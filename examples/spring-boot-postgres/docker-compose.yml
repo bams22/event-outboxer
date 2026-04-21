@@ -1,0 +1,29 @@
+# Spin up the backing services this example needs.
+#
+#   docker compose up -d
+#
+# Then `./mvnw spring-boot:run` from this directory.
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: outboxer-example-pg
+    environment:
+      POSTGRES_USER: outbox
+      POSTGRES_PASSWORD: outbox
+      POSTGRES_DB: outbox
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outbox"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # KeyDB is a multi-threaded drop-in for Redis. Included here so the example
+  # can be reconfigured to use the Redis locker with zero container changes.
+  keydb:
+    image: eqalpha/keydb:6
+    container_name: outboxer-example-keydb
+    ports:
+      - "6379:6379"

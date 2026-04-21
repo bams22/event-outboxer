@@ -1,0 +1,50 @@
+package com.example.outbox;
+
+import io.github.bams22.outboxer.api.handle.EventContext;
+import io.github.bams22.outboxer.api.handle.EventHandler;
+import io.github.bams22.outboxer.api.handle.EventOutcome;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+/**
+ * Handler for {@link SendOrderConfirmationPayload}. In production this is where you would call
+ * your SMTP gateway or message broker. The body is deliberately idempotent: re-sending the same
+ * order confirmation is safe (the receiver dedupes by {@code orderId}).
+ */
+@Component
+public class SendOrderConfirmationHandler implements EventHandler<SendOrderConfirmationPayload> {
+
+  private static final Logger log = LoggerFactory.getLogger(SendOrderConfirmationHandler.class);
+
+  @Override
+  public String eventType() {
+    return SendOrderConfirmationPayload.EVENT_TYPE;
+  }
+
+  @Override
+  public Class<SendOrderConfirmationPayload> payloadType() {
+    return SendOrderConfirmationPayload.class;
+  }
+
+  /**
+   * Serialize orders to the same customer: concurrent confirmations for the same address should
+   * not race. Returning {@code null} would disable locking for this handler.
+   */
+  @Override
+  public String extractLockKey(SendOrderConfirmationPayload payload) {
+    return "customer:" + payload.email();
+  }
+
+  @Override
+  public EventOutcome handle(EventContext ctx, SendOrderConfirmationPayload payload) {
+    log.info(
+        "sending confirmation for order {} to {} (attempt {})",
+        payload.orderId(),
+        payload.email(),
+        ctx.attempt());
+    // In a real app: call SMTP / message broker / CRM.
+    // Throw on transient errors; return Fail for permanent ones.
+    return EventOutcome.Success.INSTANCE;
+  }
+}
