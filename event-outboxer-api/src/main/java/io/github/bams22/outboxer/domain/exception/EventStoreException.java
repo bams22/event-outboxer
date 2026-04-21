@@ -20,6 +20,10 @@ public final class EventStoreException extends StorageException {
   /** Message code used as a prefix in error text: {@value}. */
   public static final String CODE = "OUTBOX-302";
 
+  public EventStoreException(String message) {
+    super(CODE + ": " + message);
+  }
+
   public EventStoreException(String message, Throwable cause) {
     super(CODE + ": " + message, cause);
   }
