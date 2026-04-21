@@ -26,6 +26,24 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!--
+            Nullness annotations (ADR-0018). Transitive from event-outboxer-api,
+            but declared explicitly here so the SPI module's classpath does not
+            depend on api's dependency transit for a compile-scope contract.
+        -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <!-- Compile-only: does not propagate to runtime classpath of consumers. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
