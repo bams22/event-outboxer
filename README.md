@@ -1,1 +1,145 @@
 # event-outboxer
+
+Embedded transactional outbox for Java 25 / Spring Boot 3.5.6 / PostgreSQL 15.
+
+A library for asynchronous event-driven processing with atomicity guarantees
+between business transactions and event persistence. Inspired by
+[db-scheduler](https://github.com/kagkarlsson/db-scheduler) and
+[jobrunr](https://github.com/jobrunr/jobrunr), but purpose-built for the
+Transactional Outbox pattern.
+
+## Key properties
+
+- **Atomicity**: `publish()` participates in the caller's current transaction
+  via `TransactionAwareDataSourceProxy`. Business data and events commit or
+  roll back together — no inconsistency windows.
+- **Storage-agnostic core**: the engine knows nothing about the database;
+  the `EventStore` port is implemented in separate modules (PostgreSQL in
+  MVP, other backends are pluggable).
+- **Per-event-type isolation**: each `EventHandler` gets its own
+  `ThreadPoolTaskExecutor` and poller — a slow type cannot block a fast one.
+- **Distributed-safe**: `SELECT FOR UPDATE SKIP LOCKED` + optimistic locking
+  via a `version` column + heartbeat/lease in a separate `outbox.workers`
+  table for detecting crashed workers.
+- **At-least-once**: handlers must be idempotent. Exponential backoff with
+  jitter, attempt limits, DISABLED status for poison events.
+- **Composable failure handling**: `FailureHandler<T>` chain (log →
+  max-retries → backoff → listener-notify) — each handler type may have its
+  own policy.
+- **Deep Spring Boot integration**: MDC / tracing / security-context
+  propagation via `ContextPropagatingTaskDecorator`, graceful shutdown
+  through `SmartLifecycle`.
+
+## Scope
+
+**Fits well for**: atomicity within a single service (or its replicas) —
+when you need to save business data and schedule background work atomically.
+Examples: "save the order and send the confirmation email", "update the user
+and invalidate the cache", splitting heavy calculations into background
+steps.
+
+**Not suitable for**: cross-service messaging. If an event must reach another
+service, use a broker (Kafka, RabbitMQ); the library provides an integration
+point via a handler that publishes to the broker. Shared DB between services
+is an anti-pattern and is explicitly not supported.
+
+## Quick start
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.bams22</groupId>
+            <artifactId>event-outboxer-bom</artifactId>
+            <version>${outboxer.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.github.bams22</groupId>
+        <artifactId>event-outboxer-spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.github.bams22</groupId>
+        <artifactId>event-outboxer-storage-postgres</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.github.bams22</groupId>
+        <artifactId>event-outboxer-lock-postgres</artifactId>
+    </dependency>
+</dependencies>
+```
+
+```yaml
+# application.yml
+spring.flyway.locations:
+  - classpath:db/migration
+  - classpath:db/migration/outbox/core
+```
+
+```java
+@Service
+@RequiredArgsConstructor
+public class OrderService {
+    private final OrderRepository orderRepository;
+    private final OutboxEventPublisher publisher;
+
+    @Transactional
+    public void createOrder(CreateOrderCommand cmd) {
+        Order order = orderRepository.save(Order.from(cmd));
+        publisher.publish(
+            "SEND_ORDER_CONFIRMATION",
+            new SendOrderConfirmationPayload(order.id(), order.email())
+        );
+        // if the transaction rolls back, the event is NOT persisted
+    }
+}
+
+@Component
+@RequiredArgsConstructor
+public class SendOrderConfirmationHandler
+        implements EventHandler<SendOrderConfirmationPayload> {
+
+    private final EmailService emailService;
+
+    @Override public String eventType() { return "SEND_ORDER_CONFIRMATION"; }
+    @Override public Class<SendOrderConfirmationPayload> payloadType() {
+        return SendOrderConfirmationPayload.class;
+    }
+
+    @Override
+    public EventOutcome handle(EventContext ctx, SendOrderConfirmationPayload p) {
+        emailService.send(p.email(), "Order " + p.orderId() + " confirmed");
+        return EventOutcome.Success.INSTANCE;
+    }
+}
+```
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — overview, module layout,
+  key components and data flows.
+- [Configuration](docs/CONFIGURATION.md) — full `application.yml`
+  reference.
+- [Storage: PostgreSQL](docs/STORAGE.md) — database schema, key queries,
+  migrations.
+- [Glossary](docs/GLOSSARY.md) — definitions (event, claim, lease,
+  orphan, etc.).
+- [Architecture Decision Records](docs/adr/README.md) — rationale for
+  every significant design decision.
+
+## References and inspiration
+
+- [db-scheduler](https://github.com/kagkarlsson/db-scheduler) — minimalist
+  job scheduler (single-table design, polished polling, excellent test
+  helpers).
+- [jobrunr](https://github.com/jobrunr/jobrunr) — rich job framework
+  (built-in dashboard, state machine, listener pattern).
+
+## License
+
+See [LICENSE](LICENSE).

@@ -1,0 +1,157 @@
+# ADR-0005: Worker heartbeat in a separate table
+
+## Status
+
+Accepted
+
+## Date
+
+2026-04-19
+
+## Context
+
+To detect crashed workers (so their events can be redistributed) we need a
+heartbeat mechanism. Two approaches were considered:
+
+1. **Per-event lease**: every `PROCESSING` event carries a `lease_until`;
+   the worker periodically extends the lease for every in-flight event.
+   This is how db-scheduler does it — `last_heartbeat` column directly on
+   `scheduled_tasks`.
+
+2. **Separate workers table**: one row per JVM; the worker updates the
+   `last_heartbeat` on its own row. Events reference the worker via
+   `claimed_by`. This is how jobrunr does it with the
+   `jobrunr_backgroundjobservers` table.
+
+Option (1) was initially chosen, but the write-traffic problem on large
+backlogs was pointed out: with 1000+ in-flight events and a heartbeat every
+30s we would be writing 2000+ rows/min into the hot `outbox.events` table
+just for keepalive.
+
+## Alternatives considered
+
+- **A. Per-event lease**: `lease_until` on the `outbox.events` row.
+  Heartbeat is a batch UPDATE of all in-flight rows.
+- **B. Separate table**: `outbox.workers(worker_id PK, last_heartbeat,
+  ...)`. Heartbeat is a single-row UPDATE.
+- **C. Hybrid**: both together. Rejected as redundant.
+
+## Decision
+
+**Option B was chosen**: `outbox.workers` is a dedicated heartbeat table,
+with a single row per JVM.
+
+### Schema
+
+```sql
+CREATE TABLE outbox.workers (
+    worker_id       VARCHAR(64)  PRIMARY KEY,
+    host            VARCHAR(256) NOT NULL,
+    pid             INT,
+    started_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_heartbeat  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    graceful_stop   BOOLEAN      NOT NULL DEFAULT FALSE,
+    metadata        JSONB
+);
+
+CREATE INDEX idx_workers_heartbeat
+    ON outbox.workers (last_heartbeat)
+    WHERE graceful_stop = FALSE;
+```
+
+### Lifecycle
+
+1. **Startup**: `INSERT` into `outbox.workers` with
+   `worker_id = "host-pid-uuid"`.
+2. **Heartbeat**: every 30s (default) `UPDATE ... SET last_heartbeat=now()
+   WHERE worker_id=?` — exactly one row.
+3. **Graceful shutdown**: `UPDATE ... SET graceful_stop=TRUE` → wait for
+   in-flight events → `DELETE`.
+4. **Crash**: DELETE is not executed; after `deadThreshold`
+   (`3 × heartbeatInterval` = 90s by default) orphan recovery marks the
+   worker as dead, returns its events to PENDING, and deletes the row.
+
+## Rationale
+
+### Quantitative benefits
+
+| | Per-event lease | Workers table |
+|---|---|---|
+| Writes per heartbeat cycle | N (in-flight count) | 1 |
+| 10 in-flight, 30s heartbeat | ~20 writes/min | 2 writes/min |
+| 1000 in-flight, 30s heartbeat | ~2000 writes/min | 2 writes/min |
+
+But the key point is not just the count — the critical property is that
+**the hot `outbox.events` table is not mutated every 30s just to say "I'm
+alive"**. That means:
+- Less MVCC bloat (PG keeps old and new row versions until vacuum).
+- Fewer WAL writes.
+- Fewer index updates, including the partial `idx_events_ready` index.
+- Less replication lag if standbys are present.
+
+### Watchdog for stuck handlers
+
+A per-event lease gives a passive defense: if the handler hangs, the
+watchdog simply stops extending the lease → orphan recovery picks it up.
+With a separate workers table, we need **active reclaim**: the watchdog
+explicitly calls `EventStore.forceReclaim()`.
+
+That is slightly more code, but semantically even cleaner: we explicitly
+decide "this event is stuck" rather than passively waiting for a timeout.
+
+### Bonus: almost-free observability
+
+```sql
+-- live cluster workers
+SELECT worker_id, host, started_at, last_heartbeat, metadata
+FROM outbox.workers
+WHERE last_heartbeat > now() - interval '90 seconds';
+
+-- how many events each worker owns right now
+SELECT w.worker_id, w.host, count(e.id) AS in_flight
+FROM outbox.workers w
+LEFT JOIN outbox.events e ON e.claimed_by = w.worker_id AND e.status = 'PROCESSING'
+GROUP BY w.worker_id, w.host;
+```
+
+## Consequences
+
+### For users
+
+- The database gains an `outbox.workers` table, included in Flyway
+  migrations (it is part of `V001__outbox_core.sql`).
+- SQL-based admin visibility of the cluster is almost free.
+
+### For maintainers
+
+- `WorkerRegistry` is a separate SPI port (not part of `EventStore`).
+- Orphan recovery runs in a two-phase transaction: find dead workers →
+  reclaim their events → delete workers. Concurrency safety is ensured by
+  `FOR UPDATE SKIP LOCKED` on the workers row.
+- Edge case: events with `claimed_by` that no longer has a worker row
+  (from a partially completed graceful shutdown). An additional query in
+  orphan recovery handles this.
+- The watchdog for stuck handlers is an active reclaim, not a passive lease
+  timeout.
+
+### Positive consequences
+
+- O(1) heartbeat write traffic, independent of in-flight count.
+- A clean hot table: mutated only for business reasons (claim, finalize,
+  reclaim).
+- A ready-made dashboard via SQL.
+- `metadata` in the workers table (version, git-sha) helps with debugging.
+
+### Negative consequences
+
+- One additional table.
+- Active-reclaim watchdog is slightly more complex than a passive timeout.
+- Requires an explicit cleanup for the "event without worker row" edge
+  case.
+
+## Related decisions
+
+- [ADR-0014](0014-optimistic-locking-via-version-field.md) — how finalize
+  and orphan recovery synchronize via `version`.
+- [ADR-0004](0004-per-event-type-worker-isolation.md) — workers are shared
+  across types, events are per type.
