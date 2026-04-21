@@ -32,4 +32,4 @@ jobs:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_TOKEN: ${{ secrets.CENTRAL_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: mvn -B -ntp -Prelease deploy -DskipTests
+        run: ./mvnw -B -ntp -Prelease deploy -DskipTests

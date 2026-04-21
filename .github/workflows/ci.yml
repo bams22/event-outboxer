@@ -24,7 +24,7 @@ jobs:
           cache: maven
 
       - name: Maven verify
-        run: mvn -B -ntp verify
+        run: ./mvnw -B -ntp verify
 
   it:
     name: Integration tests (Testcontainers)
@@ -41,4 +41,5 @@ jobs:
           cache: maven
 
       - name: Maven verify -P it
-        run: mvn -B -ntp verify -P it
+        run: ./mvnw -B -ntp verify -P it
+

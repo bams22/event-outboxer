@@ -77,12 +77,15 @@
         <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
         <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
         <maven-deploy-plugin.version>3.1.3</maven-deploy-plugin.version>
-        <spotless-maven-plugin.version>2.44.0</spotless-maven-plugin.version>
+        <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
         <central-publishing-maven-plugin.version>0.6.0</central-publishing-maven-plugin.version>
 
         <!-- Non-Boot-managed test libs -->
         <testcontainers.version>1.20.4</testcontainers.version>
         <assertj.version>3.26.3</assertj.version>
+
+        <!-- Nullness annotations (ADR-0018) -->
+        <jspecify.version>1.0.0</jspecify.version>
     </properties>
 
     <dependencyManagement>
@@ -110,6 +113,13 @@
                 <groupId>org.assertj</groupId>
                 <artifactId>assertj-core</artifactId>
                 <version>${assertj.version}</version>
+            </dependency>
+
+            <!-- JSpecify nullness annotations (ADR-0018) -->
+            <dependency>
+                <groupId>org.jspecify</groupId>
+                <artifactId>jspecify</artifactId>
+                <version>${jspecify.version}</version>
             </dependency>
 
             <!-- Inter-module dependencies at project version -->
@@ -184,6 +194,12 @@
                         <release>${java.version}</release>
                         <parameters>true</parameters>
                         <showWarnings>true</showWarnings>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </path>
+                        </annotationProcessorPaths>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -247,7 +263,7 @@
                     <configuration>
                         <java>
                             <googleJavaFormat>
-                                <version>1.24.0</version>
+                                <version>1.27.0</version>
                                 <style>GOOGLE</style>
                                 <reflowLongStrings>true</reflowLongStrings>
                             </googleJavaFormat>
@@ -309,14 +325,35 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-            </plugin>
+            <!--
+                Spotless intentionally NOT activated in the default build: Spotless 2.44.5
+                together with google-java-format 1.27.0 (current latest as of April 2026) uses
+                an internal javac API that was changed in JDK 25 and fails with
+                NoSuchMethodError at runtime. The plugin configuration remains in
+                pluginManagement above and can be re-enabled once Spotless / GJF ship a
+                JDK 25-compatible release. Invoke `mvn -Pspotless spotless:apply` or
+                `spotless:check` explicitly when running on JDK ≤ 24.
+            -->
         </plugins>
     </build>
 
     <profiles>
+        <!--
+            Spotless: opt-in until JDK 25 compatible Spotless/GJF is available.
+            Invoke with -Pspotless to activate the check.
+        -->
+        <profile>
+            <id>spotless</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.diffplug.spotless</groupId>
+                        <artifactId>spotless-maven-plugin</artifactId>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <!-- Integration tests: activated with -P it; runs failsafe IT classes. -->
         <profile>
             <id>it</id>
