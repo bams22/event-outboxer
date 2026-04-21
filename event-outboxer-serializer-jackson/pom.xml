@@ -45,6 +45,20 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- Nullness annotations (transitive from api, declared for clarity). -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <!-- Compile-only: does not propagate to runtime classpath of consumers. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

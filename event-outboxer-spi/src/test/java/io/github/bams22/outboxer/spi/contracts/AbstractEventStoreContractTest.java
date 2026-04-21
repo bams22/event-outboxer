@@ -72,7 +72,7 @@ public abstract class AbstractEventStoreContractTest {
   @Test
   @DisplayName("save() persists a pending event and findById() returns it unchanged")
   void save_roundTrip() {
-    PendingEvent pending = pending(EVENT_TYPE_A, "{\"n\":1}", Instant.now());
+    PendingEvent pending = pending(EVENT_TYPE_A, "hello", Instant.now());
 
     store.save(pending);
 
@@ -81,7 +81,7 @@ public abstract class AbstractEventStoreContractTest {
     Event event = found.orElseThrow();
     assertThat(event.id()).isEqualTo(pending.id());
     assertThat(event.eventType()).isEqualTo(EVENT_TYPE_A);
-    assertThat(event.payload()).isEqualTo("{\"n\":1}");
+    assertThat(event.payload()).isEqualTo(jsonString("hello"));
     assertThat(event.status()).isEqualTo(EventStatus.PENDING);
     assertThat(event.attempts()).isZero();
     assertThat(event.version()).isGreaterThanOrEqualTo(0L);
@@ -93,9 +93,9 @@ public abstract class AbstractEventStoreContractTest {
   @Test
   @DisplayName("saveAll() persists every event in the batch")
   void saveAll_persistsAll() {
-    PendingEvent p1 = pending(EVENT_TYPE_A, "{\"n\":1}", Instant.now());
-    PendingEvent p2 = pending(EVENT_TYPE_A, "{\"n\":2}", Instant.now());
-    PendingEvent p3 = pending(EVENT_TYPE_B, "{\"n\":3}", Instant.now());
+    PendingEvent p1 = pending(EVENT_TYPE_A, "p1", Instant.now());
+    PendingEvent p2 = pending(EVENT_TYPE_A, "p2", Instant.now());
+    PendingEvent p3 = pending(EVENT_TYPE_B, "p3", Instant.now());
 
     store.saveAll(List.of(p1, p2, p3));
 
@@ -128,7 +128,9 @@ public abstract class AbstractEventStoreContractTest {
 
     List<ClaimedEvent> claimed = store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 10));
 
-    assertThat(claimed).extracting(ClaimedEvent::payload).containsExactly("hi-old", "hi-new", "lo-old");
+    assertThat(claimed)
+        .extracting(ClaimedEvent::payload)
+        .containsExactly(jsonString("hi-old"), jsonString("hi-new"), jsonString("lo-old"));
   }
 
   @Test
@@ -294,7 +296,8 @@ public abstract class AbstractEventStoreContractTest {
   @DisplayName("markForRetry() reverts to PENDING, clears claim, bumps attempts and version")
   void markForRetry_revertsToPending() {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
-    Instant nextRun = Instant.now().plusSeconds(60);
+    // Truncate to microseconds: TIMESTAMPTZ in PG is microsecond-precision.
+    Instant nextRun = Instant.now().plusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
     boolean ok =
         store.markForRetry(claimed.id(), WORKER_1, claimed.claimedVersion(), "transient", nextRun);
@@ -368,7 +371,7 @@ public abstract class AbstractEventStoreContractTest {
   @DisplayName("forceReclaim() reverts PROCESSING to PENDING and bumps attempts + version")
   void forceReclaim_revertsToPending() {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
-    Instant rerun = Instant.now();
+    Instant rerun = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
     boolean ok = store.forceReclaim(claimed.id(), WORKER_1, claimed.claimedVersion(), rerun);
 
@@ -477,20 +480,29 @@ public abstract class AbstractEventStoreContractTest {
   // helpers
   // ---------------------------------------------------------------------------------------------
 
-  protected PendingEvent pending(String type, String payload, Instant runAt) {
-    return pending(type, payload, runAt, (short) 0);
+  protected PendingEvent pending(String type, String rawPayload, Instant runAt) {
+    return pending(type, rawPayload, runAt, (short) 0);
   }
 
-  protected PendingEvent pending(String type, String payload, Instant runAt, short priority) {
+  protected PendingEvent pending(String type, String rawPayload, Instant runAt, short priority) {
     return PendingEvent.builder()
         .id(UUID.randomUUID())
         .eventType(type)
-        .payload(payload)
+        .payload(jsonString(rawPayload))
         .payloadClass("java.lang.String")
         .priority(priority)
         .runAt(runAt)
         .traceContext(Map.of())
         .build();
+  }
+
+  /**
+   * Encode {@code raw} as a JSON string literal so the payload is valid JSON for adapters that
+   * persist it as JSONB. In-memory adapters round-trip it verbatim; PG adapters store and return
+   * it as a canonical JSON scalar (no whitespace inserted).
+   */
+  protected static String jsonString(String raw) {
+    return "\"" + raw.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
   }
 
   protected ClaimedEvent publishAndClaim(String type, String payload, WorkerId worker) {

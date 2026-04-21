@@ -34,6 +34,29 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- Nullness annotations (transitive from api, declared for clarity). -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <!-- Compile-only: does not propagate to runtime classpath of consumers. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Flyway is compile-scope: the library ships classpath migrations that
+             consumers may point Flyway at. Consumers opt in by adding flyway to
+             their own deps; we mark it optional so it is not force-pulled. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-spi</artifactId>
@@ -58,11 +81,6 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
