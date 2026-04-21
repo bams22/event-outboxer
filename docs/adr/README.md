@@ -45,6 +45,10 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0013: OutboxListener as an event bus for observability](0013-outbox-listener-for-observability.md)
 - [ADR-0017: Java 25 and Spring Boot 3.5.6 as the baseline](0017-java-25-and-spring-boot-3-5-baseline.md)
 
+### Code conventions
+
+- [ADR-0018: JSpecify for nullness annotations](0018-jspecify-for-nullness.md)
+
 ## Template
 
 New ADRs are created from the [0000-template.md](0000-template.md).
