@@ -1,0 +1,9 @@
+io.github.bams22.outboxer.spring.storage.InMemoryStorageAutoConfiguration
+io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration
+io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
+io.github.bams22.outboxer.spring.lock.PostgresLockAutoConfiguration
+io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration
+io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration
+io.github.bams22.outboxer.spring.metrics.MicrometerAutoConfiguration
+io.github.bams22.outboxer.spring.health.OutboxHealthAutoConfiguration
+io.github.bams22.outboxer.spring.OutboxEngineAutoConfiguration
