@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: outboxer-example
+  datasource:
+    url: jdbc:postgresql://localhost:5432/outbox
+    username: outbox
+    password: outbox
+  flyway:
+    locations:
+      # Application migrations (the orders table).
+      - classpath:db/migration
+      # event-outboxer core schema — required.
+      - classpath:db/migration/outbox/core
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
+
+outbox:
+  storage:
+    type: postgres
+  lock:
+    type: postgres
+  publisher:
+    # @Transactional is required on every publish. Set to IGNORE if you
+    # know what you're doing — e.g. maintenance scripts.
+    no-transaction-policy: FAIL
+  maintenance:
+    heartbeat-interval: 5s
+    dead-threshold: 30s
+    orphan-recovery-interval: 30s
+    watchdog-interval: 10s
+  event-types:
+    defaults:
+      poll-min-interval: 500ms
+      poll-max-interval: 5s
+      claim-batch-size: 10
+      handler-pool-size: 3
+      handler-max-runtime: 1m
+
+logging:
+  level:
+    io.github.bams22.outboxer: DEBUG

@@ -131,6 +131,16 @@ public class SendOrderConfirmationHandler
   orphan, etc.).
 - [Architecture Decision Records](docs/adr/README.md) — rationale for
   every significant design decision.
+- [Artifacts](ARTIFACTS.md) — module matrix: which jars to add for
+  each use case, compatibility, coordinates.
+- [Changelog](CHANGELOG.md) — release notes.
+
+## Example
+
+A runnable Spring Boot 3 + PostgreSQL example lives at
+[`examples/spring-boot-postgres/`](examples/spring-boot-postgres/). One
+`docker compose up` and `mvn spring-boot:run` is enough — see its
+[README](examples/spring-boot-postgres/README.md) for the full walkthrough.
 
 ## References and inspiration
 
