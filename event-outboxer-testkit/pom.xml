@@ -32,6 +32,31 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-storage-inmemory</artifactId>
         </dependency>
+        <!--
+            Jackson serializer is the canonical default for test-mode so DTO handlers round-trip
+            out of the box. Users can still pass a custom EventSerializer to OutboxTestContext.
+        -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-serializer-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- The testkit is a test utility — JUnit 5 and AssertJ are its main exports. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
