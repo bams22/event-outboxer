@@ -131,11 +131,19 @@ class InMemoryStarterCrashTest {
       return new NoopHandler();
     }
 
-    /** Strategy that dies on first claim attempt — triggers poller thread death. */
+    /**
+     * Strategy that dies on first claim attempt — triggers poller thread death.
+     *
+     * <p>Plain {@link Error} on purpose: {@code VirtualMachineError} subclasses like
+     * {@code OutOfMemoryError} are interpreted by some JVM tooling (surefire fork, ByteBuddy
+     * agent, certain JDK 25 builds) as fatal for the whole JVM, even when thrown synthetically.
+     * Plain {@code Error} keeps the crash-detection semantics (non-{@code RuntimeException},
+     * kills the thread) without triggering JVM-critical handling.
+     */
     @Bean
     PollStrategy crashingPollStrategy() {
       return (eventType, workerId, batchSize) -> {
-        throw new OutOfMemoryError("simulated crash in InMemoryStarterCrashTest");
+        throw new Error("simulated crash in InMemoryStarterCrashTest");
       };
     }
 
