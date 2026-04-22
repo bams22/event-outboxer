@@ -10,7 +10,9 @@
 package io.github.bams22.outboxer.spring;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
@@ -41,6 +43,7 @@ public class OutboxProperties {
   private final Worker worker = new Worker();
   private final HandlerExecutor handlerExecutor = new HandlerExecutor();
   private final Metrics metrics = new Metrics();
+  private final Health health = new Health();
 
   // =============================================================================================
   // nested groups
@@ -185,5 +188,23 @@ public class OutboxProperties {
      * different namespace.
      */
     private String prefix = "event_outboxer";
+  }
+
+  @Getter
+  @Setter
+  public static class Health {
+    /**
+     * Actuator health groups into which the {@code outbox} indicator is
+     * merged. Typical values: {@code readiness}, {@code liveness}. Default
+     * is empty — no influence on any probe; the indicator lives only at
+     * {@code /actuator/health/outbox}.
+     *
+     * <p>When set, an {@code EnvironmentPostProcessor} appends
+     * {@code outbox} to {@code management.endpoint.health.group.<name>.include}
+     * for each listed group, preserving the user's existing includes and
+     * the default {@code <name>State} contributor so Spring Boot's
+     * liveness / readiness semantics keep working.
+     */
+    private List<String> probeGroups = new ArrayList<>();
   }
 }

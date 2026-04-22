@@ -118,6 +118,7 @@ public class OutboxEngineAutoConfiguration {
               defaultFailureHandlerProvider,
       @Qualifier("outboxPerTypeFailureHandlers") ObjectProvider<Map<String, FailureHandler<?>>>
               perTypeFailureHandlersProvider,
+      ObjectProvider<io.github.bams22.outboxer.core.polling.PollStrategy> pollStrategyProvider,
       List<OutboxListener> listeners) {
 
     OutboxEngineBuilder builder =
@@ -151,6 +152,7 @@ public class OutboxEngineAutoConfiguration {
     defaultFailureHandlerProvider.ifAvailable(builder::defaultFailureHandler);
     perTypeFailureHandlersProvider.ifAvailable(
         map -> map.forEach(builder::failureHandlerFor));
+    pollStrategyProvider.ifAvailable(builder::pollStrategy);
     for (OutboxListener l : listeners) {
       builder.listener(l);
     }

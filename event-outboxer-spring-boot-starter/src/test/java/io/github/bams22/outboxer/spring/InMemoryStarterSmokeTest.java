@@ -18,6 +18,8 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +53,7 @@ class InMemoryStarterSmokeTest {
   @Autowired EventStore store;
   @Autowired OutboxEngine engine;
   @Autowired RecordingHandler handler;
+  @Autowired MeterRegistry meterRegistry;
 
   @Test
   void publishedEventIsProcessed() {
@@ -65,6 +68,21 @@ class InMemoryStarterSmokeTest {
 
     assertThat(handler.invocationCount()).isGreaterThanOrEqualTo(1);
     assertThat(handler.seen()).containsKey("ord-1");
+  }
+
+  @Test
+  void engineStateGaugesReflectRunningState() {
+    assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);
+
+    assertThat(
+            meterRegistry.get("event_outboxer.engine.state").tag("state", "running").gauge().value())
+        .isEqualTo(1.0);
+    assertThat(
+            meterRegistry.get("event_outboxer.engine.state").tag("state", "stopped").gauge().value())
+        .isEqualTo(0.0);
+    assertThat(
+            meterRegistry.get("event_outboxer.engine.state").tag("state", "stopping").gauge().value())
+        .isEqualTo(0.0);
   }
 
   record OrderCreated(String orderId, int count) {}
@@ -111,6 +129,11 @@ class InMemoryStarterSmokeTest {
     @Bean
     RecordingHandler recordingHandler() {
       return new RecordingHandler();
+    }
+
+    @Bean
+    MeterRegistry meterRegistry() {
+      return new SimpleMeterRegistry();
     }
   }
 }

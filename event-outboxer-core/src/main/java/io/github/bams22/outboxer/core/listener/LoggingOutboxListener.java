@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.core.listener;
 
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
@@ -156,5 +157,15 @@ public final class LoggingOutboxListener implements OutboxListener {
   @Override
   public void onDispatchRejected(DispatchRejectedInfo info) {
     log.warn("dispatch rejected {}", info);
+  }
+
+  @Override
+  public void onEngineCrashed(EngineCrashedInfo info) {
+    log.error(
+        "ENGINE CRASHED on worker {} at {} — {}",
+        info.workerId(),
+        info.at(),
+        info.reason(),
+        info.cause());
   }
 }

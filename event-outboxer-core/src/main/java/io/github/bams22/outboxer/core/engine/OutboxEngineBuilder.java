@@ -28,6 +28,7 @@ import io.github.bams22.outboxer.core.listener.OutboxListenerRegistry;
 import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
+import io.github.bams22.outboxer.core.maintenance.EngineHealthCheckTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
 import io.github.bams22.outboxer.core.polling.LockAndFetchStrategy;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
@@ -292,18 +293,36 @@ public final class OutboxEngineBuilder {
         new OrphanRecoveryTask(workerRegistry, eventStore, clock, maintenanceConfig, listener);
     WatchdogTask watchdog =
         new WatchdogTask(inFlight, eventStore, clock, typeConfig, listener);
-    MaintenanceScheduler maintenance =
-        new MaintenanceScheduler(heartbeat, orphanTask, watchdog, maintenanceConfig);
 
-    return new OutboxEngine(
-        workerRegistry,
-        workerInfo,
-        publisher,
-        maintenance,
-        pollers,
-        executors,
-        listener,
-        maintenanceConfig.shutdownTimeout());
+    // The engine-health-check needs to report crashes to the engine, but the engine isn't
+    // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.
+    java.util.concurrent.atomic.AtomicReference<OutboxEngine> engineRef =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    EngineHealthCheckTask engineHealthCheck =
+        new EngineHealthCheckTask(
+            pollers,
+            (reason, cause) -> {
+              OutboxEngine e = engineRef.get();
+              if (e != null) {
+                e.markCrashed(reason, cause);
+              }
+            });
+    MaintenanceScheduler maintenance =
+        new MaintenanceScheduler(
+            heartbeat, orphanTask, watchdog, engineHealthCheck, maintenanceConfig);
+
+    OutboxEngine engine =
+        new OutboxEngine(
+            workerRegistry,
+            workerInfo,
+            publisher,
+            maintenance,
+            pollers,
+            executors,
+            listener,
+            maintenanceConfig.shutdownTimeout());
+    engineRef.set(engine);
+    return engine;
   }
 
   // ---------------------------------------------------------------------------------------------

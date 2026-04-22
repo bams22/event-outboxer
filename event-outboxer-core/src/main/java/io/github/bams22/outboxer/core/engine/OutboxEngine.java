@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.core.engine;
 
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.WorkerDeregisteredInfo;
 import io.github.bams22.outboxer.api.observer.WorkerGracefulStopInfo;
@@ -20,11 +21,13 @@ import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +53,14 @@ public final class OutboxEngine {
   private final Duration shutdownTimeout;
 
   private volatile State state = State.STOPPED;
+
+  /**
+   * Flipped to {@code true} by {@link #markCrashed(String, Throwable)} when the background
+   * health check determines that a poller thread has died. Independent of {@link #state} so
+   * Spring's {@code SmartLifecycle.isRunning()} (via {@link #isLifecycleActive()}) keeps
+   * returning {@code true} and {@code stop()} still runs the full cleanup.
+   */
+  private volatile boolean crashed = false;
 
   public OutboxEngine(
       WorkerRegistry registry,
@@ -85,6 +96,7 @@ public final class OutboxEngine {
     if (state != State.STOPPED) {
       throw new IllegalStateException("engine already started (state=" + state + ")");
     }
+    crashed = false;
     try {
       registry.register(workerInfo);
       listener.onWorkerRegistered(new WorkerRegisteredInfo(workerInfo));
@@ -125,8 +137,8 @@ public final class OutboxEngine {
     if (state != State.RUNNING) {
       return;
     }
-    state = State.STOPPING;
     Objects.requireNonNull(timeout, "timeout must not be null");
+    state = State.STOPPING;
     log.info("outbox engine stopping: worker={} timeout={}", workerInfo.id(), timeout);
 
     for (Poller p : pollers) {
@@ -160,12 +172,58 @@ public final class OutboxEngine {
     }
 
     state = State.STOPPED;
+    crashed = false;
     log.info("outbox engine stopped: worker={}", workerInfo.id());
   }
 
-  /** Current lifecycle state. */
+  /**
+   * Observable engine state. Returns {@code STOPPED} whenever
+   * {@link #markCrashed(String, Throwable)} has fired, regardless of the internal lifecycle
+   * phase — this is the signal exposed to the Actuator health indicator and the
+   * {@code event_outboxer.engine.state} gauge. Use {@link #isLifecycleActive()} for the
+   * "has {@code start()} been called and {@code stop()} not yet completed" question.
+   */
   public State state() {
-    return state;
+    return crashed ? State.STOPPED : state;
+  }
+
+  /**
+   * Returns {@code true} when the engine has been started and {@code stop()} has not yet
+   * completed — ignoring any intervening crash. Used by Spring Boot's
+   * {@code SmartLifecycle.isRunning()} so a crashed engine still goes through the normal
+   * shutdown path (deregister worker, drain handlers).
+   */
+  public boolean isLifecycleActive() {
+    return state == State.RUNNING || state == State.STOPPING;
+  }
+
+  /**
+   * Mark the engine as crashed. Called by the background health-check task when it determines
+   * that a critical component is no longer alive. Idempotent; firing twice produces exactly one
+   * log entry and one {@link OutboxListener#onEngineCrashed} callback.
+   *
+   * @param reason human-readable description of what the health check detected
+   * @param cause the underlying throwable, if known; may be {@code null}
+   */
+  public void markCrashed(String reason, @Nullable Throwable cause) {
+    Objects.requireNonNull(reason, "reason must not be null");
+    synchronized (this) {
+      if (crashed) {
+        return;
+      }
+      crashed = true;
+    }
+    log.error(
+        "outbox engine CRASHED on worker {}: {}",
+        workerInfo.id(),
+        reason,
+        cause);
+    try {
+      listener.onEngineCrashed(
+          new EngineCrashedInfo(reason, cause, Instant.now(), workerInfo.id()));
+    } catch (RuntimeException ex) {
+      log.warn("onEngineCrashed listener threw: {}", ex.toString(), ex);
+    }
   }
 
   private void drainHandlers(Duration timeout) {

@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.testkit;
 
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
@@ -73,6 +74,8 @@ public final class RecordingOutboxListener implements OutboxListener {
   private final CopyOnWriteArrayList<StorageErrorInfo> storageErrors = new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<DispatchRejectedInfo> dispatchRejected =
       new CopyOnWriteArrayList<>();
+  private final CopyOnWriteArrayList<EngineCrashedInfo> engineCrashed =
+      new CopyOnWriteArrayList<>();
 
   /** Reset every captured list. */
   public void clear() {
@@ -97,6 +100,7 @@ public final class RecordingOutboxListener implements OutboxListener {
     leaseRenewalMismatches.clear();
     storageErrors.clear();
     dispatchRejected.clear();
+    engineCrashed.clear();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -208,6 +212,11 @@ public final class RecordingOutboxListener implements OutboxListener {
     dispatchRejected.add(info);
   }
 
+  @Override
+  public void onEngineCrashed(EngineCrashedInfo info) {
+    engineCrashed.add(info);
+  }
+
   // ---------------------------------------------------------------------------------------------
   // accessors — snapshots for assertions
   // ---------------------------------------------------------------------------------------------
@@ -294,5 +303,9 @@ public final class RecordingOutboxListener implements OutboxListener {
 
   public List<DispatchRejectedInfo> dispatchRejected() {
     return List.copyOf(dispatchRejected);
+  }
+
+  public List<EngineCrashedInfo> engineCrashed() {
+    return List.copyOf(engineCrashed);
   }
 }

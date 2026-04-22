@@ -112,6 +112,12 @@ outbox:
     # chosen to avoid clashing with other libraries that publish outbox.*.
     prefix: event_outboxer
 
+  health:
+    # Merge the outbox indicator into these Actuator health groups. Default
+    # empty = no influence on /actuator/health/liveness or /readiness.
+    # For k8s rolling restart: [readiness] is the recommended minimum.
+    probe-groups: []
+
   lock:
     type: postgres                   # postgres | redis | noop; auto-detected by classpath if omitted
     redis:
@@ -250,6 +256,21 @@ Micrometer listener settings.
   multiple outbox instances share a registry or when an organisation
   requires a different namespace. See [docs/OBSERVABILITY.md](OBSERVABILITY.md)
   for the full metric catalogue.
+
+### `outbox.health.*`
+
+Spring Boot Actuator integration.
+
+- `probe-groups` — list of Actuator health groups into which the
+  `outbox` indicator is merged. Typical values: `readiness`,
+  `liveness`. **Default: empty** (the indicator lives only at
+  `/actuator/health/outbox`; probes are unaffected). When set, an
+  `EnvironmentPostProcessor` appends `outbox` to
+  `management.endpoint.health.group.<name>.include` for each listed
+  group, preserving your existing includes and the default
+  `<name>State` contributor. See [docs/OBSERVABILITY.md §Kubernetes probes](OBSERVABILITY.md#kubernetes-probes)
+  for the tradeoffs between probe-driven pod lifecycle and
+  metric-driven alerting.
 
 ### `outbox.lock.*`
 

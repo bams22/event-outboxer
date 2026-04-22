@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.core.listener;
 
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
@@ -191,5 +192,10 @@ public final class OutboxListenerRegistry implements OutboxListener {
   @Override
   public void onDispatchRejected(DispatchRejectedInfo info) {
     broadcast(l -> l.onDispatchRejected(info), info);
+  }
+
+  @Override
+  public void onEngineCrashed(EngineCrashedInfo info) {
+    broadcast(l -> l.onEngineCrashed(info), info);
   }
 }
