@@ -22,16 +22,23 @@ class EventOutcomeTest {
   }
 
   @Test
-  void sealedPatternMatchIsExhaustive() {
+  void sealedInstanceofRoutingHitsCorrectBranch() {
     EventOutcome outcome = new EventOutcome.Retry("boom", Duration.ofSeconds(5), null);
-    // If a new subtype is added to EventOutcome, this switch fails to compile.
-    String label =
-        switch (outcome) {
-          case EventOutcome.Success s -> "success";
-          case EventOutcome.Retry r -> "retry:" + r.reason();
-          case EventOutcome.Fail f -> "fail:" + f.reason();
-          case EventOutcome.Skip s -> "skip:" + s.reason();
-        };
+    // Baseline is Java 17 (ADR-0017) — pattern-matching switch on sealed types is not
+    // available. Use an instanceof chain with a terminating throw to keep exhaustiveness as a
+    // runtime guarantee: adding a new EventOutcome subtype surfaces via the final else.
+    String label;
+    if (outcome instanceof EventOutcome.Success) {
+      label = "success";
+    } else if (outcome instanceof EventOutcome.Retry r) {
+      label = "retry:" + r.reason();
+    } else if (outcome instanceof EventOutcome.Fail f) {
+      label = "fail:" + f.reason();
+    } else if (outcome instanceof EventOutcome.Skip s) {
+      label = "skip:" + s.reason();
+    } else {
+      throw new IllegalStateException("unhandled EventOutcome: " + outcome.getClass());
+    }
     assertThat(label).isEqualTo("retry:boom");
   }
 

@@ -147,7 +147,7 @@ Users add the starter plus the adapters they need. The autoconfig uses
 
 ### Build system
 
-Maven, targeting **Java 25** and Maven 3.9+. See
+Maven, targeting **Java 17** (baseline) and Maven 3.9+. See
 [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md) for version
 baseline rationale.
 

@@ -43,7 +43,7 @@ why, which alternatives were considered and rejected. The format is based on
 
 - [ADR-0009: Spring ThreadPoolTaskExecutor + TaskDecorator in the starter](0009-spring-task-executor-in-starter.md)
 - [ADR-0013: OutboxListener as an event bus for observability](0013-outbox-listener-for-observability.md)
-- [ADR-0017: Java 25 and Spring Boot 3.5.6 as the baseline](0017-java-25-and-spring-boot-3-5-baseline.md)
+- [ADR-0017: Java 17 baseline (with JDK 21+ opt-ins) and Spring Boot 3.5.6](0017-java-25-and-spring-boot-3-5-baseline.md)
 
 ### Code conventions
 

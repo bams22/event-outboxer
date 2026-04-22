@@ -61,8 +61,19 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Baseline (ADR-0017) -->
-        <java.version>25</java.version>
+        <!--
+            Baseline Java 17 (ADR-0017). The library compiles against the
+            Java 17 API surface — no Java 21+ syntax / APIs in baseline
+            sources, to maximise the reachable audience.
+
+            Optional Java 21+ opt-ins reached via reflection at the call
+            site (see HandlerExecutorFactory.virtual): on JDK 21+ runtime
+            they use Thread.ofVirtual() natively; on JDK 17 they fail-fast
+            with a clear error message pointing at the runtime mismatch.
+            JDK 25+ runtime additionally gets JEP 491 (no synchronized
+            pinning on virtual threads) automatically.
+        -->
+        <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <maven.compiler.release>${java.version}</maven.compiler.release>
@@ -323,7 +334,7 @@
                                     <version>[3.9.0,)</version>
                                 </requireMavenVersion>
                                 <requireJavaVersion>
-                                    <version>[25,)</version>
+                                    <version>[17,)</version>
                                 </requireJavaVersion>
                                 <dependencyConvergence/>
                             </rules>

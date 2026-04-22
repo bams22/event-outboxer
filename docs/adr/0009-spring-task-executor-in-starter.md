@@ -97,8 +97,10 @@ propagates automatically:
 ### Override points
 
 - `event-outboxer.handler-executor.type=virtual` — switches to the
-  virtual-thread variant. On the Java 25 baseline (see
-  [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md)) JEP 491
+  virtual-thread variant. Requires JDK 21+ at runtime (baseline is
+  Java 17, see [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md));
+  on JDK 17 the factory fails fast with an actionable error. JDK 25+
+  additionally enables JEP 491
   eliminates `synchronized` carrier-pinning, making this opt-in safe
   for JDBC-bound handlers.
 - `@Bean TaskDecorator` — register a Spring bean of type
@@ -140,7 +142,10 @@ simple.
   implements `DisposableBean`, so `stop()` is called automatically on
   `@PreDestroy`, respecting `spring.lifecycle.timeout-per-shutdown-phase`.
 - **Virtual threads via a property**: one-line config flips the handler
-  executor to virtual threads (JDK 25 baseline; no pinning caveats).
+  executor to virtual threads. The factory reflects into
+  `Thread.ofVirtual()` / `Executors.newThreadPerTaskExecutor` so the
+  library baseline stays Java 17; a JDK 21+ runtime engages the real
+  APIs, JDK 25+ additionally removes `synchronized` pinning (JEP 491).
 - **Core stays Spring-agnostic**: plain-Java users do not get automatic
   propagation, but can register their own decorator (they configure
   everything manually anyway).
@@ -224,8 +229,11 @@ not apply. A parallel wrapper,
 `ContextPropagatingExecutorService`, applies the same
 `ContextPropagatingTaskDecorator` at submit time so that virtual
 handlers see the submitting thread's MDC / Observation / Security
-context. JEP 491 on JDK 25 (see
-[ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md))
+context. `Thread.ofVirtual()` and
+`Executors.newThreadPerTaskExecutor(...)` are invoked via reflection
+(baseline is Java 17 — see
+[ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md)); a JDK 21+
+runtime engages the real APIs, and JDK 25+
 eliminates `synchronized` carrier-pinning, so this variant is safe
 for JDBC-bound handlers.
 

@@ -1,6 +1,8 @@
 # event-outboxer
 
-Embedded transactional outbox for Java 25 / Spring Boot 3.5.6 / PostgreSQL 15.
+Embedded transactional outbox for Java 17+ / Spring Boot 3.5.6 / PostgreSQL 15.
+JDK 21+ unlocks virtual-thread handler executors; JDK 25+ adds JEP 491
+(no synchronized pinning on carriers).
 
 A library for asynchronous event-driven processing with atomicity guarantees
 between business transactions and event persistence. Inspired by
