@@ -87,9 +87,10 @@ Contains ClaimedEvent, payload, outcome, cause, attempts, now.
 
 **FailureHandler<T>** — chain-of-responsibility decorator for handling
 failures. Built-in implementations: `LogFailureHandler`,
-`NotifyListenerFailureHandler`, `MaxRetriesFailureHandler`,
-`ExponentialBackoffFailureHandler`, `FixedDelayFailureHandler`,
-`NoRetryFailureHandler`. See
+`MaxRetriesFailureHandler`, `ExponentialBackoffFailureHandler`,
+`FixedDelayFailureHandler`, `NoRetryFailureHandler`. Listener callbacks
+for retry/disable/delete are emitted by the engine dispatcher, not by
+the chain. See
 [ADR-0007](adr/0007-failure-handler-chain-of-responsibility.md).
 
 **Fetch-then-Lock strategy** — two-phase claim (SELECT → UPDATE-with-

@@ -10,7 +10,6 @@
 package io.github.bams22.outboxer.api.handle.builtin;
 
 import io.github.bams22.outboxer.api.handle.FailureHandler;
-import io.github.bams22.outboxer.api.observer.OutboxListener;
 import java.time.Duration;
 import java.util.Objects;
 import org.slf4j.event.Level;
@@ -25,17 +24,19 @@ import org.slf4j.event.Level;
  * <pre>
  * FailureHandler&lt;MyPayload&gt; fh = FailureHandlers.&lt;MyPayload&gt;builder()
  *     .withLogging(Level.WARN)
- *     .withListener(outboxListener)
  *     .withMaxAttempts(10, ExhaustedAction.DISABLE)
  *     .withExponentialBackoff(Duration.ofSeconds(5), 2.0, Duration.ofHours(1), 0.2);
  * </pre>
+ *
+ * <p>Listener events for retry / disable / delete decisions are emitted by the engine
+ * dispatcher after the decision is persisted to storage — the chain does not need a
+ * listener-forwarding decorator. See ADR-0007.
  *
  * @param <T> payload type
  */
 public final class FailureHandlerBuilder<T> {
 
   private Level logLevel;
-  private OutboxListener listener;
   private Integer maxAttempts;
   private MaxRetriesFailureHandler.ExhaustedAction exhaustedAction;
 
@@ -44,12 +45,6 @@ public final class FailureHandlerBuilder<T> {
   /** Adds a {@link LogFailureHandler} decorator at the given level. */
   public FailureHandlerBuilder<T> withLogging(Level level) {
     this.logLevel = Objects.requireNonNull(level, "level must not be null");
-    return this;
-  }
-
-  /** Adds a {@link NotifyListenerFailureHandler} decorator forwarding decisions to {@code listener}. */
-  public FailureHandlerBuilder<T> withListener(OutboxListener listener) {
-    this.listener = Objects.requireNonNull(listener, "listener must not be null");
     return this;
   }
 
@@ -87,9 +82,6 @@ public final class FailureHandlerBuilder<T> {
     FailureHandler<T> chain = leaf;
     if (maxAttempts != null) {
       chain = new MaxRetriesFailureHandler<>(maxAttempts, exhaustedAction, chain);
-    }
-    if (listener != null) {
-      chain = new NotifyListenerFailureHandler<>(listener, chain);
     }
     if (logLevel != null) {
       chain = new LogFailureHandler<>(logLevel, chain);

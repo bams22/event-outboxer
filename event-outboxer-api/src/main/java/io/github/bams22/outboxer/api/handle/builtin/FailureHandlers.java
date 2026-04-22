@@ -23,9 +23,12 @@ public final class FailureHandlers {
 
   /**
    * Returns the default failure handler: {@code Log(WARN) → MaxRetries(10, DISABLE) →
-   * ExponentialBackoff(base=5s, multiplier=2, cap=1h, jitter=0.2)}. The listener decorator is not
-   * included here — the Spring Boot starter prepends it when an {@link
-   * io.github.bams22.outboxer.api.observer.OutboxListener} is available.
+   * ExponentialBackoff(base=5s, multiplier=2, cap=1h, jitter=0.2)}.
+   *
+   * <p>No listener-forwarding decorator is included: the engine dispatcher emits
+   * {@code onEventRetryScheduled} / {@code onEventDisabled} / {@code onEventDeleted} directly
+   * after the decision is persisted, so wrapping the chain in a listener decorator would
+   * produce duplicate events. See ADR-0007 §Q25.
    *
    * @param <T> payload type inferred from the use site
    */
