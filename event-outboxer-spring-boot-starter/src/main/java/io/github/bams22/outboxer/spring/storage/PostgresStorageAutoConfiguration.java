@@ -76,8 +76,11 @@ public class PostgresStorageAutoConfiguration {
   @Bean
   @ConditionalOnMissingBean(EventStore.class)
   public PostgresEventStore outboxEventStore(
-      ConnectionSupplier connections, PostgresStorageProperties properties, Clock clock) {
-    return new PostgresEventStore(connections, properties, clock);
+      ConnectionSupplier connections,
+      PostgresStorageProperties properties,
+      Clock clock,
+      io.github.bams22.outboxer.spi.MetricsSnapshotCache metricsCache) {
+    return new PostgresEventStore(connections, properties, clock, metricsCache);
   }
 
   @Bean

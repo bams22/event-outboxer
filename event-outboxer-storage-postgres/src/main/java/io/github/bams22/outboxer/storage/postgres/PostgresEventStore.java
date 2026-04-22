@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot.EventTypeStats;
 import io.github.bams22.outboxer.storage.postgres.internal.FlatMapJson;
@@ -40,7 +41,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import io.github.bams22.outboxer.spi.Clock;
 
 /**
@@ -67,15 +67,17 @@ public final class PostgresEventStore implements EventStore {
   private final String sqlFindById;
   private final String sqlMetrics;
 
-  private final AtomicReference<CachedSnapshot> metricsCache = new AtomicReference<>();
+  private final MetricsSnapshotCache metricsCache;
 
   public PostgresEventStore(
       ConnectionSupplier connections,
       PostgresStorageProperties properties,
-      Clock clock) {
+      Clock clock,
+      MetricsSnapshotCache metricsCache) {
     this.jdbc = new OutboxJdbcRunner(Objects.requireNonNull(connections, "connections must not be null"));
     this.properties = Objects.requireNonNull(properties, "properties must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    this.metricsCache = Objects.requireNonNull(metricsCache, "metricsCache must not be null");
     this.tables = new SchemaResolver(properties);
 
     this.sqlInsert =
@@ -361,13 +363,12 @@ public final class PostgresEventStore implements EventStore {
 
   @Override
   public OutboxMetricsSnapshot metricsSnapshot() {
-    CachedSnapshot cached = metricsCache.get();
-    Instant now = clock.now();
-    if (cached != null && !cached.expired(now, properties.metricsCacheTtl())) {
-      return cached.snapshot;
+    Optional<OutboxMetricsSnapshot> cached = metricsCache.get();
+    if (cached.isPresent()) {
+      return cached.get();
     }
-    OutboxMetricsSnapshot fresh = computeMetrics(now);
-    metricsCache.set(new CachedSnapshot(fresh, now));
+    OutboxMetricsSnapshot fresh = computeMetrics(clock.now());
+    metricsCache.put(fresh);
     return fresh;
   }
 
@@ -451,11 +452,6 @@ public final class PostgresEventStore implements EventStore {
     }
   }
 
-  /** Clear the metrics cache — useful for tests that need to observe changes immediately. */
-  public void invalidateMetricsCache() {
-    metricsCache.set(null);
-  }
-
   // ---------------------------------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------------------------------
@@ -536,12 +532,6 @@ public final class PostgresEventStore implements EventStore {
   /** Internal row type for the metrics GROUP BY query. */
   private record MetricsRow(
       String eventType, String status, long cnt, Instant oldestPending, Instant oldestClaimed) {}
-
-  private record CachedSnapshot(OutboxMetricsSnapshot snapshot, Instant takenAt) {
-    boolean expired(Instant now, java.time.Duration ttl) {
-      return now.isAfter(takenAt.plus(ttl));
-    }
-  }
 
   // suppress unused import warning (Types is referenced by the adapter's future work on JSONB nulls)
   @SuppressWarnings("unused")

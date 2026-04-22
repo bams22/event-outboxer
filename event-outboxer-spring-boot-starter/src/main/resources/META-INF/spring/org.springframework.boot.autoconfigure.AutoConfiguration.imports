@@ -1,3 +1,4 @@
+io.github.bams22.outboxer.spring.cache.CacheAutoConfiguration
 io.github.bams22.outboxer.spring.storage.InMemoryStorageAutoConfiguration
 io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration
 io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
