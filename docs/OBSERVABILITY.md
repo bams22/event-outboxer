@@ -205,6 +205,11 @@ worker JVM.
 | `event_outboxer.dispatch.rejected` | counter | `event_type` | per-type handler executor rejected the dispatch | pool + queue saturated — the event is rescheduled shortly |
 | `event_outboxer.engine.state` | gauge | `state` | always present — one time series per engine state (`stopped`, `running`, `stopping`); value is 1 for the current state, 0 for the others | primary signal for metric-based alerting on engine liveness. See [§Kubernetes probes](#kubernetes-probes) for the alternative probe-based approach. |
 | `event_outboxer.engine.crashed` | counter | — | once per detected crash (poller thread death), incremented by `markCrashed(...)` | any non-zero value is an incident — pair with `engine.state{state="running"}==0` to distinguish crash from planned stop. |
+| `event_outboxer.events.pending` | gauge | `event_type` | pulled from `EventStore.metricsSnapshot()` at scrape time; one row per registered handler's event type | backlog graph. Aggregate in PromQL: `sum without(event_type)(event_outboxer_events_pending)`. |
+| `event_outboxer.events.processing` | gauge | `event_type` | as above — count of currently-claimed rows | useful alongside `pending` to see how fast handlers drain the queue |
+| `event_outboxer.events.disabled` | gauge | `event_type` | as above — count of terminal-failure rows | rising without bound means retries are exhausting permanently; investigate handler errors |
+| `event_outboxer.events.oldest_pending_age_seconds` | gauge | `event_type` | seconds since the oldest PENDING row of this type became eligible; `0` when empty | the alertable "am I falling behind?" signal — trigger when age exceeds SLO (e.g. >120 s) |
+| `event_outboxer.events.oldest_claimed_age_seconds` | gauge | — | seconds since the oldest PROCESSING row was claimed; `0` when nothing in-flight | pair with `handlerMaxRuntime` — early warning before the watchdog force-reclaims |
 
 ### Quick checks on this table
 
@@ -216,10 +221,14 @@ worker JVM.
   no reference to the engine. They are registered eagerly at context
   refresh so they appear even before `SmartLifecycle.start()` runs —
   with `state="stopped"=1` until the engine is actually started.
-- Other gauges (queue depth per type, oldest pending age) are **not**
-  emitted — they live in the health-indicator body. Wire your own
-  `Gauge` off `EventStore.metricsSnapshot()` if you need Prometheus-style
-  gauges.
+- The `event_outboxer.events.*` backlog gauges are also published from
+  the starter (`MicrometerAutoConfiguration.outboxBacklogGauges`).
+  Every scrape reads `EventStore.metricsSnapshot()` once per gauge,
+  which goes through the `MetricsSnapshotCache` SPI — so the database
+  is only hit once per cache TTL (default 30 s) regardless of how many
+  per-type rows exist. Switch to `outbox.cache.type=redis` to share the
+  snapshot across pods so dashboards aggregate to a single value across
+  the fleet instead of averaging divergent per-pod caches.
 
 ---
 
