@@ -179,6 +179,22 @@ notes. Commit in the same go.
 
 ## Troubleshooting
 
+### `versions:set` fails with `NoClassDefFoundError: org/codehaus/stax2/util/StreamReader2Delegate`
+
+`versions-maven-plugin` 2.19.0+ pulls `woodstox-core` 7.x onto its
+classpath but keeps `stax2-api` at 4.2.2, which doesn't provide the
+class woodstox 7.x expects — every invocation crashes on startup.
+The parent POM pins the plugin to `2.16.2` (last release before the
+broken combo). If you see this error, you either bypassed the pin
+with a fully-qualified invocation or the pin was removed — restore
+`<versions-maven-plugin.version>2.16.2</versions-maven-plugin.version>`
+in `pom.xml` or call the pinned version explicitly:
+
+```bash
+./mvnw org.codehaus.mojo:versions-maven-plugin:2.16.2:set \
+  -DnewVersion=N.N.N -DgenerateBackupPoms=false
+```
+
 ### `401 Unauthorized` during Maven deploy
 
 The `CENTRAL_TOKEN` GitHub secret is stale or was copied incompletely.
