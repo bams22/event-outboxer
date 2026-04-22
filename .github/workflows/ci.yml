@@ -2,34 +2,50 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: read
 
+# Cancel superseded runs on the same branch/PR — spares GitHub Actions minutes
+# when pushing rapidly.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    name: Build (unit tests)
+  unit:
+    name: Unit tests (JDK ${{ matrix.jdk }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Don't short-circuit siblings on a single JDK failure — better to see the
+      # full compatibility picture on every push.
+      fail-fast: false
+      matrix:
+        # Baseline (17), intermediate LTS (21 — virtual threads stable),
+        # current LTS (25 — JEP 491). ADR-0017.
+        jdk: ['17', '21', '25']
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: ${{ matrix.jdk }}
           cache: maven
 
-      - name: Maven verify
-        run: ./mvnw -B -ntp verify
+      - name: Maven verify (unit)
+        run: ./mvnw -B -ntp clean verify
 
   it:
     name: Integration tests (Testcontainers)
     runs-on: ubuntu-latest
-    needs: build
+    needs: unit
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -41,5 +57,4 @@ jobs:
           cache: maven
 
       - name: Maven verify -P it
-        run: ./mvnw -B -ntp verify -P it
-
+        run: ./mvnw -B -ntp clean verify -P it
