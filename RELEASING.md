@@ -127,10 +127,14 @@ triggers `.github/workflows/release.yml`, which:
 1. Strips the leading `v` from the tag name to derive
    `-Drevision=0.2.0`.
 2. Runs `./mvnw -Prelease deploy -Drevision=0.2.0 -DskipTests` on a
-   JDK 17 GitHub Actions runner.
-3. `flatten-maven-plugin` produces `.flattened-pom.xml` with the
-   resolved version; `central-publishing-maven-plugin` uploads it plus
-   jars and `.asc` signatures to Sonatype Central.
+   JDK 17 GitHub Actions runner. `flatten-maven-plugin` produces
+   `.flattened-pom.xml` with the resolved version;
+   `central-publishing-maven-plugin` uploads it plus jars and `.asc`
+   signatures to Sonatype Central.
+3. Extracts the `## [0.2.0]` section from `CHANGELOG.md` and creates a
+   GitHub Release at tag `v0.2.0` with those notes. **The job fails
+   fast** if the section is missing — so a release tag without a
+   matching CHANGELOG entry is rejected before it's announced.
 
 There is no "Release X.Y.Z" or "Bump to X.Y.(Z+1)-SNAPSHOT" commit in
 git history — the tag itself marks the release.
@@ -139,11 +143,17 @@ git history — the tag itself marks the release.
 
 Actions tab → **Release** workflow → most recent run.
 
-Expected duration: 5–10 minutes. On success, a deployment in
-**VALIDATED** state appears at
-<https://central.sonatype.com/publishing/deployments>. The workflow
-does **not** auto-publish (`<autoPublish>false</autoPublish>` in the
-parent pom) so the operator has a last chance to abort.
+Expected duration: 5–10 minutes. On success, the workflow has:
+
+1. Staged a deployment in **VALIDATED** state at
+   <https://central.sonatype.com/publishing/deployments>. The workflow
+   does **not** auto-publish (`<autoPublish>false</autoPublish>` in
+   the parent pom) so the operator has a last chance to abort.
+2. Extracted the `## [0.2.0]` section from `CHANGELOG.md` and created
+   a **GitHub Release** at `v0.2.0` with those notes — visible under
+   Releases on the repo. If this step fails because the changelog had
+   no section for this version, the whole job fails before the
+   release is announced.
 
 ### 5. Promote to Maven Central
 
@@ -151,35 +161,15 @@ parent pom) so the operator has a last chance to abort.
 2. Find the deployment under namespace `io.github.bams22`, version
    `0.2.0`.
 3. Status should be `VALIDATED`. If `FAILED`, open the deployment
-   details, fix the reported issue, drop the deployment, and restart
-   from step 3 with a new patch version (Central does not allow
-   re-uploading the same GAV).
+   details, fix the reported issue, drop the deployment, delete the
+   tag and GitHub Release, then restart from step 3 with a new patch
+   version (Central does not allow re-uploading the same GAV).
 4. Click **Publish**. Artifacts become visible on Maven Central within
    15–30 minutes:
    - <https://repo1.maven.org/maven2/io/github/bams22/event-outboxer-spring-boot-starter/0.2.0/>
    - <https://central.sonatype.com/artifact/io.github.bams22/event-outboxer-spring-boot-starter>
 
-### 6. Create the GitHub Release
-
-Using the `gh` CLI (extracts the changelog section automatically):
-
-```bash
-awk '/^## \[/{flag=0} /^## \[0\.2\.0\]/{flag=1} flag' CHANGELOG.md > release-notes.md
-gh release create v0.2.0 --title "v0.2.0" --notes-file release-notes.md
-rm release-notes.md
-```
-
-The flag-based awk is used instead of the more obvious
-`awk '/^## \[0\.2\.0\]/,/^## \[/'` range form: in the range form, both
-patterns are tested against the starting line too, and `^## \[`
-matches the `## [0.2.0]` header itself — so the range opens and
-closes on the same line and only the header makes it through.
-
-Or via the web UI: Releases → **Draft new release** → choose tag
-`v0.2.0` → set title `v0.2.0` → paste the `[0.2.0]` section of
-`CHANGELOG.md` into the body → **Publish release**.
-
-### 7. (Optional) Roll the SNAPSHOT property forward
+### 6. (Optional) Roll the SNAPSHOT property forward
 
 The `<revision>` property in `pom.xml` defaults `-SNAPSHOT` builds.
 Rolling it forward is cosmetic — nothing in the release pipeline
