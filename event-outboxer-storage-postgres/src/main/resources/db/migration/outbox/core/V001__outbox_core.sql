@@ -1,10 +1,16 @@
 -- event-outboxer core schema. See docs/STORAGE.md for rationale.
 -- This migration is idempotent per Flyway checksum; run it once with
 -- spring.flyway.locations=classpath:db/migration/outbox/core.
+--
+-- Schema name is parameterised so the library does not conflict with other
+-- tables or libraries already living in the caller's database. The Spring
+-- Boot starter auto-wires the placeholder from outbox.storage.schema
+-- (default: event_outboxer). Plain-Java Flyway users set the placeholder
+-- themselves via Flyway's placeholders(Map) API or -Dflyway.placeholders.*.
 
-CREATE SCHEMA IF NOT EXISTS outbox;
+CREATE SCHEMA IF NOT EXISTS ${eventOutboxerSchema};
 
-CREATE TABLE outbox.events (
+CREATE TABLE ${eventOutboxerSchema}.events (
     id               UUID         PRIMARY KEY,
     event_type       VARCHAR(128) NOT NULL,
     payload          JSONB        NOT NULL,
@@ -35,21 +41,21 @@ CREATE TABLE outbox.events (
 -- then orders by priority DESC, run_at ASC. Partial on PENDING keeps the
 -- index tiny even when historical DISABLED rows accumulate.
 CREATE INDEX idx_events_ready
-    ON outbox.events (event_type, priority DESC, run_at)
+    ON ${eventOutboxerSchema}.events (event_type, priority DESC, run_at)
     WHERE status = 'PENDING';
 
 -- Orphan recovery: find every event owned by a dead worker quickly.
 CREATE INDEX idx_events_processing_by_worker
-    ON outbox.events (claimed_by)
+    ON ${eventOutboxerSchema}.events (claimed_by)
     WHERE status = 'PROCESSING';
 
 -- Watchdog: scan PROCESSING events with stale claimed_at.
 CREATE INDEX idx_events_processing_claimed_at
-    ON outbox.events (claimed_at)
+    ON ${eventOutboxerSchema}.events (claimed_at)
     WHERE status = 'PROCESSING';
 
 
-CREATE TABLE outbox.workers (
+CREATE TABLE ${eventOutboxerSchema}.workers (
     worker_id       VARCHAR(64)  PRIMARY KEY,
     host            VARCHAR(256) NOT NULL,
     pid             INT,
@@ -61,5 +67,5 @@ CREATE TABLE outbox.workers (
 
 -- Orphan detection: find stale-heartbeat workers quickly; exclude clean shutdowns.
 CREATE INDEX idx_workers_heartbeat
-    ON outbox.workers (last_heartbeat)
+    ON ${eventOutboxerSchema}.workers (last_heartbeat)
     WHERE graceful_stop = FALSE;

@@ -18,7 +18,9 @@ import lombok.Builder;
  * {@code @ConfigurationProperties} so the adapter can be used from plain-Java setups too — the
  * Spring Boot starter (P9) binds YAML into this record.
  *
- * @param schema database schema holding the outbox tables; defaults to {@code outbox}
+ * @param schema database schema holding the outbox tables; defaults to
+ *     {@code event_outboxer} — a specific name chosen to avoid clashing with
+ *     other libraries or application tables in a shared database
  * @param tablePrefix optional prefix applied before table names; defaults to empty. Useful when
  *     multiple outboxes share a schema.
  * @param archiveEnabled when {@code true}, {@code markProcessed} copies the row to {@code
@@ -48,7 +50,7 @@ public record PostgresStorageProperties(
   /** Canonical defaults. */
   public static PostgresStorageProperties defaults() {
     return PostgresStorageProperties.builder()
-        .schema("outbox")
+        .schema("event_outboxer")
         .tablePrefix("")
         .archiveEnabled(false)
         .metricsCacheTtl(Duration.ofSeconds(30))

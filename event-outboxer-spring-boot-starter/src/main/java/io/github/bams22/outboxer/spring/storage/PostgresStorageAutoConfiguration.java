@@ -19,12 +19,15 @@ import io.github.bams22.outboxer.storage.postgres.PostgresStorageProperties;
 import io.github.bams22.outboxer.storage.postgres.PostgresWorkerRegistry;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.flyway.FlywayConfigurationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
@@ -82,6 +85,32 @@ public class PostgresStorageAutoConfiguration {
   public PostgresWorkerRegistry outboxWorkerRegistry(
       ConnectionSupplier connections, PostgresStorageProperties properties) {
     return new PostgresWorkerRegistry(connections, properties);
+  }
+
+  /**
+   * Feeds {@code outbox.storage.schema} into Flyway as the
+   * {@code ${eventOutboxerSchema}} placeholder so the library's classpath
+   * migrations pick up the same schema name as the adapter at runtime.
+   *
+   * <p>Merges with any other placeholders the user has configured via
+   * {@code spring.flyway.placeholders.*} — existing keys win on conflict,
+   * so users can always override the schema name explicitly.
+   */
+  @Bean
+  @ConditionalOnClass(name = "org.flywaydb.core.Flyway")
+  public FlywayConfigurationCustomizer outboxFlywayPlaceholderCustomizer(
+      OutboxProperties properties) {
+    String schema = properties.getStorage().getSchema();
+    return configuration -> {
+      Map<String, String> merged = new HashMap<>();
+      merged.put("eventOutboxerSchema", schema);
+      // Existing placeholders win — do not clobber user overrides.
+      Map<String, String> existing = configuration.getPlaceholders();
+      if (existing != null) {
+        merged.putAll(existing);
+      }
+      configuration.placeholders(merged);
+    };
   }
 
   // ---------------------------------------------------------------------------------------------

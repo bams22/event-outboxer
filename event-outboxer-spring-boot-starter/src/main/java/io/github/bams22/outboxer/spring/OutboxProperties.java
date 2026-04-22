@@ -40,6 +40,7 @@ public class OutboxProperties {
   private final EventTypes eventTypes = new EventTypes();
   private final Worker worker = new Worker();
   private final HandlerExecutor handlerExecutor = new HandlerExecutor();
+  private final Metrics metrics = new Metrics();
 
   // =============================================================================================
   // nested groups
@@ -51,8 +52,15 @@ public class OutboxProperties {
     /** {@code inmemory} or {@code postgres}. Default: {@code inmemory}. */
     private StorageType type = StorageType.inmemory;
 
-    /** Schema name for the PG adapter. Default: {@code outbox}. */
-    private String schema = "outbox";
+    /**
+     * Schema name for the PG adapter. Default: {@code event_outboxer} — a
+     * specific name chosen to avoid clashing with other libraries or
+     * application tables in a shared database. Propagated both into the
+     * adapter's SQL (via {@code SchemaResolver}) and into the Flyway
+     * {@code ${eventOutboxerSchema}} placeholder used by the classpath
+     * migrations.
+     */
+    private String schema = "event_outboxer";
 
     /** Optional table prefix; default empty. */
     private String tablePrefix = "";
@@ -164,5 +172,18 @@ public class OutboxProperties {
   public enum ExecutorType {
     platform,
     virtual
+  }
+
+  @Getter
+  @Setter
+  public static class Metrics {
+    /**
+     * Prefix applied to every Micrometer metric published by the outbox.
+     * Default: {@code event_outboxer} — a specific name chosen to avoid
+     * clashing with other libraries. Override when multiple outbox
+     * instances share a registry or when an organisation requires a
+     * different namespace.
+     */
+    private String prefix = "event_outboxer";
   }
 }

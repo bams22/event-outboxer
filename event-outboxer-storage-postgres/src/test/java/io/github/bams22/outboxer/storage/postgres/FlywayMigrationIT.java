@@ -14,18 +14,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Map;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 
 class FlywayMigrationIT {
 
+  private static final String SCHEMA = PostgresTestEnvironment.SCHEMA;
+
   @Test
   void tablesAndPartialIndexesExist() throws Exception {
     try (Connection conn = PostgresTestEnvironment.dataSource().getConnection();
         Statement st = conn.createStatement()) {
-      assertTableExists(st, "outbox", "events");
-      assertTableExists(st, "outbox", "workers");
-      assertTableExists(st, "outbox", "event_archive");
+      assertTableExists(st, SCHEMA, "events");
+      assertTableExists(st, SCHEMA, "workers");
+      assertTableExists(st, SCHEMA, "event_archive");
       assertIndexExists(st, "idx_events_ready");
       assertIndexExists(st, "idx_events_processing_by_worker");
       assertIndexExists(st, "idx_events_processing_claimed_at");
@@ -40,6 +43,7 @@ class FlywayMigrationIT {
             .dataSource(PostgresTestEnvironment.dataSource())
             .locations(
                 "classpath:db/migration/outbox/core", "classpath:db/migration/outbox/archive")
+            .placeholders(Map.of("eventOutboxerSchema", SCHEMA))
             .load();
 
     // Second migrate call should be a no-op and succeed.
@@ -62,7 +66,9 @@ class FlywayMigrationIT {
   private static void assertIndexExists(Statement st, String indexName) throws Exception {
     try (ResultSet rs =
         st.executeQuery(
-            "SELECT 1 FROM pg_indexes WHERE schemaname = 'outbox' AND indexname = '"
+            "SELECT 1 FROM pg_indexes WHERE schemaname = '"
+                + SCHEMA
+                + "' AND indexname = '"
                 + indexName
                 + "'")) {
       assertThat(rs.next()).as("index %s must exist", indexName).isTrue();
