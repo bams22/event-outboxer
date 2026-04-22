@@ -12,7 +12,6 @@ package io.github.bams22.outboxer.api.publish;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -75,12 +74,4 @@ public interface OutboxEventPublisher {
    * caller's transaction is expected to roll back, leaving the outbox untouched.
    */
   List<UUID> publishAll(Collection<PublishRequest> requests);
-
-  /**
-   * Publishes the event unless another event with the same {@code idempotencyKey} has already
-   * been persisted. Returns {@code Optional.empty()} on collision — this is a deduplication
-   * outcome, not an error (see ADR Q3).
-   */
-  Optional<UUID> publishIfAbsent(
-      String eventType, Object payload, String idempotencyKey, PublishOptions options);
 }

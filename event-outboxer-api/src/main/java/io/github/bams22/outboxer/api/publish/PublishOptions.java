@@ -25,7 +25,6 @@ import org.jspecify.annotations.Nullable;
  *
  * @param runAt earliest time the event may be claimed; defaults to {@code now}
  * @param priority explicit priority; defaults to 0
- * @param idempotencyKey optional deduplication key for {@code publishIfAbsent(...)} flows
  * @param traceContext W3C traceparent/baggage to attach; normally the publisher captures this
  *     from the current MDC/Observation context, but callers may override it
  */
@@ -33,7 +32,6 @@ import org.jspecify.annotations.Nullable;
 public record PublishOptions(
     @Nullable Instant runAt,
     @Nullable Short priority,
-    @Nullable String idempotencyKey,
     @Nullable Map<String, String> traceContext) {
 
   public PublishOptions {
@@ -43,6 +41,6 @@ public record PublishOptions(
 
   /** Canonical empty instance — all defaults. */
   public static PublishOptions defaults() {
-    return new PublishOptions(null, null, null, null);
+    return new PublishOptions(null, null, null);
   }
 }
