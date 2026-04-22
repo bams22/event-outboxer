@@ -162,8 +162,14 @@ class OutboxEngineIntegrationTest {
                 recordingHandler("BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
             .pollStrategy(
                 (eventType, workerId, batchSize) -> {
-                  // Uncaught Error — bypasses Poller.tick()'s RuntimeException catch, kills thread.
-                  throw new OutOfMemoryError("simulated");
+                  // Uncaught Error — bypasses Poller.tick()'s RuntimeException catch, kills
+                  // thread. Plain java.lang.Error on purpose: VirtualMachineError subclasses
+                  // like OutOfMemoryError / StackOverflowError are interpreted by some JVM
+                  // tooling (surefire fork, ByteBuddy agent, certain JDK 25 builds) as fatal
+                  // for the whole JVM, even when thrown synthetically. Plain Error keeps the
+                  // crash-detection semantics (non-RuntimeException, kills the thread) without
+                  // triggering JVM-critical handling.
+                  throw new Error("simulated");
                 })
             .listener(crashListener)
             .build();
