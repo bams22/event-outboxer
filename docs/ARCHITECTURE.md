@@ -536,6 +536,43 @@ The details block carries the engine state, totals from
 `workerId`. See [docs/OBSERVABILITY.md §Health indicator](OBSERVABILITY.md#health-indicator)
 for the full field reference and operational playbook.
 
+### 7. Feature parity: starter vs plain core
+
+The starter exists to wire things automatically. It must **not** change
+semantics relative to the core; everything that affects correctness is
+implemented once in `event-outboxer-core`. The table below makes that
+contract reviewable — when adding a feature, walk each row and either
+answer for both columns or explain why one side deliberately differs.
+This audit exists because past drift (e.g. a listener-forwarding
+decorator embedded in the default failure chain on one path and not the
+other) has been a real source of bugs.
+
+| Feature | `event-outboxer-core` | `event-outboxer-spring-boot-starter` |
+|---|---|---|
+| Transaction participation | `TransactionContext` SPI — caller wires the implementation | `SpringTransactionContext` + `TransactionAwareDataSourceProxy` auto-wired |
+| Poller | raw `Thread` per event type (`Poller.java`) | inherited from core |
+| Maintenance (heartbeat / orphan / watchdog / crash-check) | `ScheduledExecutorService` owned by `MaintenanceScheduler` | inherited from core |
+| Handler executor shape | `Function<EventTypeConfig, ExecutorService>` supplied to `OutboxEngineBuilder` | `HandlerExecutorFactory.platform()` / `.virtual()` picked by `outbox.handler-executor.type`; Spring `ThreadPoolTaskExecutor` exposed as `ExecutorService` via `SpringTaskExecutorAdapter` |
+| Context propagation (MDC / Observation / Security) | none built-in — caller decorates their own `Executor` | `ContextPropagatingTaskDecorator` default; user can swap via `@Bean TaskDecorator` |
+| Failure-chain default | `FailureHandlers.defaults()` = `Log → MaxRetries → ExponentialBackoff` | identical — starter does not re-wrap |
+| Retry / disable / delete listener emission | `HandlerDispatcher` fires listener callbacks after storage commit | identical — starter adds no second emission path (see [ADR-0007](adr/0007-failure-handler-chain-of-responsibility.md) §Q25) |
+| `LoggingOutboxListener` | auto-added by `OutboxEngineBuilder` (plain-Java default) | explicitly opted out (`includeLoggingListener(false)`) to avoid double-logging with the engine's own SLF4J calls |
+| `MicrometerOutboxListener` | separate module; caller registers manually | auto-registered by `MicrometerAutoConfiguration` when Micrometer is on the classpath |
+| Health surface | `OutboxEngine.state()` + `OutboxEngine.isLifecycleActive()` + `OutboxListener.onEngineCrashed` | `OutboxHealthIndicator` + `outbox.health.probe-groups` `EnvironmentPostProcessor` that folds `outbox` into Actuator liveness / readiness groups |
+| Crash detection | `EngineHealthCheckTask` in the maintenance scheduler; flips `state()` → `STOPPED`, fires `onEngineCrashed` | inherited — starter only surfaces the result via the health indicator |
+| Flyway migrations | classpath `db/migration/outbox/{core,archive}` with `${eventOutboxerSchema}` placeholder | `FlywayConfigurationCustomizer` auto-feeds `outbox.storage.schema` into the placeholder |
+| Liquibase changelog | classpath `db/changelog/outbox/{core,archive}/changelog.xml` with the same parameter name | `OutboxLiquibaseParameterEnvironmentPostProcessor` auto-feeds `spring.liquibase.parameters.eventOutboxerSchema` |
+| Serializer | `EventSerializer` SPI — caller wires | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last) |
+| Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
+| Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
+| Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("outbox")` → `OutboxPropertiesValidator` → builder |
+
+**Invariant.** If you are tempted to ship something only in the starter
+(auto-instantiation, YAML binding, `ObjectProvider` resolution), it must
+either expose the same capability in core as a programmatic API or be
+pure convenience with no runtime-behaviour difference. Semantic features
+belong to the core; the starter only wires, it never adds behaviour.
+
 ---
 
 ## Related documents
