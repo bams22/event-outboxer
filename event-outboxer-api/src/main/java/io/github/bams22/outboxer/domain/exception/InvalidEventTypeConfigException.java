@@ -10,9 +10,10 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * Startup-time failure: a per-event-type configuration block is invalid. Examples: negative
- * pool sizes, {@code multiplier <= 1.0} with {@code strategy=EXPONENTIAL}, jitter outside
- * {@code [0, 1]}, or a {@code batch-size} larger than {@code max-pool-size + queue-capacity}.
+ * Startup-time failure: a per-event-type configuration block is invalid. Examples: non-positive
+ * {@code handler-pool-size} or {@code claim-batch-size}, negative {@code handler-queue-capacity},
+ * {@code poll-multiplier <= 1.0}, or {@code poll-max-interval} smaller than
+ * {@code poll-min-interval}.
  */
 public final class InvalidEventTypeConfigException extends ConfigurationException {
 

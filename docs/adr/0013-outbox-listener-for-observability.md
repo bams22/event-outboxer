@@ -35,7 +35,7 @@ separate `event-outboxer-metrics-micrometer` module with
 
 ### API
 
-21 methods in `OutboxListener`, all with a default no-op. Arguments are
+22 methods in `OutboxListener`, all with a default no-op. Arguments are
 records (protection against breaking changes when adding fields).
 
 Groups:
@@ -52,6 +52,7 @@ Groups:
    `onLeaseRenewalMismatch`.
 6. **Storage**: `onStorageError`.
 7. **Dispatch**: `onDispatchRejected`.
+8. **Engine lifecycle**: `onEngineCrashed`.
 
 The complete list lives in the `OutboxListener` javadoc.
 
@@ -144,7 +145,7 @@ it logs key events at INFO/WARN. Users can disable it via
 
 ### Negative consequences
 
-- 21 methods — a noticeable API surface. Adding a new one is a breaking
+- 22 methods — a noticeable API surface. Adding a new one is a breaking
   change.
 - Listeners must be thread-safe and fast.
 - A little more boilerplate when creating a custom listener.
