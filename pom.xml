@@ -4,12 +4,12 @@
 
     <groupId>io.github.bams22</groupId>
     <artifactId>event-outboxer-parent</artifactId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
 
     <name>event-outboxer (parent)</name>
-    <description>Embedded transactional outbox for Java 25 / Spring Boot 3.5.6 /
-        PostgreSQL 15 / KeyDB 6. Parent POM aggregating all modules.</description>
+    <description>Embedded transactional outbox for Java 17+ / Spring Boot 3.5.6+ /
+        PostgreSQL 15+ / Redis/keydb. Parent POM aggregating all modules.</description>
     <url>https://github.com/bams22/event-outboxer</url>
     <inceptionYear>2026</inceptionYear>
 
@@ -62,6 +62,17 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!--
+            CI-friendly version (Maven 3.5+). Every module sets
+            <version>${revision}</version>; the concrete value comes from here
+            for local builds and from -Drevision=X.Y.Z for release builds
+            driven by the tag-push workflow. flatten-maven-plugin resolves
+            ${revision} into the published .flattened-pom.xml so consumers
+            never see the property placeholder. Release runbook lives in
+            RELEASING.md.
+        -->
+        <revision>0.1.0-SNAPSHOT</revision>
+
+        <!--
             Baseline Java 17 (ADR-0017). The library compiles against the
             Java 17 API surface — no Java 21+ syntax / APIs in baseline
             sources, to maximise the reachable audience.
@@ -97,6 +108,7 @@
             2.16.2 is the last release without the broken combo.
         -->
         <versions-maven-plugin.version>2.16.2</versions-maven-plugin.version>
+        <flatten-maven-plugin.version>1.7.0</flatten-maven-plugin.version>
         <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
         <central-publishing-maven-plugin.version>0.6.0</central-publishing-maven-plugin.version>
 
@@ -287,6 +299,37 @@
                     <version>${versions-maven-plugin.version}</version>
                 </plugin>
                 <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>flatten-maven-plugin</artifactId>
+                    <version>${flatten-maven-plugin.version}</version>
+                    <configuration>
+                        <!--
+                            resolveCiFriendliesOnly: substitute ${revision}/${sha1}/${changelist}
+                            into the flattened pom but leave every other element (description,
+                            licenses, scm, developers, plugin config) intact. Maven Central
+                            requires all those fields to survive publication.
+                        -->
+                        <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                        <updatePomFile>true</updatePomFile>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>flatten</id>
+                            <phase>process-resources</phase>
+                            <goals>
+                                <goal>flatten</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>flatten-clean</id>
+                            <phase>clean</phase>
+                            <goals>
+                                <goal>clean</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
                     <groupId>com.diffplug.spotless</groupId>
                     <artifactId>spotless-maven-plugin</artifactId>
                     <version>${spotless-maven-plugin.version}</version>
@@ -331,6 +374,17 @@
         </pluginManagement>
 
         <plugins>
+            <!--
+                flatten-maven-plugin runs in every module: it resolves ${revision}
+                at build time and writes .flattened-pom.xml, which the deploy
+                plugin then installs/publishes in place of the raw pom. Config
+                and execution bindings are inherited from pluginManagement above.
+                BOM module overrides <flattenMode>bom</flattenMode> in its own pom.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>

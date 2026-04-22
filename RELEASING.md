@@ -73,107 +73,120 @@ javadoc-jar issues without creating a tag.
 
 ## Per-release procedure
 
-Assume we're cutting `0.1.0` from the current `0.1.0-SNAPSHOT`.
-Substitute your target version throughout.
+Versions are **CI-friendly** (every module declares
+`<version>${revision}</version>`): the concrete value is injected at
+release time from the git tag, and `flatten-maven-plugin` writes
+`.flattened-pom.xml` files with the value resolved before deploy. The
+`<revision>` property in `pom.xml` stays on a `-SNAPSHOT` value and is
+never edited for releases — the tag drives everything.
+
+Assume we're cutting `0.2.0`. Substitute your target version throughout.
 
 ### 1. Pre-flight checks
 
 - [ ] `main` branch is green in the `CI` workflow (unit matrix 17/21/25
       plus the Testcontainers IT job).
-- [ ] `CHANGELOG.md` already contains a `## [0.1.0] — YYYY-MM-DD`
-      section with Added / Changed / Removed / Fixed bullets for
-      everything in this release.
+- [ ] `CHANGELOG.md` contains a `## [0.2.0] — YYYY-MM-DD` section with
+      Added / Changed / Removed / Fixed bullets for everything in this
+      release. (Commit this on `main` first if missing.)
 - [ ] All feature commits are merged into `main`.
 - [ ] Working tree is clean (`git status`).
 
-### 2. Bump version to the release value
-
-```bash
-./mvnw versions:set -DnewVersion=0.1.0 -DgenerateBackupPoms=false
-git diff          # spot-check that every module moved to 0.1.0
-git add -u
-git commit -m "Release 0.1.0"
-```
-
-### 3. Local dry-run
+### 2. (Optional but recommended) Local dry-run
 
 Stages every artifact to `./stage/` so you can inspect the files that
 would be uploaded. Fails fast on GPG / sources / javadoc misconfig.
+Pass `-Drevision=` so the flattened poms carry the release version:
 
 ```bash
 ./mvnw -B -ntp -Prelease clean deploy \
+  -Drevision=0.2.0 \
   -DaltDeploymentRepository=local::file:./stage \
   -DskipTests
 ```
 
-Verify under `./stage/io/github/bams22/*/0.1.0/`:
+Verify under `./stage/io/github/bams22/*/0.2.0/`:
 
 - [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar`, `*.pom`
 - [ ] A matching `.asc` GPG signature next to each of the above.
+- [ ] The `.pom` files contain `<version>0.2.0</version>`, not
+      `${revision}` — confirms `flatten-maven-plugin` ran.
 
 Delete `./stage/` after inspection.
 
-### 4. Tag and push
+### 3. Tag and push
 
 ```bash
-git tag -a v0.1.0 -m "Release 0.1.0"
-git push origin main
-git push origin v0.1.0
+git tag -a v0.2.0 -m "Release 0.2.0"
+git push origin v0.2.0
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml`, which runs
-`./mvnw -Prelease deploy -DskipTests` on a GitHub Actions runner.
+That's the entire release action on your side. Pushing the `v*` tag
+triggers `.github/workflows/release.yml`, which:
 
-### 5. Watch the release workflow
+1. Strips the leading `v` from the tag name to derive
+   `-Drevision=0.2.0`.
+2. Runs `./mvnw -Prelease deploy -Drevision=0.2.0 -DskipTests` on a
+   JDK 17 GitHub Actions runner.
+3. `flatten-maven-plugin` produces `.flattened-pom.xml` with the
+   resolved version; `central-publishing-maven-plugin` uploads it plus
+   jars and `.asc` signatures to Sonatype Central.
+
+There is no "Release X.Y.Z" or "Bump to X.Y.(Z+1)-SNAPSHOT" commit in
+git history — the tag itself marks the release.
+
+### 4. Watch the release workflow
 
 Actions tab → **Release** workflow → most recent run.
 
 Expected duration: 5–10 minutes. On success, a deployment in
 **VALIDATED** state appears at
 <https://central.sonatype.com/publishing/deployments>. The workflow
-does **not** auto-publish (pom.xml has `<autoPublish>false</autoPublish>`
-so the operator has a last chance to abort).
+does **not** auto-publish (`<autoPublish>false</autoPublish>` in the
+parent pom) so the operator has a last chance to abort.
 
-### 6. Promote to Maven Central
+### 5. Promote to Maven Central
 
 1. Open <https://central.sonatype.com/publishing/deployments>.
 2. Find the deployment under namespace `io.github.bams22`, version
-   `0.1.0`.
+   `0.2.0`.
 3. Status should be `VALIDATED`. If `FAILED`, open the deployment
    details, fix the reported issue, drop the deployment, and restart
-   from step 4 with a new patch version (Central does not allow
+   from step 3 with a new patch version (Central does not allow
    re-uploading the same GAV).
 4. Click **Publish**. Artifacts become visible on Maven Central within
    15–30 minutes:
-   - <https://repo1.maven.org/maven2/io/github/bams22/event-outboxer-spring-boot-starter/0.1.0/>
+   - <https://repo1.maven.org/maven2/io/github/bams22/event-outboxer-spring-boot-starter/0.2.0/>
    - <https://central.sonatype.com/artifact/io.github.bams22/event-outboxer-spring-boot-starter>
 
-### 7. Create the GitHub Release
+### 6. Create the GitHub Release
 
 Using the `gh` CLI (extracts the changelog section automatically):
 
 ```bash
-awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md | sed '$d' > release-notes.md
-gh release create v0.1.0 --title "v0.1.0" --notes-file release-notes.md
+awk '/^## \[0\.2\.0\]/,/^## \[/' CHANGELOG.md | sed '$d' > release-notes.md
+gh release create v0.2.0 --title "v0.2.0" --notes-file release-notes.md
 rm release-notes.md
-```
+``` 
 
 Or via the web UI: Releases → **Draft new release** → choose tag
-`v0.1.0` → set title `v0.1.0` → paste the `[0.1.0]` section of
+`v0.2.0` → set title `v0.2.0` → paste the `[0.2.0]` section of
 `CHANGELOG.md` into the body → **Publish release**.
 
-### 8. Bump to the next development version
+### 7. (Optional) Roll the SNAPSHOT property forward
 
-```bash
-./mvnw versions:set -DnewVersion=0.2.0-SNAPSHOT -DgenerateBackupPoms=false
-git add -u
-git commit -m "Bump to 0.2.0-SNAPSHOT"
-git push origin main
+The `<revision>` property in `pom.xml` defaults `-SNAPSHOT` builds.
+Rolling it forward is cosmetic — nothing in the release pipeline
+depends on it — but keeps local snapshot coordinates aligned with the
+next planned version:
+
+```xml
+<revision>0.3.0-SNAPSHOT</revision>
 ```
 
-Also add a fresh `## [Unreleased]` section to `CHANGELOG.md` above
-`[0.1.0]` so subsequent feature commits have somewhere to land their
-notes. Commit in the same go.
+Commit with a fresh `## [Unreleased]` section added above `[0.2.0]`
+in `CHANGELOG.md` so subsequent feature commits have somewhere to
+land their notes.
 
 ---
 
