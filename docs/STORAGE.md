@@ -432,8 +432,69 @@ FROM event_outboxer.events
 GROUP BY event_type, status;
 ```
 
-The adapter caches the result with TTL=30s (configurable via
-`outbox.storage.postgres.metrics-snapshot-cache-ttl`).
+The adapter does not cache the result itself — it delegates to a
+`MetricsSnapshotCache` SPI (see §Pluggable metrics cache). The default
+cache is per-JVM with `TTL=30s`, configured via
+`outbox.storage.metrics-cache-ttl`.
+
+### Pluggable metrics cache
+
+`EventStore.metricsSnapshot()` is the only query that feeds
+`/actuator/health/outbox`. On a fleet of 10 pods each pod's local cache
+refreshes on its own rhythm, so two scrapes seconds apart can return
+different `totalPending` / `oldestPendingRunAt` values depending on
+which replica the load balancer picks. Switch the cache to a shared
+backend to make every pod return the same snapshot inside a TTL
+window.
+
+The cache is selected by `outbox.cache.type`:
+
+| Value    | Behaviour                                                                                                 |
+|----------|-----------------------------------------------------------------------------------------------------------|
+| `memory` | Default. Per-JVM `AtomicReference` with `TTL` from `outbox.storage.metrics-cache-ttl`. Matches pre-SPI behaviour. |
+| `noop`   | No caching. Each `metricsSnapshot()` call hits the database. Simplest for tests; costly at scale.         |
+| `redis`  | Redis/KeyDB-backed (requires `event-outboxer-cache-redis` module and a `StatefulRedisConnection` bean).   |
+
+#### Redis cache
+
+```xml
+<dependency>
+    <groupId>io.github.bams22</groupId>
+    <artifactId>event-outboxer-cache-redis</artifactId>
+</dependency>
+```
+
+```yaml
+outbox:
+  cache:
+    type: redis
+    redis:
+      key-prefix: "outbox:metrics:"   # optional; default shown
+  storage:
+    metrics-cache-ttl: 30s             # becomes the Redis key PX expire
+```
+
+Supply a `StatefulRedisConnection<String, String>` `@Bean`; the starter
+wires `LettuceMetricsSnapshotCache` against it. A Redis outage is
+fail-safe: errors are logged and treated as cache miss, so the health
+probe keeps working (each pod just falls back to its own database
+query).
+
+#### Bring your own impl
+
+```java
+@Bean
+public MetricsSnapshotCache myCache(SomeOtherStore store) {
+    return new MetricsSnapshotCache() {
+        public Optional<OutboxMetricsSnapshot> get() { ... }
+        public void put(OutboxMetricsSnapshot s)    { ... }
+        public void invalidate()                    { ... }
+    };
+}
+```
+
+Any user-defined `@Bean MetricsSnapshotCache` wins over the autowired
+default regardless of `outbox.cache.type`.
 
 ---
 

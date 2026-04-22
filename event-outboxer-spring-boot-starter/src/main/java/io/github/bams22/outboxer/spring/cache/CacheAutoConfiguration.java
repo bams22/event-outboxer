@@ -21,10 +21,20 @@ import org.springframework.context.annotation.Bean;
  * Auto-configuration for the {@link MetricsSnapshotCache} SPI that backs
  * {@code EventStore.metricsSnapshot()} caching.
  *
- * <p>Default is an in-memory TTL cache driven by {@code outbox.storage.metrics-cache-ttl}. Users
- * who want a shared cache across pods (so {@code /actuator/health/outbox} returns the same
- * snapshot on every replica) define their own {@code @Bean MetricsSnapshotCache}; the
- * {@code event-outboxer-cache-redis} module ships a ready-to-use Lettuce-backed implementation.
+ * <p>Selected via {@code outbox.cache.type}:
+ *
+ * <ul>
+ *   <li>{@code memory} (default) — per-JVM TTL cache, driven by
+ *       {@code outbox.storage.metrics-cache-ttl}.
+ *   <li>{@code noop} — caching disabled; every call recomputes from the database.
+ *   <li>{@code redis} — shared Redis-backed cache; wired by
+ *       {@code RedisCacheAutoConfiguration} when {@code event-outboxer-cache-redis} is on the
+ *       classpath and a {@code StatefulRedisConnection} bean is available.
+ * </ul>
+ *
+ * <p>All three options respect {@code @ConditionalOnMissingBean(MetricsSnapshotCache.class)} so a
+ * user-defined {@code @Bean MetricsSnapshotCache} overrides the starter default regardless of
+ * the selected type.
  */
 @AutoConfiguration
 @ConditionalOnProperty(prefix = "outbox", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -32,7 +42,20 @@ public class CacheAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(MetricsSnapshotCache.class)
-  public MetricsSnapshotCache outboxMetricsSnapshotCache(Clock clock, OutboxProperties properties) {
+  @ConditionalOnProperty(
+      prefix = "outbox.cache",
+      name = "type",
+      havingValue = "memory",
+      matchIfMissing = true)
+  public MetricsSnapshotCache outboxInMemoryMetricsSnapshotCache(
+      Clock clock, OutboxProperties properties) {
     return MetricsSnapshotCache.inMemory(clock, properties.getStorage().getMetricsCacheTtl());
+  }
+
+  @Bean
+  @ConditionalOnMissingBean(MetricsSnapshotCache.class)
+  @ConditionalOnProperty(prefix = "outbox.cache", name = "type", havingValue = "noop")
+  public MetricsSnapshotCache outboxNoopMetricsSnapshotCache() {
+    return MetricsSnapshotCache.noop();
   }
 }
