@@ -52,45 +52,38 @@ This is significant DX debt.
 
 ### In the core
 
-The contract is `java.util.concurrent.Executor` (SAM interface):
+The contract is `Function<EventTypeConfig, ExecutorService>` — a
+factory that, given a per-type config, returns a plain JDK
+`java.util.concurrent.ExecutorService`. See
+`OutboxEngineBuilder.handlerExecutorFactory(...)`. No Spring types;
+no bespoke wrapper interface.
 
-```java
-// Internal lifecycle hook in the core
-public interface OutboxExecutor {
-    void execute(Runnable task);
-    void shutdown(Duration awaitTermination);
-}
-```
-
-This is just a wrapper around `Executor` + lifecycle. No Spring types.
+`ExecutorService` (not plain `Executor`) is required because
+`OutboxEngine.drainHandlers` performs a graceful shutdown sequence —
+`shutdown()` → `awaitTermination(timeout)` → `shutdownNow()` — which
+a plain `Executor` SAM cannot express. See §Implementation notes
+(0.1.0) below for why this shape won out over the alternatives.
 
 ### In the starter
 
-The autoconfiguration creates a per-type `ThreadPoolTaskExecutor` with a
-configured `TaskDecorator`:
+The starter ships a static utility —
+`io.github.bams22.outboxer.spring.executor.HandlerExecutorFactory`
+— with two factory methods selected via the
+`outbox.handler-executor.type` property:
 
-```java
-@Bean
-@ConditionalOnMissingBean(name = "outboxHandlerExecutorFactory")
-public OutboxHandlerExecutorFactory outboxHandlerExecutorFactory(
-        OutboxProperties props,
-        ObjectProvider<TaskDecorator> taskDecorators) {
+- `platform()` — builds a fixed-size `ThreadPoolTaskExecutor` with
+  a hard-wired `ContextPropagatingTaskDecorator`, then exposes it
+  to the core as an `ExecutorService` via `SpringTaskExecutorAdapter`
+  (see §Implementation notes (0.1.0) below for why the adapter is
+  needed).
+- `virtual()` — builds `Executors.newThreadPerTaskExecutor(...)` on
+  a virtual-thread factory and wraps it in
+  `ContextPropagatingExecutorService` so the same decorator applies.
 
-    return (eventType, cfg) -> {
-        ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();
-        ex.setCorePoolSize(cfg.corePoolSize());
-        ex.setMaxPoolSize(cfg.maxPoolSize());
-        ex.setQueueCapacity(cfg.queueCapacity());
-        ex.setThreadNamePrefix("outbox-handler-" + eventType + "-");
-        ex.setTaskDecorator(taskDecorators.getIfAvailable(
-            ContextPropagatingTaskDecorator::new));
-        ex.setWaitForTasksToCompleteOnShutdown(true);
-        ex.setAwaitTerminationSeconds((int) cfg.awaitTerminationSeconds());
-        ex.initialize();
-        return ex;
-    };
-}
-```
+`OutboxEngineAutoConfiguration` wires the matching factory into
+`OutboxEngineBuilder.handlerExecutorFactory(...)`. Pool sizing,
+queue capacity, and thread naming come from `EventTypeConfig` /
+`OutboxProperties`.
 
 `ContextPropagatingTaskDecorator` (Spring Framework 6.1+ / Spring Boot
 3.2+) uses Micrometer's `ContextSnapshotFactory` under the hood and
@@ -103,26 +96,37 @@ propagates automatically:
 
 ### Override points
 
-- `@Bean TaskDecorator` — users can replace the decorator with custom
-  propagation.
-- `@Bean(name="outboxHandlerExecutorFactory") ...` — full factory override.
-- `outbox.handler-executor.type=virtual` — `SimpleAsyncTaskExecutor` with
-  virtual threads. On the Java 25 baseline (see
-  [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md)) virtual
-  threads are first-class and JEP 491 eliminates `synchronized`
-  carrier-pinning, making this opt-in safe for JDBC-bound handlers.
+- `outbox.handler-executor.type=virtual` — switches to the
+  virtual-thread variant. On the Java 25 baseline (see
+  [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md)) JEP 491
+  eliminates `synchronized` carrier-pinning, making this opt-in safe
+  for JDBC-bound handlers.
+- `@Bean OutboxEngine` — full override if the defaults don't fit;
+  replaces the entire engine, including its executor wiring.
 
-### Maintenance executor is also a Spring bean
+A dedicated `@Bean TaskDecorator` override point is **not** wired
+in 0.1.0 — the decorator is hard-coded to
+`ContextPropagatingTaskDecorator`. A future release may inject
+`ObjectProvider<TaskDecorator>` into `HandlerExecutorFactory`;
+tracked separately.
 
-A `ThreadPoolTaskScheduler` with 2–3 threads for heartbeat, orphan
-recovery, and watchdog. **No TaskDecorator** — background operations should
-not pollute traces.
+### Maintenance executor stays inside the core
 
-### Poller executor is a single-thread Spring bean
+Heartbeat, orphan recovery, and watchdog run on a shared
+`java.util.concurrent.ScheduledExecutorService` owned by
+`MaintenanceScheduler` in `event-outboxer-core`. No Spring bean;
+no `TaskDecorator` — background operations must not pollute traces,
+and keeping it in the core preserves the Spring-free invariant
+([ADR-0010](0010-storage-agnostic-core-via-spi.md)).
 
-Each poller is a `SingleThreadTaskExecutor` (or `ThreadPoolTaskExecutor`
-with `corePoolSize=1`) with the prefix `outbox-poller-${eventType}`. No
-`TaskDecorator` — the poller is background infrastructure.
+### Poller stays inside the core
+
+Each per-type poller runs on a raw
+`new Thread(this::loop, "outbox-poller-<eventType>")` (see
+`Poller.java`). No executor bean, no `TaskDecorator` — the poller
+is background infrastructure, and a dedicated thread keeps its
+control-flow (steady-state loop + clean interrupt semantics)
+simple.
 
 ## Rationale
 
@@ -146,17 +150,21 @@ with `corePoolSize=1`) with the prefix `outbox-poller-${eventType}`. No
 - MDC/tracing propagate "for free": if the application uses Micrometer
   Observation / OpenTelemetry, handlers see the same traceId/spanId as the
   upstream request.
-- Thread dumps are readable: `outbox-handler-SEND_EMAIL-1`,
-  `outbox-poller-UPDATE_CACHE`.
-- Custom propagation through `@Bean TaskDecorator`.
+- Thread dumps are readable: `outbox-handler-N`, `outbox-vt-N`,
+  `outbox-poller-<eventType>`.
+- Custom propagation: replace the whole engine via `@Bean OutboxEngine`
+  (a direct `@Bean TaskDecorator` override is a follow-up; see §Override
+  points).
 
 ### For maintainers
 
 - **The core does not depend on Spring**. Plain-Java usage is supported,
   just without `TaskDecorator` (users can add one themselves).
-- The starter has autoconfigurations for three executor flavors: handler
-  (per type), poller (per type), maintenance (shared).
-- The handler executor is the only one with a `TaskDecorator` by default.
+- The starter owns only the **handler** executor wiring (via
+  `HandlerExecutorFactory`). The **poller** (raw `Thread`) and
+  **maintenance** (`ScheduledExecutorService`) executors live in the
+  core and are Spring-free.
+- The handler executor is the only one with a `TaskDecorator`.
 
 ### Positive consequences
 
@@ -168,6 +176,62 @@ with `corePoolSize=1`) with the prefix `outbox-poller-${eventType}`. No
 
 - Spring users get slightly different behavior from plain-Java users
   (propagation on vs off). Expected, but must be documented.
+
+## Implementation notes (0.1.0)
+
+The decision above settles *what* to run (Spring
+`ThreadPoolTaskExecutor` with `ContextPropagatingTaskDecorator`).
+The 0.1.0 implementation answers *how* to expose that to the
+Spring-free core without losing decoration or lifecycle.
+
+### Core contract
+
+`OutboxEngineBuilder.handlerExecutorFactory(...)` accepts
+`Function<EventTypeConfig, ExecutorService>`. The core uses plain
+JDK `ExecutorService` — not `Executor`, not Spring `TaskExecutor`,
+and not a bespoke `OutboxExecutor` interface — because the engine
+needs the lifecycle trio `shutdown()` / `awaitTermination(...)` /
+`shutdownNow()` for graceful drain, and `ExecutorService` already
+has exactly that shape.
+
+### Why not submit to `ThreadPoolTaskExecutor` directly
+
+`ThreadPoolTaskExecutor` implements Spring's `TaskExecutor`, not
+`java.util.concurrent.ExecutorService`. It exposes its delegate
+pool via `getThreadPoolExecutor()`, but submitting there bypasses
+the `TaskDecorator` — Spring installs decoration inside TPTE's own
+`execute` / `submit` methods, not in the delegate. If the core
+drove the delegate directly, MDC / Observation / Security context
+would not propagate from the poller thread to handler threads.
+
+### Alternatives
+
+| # | Option                                                                 | Verdict    | Reason                                                                                                      |
+| - | ---------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 1 | Change core contract to plain `Executor`                               | Rejected   | Loses `shutdown` / `awaitTermination`; graceful drain breaks.                                               |
+| 2 | Change core contract to Spring `TaskExecutor`                          | Rejected   | Violates Spring-free-core invariant ([ADR-0010](0010-storage-agnostic-core-via-spi.md)).                     |
+| 3 | Introduce a bespoke `OutboxExecutor` interface                         | Rejected   | Over-engineering; no capability beyond JDK `ExecutorService`, plus one extra adapter per adapter.           |
+| 4 | Pass `tpte.getThreadPoolExecutor()` (the underlying `ThreadPoolExecutor`) | Rejected   | Bypasses `TaskDecorator` — no context propagation.                                                           |
+| 5 | **`SpringTaskExecutorAdapter` wrapping `ThreadPoolTaskExecutor`**       | **Chosen** | Submission routes through TPTE (decoration runs); lifecycle routes through the underlying `ThreadPoolExecutor`. |
+
+### Virtual threads
+
+`Executors.newThreadPerTaskExecutor(...)` is not backed by a
+`ThreadPoolTaskExecutor`, so the TPTE decoration mechanism does
+not apply. A parallel wrapper,
+`ContextPropagatingExecutorService`, applies the same
+`ContextPropagatingTaskDecorator` at submit time so that virtual
+handlers see the submitting thread's MDC / Observation / Security
+context. JEP 491 on JDK 25 (see
+[ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md))
+eliminates `synchronized` carrier-pinning, so this variant is safe
+for JDBC-bound handlers.
+
+### Pointers
+
+- `event-outboxer-spring-boot-starter/.../executor/HandlerExecutorFactory.java` — the two factory methods.
+- `event-outboxer-spring-boot-starter/.../executor/SpringTaskExecutorAdapter.java` — TPTE → `ExecutorService` bridge.
+- `event-outboxer-spring-boot-starter/.../executor/ContextPropagatingExecutorService.java` — same-decorator wrapper for the virtual variant.
 
 ## Related decisions
 
