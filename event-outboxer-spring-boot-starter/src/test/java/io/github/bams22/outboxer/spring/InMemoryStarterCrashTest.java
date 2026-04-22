@@ -15,9 +15,11 @@ import static org.awaitility.Awaitility.await;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
 import io.github.bams22.outboxer.spring.health.OutboxHealthIndicator;
+import io.github.bams22.outboxer.testkit.RecordingOutboxListener;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -59,6 +61,7 @@ class InMemoryStarterCrashTest {
   @Autowired OutboxEngine engine;
   @Autowired MeterRegistry meterRegistry;
   @Autowired OutboxHealthIndicator healthIndicator;
+  @Autowired RecordingOutboxListener recording;
 
   @Test
   void pollerDeathFlipsStateMetricAndHealth() {
@@ -88,6 +91,13 @@ class InMemoryStarterCrashTest {
     // Lifecycle is still active — Spring will call stop() on context close, cleanup runs
     // normally (worker deregister, handler drain).
     assertThat(engine.isLifecycleActive()).isTrue();
+
+    // onEngineCrashed listener fired exactly once with a non-blank reason. The metric counter
+    // is derived from this callback, so covering both keeps the wire trustable end-to-end.
+    assertThat(recording.engineCrashed()).hasSize(1);
+    EngineCrashedInfo info = recording.engineCrashed().get(0);
+    assertThat(info.reason()).isNotBlank();
+    assertThat(info.workerId()).isNotNull();
   }
 
   static class NoopHandler implements EventHandler<String> {
@@ -132,6 +142,11 @@ class InMemoryStarterCrashTest {
     @Bean
     MeterRegistry meterRegistry() {
       return new SimpleMeterRegistry();
+    }
+
+    @Bean
+    RecordingOutboxListener recordingListener() {
+      return new RecordingOutboxListener();
     }
   }
 }
