@@ -15,12 +15,13 @@ To minimise collisions with other libraries sharing the same database
 or Micrometer registry, the library's defaults use a specific prefix:
 
 - **Database schema** defaults to `event_outboxer` (configurable via
-  `outbox.storage.schema`). The classpath Flyway migrations use the
-  `${eventOutboxerSchema}` placeholder; the Spring Boot starter
-  auto-wires it so changing the property updates both the adapter's
-  SQL and the migration in lock-step. Plain-Java Flyway users pass
-  the placeholder explicitly (see `docs/STORAGE.md §Configurable
-  schema name`).
+  `outbox.storage.schema`). The classpath Flyway migrations and the
+  Liquibase changelog both use the `${eventOutboxerSchema}`
+  placeholder; the Spring Boot starter auto-wires it for whichever
+  tool is on the classpath so changing the property updates adapter
+  SQL and migrations in lock-step. Plain-Java Flyway / Liquibase
+  users pass the placeholder explicitly (see `docs/STORAGE.md
+  §Configurable schema name`).
 - **Micrometer metric prefix** defaults to `event_outboxer`
   (configurable via `outbox.metrics.prefix`). Every counter / timer /
   summary registered by `MicrometerOutboxListener` carries this
@@ -78,9 +79,13 @@ or Micrometer registry, the library's defaults use a specific prefix:
 - `event-outboxer-storage-postgres` — PostgreSQL 15+ backend: minimalist
   internal JDBC runner, `ConnectionSupplier`-driven, CTE `FOR UPDATE
   SKIP LOCKED` claim query, optimistic-lock finalize, optional archive
-  table, cached metrics snapshot. Flyway migrations shipped as
-  classpath resources (`classpath:db/migration/outbox/core` +
-  `archive`).
+  table, cached metrics snapshot. Migrations shipped as classpath
+  resources for both migration tools: Flyway
+  (`classpath:db/migration/outbox/{core,archive}`) and Liquibase
+  (`classpath:db/changelog/outbox/{core,archive}/changelog.xml`).
+  Both variants share the same SQL files via Liquibase `<sqlFile>`
+  and the starter auto-wires the `eventOutboxerSchema` parameter for
+  whichever tool is on the classpath.
 - `event-outboxer-storage-inmemory` — thread-safe in-JVM implementation
   of every SPI port; intended for tests and local development.
 
@@ -196,10 +201,8 @@ or Micrometer registry, the library's defaults use a specific prefix:
 
 ### Known limitations
 
-- `publishIfAbsent(...)` throws `UnsupportedOperationException`; dedup
-  with an idempotency key is planned post-MVP.
-- Liquibase mirror of the migrations is deferred — users on Liquibase
-  copy the SQL from `docs/STORAGE.md` into their own migration set.
+- Idempotent publishing (dedup by key) is not part of the 0.1.0 API;
+  planned for 0.2.0 alongside an idempotency-key column in the store.
 - LISTEN/NOTIFY fast-wake path for the PG adapter (ADR-0006) is not
   implemented in 0.1.0; polling is the only claim mechanism.
 

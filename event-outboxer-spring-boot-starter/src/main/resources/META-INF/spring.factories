@@ -1,2 +1,3 @@
 org.springframework.boot.env.EnvironmentPostProcessor=\
-io.github.bams22.outboxer.spring.health.OutboxProbeGroupsEnvironmentPostProcessor
+io.github.bams22.outboxer.spring.health.OutboxProbeGroupsEnvironmentPostProcessor,\
+io.github.bams22.outboxer.spring.storage.OutboxLiquibaseParameterEnvironmentPostProcessor

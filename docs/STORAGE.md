@@ -227,8 +227,36 @@ Flyway.configure()
 
 ### Liquibase
 
-Flyway is the supported choice. Liquibase users can copy the SQL into
-their migration structure. Formal Liquibase support may come post-MVP.
+A Liquibase changelog that reuses the same SQL files is shipped on
+the classpath of `event-outboxer-storage-postgres`:
+
+- `classpath:db/changelog/outbox/core/changelog.xml` — core schema.
+- `classpath:db/changelog/outbox/archive/changelog.xml` — optional
+  archive table (see ADR-0008).
+
+Wire it through the Spring Boot starter:
+
+```yaml
+spring:
+  liquibase:
+    change-log: classpath:db/changelog/outbox/core/changelog.xml
+```
+
+The starter auto-feeds `outbox.storage.schema` into the
+`eventOutboxerSchema` Liquibase parameter via a `BeanPostProcessor`
+that catches the `SpringLiquibase` bean; user-supplied
+`spring.liquibase.parameters.*` entries win on conflict.
+
+Plain-Java Liquibase users pass the parameter themselves:
+
+```java
+Liquibase liquibase = new Liquibase(
+    "db/changelog/outbox/core/changelog.xml",
+    new ClassLoaderResourceAccessor(),
+    new JdbcConnection(connection));
+liquibase.setChangeLogParameter("eventOutboxerSchema", "event_outboxer");
+liquibase.update(new Contexts());
+```
 
 ---
 

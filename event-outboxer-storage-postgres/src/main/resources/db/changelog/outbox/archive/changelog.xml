@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  event-outboxer optional archive table, Liquibase variant. Applied in addition
+  to the core changelog when archiving is enabled. See ADR-0008 and
+  docs/STORAGE.md.
+
+  Usage (combine with core):
+
+    spring:
+      liquibase:
+        change-log: classpath:db/changelog/outbox/master-with-archive.xml
+
+  or include both files manually from your own master changelog.
+-->
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <property name="eventOutboxerSchema" value="event_outboxer" dbms="postgresql"/>
+
+    <changeSet id="outbox-archive-001" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="db/migration/outbox/archive/V002__outbox_archive.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
+</databaseChangeLog>

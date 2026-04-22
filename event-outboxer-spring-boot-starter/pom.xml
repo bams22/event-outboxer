@@ -137,6 +137,11 @@
             <artifactId>flyway-core</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <groupId>org.liquibase</groupId>
+            <artifactId>liquibase-core</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <!-- Test -->
         <dependency>
