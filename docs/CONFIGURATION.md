@@ -209,7 +209,12 @@ Maintenance-process parameters.
 - `watchdog-interval` — period of `WatchdogTask`.
 - `maintenance-pool-size` — shared `ScheduledExecutorService` size.
 - `shutdown-timeout` — maximum wait for in-flight handlers during graceful
-  shutdown.
+  shutdown. See [docs/ARCHITECTURE.md §SmartLifecycle phases](ARCHITECTURE.md#3-smartlifecycle-phases)
+  for the drain sequence.
+
+> See [docs/OBSERVABILITY.md](OBSERVABILITY.md) for what these knobs
+> look like from the outside — the health endpoint, the Micrometer
+> metric list and five troubleshooting recipes.
 
 ### `outbox.storage.*`
 

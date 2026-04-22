@@ -119,6 +119,17 @@ public class SendOrderConfirmationHandler
 }
 ```
 
+## Observability at a glance
+
+When Spring Boot Actuator is on the classpath, the starter auto-wires
+a health endpoint at `GET /actuator/health/outbox` (engine state +
+backlog totals + worker id) and — when a `MeterRegistry` bean is
+present — a full set of Micrometer counters / timers / summaries
+prefixed `outbox.*` (per-`event_type` tags on every signal). See
+[docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for the field-level
+health reference, the metrics catalogue and five troubleshooting
+recipes.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — overview, module layout,
@@ -127,6 +138,11 @@ public class SendOrderConfirmationHandler
   reference.
 - [Storage: PostgreSQL](docs/STORAGE.md) — database schema, key queries,
   migrations.
+- [Observability](docs/OBSERVABILITY.md) — health indicator, Micrometer
+  metrics table, `OutboxListener` callback catalogue, troubleshooting
+  playbook.
+- [Testing](docs/TESTING.md) — using `event-outboxer-testkit` to write
+  deterministic handler tests without Testcontainers.
 - [Glossary](docs/GLOSSARY.md) — definitions (event, claim, lease,
   orphan, etc.).
 - [Architecture Decision Records](docs/adr/README.md) — rationale for
