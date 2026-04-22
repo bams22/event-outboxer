@@ -85,6 +85,51 @@ class InMemoryStarterSmokeTest {
         .isEqualTo(0.0);
   }
 
+  @Test
+  void backlogGaugesAreRegisteredPerEventType() {
+    // Gauges are registered eagerly at context refresh; values are pulled on scrape. The per-type
+    // rows exist before any event is published — initial values are 0.
+    assertThat(
+            meterRegistry
+                .get("event_outboxer.events.pending")
+                .tag("event_type", "ORDER")
+                .gauge())
+        .isNotNull();
+    assertThat(
+            meterRegistry
+                .get("event_outboxer.events.processing")
+                .tag("event_type", "ORDER")
+                .gauge())
+        .isNotNull();
+    assertThat(
+            meterRegistry
+                .get("event_outboxer.events.disabled")
+                .tag("event_type", "ORDER")
+                .gauge())
+        .isNotNull();
+    assertThat(
+            meterRegistry
+                .get("event_outboxer.events.oldest_pending_age_seconds")
+                .tag("event_type", "ORDER")
+                .gauge())
+        .isNotNull();
+
+    // Snapshot-wide (no event_type tag).
+    assertThat(meterRegistry.get("event_outboxer.events.oldest_claimed_age_seconds").gauge())
+        .isNotNull();
+
+    // Values are finite doubles — i.e. the gauge supplier runs cleanly with an empty store.
+    assertThat(
+            meterRegistry
+                .get("event_outboxer.events.pending")
+                .tag("event_type", "ORDER")
+                .gauge()
+                .value())
+        .isNotNaN();
+    assertThat(meterRegistry.get("event_outboxer.events.oldest_claimed_age_seconds").gauge().value())
+        .isNotNaN();
+  }
+
   record OrderCreated(String orderId, int count) {}
 
   static class RecordingHandler implements EventHandler<OrderCreated> {
