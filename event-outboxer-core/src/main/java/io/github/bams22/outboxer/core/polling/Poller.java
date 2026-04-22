@@ -126,14 +126,32 @@ public final class Poller {
     log.debug("poller start: eventType={}, worker={}", eventType, workerId);
     try {
       while (running) {
-        int dispatched = tick();
-        waiter.record(dispatched);
-        long waitNanos = waiter.nextWait().toNanos();
-        if (waitNanos > 0) {
-          LockSupport.parkNanos(waitNanos);
-          if (Thread.interrupted()) {
-            // stop() may have interrupted us mid-park; re-check running.
+        try {
+          int dispatched = tick();
+          waiter.record(dispatched);
+          long waitNanos = waiter.nextWait().toNanos();
+          if (waitNanos > 0) {
+            LockSupport.parkNanos(waitNanos);
+            if (Thread.interrupted()) {
+              // stop() may have interrupted us mid-park; re-check running.
+            }
           }
+        } catch (Error err) {
+          // Errors (OOM, StackOverflow, test-injected fakes, unexpected linkage
+          // failures) terminate the poller thread deliberately through a clean exit
+          // of the loop rather than escaping to the JVM's uncaught-exception
+          // handler. Rationale:
+          //   1. Production: the engine's EngineHealthCheckTask observes
+          //      thread.isAlive()==false and flips state→STOPPED the same way as
+          //      before — crash detection still engages.
+          //   2. Test infrastructure: JUnit / surefire install handlers that
+          //      attribute uncaught thread exceptions to the currently-running
+          //      test; letting Errors escape makes crash-detection tests flap
+          //      depending on JDK / surefire version.
+          //   3. Observability: the Error is logged via SLF4J instead of the JVM's
+          //      stderr print, fitting into the application's log pipeline.
+          log.error("poller thread died from Error: {}", err.toString(), err);
+          break;
         }
       }
     } finally {
