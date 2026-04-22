@@ -44,6 +44,7 @@ public class OutboxProperties {
   private final HandlerExecutor handlerExecutor = new HandlerExecutor();
   private final Metrics metrics = new Metrics();
   private final Health health = new Health();
+  private final Cache cache = new Cache();
 
   // =============================================================================================
   // nested groups
@@ -93,6 +94,34 @@ public class OutboxProperties {
     noop,
     postgres,
     redis
+  }
+
+  @Getter
+  @Setter
+  public static class Cache {
+    /**
+     * Selects the backing store for {@code MetricsSnapshotCache}. {@code memory} (default)
+     * keeps the per-JVM TTL cache from pre-SPI behaviour; {@code redis} uses the
+     * {@code event-outboxer-cache-redis} module to share a single snapshot across pods;
+     * {@code noop} disables caching entirely so each {@code metricsSnapshot()} call
+     * recomputes from the database.
+     */
+    private CacheType type = CacheType.memory;
+
+    private final Redis redis = new Redis();
+
+    @Getter
+    @Setter
+    public static class Redis {
+      /** Prefix prepended to the cache key. */
+      private String keyPrefix = "outbox:metrics:";
+    }
+  }
+
+  public enum CacheType {
+    memory,
+    redis,
+    noop
   }
 
   @Getter

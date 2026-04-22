@@ -566,6 +566,7 @@ other) has been a real source of bugs.
 | Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
 | Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
 | Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("outbox")` → `OutboxPropertiesValidator` → builder |
+| Metrics-snapshot cache | `MetricsSnapshotCache` SPI with `noop()` / `inMemory(Clock, ttl)` static factories; caller passes the one they want into `PostgresEventStore` | `CacheAutoConfiguration` picks `memory` (default) / `noop` per `outbox.cache.type`; `RedisCacheAutoConfiguration` selects the Lettuce-backed variant from `event-outboxer-cache-redis` when `type=redis` and a `StatefulRedisConnection` bean exists; user `@Bean MetricsSnapshotCache` overrides everything |
 
 **Invariant.** If you are tempted to ship something only in the starter
 (auto-instantiation, YAML binding, `ObjectProvider` resolution), it must

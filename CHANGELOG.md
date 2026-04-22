@@ -53,7 +53,12 @@ or Micrometer registry, the library's defaults use a specific prefix:
 **SPI (`event-outboxer-spi`)**
 
 - `EventStore`, `WorkerRegistry`, `EntityLocker`, `EventSerializer`,
-  `Clock`, `ConnectionSupplier` ports.
+  `Clock`, `ConnectionSupplier`, `MetricsSnapshotCache` ports.
+- `MetricsSnapshotCache` ships `noop()` and
+  `inMemory(Clock, Duration)` static factories; adapters swap the
+  backing store without touching their own query path, so users can
+  collapse per-pod snapshot drift with a shared cache (see
+  `event-outboxer-cache-redis` + `outbox.cache.type=redis`).
 - Reusable abstract contract tests (`AbstractEventStoreContractTest`,
   `AbstractWorkerRegistryContractTest`,
   `AbstractEntityLockerContractTest`) published as a test-jar.
@@ -99,6 +104,13 @@ or Micrometer registry, the library's defaults use a specific prefix:
   hand-off does not leak locks.
 - `event-outboxer-lock-redis` — `SET NX PX` with UUID fencing tokens;
   Lua compare-and-delete unlock script. Works against KeyDB 6+ too.
+- `event-outboxer-cache-redis` — Lettuce-backed
+  `MetricsSnapshotCache` impl. Every pod reads/writes a single
+  Redis key (default `outbox:metrics:snapshot`) so
+  `/actuator/health/outbox` returns the same aggregate totals across
+  the fleet; TTL is enforced server-side via `SET PX`. Jackson JSON
+  codec with `jsr310` for the `Instant` fields. Fail-safe on Redis
+  errors (logged, treated as cache miss).
 - `event-outboxer-metrics-micrometer` — full Micrometer implementation
   of `OutboxListener` (counters, timers, per-type tags).
 

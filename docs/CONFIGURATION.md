@@ -133,6 +133,11 @@ outbox:
   handler-executor:
     type: platform                   # platform | virtual
 
+  cache:
+    type: memory                     # memory (default) | redis | noop
+    redis:
+      key-prefix: "outbox:metrics:"  # shared key namespace when type=redis
+
   listener:
     micrometer:
       enabled: true                  # auto-enabled when micrometer is on the classpath
@@ -242,8 +247,10 @@ Storage adapter settings.
   `event_outboxer.v1_events`).
 - `archive-enabled` — enables archiving (requires an additional
   migration; see ADR-0008).
-- `metrics-cache-ttl` — TTL for caching `OutboxMetricsSnapshot`
-  results.
+- `metrics-cache-ttl` — TTL applied by the default in-memory cache and
+  (when `outbox.cache.type=redis`) as the PX expire on the Redis key.
+  Ignored when `outbox.cache.type=noop` or a custom
+  `@Bean MetricsSnapshotCache` takes over.
 
 ### `outbox.metrics.*`
 
@@ -291,6 +298,28 @@ In MVP — Jackson only (see ADR-0011).
 - `platform` (default) — `ThreadPoolTaskExecutor` on platform threads.
 - `virtual` — `SimpleAsyncTaskExecutor` with virtual threads (Java 25
   baseline; safe with JDBC thanks to JEP 491).
+
+### `outbox.cache.*`
+
+Backs `EventStore.metricsSnapshot()` caching. See
+[docs/STORAGE.md §Pluggable metrics cache](STORAGE.md#pluggable-metrics-cache)
+for the motivation (consistent snapshot across pods) and the full
+Redis wiring recipe.
+
+- `type` — one of:
+  - `memory` (default) — per-JVM `AtomicReference` TTL cache, keyed off
+    `outbox.storage.metrics-cache-ttl`.
+  - `noop` — caching disabled; every `metricsSnapshot()` call hits the
+    database. Useful for tests that need live state.
+  - `redis` — shared Redis/KeyDB-backed cache; requires
+    `event-outboxer-cache-redis` on the classpath and a
+    `StatefulRedisConnection<String, String>` bean.
+- `redis.key-prefix` — prefix prepended to the cache key when
+  `type=redis`. Default `outbox:metrics:`; the cache writes a single
+  key `<key-prefix>snapshot`.
+
+A user-defined `@Bean MetricsSnapshotCache` wins over every autowired
+variant regardless of `type`.
 
 ### `outbox.listener.*`
 

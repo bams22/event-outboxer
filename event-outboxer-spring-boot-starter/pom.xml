@@ -105,6 +105,11 @@
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-cache-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-metrics-micrometer</artifactId>
             <optional>true</optional>
         </dependency>
