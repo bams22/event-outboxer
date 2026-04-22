@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -26,6 +27,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * shared singleton is noticeably faster).
  */
 public final class PostgresTestEnvironment {
+
+  /** Must match the default in {@code PostgresStorageProperties.defaults()}. */
+  public static final String SCHEMA = "event_outboxer";
 
   private static final PostgreSQLContainer<?> CONTAINER;
   private static final HikariDataSource DATA_SOURCE;
@@ -51,6 +55,7 @@ public final class PostgresTestEnvironment {
         .dataSource(DATA_SOURCE)
         .locations(
             "classpath:db/migration/outbox/core", "classpath:db/migration/outbox/archive")
+        .placeholders(Map.of("eventOutboxerSchema", SCHEMA))
         .load()
         .migrate();
   }
@@ -85,8 +90,8 @@ public final class PostgresTestEnvironment {
   public static void truncate() {
     try (Connection conn = DATA_SOURCE.getConnection();
         Statement st = conn.createStatement()) {
-      st.execute("TRUNCATE TABLE outbox.events, outbox.workers RESTART IDENTITY");
-      st.execute("TRUNCATE TABLE outbox.event_archive RESTART IDENTITY");
+      st.execute("TRUNCATE TABLE " + SCHEMA + ".events, " + SCHEMA + ".workers RESTART IDENTITY");
+      st.execute("TRUNCATE TABLE " + SCHEMA + ".event_archive RESTART IDENTITY");
     } catch (SQLException e) {
       throw new IllegalStateException("failed to truncate outbox tables", e);
     }

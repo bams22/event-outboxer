@@ -125,7 +125,10 @@ When Spring Boot Actuator is on the classpath, the starter auto-wires
 a health endpoint at `GET /actuator/health/outbox` (engine state +
 backlog totals + worker id) and — when a `MeterRegistry` bean is
 present — a full set of Micrometer counters / timers / summaries
-prefixed `outbox.*` (per-`event_type` tags on every signal). See
+prefixed `event_outboxer.*` (per-`event_type` tags on every signal).
+Both the DB schema (`event_outboxer` by default) and the metric prefix
+are configurable via `outbox.storage.schema` and `outbox.metrics.prefix`
+so the library never clashes with siblings in the same deployment. See
 [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for the field-level
 health reference, the metrics catalogue and five troubleshooting
 recipes.

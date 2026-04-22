@@ -19,9 +19,9 @@ class SchemaResolverTest {
   @Test
   void defaultSchemaAndNoPrefix() {
     SchemaResolver r = new SchemaResolver(PostgresStorageProperties.defaults());
-    assertThat(r.events()).isEqualTo("outbox.events");
-    assertThat(r.workers()).isEqualTo("outbox.workers");
-    assertThat(r.archive()).isEqualTo("outbox.event_archive");
+    assertThat(r.events()).isEqualTo("event_outboxer.events");
+    assertThat(r.workers()).isEqualTo("event_outboxer.workers");
+    assertThat(r.archive()).isEqualTo("event_outboxer.event_archive");
   }
 
   @Test

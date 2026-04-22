@@ -90,7 +90,7 @@ outbox:
         handler-max-runtime: 1m
 
   lifecycle:
-    heartbeat-interval: 30s          # how often writers update outbox.workers
+    heartbeat-interval: 30s          # how often writers update event_outboxer.workers
     dead-threshold: 90s              # seconds of silence before a worker is considered dead
     orphan-recovery-interval: 1m     # orphan-recovery task period
     watchdog-interval: 30s           # stuck-handler watchdog period
@@ -99,13 +99,18 @@ outbox:
 
   storage:
     type: postgres                   # postgres | inmemory
-    postgres:
-      schema: outbox
-      table-prefix: ""               # optional table-name prefix (outbox.<prefix>events)
-      datasource: null               # DataSource bean name; null = primary
-      archive:
-        enabled: false               # enable archiving of successful events
-      metrics-snapshot-cache-ttl: 30s
+    # schema is shared between the adapter (SQL) and the classpath
+    # migrations (Flyway ${eventOutboxerSchema} placeholder). Default
+    # name is specific to avoid conflicts with other libraries.
+    schema: event_outboxer
+    table-prefix: ""                 # optional table-name prefix (event_outboxer.<prefix>events)
+    archive-enabled: false           # enable archiving of successful events
+    metrics-cache-ttl: 30s
+
+  metrics:
+    # Prefix applied to every Micrometer counter/timer/summary. Default
+    # chosen to avoid clashing with other libraries that publish outbox.*.
+    prefix: event_outboxer
 
   lock:
     type: postgres                   # postgres | redis | noop; auto-detected by classpath if omitted
@@ -222,15 +227,29 @@ Storage adapter settings.
 
 - `type` — `postgres` (default when `storage-postgres` is on the
   classpath) or `inmemory` (for tests).
-- `postgres.schema` — schema name.
-- `postgres.table-prefix` — optional table prefix (e.g. `v1_` →
-  `outbox.v1_events`).
-- `postgres.datasource` — DataSource bean name; `null` = primary. Useful
-  when multiple DataSources are present.
-- `postgres.archive.enabled` — enables archiving (requires an additional
+- `schema` — schema name. **Default: `event_outboxer`** — a specific
+  name chosen to avoid clashing with other libraries or application
+  tables in a shared database. The value is propagated into both the
+  adapter's SQL and the Flyway placeholder `${eventOutboxerSchema}`
+  used by the classpath migrations, so changing it once updates both.
+- `table-prefix` — optional table prefix (e.g. `v1_` →
+  `event_outboxer.v1_events`).
+- `archive-enabled` — enables archiving (requires an additional
   migration; see ADR-0008).
-- `postgres.metrics-snapshot-cache-ttl` — TTL for caching
-  `OutboxMetricsSnapshot` results.
+- `metrics-cache-ttl` — TTL for caching `OutboxMetricsSnapshot`
+  results.
+
+### `outbox.metrics.*`
+
+Micrometer listener settings.
+
+- `prefix` — prefix applied to every counter / timer / summary
+  registered by `MicrometerOutboxListener`. **Default:
+  `event_outboxer`** — a specific name chosen to avoid clashing with
+  other libraries that publish `outbox.*` metrics. Override when
+  multiple outbox instances share a registry or when an organisation
+  requires a different namespace. See [docs/OBSERVABILITY.md](OBSERVABILITY.md)
+  for the full metric catalogue.
 
 ### `outbox.lock.*`
 

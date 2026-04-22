@@ -7,9 +7,9 @@ migration layout.
 ## Contents
 
 1. [Overview](#overview)
-2. [Table `outbox.events`](#table-outboxevents)
-3. [Table `outbox.workers`](#table-outboxworkers)
-4. [Optional table `outbox.event_archive`](#optional-table-outboxevent_archive)
+2. [Table `event_outboxer.events`](#table-outboxevents)
+3. [Table `event_outboxer.workers`](#table-outboxworkers)
+4. [Optional table `event_outboxer.event_archive`](#optional-table-outboxevent_archive)
 5. [Migrations (Flyway)](#migrations-flyway)
 6. [Key queries](#key-queries)
 7. [Operational recommendations](#operational-recommendations)
@@ -20,21 +20,26 @@ migration layout.
 
 Two primary tables plus one optional:
 
-- **`outbox.events`** — active events. Mutated on publish / claim /
+- **`event_outboxer.events`** — active events. Mutated on publish / claim /
   finalize / reclaim.
-- **`outbox.workers`** — heartbeat table (one row per JVM). Mutated on
+- **`event_outboxer.workers`** — heartbeat table (one row per JVM). Mutated on
   start / heartbeat / graceful_stop / orphan reclaim.
-- **`outbox.event_archive`** (opt-in) — archive of successfully processed
+- **`event_outboxer.event_archive`** (opt-in) — archive of successfully processed
   events. Immutable after insert.
+
+The schema name `event_outboxer` is the default — chosen explicitly so
+the library does not conflict with other tables or libraries in a
+shared database. Override via `outbox.storage.schema=my_schema` if you
+need a different name; see [§Configurable schema name](#configurable-schema-name).
 
 PostgreSQL version: **15+** (partial indexes, JSONB, CTE with UPDATE).
 
 ---
 
-## Table `outbox.events`
+## Table `event_outboxer.events`
 
 ```sql
-CREATE TABLE outbox.events (
+CREATE TABLE event_outboxer.events (
     id               UUID         PRIMARY KEY,
     event_type       VARCHAR(128) NOT NULL,
     payload          JSONB        NOT NULL,
@@ -67,17 +72,17 @@ CREATE TABLE outbox.events (
 ```sql
 -- Hot path: claim query (the most important index)
 CREATE INDEX idx_events_ready
-    ON outbox.events (event_type, priority DESC, run_at)
+    ON event_outboxer.events (event_type, priority DESC, run_at)
     WHERE status = 'PENDING';
 
 -- Orphan recovery: quickly find events of a dead worker
 CREATE INDEX idx_events_processing_by_worker
-    ON outbox.events (claimed_by)
+    ON event_outboxer.events (claimed_by)
     WHERE status = 'PROCESSING';
 
 -- Watchdog: select PROCESSING events that exceed maxRuntime
 CREATE INDEX idx_events_processing_claimed_at
-    ON outbox.events (claimed_at)
+    ON event_outboxer.events (claimed_at)
     WHERE status = 'PROCESSING';
 ```
 
@@ -112,10 +117,10 @@ code bugs.
 
 ---
 
-## Table `outbox.workers`
+## Table `event_outboxer.workers`
 
 ```sql
-CREATE TABLE outbox.workers (
+CREATE TABLE event_outboxer.workers (
     worker_id       VARCHAR(64)  PRIMARY KEY,
     host            VARCHAR(256) NOT NULL,
     pid             INT,
@@ -127,7 +132,7 @@ CREATE TABLE outbox.workers (
 
 -- Orphan detection: fast search for stale workers
 CREATE INDEX idx_workers_heartbeat
-    ON outbox.workers (last_heartbeat)
+    ON event_outboxer.workers (last_heartbeat)
     WHERE graceful_stop = FALSE;
 ```
 
@@ -139,12 +144,13 @@ See [ADR-0005](adr/0005-workers-heartbeat-table.md).
 
 ---
 
-## Optional table `outbox.event_archive`
+## Optional table `event_outboxer.event_archive`
 
-Applied only when `outbox.postgres.archive.enabled=true`.
+Applied only when `outbox.storage.archive-enabled=true` (and the
+application configures Flyway to include the `archive/` location).
 
 ```sql
-CREATE TABLE outbox.event_archive (
+CREATE TABLE event_outboxer.event_archive (
     id               UUID         PRIMARY KEY,
     event_type       VARCHAR(128) NOT NULL,
     payload          JSONB        NOT NULL,
@@ -159,9 +165,9 @@ CREATE TABLE outbox.event_archive (
     archived_by      VARCHAR(64)  NOT NULL
 );
 
-CREATE INDEX idx_archive_archived_at ON outbox.event_archive (archived_at);
+CREATE INDEX idx_archive_archived_at ON event_outboxer.event_archive (archived_at);
 CREATE INDEX idx_archive_event_type_created_at
-    ON outbox.event_archive (event_type, created_at);
+    ON event_outboxer.event_archive (event_type, created_at);
 ```
 
 Absent columns: `status`, `claimed_by`, `version` — they lose meaning after
@@ -192,6 +198,33 @@ spring:
       - classpath:db/migration/outbox/archive   # only if archive is enabled
 ```
 
+### Configurable schema name
+
+The migration SQL uses the Flyway placeholder `${eventOutboxerSchema}`
+for the schema; the Spring Boot starter auto-wires it from
+`outbox.storage.schema` (default: `event_outboxer` — specific to avoid
+clashing with other libraries or application tables). Change the schema
+in one place and both the SQL migrations AND the adapter's runtime
+queries pick it up:
+
+```yaml
+outbox:
+  storage:
+    schema: my_custom_schema   # or leave unset for event_outboxer
+```
+
+Plain-Java users (running Flyway directly, not through the starter)
+pass the placeholder themselves:
+
+```java
+Flyway.configure()
+    .dataSource(dataSource)
+    .locations("classpath:db/migration/outbox/core")
+    .placeholders(Map.of("eventOutboxerSchema", "event_outboxer"))
+    .load()
+    .migrate();
+```
+
 ### Liquibase
 
 Flyway is the supported choice. Liquibase users can copy the SQL into
@@ -208,7 +241,7 @@ A single atomic SQL (CTE + UPDATE + RETURNING):
 ```sql
 WITH picked AS (
     SELECT id
-    FROM outbox.events
+    FROM event_outboxer.events
     WHERE event_type = :event_type
       AND status     = 'PENDING'
       AND run_at    <= now()
@@ -216,7 +249,7 @@ WITH picked AS (
     LIMIT :limit
     FOR UPDATE SKIP LOCKED
 )
-UPDATE outbox.events e
+UPDATE event_outboxer.events e
 SET status      = 'PROCESSING',
     claimed_by  = :worker_id,
     claimed_at  = now(),
@@ -237,7 +270,7 @@ Optimizations:
 ### Heartbeat (O(1))
 
 ```sql
-UPDATE outbox.workers
+UPDATE event_outboxer.workers
 SET last_heartbeat = now()
 WHERE worker_id = :worker_id;
 ```
@@ -251,14 +284,14 @@ BEGIN;
 
 WITH dead AS (
     SELECT worker_id
-    FROM outbox.workers
+    FROM event_outboxer.workers
     WHERE last_heartbeat < now() - (:dead_threshold_seconds * interval '1 second')
       AND graceful_stop = FALSE
     ORDER BY last_heartbeat
     LIMIT :batch_size
     FOR UPDATE SKIP LOCKED
 )
-UPDATE outbox.events e
+UPDATE event_outboxer.events e
 SET status           = 'PENDING',
     attempts         = attempts + 1,
     last_fail_reason = 'orphan-recovered: worker ' || e.claimed_by
@@ -271,14 +304,14 @@ WHERE e.claimed_by = d.worker_id
   AND e.status     = 'PROCESSING'
 RETURNING e.id, e.event_type, d.worker_id;
 
-DELETE FROM outbox.workers w
+DELETE FROM event_outboxer.workers w
 USING dead d
 WHERE w.worker_id = d.worker_id;
 
 COMMIT;
 ```
 
-Concurrency is guarded by `FOR UPDATE SKIP LOCKED` on `outbox.workers`: one
+Concurrency is guarded by `FOR UPDATE SKIP LOCKED` on `event_outboxer.workers`: one
 instance claims each dead worker, the others skip it.
 
 ### Edge case: orphaned events without a worker row
@@ -286,7 +319,7 @@ instance claims each dead worker, the others skip it.
 A separate query in the same `OrphanRecoveryTask`:
 
 ```sql
-UPDATE outbox.events e
+UPDATE event_outboxer.events e
 SET status           = 'PENDING',
     attempts         = attempts + 1,
     last_fail_reason = 'orphan: claimed_by worker no longer exists',
@@ -296,7 +329,7 @@ SET status           = 'PENDING',
 WHERE e.status = 'PROCESSING'
   AND e.claimed_at < now() - (:dead_threshold_seconds * interval '1 second')
   AND NOT EXISTS (
-      SELECT 1 FROM outbox.workers w WHERE w.worker_id = e.claimed_by
+      SELECT 1 FROM event_outboxer.workers w WHERE w.worker_id = e.claimed_by
   )
 RETURNING e.id;
 ```
@@ -304,7 +337,7 @@ RETURNING e.id;
 ### Force reclaim (stuck-handler watchdog)
 
 ```sql
-UPDATE outbox.events
+UPDATE event_outboxer.events
 SET status           = 'PENDING',
     attempts         = attempts + 1,
     last_fail_reason = 'stuck: ' || :reason,
@@ -325,7 +358,7 @@ force-reclaim does not apply.
 ### Mark processed (success, DELETE)
 
 ```sql
-DELETE FROM outbox.events
+DELETE FROM event_outboxer.events
 WHERE id = :event_id
   AND version = :claimed_version
   AND claimed_by = :worker_id
@@ -336,7 +369,7 @@ WHERE id = :event_id
 
 ```sql
 BEGIN;
-INSERT INTO outbox.event_archive (
+INSERT INTO event_outboxer.event_archive (
     id, event_type, payload, payload_class, priority,
     attempts, created_at, run_at, last_fail_reason,
     trace_context, archived_at, archived_by
@@ -345,13 +378,13 @@ SELECT
     id, event_type, payload, payload_class, priority,
     attempts, created_at, run_at, last_fail_reason,
     trace_context, now(), :worker_id
-FROM outbox.events
+FROM event_outboxer.events
 WHERE id = :event_id
   AND version = :claimed_version
   AND claimed_by = :worker_id
   AND status = 'PROCESSING';
 
-DELETE FROM outbox.events
+DELETE FROM event_outboxer.events
 WHERE id = :event_id
   AND version = :claimed_version
   AND claimed_by = :worker_id;
@@ -367,7 +400,7 @@ SELECT
     count(*) as cnt,
     min(created_at) FILTER (WHERE status = 'PENDING') as oldest_pending_created,
     min(run_at) FILTER (WHERE status = 'PENDING') as oldest_pending_run_at
-FROM outbox.events
+FROM event_outboxer.events
 GROUP BY event_type, status;
 ```
 
@@ -380,7 +413,7 @@ The adapter caches the result with TTL=30s (configurable via
 
 ### Table size
 
-`outbox.events` must not grow unbounded:
+`event_outboxer.events` must not grow unbounded:
 - Successful events are deleted (or moved to the archive; see ADR-0008).
 - DISABLED events remain, but they are few (only real failures).
 - PENDING + PROCESSING is the live backlog and should be bounded.
@@ -395,7 +428,7 @@ An active table with frequent UPDATEs requires aggressive autovacuum. Table
 level settings:
 
 ```sql
-ALTER TABLE outbox.events SET (
+ALTER TABLE event_outboxer.events SET (
     autovacuum_vacuum_scale_factor = 0.05,   -- vacuum at 5% dead tuples
     autovacuum_analyze_scale_factor = 0.02,
     autovacuum_vacuum_cost_delay = 0         -- aggressive
@@ -404,55 +437,51 @@ ALTER TABLE outbox.events SET (
 
 ### Monitoring
 
-Key metrics (via Micrometer):
-- `outbox.events.pending.count{event_type}` — backlog size.
-- `outbox.events.oldest_pending_age_seconds{event_type}` — queue lag.
-- `outbox.events.disabled.count{event_type}` — broken events.
-- `outbox.events.concurrent_completion_conflict` — rate of races (see
-  ADR-0014).
-- `outbox.workers.leaked` — difference between `InFlightRegistry.size()`
-  and `executor.activeCount` (see ADR-0005).
-- `outbox.handler.stuck.count` — handlers exceeding `handlerMaxRuntime`.
+Metrics are emitted through the Micrometer adapter with the prefix
+`event_outboxer` (configurable via `outbox.metrics.prefix`). See
+[docs/OBSERVABILITY.md §Micrometer metrics reference](OBSERVABILITY.md#micrometer-metrics-reference)
+for the full table of counter / timer / summary names with their tags,
+firing conditions and interpretation.
 
 ### Admin queries
 
 ```sql
 -- Top event types by backlog
 SELECT event_type, count(*)
-FROM outbox.events
+FROM event_outboxer.events
 WHERE status = 'PENDING'
 GROUP BY event_type
 ORDER BY count DESC;
 
 -- Oldest PENDING
 SELECT id, event_type, created_at, run_at, attempts
-FROM outbox.events
+FROM event_outboxer.events
 WHERE status = 'PENDING'
 ORDER BY run_at
 LIMIT 20;
 
 -- Live workers
 SELECT worker_id, host, started_at, last_heartbeat, metadata
-FROM outbox.workers
+FROM event_outboxer.workers
 WHERE last_heartbeat > now() - interval '2 minutes'
 ORDER BY host;
 
 -- Workers with in-flight events
 SELECT w.worker_id, w.host, count(e.id) as in_flight
-FROM outbox.workers w
-LEFT JOIN outbox.events e
+FROM event_outboxer.workers w
+LEFT JOIN event_outboxer.events e
     ON e.claimed_by = w.worker_id AND e.status = 'PROCESSING'
 GROUP BY w.worker_id, w.host;
 
 -- DISABLED events for investigation
 SELECT id, event_type, attempts, last_fail_reason, created_at
-FROM outbox.events
+FROM event_outboxer.events
 WHERE status = 'DISABLED'
 ORDER BY created_at DESC
 LIMIT 50;
 
 -- Reviving a DISABLED event (admin)
-UPDATE outbox.events
+UPDATE event_outboxer.events
 SET status = 'PENDING',
     attempts = 0,
     last_fail_reason = 'manually re-enabled',
