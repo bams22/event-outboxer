@@ -17,10 +17,13 @@ import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Aggregate view of outbox state used to drive {@code Micrometer} gauges and the {@code
- * HealthIndicator}. Returned by {@link EventStore#metricsSnapshot()}; adapters are expected to
- * cache the result for a short TTL (see CONFIGURATION.md §metrics) so that dashboards scraping the
- * registry every few seconds do not hammer the database.
+ * Aggregate view of outbox state used by Actuator {@code /actuator/health/outbox} and by the
+ * starter-registered backlog gauges (per-event-type pending / processing / disabled and the
+ * oldest-age gauges in {@code MicrometerAutoConfiguration}). Returned by
+ * {@link EventStore#metricsSnapshot()}; adapters delegate caching to the
+ * {@link MetricsSnapshotCache} SPI — the default in-memory factory covers single-JVM cases and
+ * {@code event-outboxer-cache-redis} provides a shared-across-pods variant so that dashboards
+ * scraping the registry every few seconds do not hammer the database.
  *
  * <p>All counts are non-negative. {@code oldestPendingRunAt} and {@code oldestClaimedAt} are {@code
  * null} when there are no rows in the corresponding state.

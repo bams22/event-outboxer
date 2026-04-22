@@ -135,6 +135,15 @@ or Micrometer registry, the library's defaults use a specific prefix:
 - `event_outboxer.engine.state{state=stopped|running|stopping}`
   Micrometer gauges for metric-based alerting on engine liveness
   without touching the probe groups.
+- Backlog gauges driven by `EventStore.metricsSnapshot()` through
+  the `MetricsSnapshotCache` SPI (so every scrape is bounded by the
+  cache TTL and — with `outbox.cache.type=redis` — shared across
+  pods). Per-type (`event_type` tag):
+  `event_outboxer.events.pending`, `…processing`, `…disabled`,
+  `event_outboxer.events.oldest_pending_age_seconds`. Global:
+  `event_outboxer.events.oldest_claimed_age_seconds`. Registered
+  once per `EventHandler` bean at context refresh; aggregate in
+  PromQL with `sum without(event_type)(…)`.
 - **Engine crash detection** for poller threads.
   `EngineHealthCheckTask` runs every
   `outbox.maintenance.watchdog-interval` and inspects each per-type
