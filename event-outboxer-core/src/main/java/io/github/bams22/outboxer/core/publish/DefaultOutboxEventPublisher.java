@@ -29,7 +29,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -43,10 +42,6 @@ import java.util.UUID;
  *   <li>Build a {@link PendingEvent} and hand it to {@link EventStore#save(PendingEvent)}.
  *   <li>Fire {@code OutboxListener.onEventPublished(...)}.
  * </ol>
- *
- * <p>{@code publishIfAbsent(...)} requires store-side dedup support and is not part of the MVP —
- * it throws {@link UnsupportedOperationException} until a dedicated idempotency-key column is
- * introduced (post-MVP).
  */
 public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
@@ -128,15 +123,6 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
       emitPublished(pe);
     }
     return List.copyOf(ids);
-  }
-
-  @Override
-  public Optional<UUID> publishIfAbsent(
-      String eventType, Object payload, String idempotencyKey, PublishOptions options) {
-    Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
-    throw new UnsupportedOperationException(
-        "publishIfAbsent is not implemented in MVP — planned post-MVP alongside a dedicated "
-            + "idempotency-key column in the store (see ADR-0010 follow-up).");
   }
 
   // ---------------------------------------------------------------------------------------------

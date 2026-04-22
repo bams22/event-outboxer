@@ -107,14 +107,6 @@ class DefaultOutboxEventPublisherTest {
         .isInstanceOf(PublishValidationException.class);
   }
 
-  @Test
-  void publishIfAbsentIsUnsupportedInMvp() {
-    DefaultOutboxEventPublisher publisher = plain(new InMemoryEventStore());
-    assertThatThrownBy(
-            () -> publisher.publishIfAbsent("T", "hello", "idemp", PublishOptions.defaults()))
-        .isInstanceOf(UnsupportedOperationException.class);
-  }
-
   private static final OutboxListener NOOP = new OutboxListener() {};
 
   private static DefaultOutboxEventPublisher plain(InMemoryEventStore store) {
