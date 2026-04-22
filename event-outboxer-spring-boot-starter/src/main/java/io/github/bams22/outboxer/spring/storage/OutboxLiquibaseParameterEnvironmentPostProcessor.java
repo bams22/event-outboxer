@@ -35,7 +35,7 @@ public class OutboxLiquibaseParameterEnvironmentPostProcessor
     implements EnvironmentPostProcessor, Ordered {
 
   static final String PROPERTY_SOURCE_NAME = "event-outboxer-liquibase-parameters";
-  static final String SCHEMA_PROPERTY = "outbox.storage.schema";
+  static final String SCHEMA_PROPERTY = "event-outboxer.storage.schema";
   static final String DEFAULT_SCHEMA = "event_outboxer";
   static final String LIQUIBASE_PARAMETER_KEY =
       "spring.liquibase.parameters.eventOutboxerSchema";

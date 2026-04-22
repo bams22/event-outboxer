@@ -36,14 +36,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest(
     classes = PostgresStarterIT.TestApp.class,
     properties = {
-      "outbox.storage.type=postgres",
-      "outbox.publisher.no-transaction-policy=FAIL",
-      "outbox.event-types.defaults.poll-min-interval=20ms",
-      "outbox.event-types.defaults.poll-max-interval=50ms",
-      "outbox.maintenance.heartbeat-interval=500ms",
-      "outbox.maintenance.dead-threshold=2s",
-      "outbox.maintenance.orphan-recovery-interval=1s",
-      "outbox.maintenance.watchdog-interval=500ms",
+      "event-outboxer.storage.type=postgres",
+      "event-outboxer.publisher.no-transaction-policy=FAIL",
+      "event-outboxer.event-types.defaults.poll-min-interval=20ms",
+      "event-outboxer.event-types.defaults.poll-max-interval=50ms",
+      "event-outboxer.maintenance.heartbeat-interval=500ms",
+      "event-outboxer.maintenance.dead-threshold=2s",
+      "event-outboxer.maintenance.orphan-recovery-interval=1s",
+      "event-outboxer.maintenance.watchdog-interval=500ms",
       "spring.flyway.locations=classpath:db/migration/outbox/core"
     })
 @Testcontainers

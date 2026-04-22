@@ -26,7 +26,7 @@ concurrency control.
 **concurrent completion conflict** — a race situation where a finalize
 operation returns `false` because `version` has changed (another worker /
 orphan recovery / watchdog won). Expected under at-least-once;
-`outbox.events.concurrent_completion_conflict` is the corresponding
+`event_outboxer.events.concurrent_completion_conflict` is the corresponding
 metric.
 
 ## D
@@ -110,7 +110,7 @@ orphan reclaim in that the worker is still alive.
 running handlers of that type. Core-type:
 `java.util.concurrent.Executor`.
 
-**heartbeat** — periodic `UPDATE outbox.workers SET last_heartbeat=now()`.
+**heartbeat** — periodic `UPDATE event_outboxer.workers SET last_heartbeat=now()`.
 One row per JVM, independent of the in-flight count. Default interval —
 30s.
 
@@ -174,7 +174,7 @@ Implementations: `LoggingOutboxListener` (default),
 ## P
 
 **payload** — event business data serialized to JSON (Jackson). Stored in
-`outbox.events.payload JSONB`. Payload type is an explicit DTO, not a
+`event_outboxer.events.payload JSONB`. Payload type is an explicit DTO, not a
 lambda. See [ADR-0003](adr/0003-explicit-dto-payload.md).
 
 **PENDING** — the initial status of an event after publish. Ready to be
@@ -253,5 +253,5 @@ NOT change on heartbeat (stored in a separate table).
 `workerId, host, pid, startedAt, metadata`.
 
 **WorkerRegistry** — SPI port for registering workers and heartbeating.
-Implemented as the `outbox.workers` table in the PG adapter. See
+Implemented as the `event_outboxer.workers` table in the PG adapter. See
 [ADR-0005](adr/0005-workers-heartbeat-table.md).

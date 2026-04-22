@@ -106,7 +106,7 @@ Users override in three ways, in increasing specificity:
 - Customize Boot's primary `ObjectMapper` (affects every Jackson user in
   the application).
 - Register a qualified `@Bean("outboxObjectMapper") ObjectMapper` —
-  isolated to the outbox.
+  isolated to the event-outboxer.
 - Register a fully custom `@Bean("outboxEventSerializer") EventSerializer`
   — bypasses Jackson entirely.
 

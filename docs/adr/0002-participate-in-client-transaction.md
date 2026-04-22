@@ -78,10 +78,10 @@ architecture.
 
 - `@Transactional void createOrder()` → `publisher.publish(...)` →
   `orderRepo.save(...)` → commit/rollback of the business TX determines
-  whether the event ends up in the outbox.
+  whether the event ends up in the event-outboxer.
 - Hard contract documented: **publish() MUST participate in the current TX**.
 - Behavior when there is no TX is configurable:
-  `outbox.publisher.no-transaction-policy: FAIL | AUTO | IGNORE`.
+  `event-outboxer.publisher.no-transaction-policy: FAIL | AUTO | IGNORE`.
 
 ### For maintainers
 
@@ -96,7 +96,7 @@ architecture.
 
 - Atomicity out of the box. Users cannot accidentally break it.
 - A regression test in CI: `@Transactional` + `publish()` + synthetic
-  rollback → no entry in `outbox.events`.
+  rollback → no entry in `event_outboxer.events`.
 
 ### Negative consequences
 

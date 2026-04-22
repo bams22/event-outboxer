@@ -46,7 +46,7 @@ public class OutboxProbeGroupsEnvironmentPostProcessor implements EnvironmentPos
   /** Property source we contribute under — named for easy identification in debug dumps. */
   static final String PROPERTY_SOURCE_NAME = "event-outboxer-probe-groups";
 
-  static final String PROBE_GROUPS_PROPERTY = "outbox.health.probe-groups";
+  static final String PROBE_GROUPS_PROPERTY = "event-outboxer.health.probe-groups";
 
   @Override
   public int getOrder() {

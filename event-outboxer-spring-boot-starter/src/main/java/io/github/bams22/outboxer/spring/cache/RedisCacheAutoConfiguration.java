@@ -34,7 +34,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 @ConditionalOnClass(LettuceMetricsSnapshotCache.class)
 @ConditionalOnBean(StatefulRedisConnection.class)
-@ConditionalOnProperty(prefix = "outbox.cache", name = "type", havingValue = "redis")
+@ConditionalOnProperty(prefix = "event-outboxer.cache", name = "type", havingValue = "redis")
 public class RedisCacheAutoConfiguration {
 
   @Bean

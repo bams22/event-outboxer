@@ -73,11 +73,11 @@ automatically into `OutboxListenerRegistry`. In plain Java — via a builder.
 
 The `event-outboxer-metrics-micrometer` module provides a ready
 implementation. Mapping (sample):
-- `onEventProcessed` → `outbox.events.processed{event_type}` Counter +
-  `outbox.events.handle.duration{event_type}` Timer.
-- `onEventRetryScheduled` → `outbox.events.retried{event_type}` Counter.
-- `onEventDisabled` → `outbox.events.disabled{event_type}` Counter.
-- `onOrphansReclaimed` → `outbox.orphans.reclaimed` Counter.
+- `onEventProcessed` → `event_outboxer.events.processed{event_type}` Counter +
+  `event_outboxer.events.handle.duration{event_type}` Timer.
+- `onEventRetryScheduled` → `event_outboxer.events.retried{event_type}` Counter.
+- `onEventDisabled` → `event_outboxer.events.disabled{event_type}` Counter.
+- `onOrphansReclaimed` → `event-outboxer.orphans.reclaimed` Counter.
 - etc.
 
 The starter registers it automatically when Micrometer is on the classpath
@@ -103,7 +103,7 @@ core on SLF4J only.
 - **The core stays pristine** — only SLF4J.
 - **The event bus is reused** — not just metrics, but also:
   - Structured logging (logback/slf4j JSON encoders).
-  - Audit trail (a listener writes to a separate `outbox.audit` table).
+  - Audit trail (a listener writes to a separate `event-outboxer.audit` table).
   - Alerting (a listener pushes to Slack on DISABLED events).
   - Distributed tracing (a listener emits Observation events).
 - **Custom listeners** — users write their own bean, implementing the
@@ -114,7 +114,7 @@ core on SLF4J only.
 
 In the Spring starter, `LoggingOutboxListener` is registered by default —
 it logs key events at INFO/WARN. Users can disable it via
-`outbox.listener.logging.enabled=false`.
+`event-outboxer.listener.logging.enabled=false`.
 
 ## Consequences
 

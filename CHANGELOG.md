@@ -15,7 +15,7 @@ To minimise collisions with other libraries sharing the same database
 or Micrometer registry, the library's defaults use a specific prefix:
 
 - **Database schema** defaults to `event_outboxer` (configurable via
-  `outbox.storage.schema`). The classpath Flyway migrations and the
+  `event-outboxer.storage.schema`). The classpath Flyway migrations and the
   Liquibase changelog both use the `${eventOutboxerSchema}`
   placeholder; the Spring Boot starter auto-wires it for whichever
   tool is on the classpath so changing the property updates adapter
@@ -23,7 +23,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   users pass the placeholder explicitly (see `docs/STORAGE.md
   §Configurable schema name`).
 - **Micrometer metric prefix** defaults to `event_outboxer`
-  (configurable via `outbox.metrics.prefix`). Every counter / timer /
+  (configurable via `event-outboxer.metrics.prefix`). Every counter / timer /
   summary registered by `MicrometerOutboxListener` carries this
   prefix.
 
@@ -58,7 +58,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   `inMemory(Clock, Duration)` static factories; adapters swap the
   backing store without touching their own query path, so users can
   collapse per-pod snapshot drift with a shared cache (see
-  `event-outboxer-cache-redis` + `outbox.cache.type=redis`).
+  `event-outboxer-cache-redis` + `event-outboxer.cache.type=redis`).
 - Reusable abstract contract tests (`AbstractEventStoreContractTest`,
   `AbstractWorkerRegistryContractTest`,
   `AbstractEntityLockerContractTest`) published as a test-jar.
@@ -116,7 +116,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
 
 **Spring Boot 3.5.6 starter (`event-outboxer-spring-boot-starter`)**
 
-- `@ConfigurationProperties("outbox.*")` binding for the full YAML
+- `@ConfigurationProperties("event-outboxer.*")` binding for the full YAML
   surface documented in `docs/CONFIGURATION.md`.
 - Storage / lock / serializer auto-configurations; `@ConditionalOn*`
   selection by property + classpath + bean availability.
@@ -128,7 +128,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
 - `OutboxSmartLifecycle` (phase 20000, auto-startup, graceful stop).
 - `OutboxHealthIndicator` for Spring Boot Actuator.
 - `OutboxProbeGroupsEnvironmentPostProcessor` — opt-in integration
-  with Actuator probe groups via `outbox.health.probe-groups`, for
+  with Actuator probe groups via `event-outboxer.health.probe-groups`, for
   k8s deployments that hit only `/actuator/health/liveness` and
   `/readiness`. Merges `outbox` into the configured groups while
   preserving the default `<group>State` contributor.
@@ -137,7 +137,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   without touching the probe groups.
 - Backlog gauges driven by `EventStore.metricsSnapshot()` through
   the `MetricsSnapshotCache` SPI (so every scrape is bounded by the
-  cache TTL and — with `outbox.cache.type=redis` — shared across
+  cache TTL and — with `event-outboxer.cache.type=redis` — shared across
   pods). Per-type (`event_type` tag):
   `event_outboxer.events.pending`, `…processing`, `…disabled`,
   `event_outboxer.events.oldest_pending_age_seconds`. Global:
@@ -146,7 +146,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   PromQL with `sum without(event_type)(…)`.
 - **Engine crash detection** for poller threads.
   `EngineHealthCheckTask` runs every
-  `outbox.maintenance.watchdog-interval` and inspects each per-type
+  `event-outboxer.maintenance.watchdog-interval` and inspects each per-type
   poller's thread for unexpected termination (uncaught `Error` that
   bypassed the `Poller.tick()` exception filter). On first
   detection: `OutboxEngine.markCrashed(...)` flips `state()` to

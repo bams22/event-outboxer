@@ -19,7 +19,7 @@ Transactional Outbox pattern.
 - **Per-event-type isolation**: each `EventHandler` gets its own
   `ThreadPoolTaskExecutor` and poller — a slow type cannot block a fast one.
 - **Distributed-safe**: `SELECT FOR UPDATE SKIP LOCKED` + optimistic locking
-  via a `version` column + heartbeat/lease in a separate `outbox.workers`
+  via a `version` column + heartbeat/lease in a separate `event_outboxer.workers`
   table for detecting crashed workers.
 - **At-least-once**: handlers must be idempotent. Exponential backoff with
   jitter, attempt limits, DISABLED status for poison events.
@@ -129,10 +129,10 @@ prefixed `event_outboxer.*` (per-`event_type` tags on every signal),
 plus an `event_outboxer.engine.state{state=...}` gauge for
 metric-based alerting. For k8s deployments that probe only
 `/actuator/health/liveness` and `/actuator/health/readiness`, opt in
-to probe integration with `outbox.health.probe-groups: [readiness]`
+to probe integration with `event-outboxer.health.probe-groups: [readiness]`
 so rolling restarts drain in-flight handlers automatically. Both the
 DB schema (`event_outboxer` by default) and the metric prefix are
-configurable via `outbox.storage.schema` and `outbox.metrics.prefix`
+configurable via `event-outboxer.storage.schema` and `event-outboxer.metrics.prefix`
 so the library never clashes with siblings in the same deployment.
 See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for the field-level
 health reference, the metrics catalogue, the k8s probe playbook and

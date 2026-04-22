@@ -48,7 +48,7 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 @AutoConfiguration(after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass({PostgresEventStore.class, TransactionAwareDataSourceProxy.class})
 @ConditionalOnBean(DataSource.class)
-@ConditionalOnProperty(prefix = "outbox.storage", name = "type", havingValue = "postgres")
+@ConditionalOnProperty(prefix = "event-outboxer.storage", name = "type", havingValue = "postgres")
 public class PostgresStorageAutoConfiguration {
 
   @Bean

@@ -30,7 +30,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration(after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgAdvisoryLocker.class)
 @ConditionalOnBean(DataSource.class)
-@ConditionalOnProperty(prefix = "outbox.lock", name = "type", havingValue = "postgres")
+@ConditionalOnProperty(prefix = "event-outboxer.lock", name = "type", havingValue = "postgres")
 public class PostgresLockAutoConfiguration {
 
   @Bean

@@ -28,7 +28,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties("outbox")
+@ConfigurationProperties("event-outboxer")
 public class OutboxProperties {
 
   /** Master switch; set to {@code false} to disable all auto-configuration. */

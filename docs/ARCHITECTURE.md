@@ -192,7 +192,7 @@ DefaultOutboxEventPublisher
           │
           ▼
         PostgreSQL
-          INSERT INTO outbox.events (...) VALUES (...);
+          INSERT INTO event_outboxer.events (...) VALUES (...);
           │ (within the caller's transaction)
           │
           ▼
@@ -246,27 +246,27 @@ For each claimedEvent:
 WorkerRegistry.heartbeat(workerId)
     │
     ▼
-  UPDATE outbox.workers SET last_heartbeat = now() WHERE worker_id = ?
+  UPDATE event_outboxer.workers SET last_heartbeat = now() WHERE worker_id = ?
 ```
 
 #### OrphanRecoveryTask (every minute)
 ```
 1. WorkerRegistry.findDead(deadThreshold=90s, limit)
      ↓
-   SELECT worker_id FROM outbox.workers
+   SELECT worker_id FROM event_outboxer.workers
    WHERE last_heartbeat < now() - 90s AND graceful_stop=FALSE
    FOR UPDATE SKIP LOCKED LIMIT ?
 
 2. EventStore.reclaimOrphans(deadWorkerIds)
      ↓
-   UPDATE outbox.events
+   UPDATE event_outboxer.events
    SET status='PENDING', attempts=attempts+1, claimed_by=NULL, version=version+1,
        last_fail_reason='orphan-recovered: worker X'
    WHERE status='PROCESSING' AND claimed_by = ANY(deadWorkerIds)
 
 3. WorkerRegistry.removeDead(deadWorkerIds)
      ↓
-   DELETE FROM outbox.workers WHERE worker_id = ANY(deadWorkerIds)
+   DELETE FROM event_outboxer.workers WHERE worker_id = ANY(deadWorkerIds)
 
 4. Listener.onOrphansReclaimed(deadWorkerIds, eventCount)
 ```
@@ -282,7 +282,7 @@ For each inflight e where (now - e.claimedAt) > handlerMaxRuntime(e.eventType):
     EventStore.forceReclaim(id, claimedVersion, workerId, "stuck: exceeded handlerMaxRuntime")
         │
         ▼
-      UPDATE outbox.events
+      UPDATE event_outboxer.events
       SET status='PENDING', attempts=attempts+1, claimed_by=NULL, version=version+1
       WHERE id=? AND claimed_by=? AND version=? AND status='PROCESSING'
         │
@@ -316,7 +316,7 @@ For each inflight e where (now - e.claimedAt) > handlerMaxRuntime(e.eventType):
 Three active statuses: **PENDING / PROCESSING / DISABLED**.
 
 Successfully processed events are **DELETEd**. The optional archive is a
-separate `outbox.event_archive` table (see
+separate `event_outboxer.event_archive` table (see
 [ADR-0008](adr/0008-three-statuses-plus-optional-archive.md)).
 
 ---
@@ -325,16 +325,16 @@ separate `outbox.event_archive` table (see
 
 ```
 Startup:
-  INSERT INTO outbox.workers (worker_id, host, pid, started_at,
+  INSERT INTO event_outboxer.workers (worker_id, host, pid, started_at,
                                last_heartbeat, graceful_stop=FALSE)
 
 Running:
   every heartbeatInterval (default 30s):
-    UPDATE outbox.workers SET last_heartbeat = now() WHERE worker_id = ?
+    UPDATE event_outboxer.workers SET last_heartbeat = now() WHERE worker_id = ?
     ← O(1) write, independent of the number of in-flight events
 
 Graceful shutdown:
-  1. UPDATE outbox.workers SET graceful_stop = TRUE
+  1. UPDATE event_outboxer.workers SET graceful_stop = TRUE
      ← signal to orphan detection: "don't touch me"
 
   2. Poller.stop() — stop claiming
@@ -344,7 +344,7 @@ Graceful shutdown:
   4. MaintenanceExecutor stays alive until the end — heartbeat keeps running
      while any events are still in flight
 
-  5. DELETE FROM outbox.workers WHERE worker_id = ?
+  5. DELETE FROM event_outboxer.workers WHERE worker_id = ?
 
 Crash:
   DELETE does not execute → the row remains with a stale last_heartbeat
@@ -390,12 +390,12 @@ Implementation in `LockAndFetchStrategy` (CTE + UPDATE in a single SQL):
 
 ```sql
 WITH picked AS (
-    SELECT id FROM outbox.events
+    SELECT id FROM event_outboxer.events
     WHERE event_type = ? AND status = 'PENDING' AND run_at <= now()
     ORDER BY priority DESC, run_at
     LIMIT ? FOR UPDATE SKIP LOCKED
 )
-UPDATE outbox.events e
+UPDATE event_outboxer.events e
 SET status='PROCESSING', claimed_by=?, claimed_at=now(), version=version+1
 FROM picked WHERE e.id = picked.id
 RETURNING e.*;
@@ -407,7 +407,7 @@ RETURNING e.*;
 
 ### Scenario 1: worker killed with SIGKILL
 
-1. `last_heartbeat` in `outbox.workers` becomes stale.
+1. `last_heartbeat` in `event_outboxer.workers` becomes stale.
 2. After `deadThreshold` (default 90s), `OrphanRecoveryTask` on another
    instance marks the worker as dead.
 3. The worker's events are returned to PENDING with `attempts++`.
@@ -420,7 +420,7 @@ RETURNING e.*;
 3. `EventStore.forceReclaim()` returns the event to PENDING.
 4. The event is claimed again (possibly by another thread on the same JVM).
 5. The hung thread remains in the JVM (physical leak — unavoidable in Java
-   without a safe-kill API). Metric: `outbox.workers.leaked`.
+   without a safe-kill API). Metric: `event_outboxer.workers.leaked`.
 
 ### Scenario 3: handler threw a Throwable (including Error)
 
@@ -496,13 +496,13 @@ The internal order of the stop sequence — executed by
      heartbeat / orphan-recovery / watchdog tasks.
 
 5. WorkerRegistry.deregister(workerId)
-   → DELETE FROM outbox.workers WHERE worker_id = ?
+   → DELETE FROM event_outboxer.workers WHERE worker_id = ?
 
 6. Fire OutboxListener.onWorkerDeregistered.
 ```
 
 The default `shutdown-timeout` is 30 seconds, tuned via
-`outbox.maintenance.shutdown-timeout`. If your handlers may legitimately
+`event-outboxer.maintenance.shutdown-timeout`. If your handlers may legitimately
 run longer than 30 s, raise it (the alternative — `shutdownNow()` plus
 a fresh orphan-recovery cycle on restart — is correct but wastes work).
 
@@ -516,7 +516,7 @@ a fresh orphan-recovery cycle on restart — is correct but wastes work).
 
 ### 5. @ConfigurationProperties
 
-All configuration lives under `outbox.*` in application.yml — see
+All configuration lives under `event-outboxer.*` in application.yml — see
 [docs/CONFIGURATION.md](CONFIGURATION.md). Invariant validation
 (`deadThreshold >= 3 × heartbeatInterval`, etc.) runs in
 `OutboxPropertiesValidator` at startup.
@@ -552,22 +552,22 @@ other) has been a real source of bugs.
 | Transaction participation | `TransactionContext` SPI — caller wires the implementation | `SpringTransactionContext` + `TransactionAwareDataSourceProxy` auto-wired |
 | Poller | raw `Thread` per event type (`Poller.java`) | inherited from core |
 | Maintenance (heartbeat / orphan / watchdog / crash-check) | `ScheduledExecutorService` owned by `MaintenanceScheduler` | inherited from core |
-| Handler executor shape | `Function<EventTypeConfig, ExecutorService>` supplied to `OutboxEngineBuilder` | `HandlerExecutorFactory.platform()` / `.virtual()` picked by `outbox.handler-executor.type`; Spring `ThreadPoolTaskExecutor` exposed as `ExecutorService` via `SpringTaskExecutorAdapter` |
+| Handler executor shape | `Function<EventTypeConfig, ExecutorService>` supplied to `OutboxEngineBuilder` | `HandlerExecutorFactory.platform()` / `.virtual()` picked by `event-outboxer.handler-executor.type`; Spring `ThreadPoolTaskExecutor` exposed as `ExecutorService` via `SpringTaskExecutorAdapter` |
 | Context propagation (MDC / Observation / Security) | none built-in — caller decorates their own `Executor` | `ContextPropagatingTaskDecorator` default; user can swap via `@Bean TaskDecorator` |
 | Failure-chain default | `FailureHandlers.defaults()` = `Log → MaxRetries → ExponentialBackoff` | identical — starter does not re-wrap |
 | Retry / disable / delete listener emission | `HandlerDispatcher` fires listener callbacks after storage commit | identical — starter adds no second emission path (see [ADR-0007](adr/0007-failure-handler-chain-of-responsibility.md) §Q25) |
 | `LoggingOutboxListener` | auto-added by `OutboxEngineBuilder` (plain-Java default) | explicitly opted out (`includeLoggingListener(false)`) to avoid double-logging with the engine's own SLF4J calls |
 | `MicrometerOutboxListener` | separate module; caller registers manually | auto-registered by `MicrometerAutoConfiguration` when Micrometer is on the classpath |
 | Backlog gauges (pending / processing / disabled / oldest-age) | none built-in; caller wires own `Gauge.builder(...)` off `EventStore.metricsSnapshot()` | `MicrometerAutoConfiguration.outboxBacklogGauges` registers per-type gauges for every `EventHandler` bean + a global `oldest_claimed_age_seconds`; reads go through the `MetricsSnapshotCache` SPI |
-| Health surface | `OutboxEngine.state()` + `OutboxEngine.isLifecycleActive()` + `OutboxListener.onEngineCrashed` | `OutboxHealthIndicator` + `outbox.health.probe-groups` `EnvironmentPostProcessor` that folds `outbox` into Actuator liveness / readiness groups |
+| Health surface | `OutboxEngine.state()` + `OutboxEngine.isLifecycleActive()` + `OutboxListener.onEngineCrashed` | `OutboxHealthIndicator` + `event-outboxer.health.probe-groups` `EnvironmentPostProcessor` that folds `outbox` into Actuator liveness / readiness groups |
 | Crash detection | `EngineHealthCheckTask` in the maintenance scheduler; flips `state()` → `STOPPED`, fires `onEngineCrashed` | inherited — starter only surfaces the result via the health indicator |
-| Flyway migrations | classpath `db/migration/outbox/{core,archive}` with `${eventOutboxerSchema}` placeholder | `FlywayConfigurationCustomizer` auto-feeds `outbox.storage.schema` into the placeholder |
+| Flyway migrations | classpath `db/migration/outbox/{core,archive}` with `${eventOutboxerSchema}` placeholder | `FlywayConfigurationCustomizer` auto-feeds `event-outboxer.storage.schema` into the placeholder |
 | Liquibase changelog | classpath `db/changelog/outbox/{core,archive}/changelog.xml` with the same parameter name | `OutboxLiquibaseParameterEnvironmentPostProcessor` auto-feeds `spring.liquibase.parameters.eventOutboxerSchema` |
 | Serializer | `EventSerializer` SPI — caller wires | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last) |
 | Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
 | Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
 | Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("outbox")` → `OutboxPropertiesValidator` → builder |
-| Metrics-snapshot cache | `MetricsSnapshotCache` SPI with `noop()` / `inMemory(Clock, ttl)` static factories; caller passes the one they want into `PostgresEventStore` | `CacheAutoConfiguration` picks `memory` (default) / `noop` per `outbox.cache.type`; `RedisCacheAutoConfiguration` selects the Lettuce-backed variant from `event-outboxer-cache-redis` when `type=redis` and a `StatefulRedisConnection` bean exists; user `@Bean MetricsSnapshotCache` overrides everything |
+| Metrics-snapshot cache | `MetricsSnapshotCache` SPI with `noop()` / `inMemory(Clock, ttl)` static factories; caller passes the one they want into `PostgresEventStore` | `CacheAutoConfiguration` picks `memory` (default) / `noop` per `event-outboxer.cache.type`; `RedisCacheAutoConfiguration` selects the Lettuce-backed variant from `event-outboxer-cache-redis` when `type=redis` and a `StatefulRedisConnection` bean exists; user `@Bean MetricsSnapshotCache` overrides everything |
 
 **Invariant.** If you are tempted to ship something only in the starter
 (auto-instantiation, YAML binding, `ObjectProvider` resolution), it must

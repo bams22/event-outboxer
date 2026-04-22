@@ -33,8 +33,8 @@ policies, and the ease of auditing.
 **Option C was chosen**.
 
 Active statuses: **PENDING / PROCESSING / DISABLED**. Successfully processed
-events are deleted from `outbox.events`. An optional `outbox.event_archive`
-table is activated via `outbox.postgres.archive.enabled=true`.
+events are deleted from `event_outboxer.events`. An optional `event_outboxer.event_archive`
+table is activated via `event-outboxer.postgres.archive.enabled=true`.
 
 ### Status transitions
 
@@ -60,9 +60,9 @@ runs:
 
 ```sql
 BEGIN;
-INSERT INTO outbox.event_archive (... , archived_at, archived_by)
-SELECT ..., now(), :workerId FROM outbox.events WHERE id = :eventId;
-DELETE FROM outbox.events WHERE id = :eventId AND version = :claimedVersion;
+INSERT INTO event_outboxer.event_archive (... , archived_at, archived_by)
+SELECT ..., now(), :workerId FROM event_outboxer.events WHERE id = :eventId;
+DELETE FROM event_outboxer.events WHERE id = :eventId AND version = :claimedVersion;
 COMMIT;
 ```
 
@@ -72,7 +72,7 @@ and allows selectively not archiving (e.g. Skip events) without DDL changes.
 ### Archive schema
 
 ```sql
-CREATE TABLE outbox.event_archive (
+CREATE TABLE event_outboxer.event_archive (
     id               UUID         PRIMARY KEY,
     event_type       VARCHAR(128) NOT NULL,
     payload          JSONB        NOT NULL,
@@ -87,9 +87,9 @@ CREATE TABLE outbox.event_archive (
     archived_by      VARCHAR(64)  NOT NULL
 );
 
-CREATE INDEX idx_archive_archived_at ON outbox.event_archive (archived_at);
+CREATE INDEX idx_archive_archived_at ON event_outboxer.event_archive (archived_at);
 CREATE INDEX idx_archive_event_type_created_at
-    ON outbox.event_archive (event_type, created_at);
+    ON event_outboxer.event_archive (event_type, created_at);
 ```
 
 Absent fields: `status`, `claimed_by`, `version` — they have no meaning in
@@ -131,9 +131,9 @@ archive (for admin investigation). The application chooses explicitly.
 
 - A successful event disappears from the DB (or moves to the archive if
   enabled).
-- For audit: set `outbox.archive.enabled=true` plus a retention policy in
+- For audit: set `event-outboxer.archive.enabled=true` plus a retention policy in
   code.
-- DISABLED events remain in `outbox.events` — visible, investigable,
+- DISABLED events remain in `event_outboxer.events` — visible, investigable,
   manually revivable via the admin API.
 
 ### For maintainers

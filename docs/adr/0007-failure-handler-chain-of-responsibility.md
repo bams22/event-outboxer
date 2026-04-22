@@ -105,7 +105,7 @@ FailureHandlers.defaults() =
 
 For 80% of cases the chain is built by the starter from properties:
 ```yaml
-outbox.handlers.defaults.failure:
+event-outboxer.handlers.defaults.failure:
   max-attempts: 10
   exhausted-action: DISABLE
   strategy: exponential
@@ -116,7 +116,7 @@ outbox.handlers.defaults.failure:
   log-level: WARN
 ```
 
-Per-type thin merge: `outbox.handlers.types.SEND_EMAIL.failure.max-attempts:
+Per-type thin merge: `event-outboxer.handlers.types.SEND_EMAIL.failure.max-attempts:
 5` overrides ONLY `max-attempts`; the remaining fields inherit from
 `defaults`.
 

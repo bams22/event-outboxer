@@ -30,7 +30,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 @ConditionalOnClass(InMemoryEventStore.class)
 @ConditionalOnProperty(
-    prefix = "outbox.storage",
+    prefix = "event-outboxer.storage",
     name = "type",
     havingValue = "inmemory",
     matchIfMissing = true)

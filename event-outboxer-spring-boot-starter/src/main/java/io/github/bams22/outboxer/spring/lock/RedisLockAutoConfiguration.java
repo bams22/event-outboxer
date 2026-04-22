@@ -28,7 +28,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 @ConditionalOnClass(RedisEntityLocker.class)
 @ConditionalOnBean(StatefulRedisConnection.class)
-@ConditionalOnProperty(prefix = "outbox.lock", name = "type", havingValue = "redis")
+@ConditionalOnProperty(prefix = "event-outboxer.lock", name = "type", havingValue = "redis")
 public class RedisLockAutoConfiguration {
 
   @Bean
