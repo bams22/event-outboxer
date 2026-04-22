@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  event-outboxer core schema, Liquibase variant. Mirrors the Flyway migration at
+  db/migration/outbox/core/V001__outbox_core.sql by delegating to the same SQL file
+  via <sqlFile>. Liquibase and Flyway share the ${eventOutboxerSchema} placeholder
+  syntax, so one SQL file works for both.
+
+  Usage:
+
+    spring:
+      liquibase:
+        change-log: classpath:db/changelog/outbox/core/changelog.xml
+
+  The Spring Boot starter auto-wires the parameter eventOutboxerSchema from
+  outbox.storage.schema (default: event_outboxer). Plain-Java Liquibase users
+  must set it themselves via -Dliquibase.parameter.eventOutboxerSchema=...,
+  spring.liquibase.parameters.eventOutboxerSchema=..., or by calling
+  Liquibase.setChangeLogParameter(...) programmatically.
+
+  See docs/STORAGE.md §Configurable schema name.
+-->
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!-- Fallback default so the file is self-contained for users who do not
+         wire the parameter explicitly (library default matches). The starter
+         still overrides this via Liquibase parameters when present. -->
+    <property name="eventOutboxerSchema" value="event_outboxer" dbms="postgresql"/>
+
+    <changeSet id="outbox-core-001" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="db/migration/outbox/core/V001__outbox_core.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
+</databaseChangeLog>
