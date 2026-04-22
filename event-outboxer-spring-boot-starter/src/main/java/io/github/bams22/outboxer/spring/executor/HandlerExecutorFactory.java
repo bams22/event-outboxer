@@ -9,64 +9,85 @@
  */
 package io.github.bams22.outboxer.spring.executor;
 
-import io.github.bams22.outboxer.core.concurrent.NamedThreadFactory;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import org.springframework.core.task.TaskDecorator;
+import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * Produces per-event-type handler executors. Two flavours, selectable via {@code
- * outbox.handler-executor.type}:
+ * Produces per-event-type handler executors for the Spring Boot starter. Two flavours,
+ * selectable via {@code outbox.handler-executor.type}:
  *
  * <ul>
- *   <li>{@code platform} — fixed-size {@link ThreadPoolExecutor} with a bounded queue (see
- *       {@link EventTypeConfig#handlerQueueCapacity()}). Rejections surface as {@code
- *       onDispatchRejected} and the event is eligible again after a short retry delay.
+ *   <li>{@code platform} — Spring {@link ThreadPoolTaskExecutor} configured with a
+ *       {@link ContextPropagatingTaskDecorator} so MDC, Micrometer Observation and security
+ *       context captured on the submitting (poller) thread carry over to the handler thread.
+ *       Exposed to the core engine as an {@code ExecutorService} via
+ *       {@link SpringTaskExecutorAdapter} (the adapter is the key — submitting directly to
+ *       the underlying pool would bypass decoration). Matches ADR-0009.
  *   <li>{@code virtual} — {@link Executors#newThreadPerTaskExecutor(java.util.concurrent.ThreadFactory)}
- *       backed by virtual threads. Safe on JDK 25 thanks to JEP 491 (no pinning on
- *       {@code synchronized}).
+ *       backed by virtual threads, wrapped in {@link ContextPropagatingExecutorService} to
+ *       apply the same {@link ContextPropagatingTaskDecorator}. Safe on JDK 25 thanks to
+ *       JEP 491 (no pinning on {@code synchronized}).
  * </ul>
- *
- * <p>Spring Boot's {@code ContextPropagatingTaskDecorator} for MDC / Micrometer Observation
- * propagation is deferred to a future refinement — platform handlers still carry the request
- * context because the engine reads {@code claimed.traceContext()} and restores it manually.
  */
 public final class HandlerExecutorFactory {
 
   private HandlerExecutorFactory() {}
 
-  /** Fixed-thread-pool factory matching the core builder default. */
+  /**
+   * Fixed-size {@link ThreadPoolTaskExecutor} per event type.
+   *
+   * <p>Configuration:
+   *
+   * <ul>
+   *   <li>{@code core = max = handlerPoolSize} — fixed pool; no on-demand scaling.
+   *   <li>{@code queueCapacity = handlerQueueCapacity} — bounded LinkedBlockingQueue when
+   *       positive; SynchronousQueue when 0 (tasks fail fast when the pool is saturated and
+   *       surface as {@code onDispatchRejected}).
+   *   <li>{@code keepAliveSeconds = 0} — core threads stay alive forever (no pool shrink).
+   *   <li>Daemon threads named {@code outbox-handler-<N>}.
+   *   <li>Rejection policy: {@link ThreadPoolExecutor.AbortPolicy}.
+   *   <li>{@link ContextPropagatingTaskDecorator} for MDC / Observation / security context
+   *       propagation from the poller thread.
+   * </ul>
+   */
   public static Function<EventTypeConfig, ExecutorService> platform() {
-    return cfg ->
-        new ThreadPoolExecutor(
-            cfg.handlerPoolSize(),
-            cfg.handlerPoolSize(),
-            0L,
-            TimeUnit.MILLISECONDS,
-            queueOf(cfg),
-            new NamedThreadFactory("outbox-handler", true),
-            new ThreadPoolExecutor.AbortPolicy());
+    return cfg -> {
+      ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+      executor.setCorePoolSize(cfg.handlerPoolSize());
+      executor.setMaxPoolSize(cfg.handlerPoolSize());
+      executor.setQueueCapacity(cfg.handlerQueueCapacity());
+      executor.setKeepAliveSeconds(0);
+      executor.setAllowCoreThreadTimeOut(false);
+      executor.setThreadNamePrefix("outbox-handler-");
+      executor.setDaemon(true);
+      executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+      executor.setTaskDecorator(contextPropagatingDecorator());
+      executor.initialize();
+      return new SpringTaskExecutorAdapter(executor);
+    };
   }
 
   /** Virtual-thread factory; JEP 491 makes synchronized-heavy drivers safe on JDK 25. */
   public static Function<EventTypeConfig, ExecutorService> virtual() {
+    TaskDecorator decorator = contextPropagatingDecorator();
     return cfg ->
-        Executors.newThreadPerTaskExecutor(
-            Thread.ofVirtual().name("outbox-vt-", 0L).factory());
+        new ContextPropagatingExecutorService(
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("outbox-vt-", 0L).factory()),
+            decorator);
   }
 
-  private static BlockingQueue<Runnable> queueOf(EventTypeConfig cfg) {
-    int cap = cfg.handlerQueueCapacity();
-    if (cap == 0) {
-      return new SynchronousQueue<>();
-    }
-    return cap > 0 ? new ArrayBlockingQueue<>(cap) : new LinkedBlockingQueue<>();
+  /**
+   * Factory for {@link ContextPropagatingTaskDecorator}. Extracted so tests can swap it out; in
+   * production we always want Spring Framework's default, which reads all registered
+   * {@code ThreadLocalAccessor}s via {@code ContextSnapshotFactory}.
+   */
+  private static TaskDecorator contextPropagatingDecorator() {
+    return new ContextPropagatingTaskDecorator();
   }
 }

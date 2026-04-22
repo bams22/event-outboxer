@@ -118,6 +118,15 @@
             <artifactId>micrometer-core</artifactId>
             <optional>true</optional>
         </dependency>
+        <!--
+            Runtime dep of ContextPropagatingTaskDecorator (used by HandlerExecutorFactory for
+            MDC / Observation / security-context propagation). Spring pulls this transitively
+            via micrometer-observation as optional, so the starter declares it explicitly.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.lettuce</groupId>
             <artifactId>lettuce-core</artifactId>
