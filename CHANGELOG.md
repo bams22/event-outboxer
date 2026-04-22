@@ -4,7 +4,13 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — 2026-05-01
+
+## [0.2.0] — 2026-04-22
+
+### Added
+- CI release workflow (`release.yml`) that triggers on new tags, builds and tests the project, and deploys to Sonatype Central Publishing.
+
+## [0.1.0] — 2026-04-22
 
 Initial release. Embedded transactional outbox for Java 17+ / Spring Boot 3.5.6 /
 PostgreSQL 15 / Redis 7 (KeyDB 6). Baseline is Java 17; JDK 21+ at runtime

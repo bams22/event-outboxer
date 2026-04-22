@@ -27,9 +27,16 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: GPG_PASSPHRASE
 
+      # Tag is expected to be of the form vX.Y.Z — strip the leading "v" to
+      # derive the Maven version passed as -Drevision=. flatten-maven-plugin
+      # resolves it into every module's .flattened-pom.xml before deploy.
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to Sonatype Central
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_TOKEN: ${{ secrets.CENTRAL_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: ./mvnw -B -ntp -Prelease deploy -DskipTests
+        run: ./mvnw -B -ntp -Prelease deploy -Drevision=${{ steps.ver.outputs.version }} -DskipTests

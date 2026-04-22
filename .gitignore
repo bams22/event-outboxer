@@ -26,3 +26,8 @@ replay_pid*
 /.idea
 target/
 *.iml
+
+# flatten-maven-plugin: generated per-module pom with ${revision} resolved.
+# Created during `mvn process-resources` / `install` / `deploy`, cleaned by
+# `mvn clean`. Never committed.
+.flattened-pom.xml
