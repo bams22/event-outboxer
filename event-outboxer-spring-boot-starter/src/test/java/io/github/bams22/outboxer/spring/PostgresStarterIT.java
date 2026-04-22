@@ -131,7 +131,14 @@ class PostgresStarterIT {
   }
 
   @SpringBootConfiguration
-  @EnableAutoConfiguration
+  // The starter pulls liquibase-core as an optional compile dep so its own
+  // OutboxLiquibaseParameterEnvironmentPostProcessor + classpath changelog can be consumed
+  // by downstream users. That optional dep leaks onto the test classpath, activating Spring
+  // Boot's LiquibaseAutoConfiguration which then looks for the stock
+  // db/changelog/db.changelog-master.yaml and fails when it's absent. Exclude it — this test
+  // drives migrations through Flyway (see spring.flyway.locations above).
+  @EnableAutoConfiguration(
+      exclude = org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.class)
   static class TestApp {
 
     @Bean
