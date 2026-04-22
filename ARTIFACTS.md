@@ -1,0 +1,97 @@
+# Artifacts
+
+All artifacts publish to Maven Central under `groupId = io.github.bams22`.
+
+## Pick-list
+
+The table below is the quickest way to decide what to add to your `pom.xml`.
+
+| Goal | Modules to add | Transitive runtime cost |
+|---|---|---|
+| Spring Boot + PostgreSQL (typical production) | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-postgres` <br> `event-outboxer-metrics-micrometer` (optional) | Spring Boot 3.5, PostgreSQL JDBC, HikariCP (via your `spring-boot-starter-jdbc`), Micrometer. |
+| Spring Boot + PG with Redis-coordinated locks | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-redis` | Additional: Lettuce 6. |
+| Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` <br> `event-outboxer-lock-postgres` (or redis / noop) | SLF4J, Jackson, adapter dependencies. |
+| Unit / integration tests for your handlers | `event-outboxer-testkit` (test scope) | Transitively brings in-memory adapter + Jackson. |
+
+Always import the BOM first and let it manage versions:
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.bams22</groupId>
+            <artifactId>event-outboxer-bom</artifactId>
+            <version>${outboxer.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+## Module matrix
+
+| Module | Description | Depends on (compile) | When to use |
+|---|---|---|---|
+| `event-outboxer-bom` | Versions-only BOM. | — | Always — controls `event-outboxer-*` versions in one place. |
+| `event-outboxer-api` | Publisher, handler, listener, domain, exceptions. | `slf4j-api`, `jspecify`. | Transitive; you rarely add this directly. |
+| `event-outboxer-spi` | Ports (`EventStore`, `WorkerRegistry`, `EntityLocker`, `EventSerializer`, `Clock`, `ConnectionSupplier`). | `event-outboxer-api`. | Transitive. Consumers who build custom adapters depend on it directly. |
+| `event-outboxer-core` | Engine: poller, dispatcher, in-flight registry, maintenance tasks, default publisher. **Spring-free.** | `event-outboxer-api`, `event-outboxer-spi`. | Transitive when using the starter. Plain-Java users add it directly. |
+| `event-outboxer-storage-inmemory` | Thread-safe in-process `EventStore` / `WorkerRegistry` / `EntityLocker`. | `event-outboxer-api`, `event-outboxer-spi`. | Tests, dev setups, experimentation. Do NOT use in production. |
+| `event-outboxer-storage-postgres` | PG 15+ backend with CTE + `SKIP LOCKED` claim, optional archive. Ships Flyway migrations. | `event-outboxer-api`, `event-outboxer-spi`, `postgresql` JDBC, `flyway-core` (optional). | Production default. |
+| `event-outboxer-serializer-jackson` | `JacksonEventSerializer` + `JacksonObjectMapperFactory.defaults()`. | Jackson databind + JavaTime + Jdk8 + ParameterNames. | Transitive via the starter; add directly in plain-Java setups. |
+| `event-outboxer-lock-postgres` | `pg_advisory_lock`-backed `EntityLocker`. | PostgreSQL JDBC. | Single-region deployments sharing the outbox DB. |
+| `event-outboxer-lock-redis` | Redis/KeyDB `EntityLocker` with fencing-token unlock. | Lettuce 6. | Multi-region or cross-DB deployments. |
+| `event-outboxer-metrics-micrometer` | `OutboxListener` publishing to a Micrometer `MeterRegistry`. | `micrometer-core`. | Any Boot app with Micrometer/Observation; the starter auto-wires it if present. |
+| `event-outboxer-testkit` | `SettableClock`, `ManualEngine`, `OutboxTestContext`, `RecordingOutboxListener`, fluent assertions, JUnit 5 extension. | `event-outboxer-core`, in-memory adapter, Jackson serializer. | Test-scope dependency for handler tests. |
+| `event-outboxer-spring-boot-starter` | Auto-configuration, property binding, `SmartLifecycle`, `TransactionAwareDataSourceProxy` wiring, actuator health. | Spring Boot auto-configure, jdbc, validation, Actuator (optional), every adapter (optional). | Any Spring Boot 3.5+ app. |
+
+## Compatibility
+
+- **Java**: requires JDK **25** (LTS). Virtual threads are a fully supported
+  opt-in; JEP 491 (available since JDK 24) eliminates pinning on
+  `synchronized` blocks so JDBC drivers run safely on virtual threads.
+- **Maven**: requires **3.9+**. The project ships a Maven Wrapper pinned
+  to 3.9.12 (`./mvnw`).
+- **Spring Boot**: built against **3.5.6** via the
+  `spring-boot-dependencies` BOM. Works with newer 3.x minors if
+  Micrometer / Jackson / Spring Framework stay compatible; drop the BOM
+  import in your own pom to override.
+- **PostgreSQL**: **15+** for the storage adapter (partial indexes,
+  JSONB, CTE-in-UPDATE). Earlier versions will not apply `V001`.
+- **Redis / KeyDB**: Redis **7+** or KeyDB **6+** for the Redis locker.
+- **Lettuce**: any 6.x via Spring Boot's managed version.
+
+## Artifacts per release
+
+Each module publishes the standard three-jar set plus signatures:
+
+| File | Purpose |
+|---|---|
+| `${artifactId}-${version}.jar` | Main compiled classes. |
+| `${artifactId}-${version}-sources.jar` | Source attachment for IDE drill-down. |
+| `${artifactId}-${version}-javadoc.jar` | Generated Javadoc. |
+| `*.pom` | Dependency metadata. |
+| `*.asc` | Detached GPG signature per artifact and pom. |
+| `*.md5` / `*.sha1` | Checksums (generated by the deploy plugin). |
+
+The `event-outboxer-spi` jar is also published with the `tests` classifier
+so adapter modules can extend the abstract contract tests.
+
+## Coordinates cheat-sheet
+
+```
+io.github.bams22:event-outboxer-bom:0.1.0                  (pom)
+io.github.bams22:event-outboxer-api:0.1.0
+io.github.bams22:event-outboxer-spi:0.1.0
+io.github.bams22:event-outboxer-spi:0.1.0:tests            (classifier)
+io.github.bams22:event-outboxer-core:0.1.0
+io.github.bams22:event-outboxer-storage-inmemory:0.1.0
+io.github.bams22:event-outboxer-storage-postgres:0.1.0
+io.github.bams22:event-outboxer-serializer-jackson:0.1.0
+io.github.bams22:event-outboxer-lock-postgres:0.1.0
+io.github.bams22:event-outboxer-lock-redis:0.1.0
+io.github.bams22:event-outboxer-metrics-micrometer:0.1.0
+io.github.bams22:event-outboxer-testkit:0.1.0
+io.github.bams22:event-outboxer-spring-boot-starter:0.1.0
+```

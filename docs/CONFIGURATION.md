@@ -56,13 +56,11 @@ outbox:
 
   handlers:
     defaults:
-      core-pool-size: 1              # minimum number of threads in the pool
-      max-pool-size: 3               # maximum
-      queue-capacity: 10             # executor.queue buffer size
-      keep-alive: 60s                # lifetime of idle threads above core
+      handler-pool-size: 3           # fixed per-type thread pool (core == max, no scaling)
+      handler-queue-capacity: 100    # bounded LinkedBlockingQueue; SynchronousQueue when 0
       polling-interval: 10s          # base poll interval
       max-idle-polling-interval: 30s # upper bound during adaptive backoff
-      batch-size: null               # how many events to fetch per claim; null = max-pool-size
+      claim-batch-size: 10           # how many events to fetch per poll
       handler-max-runtime: 30m       # watchdog threshold
       lock-ttl: 5m                   # lock TTL when entityLocker.tryLock() is called
       lock-busy-retry-delay: 1s      # delay when lock is busy
@@ -79,13 +77,12 @@ outbox:
 
     types:
       SEND_EMAIL:
-        max-pool-size: 20
+        handler-pool-size: 20
         polling-interval: 2s
         failure:
           max-attempts: 5            # remaining failure fields are inherited
       UPDATE_CACHE:
-        core-pool-size: 5
-        max-pool-size: 30
+        handler-pool-size: 30
         polling-interval: 500ms
         handler-max-runtime: 1m
 
@@ -182,13 +179,16 @@ transaction:
 Handler settings. Defaults apply to everyone; per-type overrides adjust
 individually (see [thin merge](#per-type-override-thin-merge)).
 
-- `core-pool-size`, `max-pool-size`, `queue-capacity`, `keep-alive` —
-  `ThreadPoolTaskExecutor` parameters for per-type handlers.
+- `handler-pool-size`, `handler-queue-capacity` — fixed-size
+  `ThreadPoolTaskExecutor` per event type. The pool does not scale
+  (`core == max`, `keepAliveSeconds = 0`, no thread turnover); size
+  `handler-pool-size` for expected handler concurrency. A zero
+  `handler-queue-capacity` makes dispatch fail fast (surfaces as
+  `onDispatchRejected`).
 - `polling-interval` — base interval between polls of this type.
 - `max-idle-polling-interval` — upper bound for adaptive backoff (after a
   sequence of empty polls).
-- `batch-size` — how many events to claim per poll; `null` =
-  `max-pool-size`.
+- `claim-batch-size` — how many events to claim per poll.
 - `handler-max-runtime` — watchdog threshold. A longer-running handler is
   force-reclaimed (thread leak, see ADR-0005).
 - `lock-ttl` — lock TTL passed to `EntityLocker.tryLock()`.
@@ -341,12 +341,12 @@ At application startup `OutboxPropertiesValidator` checks:
 |---|---|
 | `dead-threshold >= 3 × heartbeat-interval` | Protect against GC-stall false positives |
 | `handler-max-runtime > 0` | Sanity |
-| `batch-size <= max-pool-size + queue-capacity` (when set) | Claimed events must fit into the executor |
+| `handler-pool-size > 0`, `handler-queue-capacity >= 0` | Pool is fixed-size and bounded |
+| `claim-batch-size > 0` | Sanity |
 | `failure.strategy=NONE ⇒ max-attempts=1` | Consistency |
 | `failure.strategy=EXPONENTIAL ⇒ multiplier > 1.0` | Exp backoff needs growth |
 | `failure.jitter ∈ [0.0, 1.0]` | Sanity |
 | `polling-interval <= max-idle-polling-interval` | Adaptive growth cannot shrink |
-| `core-pool-size <= max-pool-size` | Thread pool invariant |
 
 On violation — `InvariantViolationException`; the pod fails to start.
 

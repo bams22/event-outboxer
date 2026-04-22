@@ -166,7 +166,7 @@ OrphanRecoveryTask in the maintenance executor: `findDead()` +
 **OutboxEventPublisher** — public API for publishing events. The default
 implementation in the core uses EventSerializer + EventStore.save().
 
-**OutboxListener** — event bus for observability (21 methods).
+**OutboxListener** — event bus for observability (22 methods).
 Implementations: `LoggingOutboxListener` (default),
 `MicrometerOutboxListener` (separate module). See
 [ADR-0013](adr/0013-outbox-listener-for-observability.md).

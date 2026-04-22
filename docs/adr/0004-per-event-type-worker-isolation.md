@@ -62,7 +62,7 @@ Shared across all types:
   type B from discovering new B events. With a shared poller, a single
   `SELECT FOR UPDATE SKIP LOCKED` could return only A events until the limit
   is exhausted.
-- **Per-type tuning**: `core-pool-size`, `max-pool-size`,
+- **Per-type tuning**: `handler-pool-size`, `handler-queue-capacity`,
   `polling-interval` are configured per type (with inheritance from
   `defaults`).
 - **Observability**: metrics such as `outbox.executor.active{event_type=X}`
@@ -77,8 +77,8 @@ Shared across all types:
 - Per-type configuration through `outbox.handlers.types.<eventType>.*` in
   application.yml.
 - With many handlers (30+), the total thread count grows. Conservative
-  defaults (`core=1, max=3, queue=10`) are recommended; only busy types
-  should be scaled up.
+  defaults (`handler-pool-size=3, handler-queue-capacity=100`) are
+  recommended; only busy types should be scaled up.
 
 ### For maintainers
 
@@ -98,7 +98,8 @@ Shared across all types:
 ### Negative consequences
 
 - Many threads with a large N of handlers (mitigated by conservative
-  defaults + dynamic pool sizing with `keep-alive`).
+  defaults; the handler pool is fixed-size per type, so tuning means
+  choosing `handler-pool-size` per expected concurrency).
 - N pollers × `polling-interval` → N queries/sec to the DB at idle. Mitigated
   by adaptive backoff after N consecutive empty polls.
 - Slightly more memory for registries and stopped states.
