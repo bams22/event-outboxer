@@ -10,8 +10,8 @@
 
 /**
  * Built-in {@link io.github.bams22.outboxer.api.handle.FailureHandler} implementations —
- * three leaves (no-retry / fixed-delay / exponential-backoff) and three decorators
- * (log / notify-listener / max-retries) — plus a fluent {@link
+ * three leaves (no-retry / fixed-delay / exponential-backoff) and two decorators
+ * (log / max-retries) — plus a fluent {@link
  * io.github.bams22.outboxer.api.handle.builtin.FailureHandlerBuilder} and the {@link
  * io.github.bams22.outboxer.api.handle.builtin.FailureHandlers#defaults()} factory.
  *

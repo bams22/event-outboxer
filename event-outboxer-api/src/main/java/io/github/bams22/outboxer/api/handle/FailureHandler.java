@@ -24,9 +24,13 @@ package io.github.bams22.outboxer.api.handle;
  *   <li>The per-type failure handler configured in {@code EventTypeConfig} (Spring starter binds
  *       this from {@code outbox.handlers.types.<type>.failure.*} properties).
  *   <li>{@code FailureHandlers.defaults()} — the library-wide default chain
- *       ({@code Log → NotifyListener → MaxRetries(10, DISABLE) → ExponentialBackoff(5s, 2x, cap
- *       1h, jitter 20%)}).
+ *       ({@code Log → MaxRetries(10, DISABLE) → ExponentialBackoff(5s, 2x, cap 1h, jitter 20%)}).
  * </ol>
+ *
+ * <p>Listener callbacks for retry / disable / delete decisions ({@code onEventRetryScheduled},
+ * {@code onEventDisabled}, {@code onEventDeleted}) are emitted by the engine dispatcher after the
+ * decision is persisted to storage — {@code FailureHandler} implementations do not need to fire
+ * them, and the built-in chain does not contain a listener-forwarding decorator.
  *
  * <p>Implementations MUST be thread-safe: the same handler instance can be invoked from multiple
  * worker threads concurrently.

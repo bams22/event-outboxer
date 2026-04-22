@@ -152,7 +152,8 @@ it logs key events at INFO/WARN. Users can disable it via
 ## Related decisions
 
 - [ADR-0007](0007-failure-handler-chain-of-responsibility.md) —
-  `NotifyListenerFailureHandler` emits listener events during
-  retry/disable.
+  `HandlerDispatcher` emits the retry / disable / delete listener
+  callbacks after storage commit (superseding the original
+  chain-decorator design).
 - [ADR-0010](0010-storage-agnostic-core-via-spi.md) — general principle:
   "core without infrastructure dependencies".

@@ -74,24 +74,25 @@ public sealed interface FailureDecision {
 ### Built-in handlers
 
 - `LogFailureHandler<T>` — decorator: logs and delegates.
-- `NotifyListenerFailureHandler<T>` — decorator: emits
-  `OutboxListener.onEventRetryScheduled/Disabled`, delegates.
 - `MaxRetriesFailureHandler<T>` — decorator: on exhaustion →
   DISABLE/DELETE; otherwise delegates.
 - `ExponentialBackoffFailureHandler<T>` — leaf: exp backoff + jitter + cap.
 - `FixedDelayFailureHandler<T>` — leaf: fixed delay.
 - `NoRetryFailureHandler<T>` — leaf: immediately DISABLE.
 
+Listener callbacks (`onEventRetryScheduled`, `onEventDisabled`,
+`onEventDeleted`) are emitted by the engine dispatcher directly after
+the decision is persisted — not by a decorator in the chain. See §Q25.
+
 ### Default chain
 
 ```java
 FailureHandlers.defaults() =
     new LogFailureHandler<>(
-        new NotifyListenerFailureHandler<>(
-            new MaxRetriesFailureHandler<>(10, DISABLE,
-                new ExponentialBackoffFailureHandler<>(
-                    Duration.ofSeconds(5), 2.0,
-                    Duration.ofHours(1), 0.2))));
+        new MaxRetriesFailureHandler<>(10, DISABLE,
+            new ExponentialBackoffFailureHandler<>(
+                Duration.ofSeconds(5), 2.0,
+                Duration.ofHours(1), 0.2)));
 ```
 
 ### Per-type resolution priority
@@ -166,11 +167,31 @@ The alternative — in-memory retry via `Thread.sleep(delay)`
 restart), complicates lease renewal. Users can wrap their code in
 resilience4j for sub-100ms transient failures themselves.
 
-### Q25: NotifyListener is part of the default chain
+### Q25: listener events are emitted by the dispatcher, not by the chain
 
-`NotifyListenerFailureHandler` is always embedded in the default chain. Every
-failure → listener event → metric. Observability outweighs compositional
-purity.
+Originally considered: embed a `NotifyListenerFailureHandler` decorator in
+the default chain so every failure produces a listener event.
+
+That design was superseded by emitting listener callbacks
+(`onEventRetryScheduled`, `onEventDisabled`, `onEventDeleted`) directly
+from `HandlerDispatcher`, gated on successful storage commit of the
+decision. Two reasons:
+
+1. **Post-commit semantics are stronger.** A chain-based decorator fires
+   *before* the state transition is persisted — if the subsequent
+   `markForRetry` / `markDisabled` fails (race with the watchdog,
+   storage outage, version mismatch), the listener sees a transition
+   that never happened. Dispatcher-side emission is guarded on the
+   actual storage commit, so the observable sequence matches the
+   persisted state exactly.
+2. **No double-emission.** If both the dispatcher and the chain emit,
+   every successful decision produces two listener events. Picking one
+   canonical source removes the hazard entirely; `NotifyListener-
+   FailureHandler` is therefore not shipped.
+
+The observability argument from the original ADR still stands — every
+failure is reported to listeners — it is simply fulfilled by the
+dispatcher rather than by a chain decorator.
 
 ## Consequences
 
@@ -208,6 +229,8 @@ purity.
 ## Related decisions
 
 - [ADR-0013](0013-outbox-listener-for-observability.md) —
-  `NotifyListenerFailureHandler` emits OutboxListener events.
+  `HandlerDispatcher` is the source of listener callbacks for
+  retry / disable / delete transitions (emission is gated on successful
+  storage commit).
 - [ADR-0015](0015-at-least-once-semantics.md) — the retry model is built on
   at-least-once.
