@@ -462,19 +462,49 @@ Security context to worker threads. See
 
 ### 3. SmartLifecycle phases
 
-```
-Start (increasing phase):
-  100: WorkerRegistry.register
-  200: MaintenanceExecutor (heartbeat, orphan, watchdog)
-  300: HandlerExecutors (per-type)
-  400: Pollers
+The Spring Boot starter exposes the engine through a single
+`OutboxSmartLifecycle` bean at phase **20000** — late enough that
+`DataSourceAutoConfiguration`, connection pools and Flyway migrations
+are already initialised, early enough that the engine is polling by
+the time Actuator reports readiness. Boot stops beans in descending
+phase order, so the engine shuts down before application connection
+pools are closed.
 
-Stop (decreasing phase):
-  400: Pollers — stop accepting events
-  300: HandlerExecutors — awaitTermination
-  200: MaintenanceExecutor — heartbeat stays up to the end
-  100: WorkerRegistry.markGracefulStop + deregister
+The internal order of the stop sequence — executed by
+`OutboxEngine.stop(Duration)` — is:
+
 ```
+1. Poller.stop() on every per-type poller
+   → stop claiming new events
+   → interrupt + join on the dedicated platform thread
+
+2. Drain handler executors
+   → executor.shutdown() on every per-type ExecutorService
+   → awaitTermination per type against the configured shutdown-timeout
+   → if the timeout is exceeded, executor.shutdownNow() cancels
+     remaining handlers. Those events stay in PROCESSING and are
+     recovered on the next start by OrphanRecoveryTask — this is the
+     at-least-once safety net (ADR-0015).
+
+3. WorkerRegistry.markGracefulStop(workerId)
+   → signal to peer replicas' orphan-recovery: "don't reclaim me,
+     I'm shutting down cleanly" (graceful_stop=TRUE excludes the row
+     from the findDead partial index; see ADR-0005).
+
+4. MaintenanceScheduler.stop(timeout)
+   → shutdown() the 3-thread ScheduledExecutorService that drives
+     heartbeat / orphan-recovery / watchdog tasks.
+
+5. WorkerRegistry.deregister(workerId)
+   → DELETE FROM outbox.workers WHERE worker_id = ?
+
+6. Fire OutboxListener.onWorkerDeregistered.
+```
+
+The default `shutdown-timeout` is 30 seconds, tuned via
+`outbox.maintenance.shutdown-timeout`. If your handlers may legitimately
+run longer than 30 s, raise it (the alternative — `shutdownNow()` plus
+a fresh orphan-recovery cycle on restart — is correct but wastes work).
 
 ### 4. Bean autowiring
 
@@ -493,10 +523,18 @@ All configuration lives under `outbox.*` in application.yml — see
 
 ### 6. HealthIndicator
 
-`OutboxHealthIndicator`:
-- `DOWN` if the maintenance executor has not produced a heartbeat for more
-  than `deadThreshold/2`.
-- `DEGRADED` if `registry.countStuckOver(handlerMaxRuntime) > 0`.
+`OutboxHealthIndicator` is registered when Spring Boot Actuator is on
+the classpath and exposes `/actuator/health/outbox`:
+
+- `UP` when the engine is `RUNNING` and the store's metrics snapshot
+  is reachable.
+- `DOWN` when the engine is `STOPPED` / `STOPPING`, or when the
+  metrics snapshot threw (DB unreachable).
+
+The details block carries the engine state, totals from
+`EventStore.metricsSnapshot()`, the snapshot timestamp and the
+`workerId`. See [docs/OBSERVABILITY.md §Health indicator](OBSERVABILITY.md#health-indicator)
+for the full field reference and operational playbook.
 
 ---
 
@@ -504,5 +542,7 @@ All configuration lives under `outbox.*` in application.yml — see
 
 - [Configuration](CONFIGURATION.md)
 - [Storage: PostgreSQL](STORAGE.md)
+- [Observability](OBSERVABILITY.md)
+- [Testing handlers with the testkit](TESTING.md)
 - [Glossary](GLOSSARY.md)
 - [Architecture Decision Records](adr/README.md)
