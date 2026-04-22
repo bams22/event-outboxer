@@ -25,26 +25,26 @@ heartbeat mechanism. Two approaches were considered:
 
 Option (1) was initially chosen, but the write-traffic problem on large
 backlogs was pointed out: with 1000+ in-flight events and a heartbeat every
-30s we would be writing 2000+ rows/min into the hot `outbox.events` table
+30s we would be writing 2000+ rows/min into the hot `event_outboxer.events` table
 just for keepalive.
 
 ## Alternatives considered
 
-- **A. Per-event lease**: `lease_until` on the `outbox.events` row.
+- **A. Per-event lease**: `lease_until` on the `event_outboxer.events` row.
   Heartbeat is a batch UPDATE of all in-flight rows.
-- **B. Separate table**: `outbox.workers(worker_id PK, last_heartbeat,
+- **B. Separate table**: `event_outboxer.workers(worker_id PK, last_heartbeat,
   ...)`. Heartbeat is a single-row UPDATE.
 - **C. Hybrid**: both together. Rejected as redundant.
 
 ## Decision
 
-**Option B was chosen**: `outbox.workers` is a dedicated heartbeat table,
+**Option B was chosen**: `event_outboxer.workers` is a dedicated heartbeat table,
 with a single row per JVM.
 
 ### Schema
 
 ```sql
-CREATE TABLE outbox.workers (
+CREATE TABLE event_outboxer.workers (
     worker_id       VARCHAR(64)  PRIMARY KEY,
     host            VARCHAR(256) NOT NULL,
     pid             INT,
@@ -55,13 +55,13 @@ CREATE TABLE outbox.workers (
 );
 
 CREATE INDEX idx_workers_heartbeat
-    ON outbox.workers (last_heartbeat)
+    ON event_outboxer.workers (last_heartbeat)
     WHERE graceful_stop = FALSE;
 ```
 
 ### Lifecycle
 
-1. **Startup**: `INSERT` into `outbox.workers` with
+1. **Startup**: `INSERT` into `event_outboxer.workers` with
    `worker_id = "host-pid-uuid"`.
 2. **Heartbeat**: every 30s (default) `UPDATE ... SET last_heartbeat=now()
    WHERE worker_id=?` — exactly one row.
@@ -82,7 +82,7 @@ CREATE INDEX idx_workers_heartbeat
 | 1000 in-flight, 30s heartbeat | ~2000 writes/min | 2 writes/min |
 
 But the key point is not just the count — the critical property is that
-**the hot `outbox.events` table is not mutated every 30s just to say "I'm
+**the hot `event_outboxer.events` table is not mutated every 30s just to say "I'm
 alive"**. That means:
 - Less MVCC bloat (PG keeps old and new row versions until vacuum).
 - Fewer WAL writes.
@@ -104,13 +104,13 @@ decide "this event is stuck" rather than passively waiting for a timeout.
 ```sql
 -- live cluster workers
 SELECT worker_id, host, started_at, last_heartbeat, metadata
-FROM outbox.workers
+FROM event_outboxer.workers
 WHERE last_heartbeat > now() - interval '90 seconds';
 
 -- how many events each worker owns right now
 SELECT w.worker_id, w.host, count(e.id) AS in_flight
-FROM outbox.workers w
-LEFT JOIN outbox.events e ON e.claimed_by = w.worker_id AND e.status = 'PROCESSING'
+FROM event_outboxer.workers w
+LEFT JOIN event_outboxer.events e ON e.claimed_by = w.worker_id AND e.status = 'PROCESSING'
 GROUP BY w.worker_id, w.host;
 ```
 
@@ -118,7 +118,7 @@ GROUP BY w.worker_id, w.host;
 
 ### For users
 
-- The database gains an `outbox.workers` table, included in Flyway
+- The database gains an `event_outboxer.workers` table, included in Flyway
   migrations (it is part of `V001__outbox_core.sql`).
 - SQL-based admin visibility of the cluster is almost free.
 

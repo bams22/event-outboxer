@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @ConditionalOnProperty(
-    prefix = "outbox.lock",
+    prefix = "event-outboxer.lock",
     name = "type",
     havingValue = "noop",
     matchIfMissing = true)

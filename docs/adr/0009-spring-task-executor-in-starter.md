@@ -69,7 +69,7 @@ a plain `Executor` SAM cannot express. See §Implementation notes
 The starter ships a static utility —
 `io.github.bams22.outboxer.spring.executor.HandlerExecutorFactory`
 — with two factory methods selected via the
-`outbox.handler-executor.type` property:
+`event-outboxer.handler-executor.type` property:
 
 - `platform()` — builds a fixed-size `ThreadPoolTaskExecutor` with
   a hard-wired `ContextPropagatingTaskDecorator`, then exposes it
@@ -96,7 +96,7 @@ propagates automatically:
 
 ### Override points
 
-- `outbox.handler-executor.type=virtual` — switches to the
+- `event-outboxer.handler-executor.type=virtual` — switches to the
   virtual-thread variant. On the Java 25 baseline (see
   [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md)) JEP 491
   eliminates `synchronized` carrier-pinning, making this opt-in safe

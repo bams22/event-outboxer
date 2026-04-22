@@ -35,7 +35,7 @@ single service, or can it serve as a bridge between microservices?
 
 - `OutboxEventPublisher` and `OutboxEngine` live in a single JVM (or in
   replicas of a single service).
-- The database is the service's own database; `outbox.events` is a table
+- The database is the service's own database; `event_outboxer.events` is a table
   owned by this service.
 - Cross-service messaging is an orthogonal concern, solved by a user-provided
   `EventHandler` that publishes to a broker (Kafka, RabbitMQ).
@@ -43,7 +43,7 @@ single service, or can it serve as a bridge between microservices?
 ## Rationale
 
 **Shared DB between different services** (option A) is a classic anti-pattern:
-- Tight coupling via the database schema: migrating `outbox.events` requires
+- Tight coupling via the database schema: migrating `event_outboxer.events` requires
   coordination across every writer/reader.
 - Broken data ownership: it is unclear who owns the data.
 - The shared database becomes a scaling bottleneck.

@@ -37,13 +37,13 @@ import org.springframework.context.annotation.Bean;
  * the selected type.
  */
 @AutoConfiguration
-@ConditionalOnProperty(prefix = "outbox", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "event-outboxer", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class CacheAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(MetricsSnapshotCache.class)
   @ConditionalOnProperty(
-      prefix = "outbox.cache",
+      prefix = "event-outboxer.cache",
       name = "type",
       havingValue = "memory",
       matchIfMissing = true)
@@ -54,7 +54,7 @@ public class CacheAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(MetricsSnapshotCache.class)
-  @ConditionalOnProperty(prefix = "outbox.cache", name = "type", havingValue = "noop")
+  @ConditionalOnProperty(prefix = "event-outboxer.cache", name = "type", havingValue = "noop")
   public MetricsSnapshotCache outboxNoopMetricsSnapshotCache() {
     return MetricsSnapshotCache.noop();
   }

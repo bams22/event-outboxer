@@ -236,4 +236,4 @@ for a worked example.
 - [docs/OBSERVABILITY.md](OBSERVABILITY.md) — what the engine emits at
   runtime; test these signals by asserting on `recording()`.
 - [docs/CONFIGURATION.md](CONFIGURATION.md) — property reference; every
-  setter on the builder maps to a `outbox.*` property.
+  setter on the builder maps to a `event-outboxer.*` property.

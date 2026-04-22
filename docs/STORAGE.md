@@ -29,7 +29,7 @@ Two primary tables plus one optional:
 
 The schema name `event_outboxer` is the default — chosen explicitly so
 the library does not conflict with other tables or libraries in a
-shared database. Override via `outbox.storage.schema=my_schema` if you
+shared database. Override via `event-outboxer.storage.schema=my_schema` if you
 need a different name; see [§Configurable schema name](#configurable-schema-name).
 
 PostgreSQL version: **15+** (partial indexes, JSONB, CTE with UPDATE).
@@ -146,7 +146,7 @@ See [ADR-0005](adr/0005-workers-heartbeat-table.md).
 
 ## Optional table `event_outboxer.event_archive`
 
-Applied only when `outbox.storage.archive-enabled=true` (and the
+Applied only when `event-outboxer.storage.archive-enabled=true` (and the
 application configures Flyway to include the `archive/` location).
 
 ```sql
@@ -202,7 +202,7 @@ spring:
 
 The migration SQL uses the Flyway placeholder `${eventOutboxerSchema}`
 for the schema; the Spring Boot starter auto-wires it from
-`outbox.storage.schema` (default: `event_outboxer` — specific to avoid
+`event-outboxer.storage.schema` (default: `event_outboxer` — specific to avoid
 clashing with other libraries or application tables). Change the schema
 in one place and both the SQL migrations AND the adapter's runtime
 queries pick it up:
@@ -242,7 +242,7 @@ spring:
     change-log: classpath:db/changelog/outbox/core/changelog.xml
 ```
 
-The starter auto-feeds `outbox.storage.schema` into the
+The starter auto-feeds `event-outboxer.storage.schema` into the
 `eventOutboxerSchema` Liquibase parameter via a `BeanPostProcessor`
 that catches the `SpringLiquibase` bean; user-supplied
 `spring.liquibase.parameters.*` entries win on conflict.
@@ -435,7 +435,7 @@ GROUP BY event_type, status;
 The adapter does not cache the result itself — it delegates to a
 `MetricsSnapshotCache` SPI (see §Pluggable metrics cache). The default
 cache is per-JVM with `TTL=30s`, configured via
-`outbox.storage.metrics-cache-ttl`.
+`event-outboxer.storage.metrics-cache-ttl`.
 
 ### Pluggable metrics cache
 
@@ -447,11 +447,11 @@ which replica the load balancer picks. Switch the cache to a shared
 backend to make every pod return the same snapshot inside a TTL
 window.
 
-The cache is selected by `outbox.cache.type`:
+The cache is selected by `event-outboxer.cache.type`:
 
 | Value    | Behaviour                                                                                                 |
 |----------|-----------------------------------------------------------------------------------------------------------|
-| `memory` | Default. Per-JVM `AtomicReference` with `TTL` from `outbox.storage.metrics-cache-ttl`. Matches pre-SPI behaviour. |
+| `memory` | Default. Per-JVM `AtomicReference` with `TTL` from `event-outboxer.storage.metrics-cache-ttl`. Matches pre-SPI behaviour. |
 | `noop`   | No caching. Each `metricsSnapshot()` call hits the database. Simplest for tests; costly at scale.         |
 | `redis`  | Redis/KeyDB-backed (requires `event-outboxer-cache-redis` module and a `StatefulRedisConnection` bean).   |
 
@@ -494,7 +494,7 @@ public MetricsSnapshotCache myCache(SomeOtherStore store) {
 ```
 
 Any user-defined `@Bean MetricsSnapshotCache` wins over the autowired
-default regardless of `outbox.cache.type`.
+default regardless of `event-outboxer.cache.type`.
 
 ---
 
@@ -527,7 +527,7 @@ ALTER TABLE event_outboxer.events SET (
 ### Monitoring
 
 Metrics are emitted through the Micrometer adapter with the prefix
-`event_outboxer` (configurable via `outbox.metrics.prefix`). See
+`event_outboxer` (configurable via `event-outboxer.metrics.prefix`). See
 [docs/OBSERVABILITY.md §Micrometer metrics reference](OBSERVABILITY.md#micrometer-metrics-reference)
 for the full table of counter / timer / summary names with their tags,
 firing conditions and interpretation.

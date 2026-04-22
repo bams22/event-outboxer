@@ -61,7 +61,7 @@ import org.springframework.context.annotation.Bean;
       JacksonSerializerAutoConfiguration.class
     })
 @EnableConfigurationProperties(OutboxProperties.class)
-@ConditionalOnProperty(prefix = "outbox", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "event-outboxer", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxEngineAutoConfiguration {
 
   @Bean

@@ -52,7 +52,7 @@ choices need to be concrete:
 - **JEP 491 (Synchronize Virtual Threads without Pinning)** — delivered
   in JDK 24, present in JDK 25. This removes the pinning concern for
   JDBC drivers and other `synchronized`-heavy code running on virtual
-  threads. It makes `outbox.handler-executor.type=virtual` a production-
+  threads. It makes `event-outboxer.handler-executor.type=virtual` a production-
   grade option for I/O-bound handlers, not just a toy.
 - **Virtual threads are first-class** (stable since 21; now with
   improved carrier behavior).

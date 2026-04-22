@@ -18,7 +18,7 @@ users should expect and what guarantees we can provide.
   (two-generals problem + failure scenarios). Approximations require
   distributed transactions (2PC) or special brokers such as Kafka with
   transactional writes.
-- **At-most-once** — data loss is acceptable. Unacceptable for an outbox.
+- **At-most-once** — data loss is acceptable. Unacceptable for an event-outboxer.
 - **At-least-once** — no events are lost, but duplicates are possible.
   The handler must be idempotent.
 
@@ -157,7 +157,7 @@ atomically.)
   `EventHandler.handle()` javadoc and in the README.
 - The documentation contains a section on idempotency patterns (this ADR
   or a standalone guide).
-- The metric `outbox.events.concurrent_completion_conflict` shows how often
+- The metric `event_outboxer.events.concurrent_completion_conflict` shows how often
   race situations arise. Zero means no duplicates. Non-zero means the
   handler MUST tolerate it.
 

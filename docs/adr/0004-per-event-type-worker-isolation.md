@@ -65,8 +65,8 @@ Shared across all types:
 - **Per-type tuning**: `handler-pool-size`, `handler-queue-capacity`,
   `polling-interval` are configured per type (with inheritance from
   `defaults`).
-- **Observability**: metrics such as `outbox.executor.active{event_type=X}`
-  and `outbox.queue.size{event_type=X}` are naturally scoped.
+- **Observability**: metrics such as `event-outboxer.executor.active{event_type=X}`
+  and `event-outboxer.queue.size{event_type=X}` are naturally scoped.
 - **Proven pattern**: this pattern is known to work well in practice for
   outbox workloads; it keeps each event type's pipeline truly independent.
 
@@ -74,7 +74,7 @@ Shared across all types:
 
 ### For users
 
-- Per-type configuration through `outbox.handlers.types.<eventType>.*` in
+- Per-type configuration through `event-outboxer.handlers.types.<eventType>.*` in
   application.yml.
 - With many handlers (30+), the total thread count grows. Conservative
   defaults (`handler-pool-size=3, handler-queue-capacity=100`) are

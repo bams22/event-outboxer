@@ -39,15 +39,15 @@ import org.springframework.core.task.TaskDecorator;
 @SpringBootTest(
     classes = CustomTaskDecoratorTest.TestApp.class,
     properties = {
-      "outbox.storage.type=inmemory",
-      "outbox.publisher.no-transaction-policy=IGNORE",
-      "outbox.event-types.defaults.poll-min-interval=20ms",
-      "outbox.event-types.defaults.poll-max-interval=50ms",
-      "outbox.event-types.defaults.handler-pool-size=1",
-      "outbox.maintenance.heartbeat-interval=200ms",
-      "outbox.maintenance.dead-threshold=1s",
-      "outbox.maintenance.orphan-recovery-interval=500ms",
-      "outbox.maintenance.watchdog-interval=500ms"
+      "event-outboxer.storage.type=inmemory",
+      "event-outboxer.publisher.no-transaction-policy=IGNORE",
+      "event-outboxer.event-types.defaults.poll-min-interval=20ms",
+      "event-outboxer.event-types.defaults.poll-max-interval=50ms",
+      "event-outboxer.event-types.defaults.handler-pool-size=1",
+      "event-outboxer.maintenance.heartbeat-interval=200ms",
+      "event-outboxer.maintenance.dead-threshold=1s",
+      "event-outboxer.maintenance.orphan-recovery-interval=500ms",
+      "event-outboxer.maintenance.watchdog-interval=500ms"
     })
 class CustomTaskDecoratorTest {
 

@@ -111,7 +111,7 @@ this:
 | App starting, engine `STOPPED` | `DOWN` | pod not yet in service rotation |
 | Engine `RUNNING` | `UP` | traffic flows |
 | Poller thread dies (post-start crash) | `DOWN` within one `watchdog-interval` | pod drained; with liveness in the list, pod is restarted |
-| SIGTERM received, engine `STOPPING`/`STOPPED` | `DOWN` | pod taken out of rotation; in-flight handlers drain up to `outbox.maintenance.shutdown-timeout` |
+| SIGTERM received, engine `STOPPING`/`STOPPED` | `DOWN` | pod taken out of rotation; in-flight handlers drain up to `event-outboxer.maintenance.shutdown-timeout` |
 
 Crash detection is driven by the maintenance scheduler's
 `EngineHealthCheckTask`: every `watchdog-interval` it inspects each
@@ -170,7 +170,7 @@ The starter registers `MicrometerOutboxListener` when a
 `MeterRegistry` bean exists. Metric names carry the prefix
 `event_outboxer` by default — a specific name chosen so the library
 does not clash with other sources of `outbox.*` metrics. Override via
-`outbox.metrics.prefix` (Spring Boot starter) or the second argument
+`event-outboxer.metrics.prefix` (Spring Boot starter) or the second argument
 to `new MicrometerOutboxListener(registry, prefix)` (plain Java).
 
 Every per-event metric carries an `event_type` tag so dashboards can
@@ -226,7 +226,7 @@ worker JVM.
   Every scrape reads `EventStore.metricsSnapshot()` once per gauge,
   which goes through the `MetricsSnapshotCache` SPI — so the database
   is only hit once per cache TTL (default 30 s) regardless of how many
-  per-type rows exist. Switch to `outbox.cache.type=redis` to share the
+  per-type rows exist. Switch to `event-outboxer.cache.type=redis` to share the
   snapshot across pods so dashboards aggregate to a single value across
   the fleet instead of averaging divergent per-pod caches.
 
@@ -396,7 +396,7 @@ runs.
   trace by timestamp.
 
 **Fix**:
-- If liveness is in `outbox.health.probe-groups`, k8s restarts the
+- If liveness is in `event-outboxer.health.probe-groups`, k8s restarts the
   pod automatically on the next probe cycle.
 - Without liveness integration, restart the pod manually or let the
   Prometheus alert rule (`engine_state{state="running"}==0 for 1m`)

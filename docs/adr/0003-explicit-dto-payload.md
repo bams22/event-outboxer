@@ -57,7 +57,7 @@ Lambda serialization's main problems:
    is hard to predict when the bean changes.
 
 4. **Unreadable in the DB**. The cheapest way to debug the outbox is
-   `SELECT payload FROM outbox.events WHERE id=...`. A lambda is a binary
+   `SELECT payload FROM event_outboxer.events WHERE id=...`. A lambda is a binary
    sandwich with metadata; you cannot tell "email for Peter Ivanov" just by
    looking at it.
 
@@ -80,7 +80,7 @@ Explicit DTOs close all of that:
   `handler.payloadType()` — the handler knows what it deserializes, there
   are no other options.
 - **Readability**: JSONB directly in the DB,
-  `SELECT payload FROM outbox.events` returns human-readable content.
+  `SELECT payload FROM event_outboxer.events` returns human-readable content.
 
 ## Consequences
 

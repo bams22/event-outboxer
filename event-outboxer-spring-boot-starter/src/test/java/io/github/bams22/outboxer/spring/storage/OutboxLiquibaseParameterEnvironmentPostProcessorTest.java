@@ -35,7 +35,7 @@ class OutboxLiquibaseParameterEnvironmentPostProcessorTest {
 
   @Test
   void propagatesUserSchema_fromOutboxStorageSchema() {
-    StandardEnvironment env = envWith(Map.of("outbox.storage.schema", "my_outbox"));
+    StandardEnvironment env = envWith(Map.of("event-outboxer.storage.schema", "my_outbox"));
 
     epp.postProcessEnvironment(env, app);
 
@@ -48,7 +48,7 @@ class OutboxLiquibaseParameterEnvironmentPostProcessorTest {
     StandardEnvironment env =
         envWith(
             Map.of(
-                "outbox.storage.schema", "my_outbox",
+                "event-outboxer.storage.schema", "my_outbox",
                 "spring.liquibase.parameters.eventOutboxerSchema", "explicit_override"));
 
     epp.postProcessEnvironment(env, app);

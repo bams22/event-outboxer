@@ -35,7 +35,7 @@ class OutboxProbeGroupsEnvironmentPostProcessorTest {
 
   @Test
   void seedsDefaultStateIndicator_whenUserHasNoIncludes() {
-    StandardEnvironment env = envWith("outbox.health.probe-groups", "readiness");
+    StandardEnvironment env = envWith("event-outboxer.health.probe-groups", "readiness");
 
     epp.postProcessEnvironment(env, app);
 
@@ -48,7 +48,7 @@ class OutboxProbeGroupsEnvironmentPostProcessorTest {
     StandardEnvironment env =
         envWith(
             Map.of(
-                "outbox.health.probe-groups", "readiness",
+                "event-outboxer.health.probe-groups", "readiness",
                 "management.endpoint.health.group.readiness.include", "readinessState, db "));
 
     epp.postProcessEnvironment(env, app);
@@ -59,7 +59,7 @@ class OutboxProbeGroupsEnvironmentPostProcessorTest {
 
   @Test
   void supportsMultipleGroups() {
-    StandardEnvironment env = envWith("outbox.health.probe-groups", "readiness,liveness");
+    StandardEnvironment env = envWith("event-outboxer.health.probe-groups", "readiness,liveness");
 
     epp.postProcessEnvironment(env, app);
 
@@ -74,7 +74,7 @@ class OutboxProbeGroupsEnvironmentPostProcessorTest {
     StandardEnvironment env =
         envWith(
             Map.of(
-                "outbox.health.probe-groups", "readiness",
+                "event-outboxer.health.probe-groups", "readiness",
                 "management.endpoint.health.group.readiness.include",
                     "readinessState,outbox,custom"));
 

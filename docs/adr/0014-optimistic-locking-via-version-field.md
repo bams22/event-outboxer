@@ -66,7 +66,7 @@ The finalize methods return a `boolean`:
 
 Under at-least-once semantics, `false` is an **expected race**, not
 exception-worthy. The core engine catches it, increments the metric
-`outbox.events.concurrent_completion_conflict`, and continues.
+`event_outboxer.events.concurrent_completion_conflict`, and continues.
 
 `StorageException` is thrown only when the storage itself has a real
 problem (network, deadlock, constraint violation).
@@ -75,7 +75,7 @@ problem (network, deadlock, constraint violation).
 
 Important note: lease renewal (if we had per-event leases) must not
 increment `version`, otherwise finalize after renewal would fail. In our
-design the heartbeat is stored in a separate `outbox.workers` table (see
+design the heartbeat is stored in a separate `event_outboxer.workers` table (see
 ADR-0005), so the question does not even arise.
 
 ## Rationale
@@ -109,7 +109,7 @@ long-held locks.
 
 ### Race-condition metric
 
-`outbox.events.concurrent_completion_conflict{reason}` reveals how often
+`event_outboxer.events.concurrent_completion_conflict{reason}` reveals how often
 races occur in production. Rare — all good. Frequent — a signal that the
 watchdog or orphan recovery is too aggressive (`handlerMaxRuntime` too
 short, `deadThreshold` too short).
@@ -119,7 +119,7 @@ short, `deadThreshold` too short).
 ### For users
 
 - Observability: the metric
-  `outbox.events.concurrent_completion_conflict` (from OutboxListener →
+  `event_outboxer.events.concurrent_completion_conflict` (from OutboxListener →
   Micrometer).
 - Under normal operation — ~0 conflicts. Frequent conflicts — tune
   `handlerMaxRuntime` and `deadThreshold`.
@@ -129,7 +129,7 @@ short, `deadThreshold` too short).
 
 - **Critical invariant**: every operation that changes event state MUST
   increment `version`.
-- Exceptions: heartbeat does not touch `outbox.events` at all; lease
+- Exceptions: heartbeat does not touch `event_outboxer.events` at all; lease
   renewal (in workers model) likewise.
 - SQL always includes `WHERE id=:id AND version=:claimedVersion AND
   claimed_by=:me` for safety.
