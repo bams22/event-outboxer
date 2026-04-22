@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.storage.postgres;
 
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.contracts.AbstractEventStoreContractTest;
 import org.junit.jupiter.api.BeforeEach;
 
@@ -25,11 +26,14 @@ class PostgresEventStoreIT extends AbstractEventStoreContractTest {
 
   @Override
   protected EventStore newStore() {
+    // Tests want every metricsSnapshot() call to reflect the current store state, so use
+    // noop() to bypass the TTL cache entirely.
     this.eventStore =
         new PostgresEventStore(
             PostgresTestEnvironment.connectionSupplier(),
             PostgresStorageProperties.defaults(),
-            Clock.system());
+            Clock.system(),
+            MetricsSnapshotCache.noop());
     return eventStore;
   }
 }
