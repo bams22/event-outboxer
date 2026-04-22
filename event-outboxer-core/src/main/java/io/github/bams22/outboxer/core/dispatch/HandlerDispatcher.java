@@ -286,11 +286,19 @@ public final class HandlerDispatcher {
 
   private void routeOutcome(
       ClaimedEvent claimed, EventHandler<?> handler, Object payload, EventOutcome outcome) {
-    switch (outcome) {
-      case EventOutcome.Success ignored -> finaliseSuccess(claimed);
-      case EventOutcome.Skip skip -> finaliseSkip(claimed, skip);
-      case EventOutcome.Retry retry -> handleRetryOutcome(claimed, handler, payload, retry);
-      case EventOutcome.Fail fail -> handleFailOutcome(claimed, handler, payload, fail);
+    // instanceof chain instead of pattern-matching switch — baseline is Java 17 (ADR-0017).
+    // The final throw preserves exhaustiveness at runtime: if a new EventOutcome subtype is
+    // added without updating this dispatcher, the unhandled case surfaces immediately.
+    if (outcome instanceof EventOutcome.Success) {
+      finaliseSuccess(claimed);
+    } else if (outcome instanceof EventOutcome.Skip skip) {
+      finaliseSkip(claimed, skip);
+    } else if (outcome instanceof EventOutcome.Retry retry) {
+      handleRetryOutcome(claimed, handler, payload, retry);
+    } else if (outcome instanceof EventOutcome.Fail fail) {
+      handleFailOutcome(claimed, handler, payload, fail);
+    } else {
+      throw new IllegalStateException("unhandled EventOutcome: " + outcome.getClass());
     }
   }
 
@@ -357,10 +365,14 @@ public final class HandlerDispatcher {
       log.warn("failure handler threw; defaulting to Disable", ex);
       decision = new FailureDecision.Disable("failure handler threw: " + ex);
     }
-    switch (decision) {
-      case FailureDecision.RetryAt ra -> applyRetry(claimed, ra.when(), ra.reason(), cause);
-      case FailureDecision.Disable d -> finaliseDisable(claimed, d.reason(), cause);
-      case FailureDecision.Delete del -> applyDelete(claimed, del.reason());
+    if (decision instanceof FailureDecision.RetryAt ra) {
+      applyRetry(claimed, ra.when(), ra.reason(), cause);
+    } else if (decision instanceof FailureDecision.Disable d) {
+      finaliseDisable(claimed, d.reason(), cause);
+    } else if (decision instanceof FailureDecision.Delete del) {
+      applyDelete(claimed, del.reason());
+    } else {
+      throw new IllegalStateException("unhandled FailureDecision: " + decision.getClass());
     }
   }
 

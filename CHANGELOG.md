@@ -6,8 +6,10 @@ All notable changes to this project are documented here. Format follows
 
 ## [0.1.0] — 2026-05-01
 
-Initial release. Embedded transactional outbox for Java 25 / Spring Boot 3.5.6 /
-PostgreSQL 15 / Redis 7 (KeyDB 6).
+Initial release. Embedded transactional outbox for Java 17+ / Spring Boot 3.5.6 /
+PostgreSQL 15 / Redis 7 (KeyDB 6). Baseline is Java 17; JDK 21+ at runtime
+enables the optional `event-outboxer.handler-executor.type=virtual` executor
+flavour (JDK 25+ additionally brings JEP 491's pin-free behaviour).
 
 ### Naming
 
@@ -168,7 +170,8 @@ or Micrometer registry, the library's defaults use a specific prefix:
   `PollStrategy` bean to override the default
   `LockAndFetchStrategy`.
 - `HandlerExecutorFactory` with platform and virtual-thread modes (JEP
-  491 makes virtual threads safe on JDK 25). Platform variant uses
+  491 eliminates synchronized pinning on JDK 25; virtual-thread APIs
+  are invoked via reflection so the baseline stays Java 17). Platform variant uses
   Spring's `ThreadPoolTaskExecutor` with
   `ContextPropagatingTaskDecorator` so MDC, Micrometer Observation
   and Spring Security context propagate from the poller thread to
@@ -208,7 +211,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   - ADR-0014: optimistic locking via `version`;
   - ADR-0015: at-least-once semantics;
   - ADR-0016: Maven module structure;
-  - ADR-0017: Java 25 + Spring Boot 3.5 baseline;
+  - ADR-0017: Java 17 baseline (with JDK 21+ opt-ins) + Spring Boot 3.5;
   - ADR-0018: JSpecify for nullness annotations.
 
 **Build / CI**
@@ -217,7 +220,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
 - GitHub Actions: `ci.yml` (unit + `-P it` integration on
   Testcontainers), `release.yml` (tag-triggered deploy through
   Sonatype Central Publishing).
-- `maven-enforcer-plugin` rules: JDK 25, Maven 3.9+, dependency
+- `maven-enforcer-plugin` rules: JDK 17+, Maven 3.9+, dependency
   convergence, ban Spring from `event-outboxer-core`.
 
 ### Known limitations

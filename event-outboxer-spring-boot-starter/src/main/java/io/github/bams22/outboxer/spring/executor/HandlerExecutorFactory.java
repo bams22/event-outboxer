@@ -10,9 +10,10 @@
 package io.github.bams22.outboxer.spring.executor;
 
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
+import java.lang.reflect.Method;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Function;
 import org.springframework.core.task.TaskDecorator;
@@ -21,7 +22,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * Produces per-event-type handler executors for the Spring Boot starter. Two flavours,
- * selectable via {@code outbox.handler-executor.type}:
+ * selectable via {@code event-outboxer.handler-executor.type}:
  *
  * <ul>
  *   <li>{@code platform} — Spring {@link ThreadPoolTaskExecutor} configured with a
@@ -29,11 +30,13 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  *       on the submitting (poller) thread carry over to the handler thread. Exposed to the
  *       core engine as an {@code ExecutorService} via {@link SpringTaskExecutorAdapter} (the
  *       adapter is the key — submitting directly to the underlying pool would bypass
- *       decoration). Matches ADR-0009.
- *   <li>{@code virtual} — {@link Executors#newThreadPerTaskExecutor(java.util.concurrent.ThreadFactory)}
- *       backed by virtual threads, wrapped in {@link ContextPropagatingExecutorService} to
- *       apply the same {@link TaskDecorator}. Safe on JDK 25 thanks to JEP 491 (no pinning
- *       on {@code synchronized}).
+ *       decoration). Matches ADR-0009. Works on every supported JDK.
+ *   <li>{@code virtual} — virtual-thread-per-task {@code ExecutorService}, wrapped in
+ *       {@link ContextPropagatingExecutorService} to apply the same {@link TaskDecorator}.
+ *       <strong>Requires JDK 21+ at runtime</strong> (ADR-0017): the baseline is Java 17,
+ *       so the virtual-thread APIs are invoked via reflection; on JDK < 21 the factory
+ *       fails fast with a clear error when this flavour is selected. JDK 25+ additionally
+ *       eliminates {@code synchronized} pinning via JEP 491.
  * </ul>
  *
  * <p>Both factory methods accept a {@link TaskDecorator}. The auto-configuration resolves
@@ -85,17 +88,54 @@ public final class HandlerExecutorFactory {
     return platform(new ContextPropagatingTaskDecorator());
   }
 
-  /** Virtual-thread factory; JEP 491 makes synchronized-heavy drivers safe on JDK 25. */
+  /**
+   * Virtual-thread factory; requires JDK 21+ at runtime (baseline Java 17 — APIs invoked via
+   * reflection). JEP 491 makes {@code synchronized}-heavy drivers safe on JDK 25+.
+   */
   public static Function<EventTypeConfig, ExecutorService> virtual(TaskDecorator decorator) {
     Objects.requireNonNull(decorator, "decorator must not be null");
     return cfg ->
-        new ContextPropagatingExecutorService(
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("outbox-vt-", 0L).factory()),
-            decorator);
+        new ContextPropagatingExecutorService(newVirtualThreadPerTaskExecutor(), decorator);
   }
 
   /** {@code virtual(...)} with the default {@link ContextPropagatingTaskDecorator}. */
   public static Function<EventTypeConfig, ExecutorService> virtual() {
     return virtual(new ContextPropagatingTaskDecorator());
+  }
+
+  /**
+   * Builds {@code Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("outbox-vt-",0L).factory())}
+   * via reflection so the code compiles on a Java 17 baseline and binds late to JDK 21+ APIs
+   * at runtime. Called once per event type at bean creation; reflection overhead is negligible
+   * (not on the hot path). On JDK < 21 the missing {@code Thread.ofVirtual()} surfaces as an
+   * actionable {@link IllegalStateException}.
+   */
+  private static ExecutorService newVirtualThreadPerTaskExecutor() {
+    try {
+      Class<?> builderCls = Class.forName("java.lang.Thread$Builder$OfVirtual");
+      Method ofVirtual = Thread.class.getMethod("ofVirtual");
+      Method name = builderCls.getMethod("name", String.class, long.class);
+      Method factory = builderCls.getMethod("factory");
+      Method newThreadPerTask =
+          java.util.concurrent.Executors.class.getMethod(
+              "newThreadPerTaskExecutor", ThreadFactory.class);
+
+      Object builder = ofVirtual.invoke(null);
+      builder = name.invoke(builder, "outbox-vt-", 0L);
+      ThreadFactory tf = (ThreadFactory) factory.invoke(builder);
+      return (ExecutorService) newThreadPerTask.invoke(null, tf);
+    } catch (NoSuchMethodException | ClassNotFoundException ex) {
+      throw new IllegalStateException(
+          "virtual-thread handler executor requires JDK 21+ at runtime; current JVM is "
+              + Runtime.version()
+              + ". Use 'event-outboxer.handler-executor.type=platform' (default) or upgrade"
+              + " the runtime. For JEP 491 (no synchronized pinning), use JDK 25+.",
+          ex);
+    } catch (ReflectiveOperationException ex) {
+      throw new IllegalStateException(
+          "failed to invoke Thread.ofVirtual() via reflection — unexpected for JDK "
+              + Runtime.version(),
+          ex);
+    }
   }
 }

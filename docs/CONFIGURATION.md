@@ -296,8 +296,11 @@ In MVP — Jackson only (see ADR-0011).
 ### `event-outboxer.handler-executor.type`
 
 - `platform` (default) — `ThreadPoolTaskExecutor` on platform threads.
-- `virtual` — `SimpleAsyncTaskExecutor` with virtual threads (Java 25
-  baseline; safe with JDBC thanks to JEP 491).
+- `virtual` — virtual-thread-per-task `ExecutorService` wrapped in
+  `ContextPropagatingExecutorService`. Requires JDK 21+ at runtime
+  (baseline is Java 17, virtual-thread APIs invoked via reflection);
+  JDK 25+ additionally eliminates `synchronized` pinning via JEP 491,
+  making the variant safe with JDBC drivers.
 
 ### `event-outboxer.cache.*`
 
