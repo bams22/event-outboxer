@@ -101,14 +101,16 @@ propagates automatically:
   [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md)) JEP 491
   eliminates `synchronized` carrier-pinning, making this opt-in safe
   for JDBC-bound handlers.
+- `@Bean TaskDecorator` — register a Spring bean of type
+  `org.springframework.core.task.TaskDecorator` and the
+  auto-configuration resolves it via `ObjectProvider` and hands it
+  to `HandlerExecutorFactory.platform(...)` / `.virtual(...)`. When
+  no custom bean exists the default is
+  `ContextPropagatingTaskDecorator`. Useful for adding tenant /
+  feature-flag context on top of — or entirely in place of — the
+  default MDC / Observation / security propagation.
 - `@Bean OutboxEngine` — full override if the defaults don't fit;
   replaces the entire engine, including its executor wiring.
-
-A dedicated `@Bean TaskDecorator` override point is **not** wired
-in 0.1.0 — the decorator is hard-coded to
-`ContextPropagatingTaskDecorator`. A future release may inject
-`ObjectProvider<TaskDecorator>` into `HandlerExecutorFactory`;
-tracked separately.
 
 ### Maintenance executor stays inside the core
 

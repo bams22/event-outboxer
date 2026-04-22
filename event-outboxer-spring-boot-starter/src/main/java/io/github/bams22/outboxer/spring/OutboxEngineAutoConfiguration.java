@@ -119,6 +119,7 @@ public class OutboxEngineAutoConfiguration {
       @Qualifier("outboxPerTypeFailureHandlers") ObjectProvider<Map<String, FailureHandler<?>>>
               perTypeFailureHandlersProvider,
       ObjectProvider<io.github.bams22.outboxer.core.polling.PollStrategy> pollStrategyProvider,
+      ObjectProvider<org.springframework.core.task.TaskDecorator> taskDecoratorProvider,
       List<OutboxListener> listeners) {
 
     OutboxEngineBuilder builder =
@@ -159,10 +160,15 @@ public class OutboxEngineAutoConfiguration {
     // Starter handles logging via application SLF4J config; avoid double-logging.
     builder.includeLoggingListener(false);
 
-    // Wire handler executor factory per outbox.handler-executor.type.
+    // Wire handler executor factory per outbox.handler-executor.type. A user-provided
+    // @Bean TaskDecorator wins; otherwise fall back to Spring's ContextPropagatingTaskDecorator
+    // (which already propagates MDC / Observation / security context).
+    org.springframework.core.task.TaskDecorator decorator =
+        taskDecoratorProvider.getIfAvailable(
+            org.springframework.core.task.support.ContextPropagatingTaskDecorator::new);
     switch (properties.getHandlerExecutor().getType()) {
-      case virtual -> builder.handlerExecutorFactory(HandlerExecutorFactory.virtual());
-      case platform -> builder.handlerExecutorFactory(HandlerExecutorFactory.platform());
+      case virtual -> builder.handlerExecutorFactory(HandlerExecutorFactory.virtual(decorator));
+      case platform -> builder.handlerExecutorFactory(HandlerExecutorFactory.platform(decorator));
     }
 
     return builder.build();
