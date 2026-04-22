@@ -20,7 +20,6 @@ import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
-import io.github.bams22.outboxer.api.observer.LeaseRenewalMismatchInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
@@ -142,11 +141,6 @@ public final class LoggingOutboxListener implements OutboxListener {
   @Override
   public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
     log.warn("stuck handler reclaimed {}", info);
-  }
-
-  @Override
-  public void onLeaseRenewalMismatch(LeaseRenewalMismatchInfo info) {
-    log.warn("lease renewal mismatch {}", info);
   }
 
   @Override

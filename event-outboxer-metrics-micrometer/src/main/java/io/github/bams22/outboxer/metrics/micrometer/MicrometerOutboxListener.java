@@ -20,7 +20,6 @@ import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
-import io.github.bams22.outboxer.api.observer.LeaseRenewalMismatchInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
@@ -182,11 +181,6 @@ public final class MicrometerOutboxListener implements OutboxListener {
   @Override
   public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
     incType("handler.stuck_reclaimed", info.eventType());
-  }
-
-  @Override
-  public void onLeaseRenewalMismatch(LeaseRenewalMismatchInfo info) {
-    inc("lease_renewal_mismatch");
   }
 
   // ==================== Storage ====================

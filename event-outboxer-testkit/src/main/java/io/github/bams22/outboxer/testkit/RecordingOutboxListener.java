@@ -20,7 +20,6 @@ import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
-import io.github.bams22.outboxer.api.observer.LeaseRenewalMismatchInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
@@ -69,8 +68,6 @@ public final class RecordingOutboxListener implements OutboxListener {
       new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<StuckHandlerReclaimedInfo> stuckReclaimed =
       new CopyOnWriteArrayList<>();
-  private final CopyOnWriteArrayList<LeaseRenewalMismatchInfo> leaseRenewalMismatches =
-      new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<StorageErrorInfo> storageErrors = new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<DispatchRejectedInfo> dispatchRejected =
       new CopyOnWriteArrayList<>();
@@ -97,7 +94,6 @@ public final class RecordingOutboxListener implements OutboxListener {
     heartbeatsFailed.clear();
     orphansReclaimed.clear();
     stuckReclaimed.clear();
-    leaseRenewalMismatches.clear();
     storageErrors.clear();
     dispatchRejected.clear();
     engineCrashed.clear();
@@ -198,11 +194,6 @@ public final class RecordingOutboxListener implements OutboxListener {
   }
 
   @Override
-  public void onLeaseRenewalMismatch(LeaseRenewalMismatchInfo info) {
-    leaseRenewalMismatches.add(info);
-  }
-
-  @Override
   public void onStorageError(StorageErrorInfo info) {
     storageErrors.add(info);
   }
@@ -291,10 +282,6 @@ public final class RecordingOutboxListener implements OutboxListener {
 
   public List<StuckHandlerReclaimedInfo> stuckReclaimed() {
     return List.copyOf(stuckReclaimed);
-  }
-
-  public List<LeaseRenewalMismatchInfo> leaseRenewalMismatches() {
-    return List.copyOf(leaseRenewalMismatches);
   }
 
   public List<StorageErrorInfo> storageErrors() {

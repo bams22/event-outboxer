@@ -152,11 +152,6 @@ public interface OutboxListener {
     // no-op
   }
 
-  /** Called when lease renewal affected fewer rows than expected. */
-  default void onLeaseRenewalMismatch(LeaseRenewalMismatchInfo info) {
-    // no-op
-  }
-
   // ==================== Storage ====================
 
   /** Called when any storage operation raised a {@code StorageException}. */
