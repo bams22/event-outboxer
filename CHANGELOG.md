@@ -30,14 +30,14 @@ or Micrometer registry, the library's defaults use a specific prefix:
 
 **Public API (`event-outboxer-api`)**
 
-- `OutboxEventPublisher` with `publish`, `publishAll`, `publishIfAbsent`
-  (`publishIfAbsent` is a documented post-MVP extension point — currently
-  throws `UnsupportedOperationException`).
+- `OutboxEventPublisher` with `publish` and `publishAll`. Idempotent
+  publishing (store-side dedup by key) is planned for 0.2.0 and is
+  intentionally not part of the 0.1.0 API surface.
 - `EventHandler<T>` with `extractLockKey(payload)` and optional
   per-handler `failureHandler()` override.
 - Sealed `EventOutcome` (`Success` / `Retry` / `Fail` / `Skip`) and
   `FailureDecision` (`RetryAt` / `Disable` / `Delete`).
-- `OutboxListener` observability surface (22 callbacks, record-based
+- `OutboxListener` observability surface (21 callbacks, record-based
   payloads).
 - Built-in `FailureHandler<T>` decorators: log, max-retries,
   exponential-backoff, fixed-delay, no-retry, plus
