@@ -164,10 +164,16 @@ parent pom) so the operator has a last chance to abort.
 Using the `gh` CLI (extracts the changelog section automatically):
 
 ```bash
-awk '/^## \[0\.2\.0\]/,/^## \[/' CHANGELOG.md | sed '$d' > release-notes.md
+awk '/^## \[/{flag=0} /^## \[0\.2\.0\]/{flag=1} flag' CHANGELOG.md > release-notes.md
 gh release create v0.2.0 --title "v0.2.0" --notes-file release-notes.md
 rm release-notes.md
-``` 
+```
+
+The flag-based awk is used instead of the more obvious
+`awk '/^## \[0\.2\.0\]/,/^## \[/'` range form: in the range form, both
+patterns are tested against the starting line too, and `^## \[`
+matches the `## [0.2.0]` header itself — so the range opens and
+closes on the same line and only the header makes it through.
 
 Or via the web UI: Releases → **Draft new release** → choose tag
 `v0.2.0` → set title `v0.2.0` → paste the `[0.2.0]` section of
