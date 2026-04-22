@@ -39,6 +39,7 @@
         <module>event-outboxer-serializer-jackson</module>
         <module>event-outboxer-lock-postgres</module>
         <module>event-outboxer-lock-redis</module>
+        <module>event-outboxer-cache-redis</module>
         <module>event-outboxer-metrics-micrometer</module>
         <module>event-outboxer-testkit</module>
         <module>event-outboxer-spring-boot-starter</module>
