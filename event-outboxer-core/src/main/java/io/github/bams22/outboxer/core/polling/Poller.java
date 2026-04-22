@@ -107,6 +107,21 @@ public final class Poller {
     return eventType;
   }
 
+  /**
+   * Returns {@code true} if this poller is supposed to be running but its backing thread has
+   * died. Checked periodically by the engine health-check task to detect unrecoverable poller
+   * crashes (uncaught {@code Error} from the strategy, JVM thread kill, etc.). Returns
+   * {@code false} before {@link #start()} and after {@link #stop()} — only a live-should-be-alive
+   * thread that isn't counts as crashed.
+   */
+  public boolean isCrashed() {
+    if (!running) {
+      return false;
+    }
+    Thread t = thread;
+    return t != null && !t.isAlive();
+  }
+
   private void loop() {
     log.debug("poller start: eventType={}, worker={}", eventType, workerId);
     try {

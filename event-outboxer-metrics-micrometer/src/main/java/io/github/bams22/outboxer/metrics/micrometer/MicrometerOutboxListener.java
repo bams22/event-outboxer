@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.metrics.micrometer;
 
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
@@ -200,5 +201,12 @@ public final class MicrometerOutboxListener implements OutboxListener {
   @Override
   public void onDispatchRejected(DispatchRejectedInfo info) {
     incType("dispatch.rejected", info.eventType());
+  }
+
+  // ==================== Engine crash ====================
+
+  @Override
+  public void onEngineCrashed(EngineCrashedInfo info) {
+    inc("engine.crashed");
   }
 }

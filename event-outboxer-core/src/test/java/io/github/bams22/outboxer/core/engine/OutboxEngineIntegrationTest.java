@@ -15,6 +15,7 @@ import static org.awaitility.Awaitility.await;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
@@ -28,6 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,7 +49,9 @@ class OutboxEngineIntegrationTest {
 
   @AfterEach
   void teardown() {
-    if (engine != null && engine.state() == OutboxEngine.State.RUNNING) {
+    // isLifecycleActive() stays true across a crash (state() would report STOPPED). We still
+    // want to run stop() to clean up maintenance scheduler + handler pools in both cases.
+    if (engine != null && engine.isLifecycleActive()) {
       engine.stop(Duration.ofSeconds(2));
     }
   }
@@ -138,6 +142,43 @@ class OutboxEngineIntegrationTest {
         .atMost(Duration.ofSeconds(10))
         .until(() -> store.findById(id).isEmpty());
     assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("poller thread death → health check flips engine state to STOPPED")
+  void crashDetectionFlipsStateOnPollerDeath() {
+    AtomicReference<EngineCrashedInfo> captured = new AtomicReference<>();
+    OutboxListener crashListener =
+        new OutboxListener() {
+          @Override
+          public void onEngineCrashed(EngineCrashedInfo info) {
+            captured.set(info);
+          }
+        };
+
+    engine =
+        fastEngine()
+            .handler(
+                recordingHandler("BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+            .pollStrategy(
+                (eventType, workerId, batchSize) -> {
+                  // Uncaught Error — bypasses Poller.tick()'s RuntimeException catch, kills thread.
+                  throw new OutOfMemoryError("simulated");
+                })
+            .listener(crashListener)
+            .build();
+    engine.start();
+
+    // Watchdog/health-check cadence in fastEngine is 200ms; allow time for at least one pass.
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .pollInterval(Duration.ofMillis(50))
+        .until(() -> engine.state() == OutboxEngine.State.STOPPED);
+
+    assertThat(engine.isLifecycleActive()).isTrue();  // stop() not yet called; cleanup pending
+    assertThat(captured.get()).isNotNull();
+    assertThat(captured.get().reason()).contains("BOOM");
+    assertThat(captured.get().workerId()).isEqualTo(engine.workerId());
   }
 
   @Test

@@ -19,15 +19,16 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Owns a small scheduled executor (three threads by default) that ticks {@link HeartbeatTask},
- * {@link OrphanRecoveryTask} and {@link WatchdogTask}. The executor is created on {@link
- * #start()} and shut down on {@link #stop(Duration)} so the engine's graceful-shutdown flow can
- * drain pending work deterministically.
+ * {@link OrphanRecoveryTask}, {@link WatchdogTask} and {@link EngineHealthCheckTask}. The
+ * executor is created on {@link #start()} and shut down on {@link #stop(Duration)} so the
+ * engine's graceful-shutdown flow can drain pending work deterministically.
  */
 public final class MaintenanceScheduler {
 
   private final HeartbeatTask heartbeat;
   private final OrphanRecoveryTask orphanRecovery;
   private final WatchdogTask watchdog;
+  private final EngineHealthCheckTask engineHealthCheck;
   private final MaintenanceConfig config;
 
   private @org.jspecify.annotations.Nullable ScheduledExecutorService executor;
@@ -36,10 +37,12 @@ public final class MaintenanceScheduler {
       HeartbeatTask heartbeat,
       OrphanRecoveryTask orphanRecovery,
       WatchdogTask watchdog,
+      EngineHealthCheckTask engineHealthCheck,
       MaintenanceConfig config) {
     this.heartbeat = Objects.requireNonNull(heartbeat);
     this.orphanRecovery = Objects.requireNonNull(orphanRecovery);
     this.watchdog = Objects.requireNonNull(watchdog);
+    this.engineHealthCheck = Objects.requireNonNull(engineHealthCheck);
     this.config = Objects.requireNonNull(config);
   }
 
@@ -53,6 +56,8 @@ public final class MaintenanceScheduler {
     scheduleFixed(executor, heartbeat, config.heartbeatInterval());
     scheduleFixed(executor, orphanRecovery, config.orphanRecoveryInterval());
     scheduleFixed(executor, watchdog, config.watchdogInterval());
+    // Crash detection ticks at the same cadence as the watchdog — no new config knob.
+    scheduleFixed(executor, engineHealthCheck, config.watchdogInterval());
   }
 
   /**

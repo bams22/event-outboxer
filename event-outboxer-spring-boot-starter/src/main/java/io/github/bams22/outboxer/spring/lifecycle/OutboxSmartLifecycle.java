@@ -34,7 +34,10 @@ public final class OutboxSmartLifecycle implements SmartLifecycle {
 
   @Override
   public void start() {
-    if (engine.state() == OutboxEngine.State.STOPPED) {
+    // Use isLifecycleActive() rather than state() == STOPPED so a crashed engine (state() reports
+    // STOPPED, but isLifecycleActive() still true until stop() completes) does not get
+    // double-started.
+    if (!engine.isLifecycleActive()) {
       engine.start();
     }
   }
@@ -55,7 +58,10 @@ public final class OutboxSmartLifecycle implements SmartLifecycle {
 
   @Override
   public boolean isRunning() {
-    return engine.state() == OutboxEngine.State.RUNNING;
+    // Return true across the entire lifecycle window (start-to-stop), ignoring crashes. This
+    // guarantees Spring Boot still calls stop() on a crashed engine so the normal cleanup
+    // (worker deregister, handler drain, graceful_stop flag) runs.
+    return engine.isLifecycleActive();
   }
 
   @Override
