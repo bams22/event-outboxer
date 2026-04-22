@@ -1,0 +1,228 @@
+# Releasing event-outboxer
+
+Runbook for cutting a release to Maven Central (Sonatype Central Portal)
+and GitHub. The Maven / CI infrastructure is already wired — see the
+`release` profile in `pom.xml` and `.github/workflows/release.yml`; this
+document is the human checklist around it.
+
+## Contents
+
+1. [One-time setup](#one-time-setup)
+2. [Per-release procedure](#per-release-procedure)
+3. [Troubleshooting](#troubleshooting)
+
+---
+
+## One-time setup
+
+Done once per repository / maintainer. Skip if already configured.
+
+### 1. Sonatype Central account
+
+1. Register at <https://central.sonatype.com> using "Sign in with GitHub".
+2. Because the groupId is `io.github.bams22`, the namespace is
+   auto-verified against the `bams22` GitHub account — no manual DNS
+   or JIRA ticket required.
+3. Generate a user token: Portal → top-right avatar → **View Account**
+   → **Generate User Token**. Copy both the `username` (opaque string,
+   not the human login) and the `password`. These become the GitHub
+   secrets `CENTRAL_USERNAME` and `CENTRAL_TOKEN`.
+
+### 2. GPG key for artifact signing
+
+Maven Central requires every artifact to be PGP-signed.
+
+```bash
+# generate a 4096-bit RSA key; skip expiry so the maintainer key is
+# stable. Name it after the GitHub identity used for releases.
+gpg --full-generate-key
+
+# find the key id — the 16-hex-digit value on the `sec` line
+gpg --list-secret-keys --keyid-format LONG
+
+# publish the public key to the keyservers Central consults
+gpg --keyserver keys.openpgp.org        --send-keys <KEY_ID>
+gpg --keyserver keyserver.ubuntu.com    --send-keys <KEY_ID>
+
+# export the private key as an ASCII-armored block, one-shot for
+# GitHub secrets. Do NOT commit this file.
+gpg --armor --export-secret-keys <KEY_ID> > private.asc
+```
+
+### 3. GitHub repository secrets
+
+Settings → Secrets and variables → Actions → **New repository secret**:
+
+| Secret            | Source                                           |
+|-------------------|--------------------------------------------------|
+| `CENTRAL_USERNAME`| Sonatype user token `username` (from step 1).   |
+| `CENTRAL_TOKEN`   | Sonatype user token `password` (from step 1).   |
+| `GPG_PRIVATE_KEY` | Entire contents of `private.asc` including the `-----BEGIN PGP PRIVATE KEY BLOCK-----` and `-----END ...-----` lines. |
+| `GPG_PASSPHRASE`  | Passphrase chosen when generating the GPG key. Required even if empty (the workflow reads it unconditionally). |
+
+Delete the local `private.asc` after uploading to avoid leaving the
+private key on disk.
+
+### 4. Verify locally (optional but recommended)
+
+Before the first real release, run the dry-run command described in
+the per-release procedure below. That catches GPG, sources-jar and
+javadoc-jar issues without creating a tag.
+
+---
+
+## Per-release procedure
+
+Assume we're cutting `0.1.0` from the current `0.1.0-SNAPSHOT`.
+Substitute your target version throughout.
+
+### 1. Pre-flight checks
+
+- [ ] `main` branch is green in the `CI` workflow (unit matrix 17/21/25
+      plus the Testcontainers IT job).
+- [ ] `CHANGELOG.md` already contains a `## [0.1.0] — YYYY-MM-DD`
+      section with Added / Changed / Removed / Fixed bullets for
+      everything in this release.
+- [ ] All feature commits are merged into `main`.
+- [ ] Working tree is clean (`git status`).
+
+### 2. Bump version to the release value
+
+```bash
+./mvnw versions:set -DnewVersion=0.1.0 -DgenerateBackupPoms=false
+git diff          # spot-check that every module moved to 0.1.0
+git add -u
+git commit -m "Release 0.1.0"
+```
+
+### 3. Local dry-run
+
+Stages every artifact to `./stage/` so you can inspect the files that
+would be uploaded. Fails fast on GPG / sources / javadoc misconfig.
+
+```bash
+./mvnw -B -ntp -Prelease clean deploy \
+  -DaltDeploymentRepository=local::file:./stage \
+  -DskipTests
+```
+
+Verify under `./stage/io/github/bams22/*/0.1.0/`:
+
+- [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar`, `*.pom`
+- [ ] A matching `.asc` GPG signature next to each of the above.
+
+Delete `./stage/` after inspection.
+
+### 4. Tag and push
+
+```bash
+git tag -a v0.1.0 -m "Release 0.1.0"
+git push origin main
+git push origin v0.1.0
+```
+
+Pushing the tag triggers `.github/workflows/release.yml`, which runs
+`./mvnw -Prelease deploy -DskipTests` on a GitHub Actions runner.
+
+### 5. Watch the release workflow
+
+Actions tab → **Release** workflow → most recent run.
+
+Expected duration: 5–10 minutes. On success, a deployment in
+**VALIDATED** state appears at
+<https://central.sonatype.com/publishing/deployments>. The workflow
+does **not** auto-publish (pom.xml has `<autoPublish>false</autoPublish>`
+so the operator has a last chance to abort).
+
+### 6. Promote to Maven Central
+
+1. Open <https://central.sonatype.com/publishing/deployments>.
+2. Find the deployment under namespace `io.github.bams22`, version
+   `0.1.0`.
+3. Status should be `VALIDATED`. If `FAILED`, open the deployment
+   details, fix the reported issue, drop the deployment, and restart
+   from step 4 with a new patch version (Central does not allow
+   re-uploading the same GAV).
+4. Click **Publish**. Artifacts become visible on Maven Central within
+   15–30 minutes:
+   - <https://repo1.maven.org/maven2/io/github/bams22/event-outboxer-spring-boot-starter/0.1.0/>
+   - <https://central.sonatype.com/artifact/io.github.bams22/event-outboxer-spring-boot-starter>
+
+### 7. Create the GitHub Release
+
+Using the `gh` CLI (extracts the changelog section automatically):
+
+```bash
+awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md | sed '$d' > release-notes.md
+gh release create v0.1.0 --title "v0.1.0" --notes-file release-notes.md
+rm release-notes.md
+```
+
+Or via the web UI: Releases → **Draft new release** → choose tag
+`v0.1.0` → set title `v0.1.0` → paste the `[0.1.0]` section of
+`CHANGELOG.md` into the body → **Publish release**.
+
+### 8. Bump to the next development version
+
+```bash
+./mvnw versions:set -DnewVersion=0.2.0-SNAPSHOT -DgenerateBackupPoms=false
+git add -u
+git commit -m "Bump to 0.2.0-SNAPSHOT"
+git push origin main
+```
+
+Also add a fresh `## [Unreleased]` section to `CHANGELOG.md` above
+`[0.1.0]` so subsequent feature commits have somewhere to land their
+notes. Commit in the same go.
+
+---
+
+## Troubleshooting
+
+### `401 Unauthorized` during Maven deploy
+
+The `CENTRAL_TOKEN` GitHub secret is stale or was copied incompletely.
+Generate a new user token in the Central Portal (Account → **Generate
+User Token**) and update the secret. Tokens do not expire automatically
+but can be revoked.
+
+### `gpg: signing failed: No secret key` / `PGP signature not found`
+
+The `GPG_PRIVATE_KEY` secret is malformed. The most common mistake is
+copying only the base64 body without the `-----BEGIN PGP PRIVATE KEY
+BLOCK-----` and `-----END ...-----` delimiter lines. Re-export with:
+
+```bash
+gpg --armor --export-secret-keys <KEY_ID>
+```
+
+and paste the full output (including delimiters) into the secret.
+
+### `sources.jar is missing` / `javadoc.jar is missing`
+
+The release profile didn't activate. Confirm the CI workflow invokes
+`./mvnw -Prelease deploy` — without the `-Prelease` flag the
+`maven-source-plugin` and `maven-javadoc-plugin` executions are
+skipped.
+
+### Validation errors about SCM / license / developers
+
+Central requires every POM to have `<scm>`, `<licenses>`,
+`<developers>`, `<url>`, `<name>`, `<description>`. These are in the
+parent POM and inherited by every module; if a module overrides them
+incorrectly the validation fails. Restore the parent values.
+
+### "Deployment with the same coordinates already exists"
+
+Each Maven Central GAV is one-shot. If the release must be re-cut,
+increment the patch version (`0.1.0` → `0.1.1`) rather than trying to
+overwrite. Update the changelog accordingly.
+
+### The workflow succeeded but nothing is in Central after an hour
+
+Check whether the deployment is stuck in `VALIDATED` waiting for
+manual **Publish**. With `<autoPublish>false</autoPublish>` the
+operator must promote it explicitly (step 6 above). Flip
+`<autoPublish>` to `true` in the parent POM if you prefer fully
+automatic promotion — most maintainers keep it `false` as an abort
+gate.
