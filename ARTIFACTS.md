@@ -48,9 +48,12 @@ Always import the BOM first and let it manage versions:
 
 ## Compatibility
 
-- **Java**: requires JDK **25** (LTS). Virtual threads are a fully supported
-  opt-in; JEP 491 (available since JDK 24) eliminates pinning on
-  `synchronized` blocks so JDBC drivers run safely on virtual threads.
+- **Java**: baseline **JDK 17** (LTS). Runs on 17, 21, 25 and later.
+  Virtual threads (`event-outboxer.handler-executor.type=virtual`) require
+  JDK 21+ at runtime — the factory invokes `Thread.ofVirtual()` via
+  reflection and fails fast on JDK 17 with a clear message. JDK 25+
+  additionally eliminates `synchronized` carrier pinning (JEP 491) so
+  JDBC drivers run safely on virtual threads. See ADR-0017.
 - **Maven**: requires **3.9+**. The project ships a Maven Wrapper pinned
   to 3.9.12 (`./mvnw`).
 - **Spring Boot**: built against **3.5.6** via the
