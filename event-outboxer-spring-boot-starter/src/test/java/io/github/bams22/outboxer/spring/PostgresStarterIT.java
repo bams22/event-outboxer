@@ -44,6 +44,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
       "event-outboxer.maintenance.dead-threshold=2s",
       "event-outboxer.maintenance.orphan-recovery-interval=1s",
       "event-outboxer.maintenance.watchdog-interval=500ms",
+      // Short shutdown timeout — Testcontainers stops the Postgres container right after the
+      // test class completes, and the Spring context shutdown hook then tries to drain the
+      // engine through an already-dead DB. With the default 30s the JVM sits idle for half a
+      // minute while surefire patiently waits to kill the fork. 2s is enough for a genuine
+      // drain when the DB is still reachable, and short enough not to hang cleanup.
+      "event-outboxer.maintenance.shutdown-timeout=2s",
       "spring.flyway.locations=classpath:db/migration/outbox/core"
     })
 @Testcontainers
