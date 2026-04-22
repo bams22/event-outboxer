@@ -6,7 +6,8 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  # contents:write is needed for the "Create GitHub Release" step below.
+  contents: write
 
 jobs:
   release:
@@ -40,3 +41,25 @@ jobs:
           CENTRAL_TOKEN: ${{ secrets.CENTRAL_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: ./mvnw -B -ntp -Prelease deploy -Drevision=${{ steps.ver.outputs.version }} -DskipTests
+
+      # Pull the "## [X.Y.Z]" section out of CHANGELOG.md for this release's
+      # notes. The flag-based awk is used instead of a range expression
+      # because `/pat1/,/pat2/` tests both patterns against the starting
+      # line, and `^## \[` matches the version header itself — collapsing
+      # the range to a single line.
+      - name: Extract release notes from CHANGELOG
+        run: |
+          awk -v v="${{ steps.ver.outputs.version }}" '
+            $0 ~ "^## \\[" {flag=0}
+            $0 ~ "^## \\[" v "\\]" {flag=1}
+            flag
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [${{ steps.ver.outputs.version }}]' section — refusing to create an empty GitHub Release." >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
