@@ -29,8 +29,18 @@ import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
  * <p>The defaults are chosen to make a round-trip predictable for the kinds of DTOs users write in
  * production services: {@code java.time.*} via {@link JavaTimeModule}, Optional/Stream via
  * {@link Jdk8Module}, record component names via {@link ParameterNamesModule}, ISO-8601
- * timestamps (instead of epoch-millis) and a strict {@code FAIL_ON_UNKNOWN_PROPERTIES=true} so
- * schema drift is caught at deserialize time rather than silently dropped.
+ * timestamps (instead of epoch-millis) preserved in their original zone, and an
+ * evolution-friendly {@code FAIL_ON_UNKNOWN_PROPERTIES=false} (ADR-0011): unknown fields are
+ * ignored and absent fields take defaults, so mixed-version replicas can read each other's
+ * payloads during a rolling deploy — adding or removing a DTO field is a zero-downtime change
+ * in both directions. {@code FAIL_ON_NULL_FOR_PRIMITIVES} is deliberately NOT enabled: for
+ * record DTOs (the norm per ADR-0003) Jackson routes an <em>absent</em> primitive component
+ * through the null path, so enabling it would break exactly the add-a-primitive-field
+ * evolution this mapper is meant to survive.
+ *
+ * <p>Applications that want strict deserialization back opt in by providing their own mapper —
+ * a bean named {@code outboxObjectMapper} in the starter, or a customized instance passed to
+ * {@link JacksonEventSerializer} in plain-Java setups.
  */
 public final class JacksonObjectMapperFactory {
 
@@ -48,7 +58,7 @@ public final class JacksonObjectMapperFactory {
         .registerModule(new ParameterNamesModule())
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
         .enable(SerializationFeature.WRITE_DATES_WITH_ZONE_ID)
-        .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES);
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .disable(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE);
   }
 }

@@ -339,6 +339,32 @@ providing an `ObjectMapper` bean named `outboxObjectMapper` (falls back
 to the primary `ObjectMapper`, then to library defaults) or by
 registering your own `@Bean EventSerializer`.
 
+#### DTO evolution and rolling deploys
+
+The library's default `ObjectMapper` is deliberately
+evolution-friendly (`FAIL_ON_UNKNOWN_PROPERTIES` disabled): during a
+rolling deploy, mixed-version replicas read each other's payloads, and
+strictness there would disable events instead of processing them.
+With the defaults:
+
+- **Adding a DTO field is safe in both directions.** An outdated
+  replica ignores the unknown field; an updated replica reads an old
+  payload with the field absent (defaults / `null` — give new fields
+  a default value or a nullable type).
+- **Removing a field is safe** — old payloads simply carry an ignored
+  extra property.
+- **Renaming** — use `@JsonAlias("oldName")` on the new component for
+  one release, then drop it once pre-rename events are drained.
+- **Type changes are not safe**; publish a new event type instead.
+
+If deserialization does fail (a truly incompatible change or corrupt
+data), the event is **not** lost: the failure routes through the
+`FailureHandler` chain — retried with backoff, `DISABLED` only after
+the chain's attempt budget (10 by default) is exhausted, with
+`OutboxListener.onEventSerializationError` fired on every failed
+attempt. Strict deserialization can be restored by supplying a strict
+`@Bean("outboxObjectMapper")`.
+
 ### Failure handling
 
 Retry/backoff policy is configured **in Java, not YAML**: provide a

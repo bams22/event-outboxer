@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (shipped Jackson defaults reconciled
+with this ADR; see the Amendment section at the bottom)
 
 ## Date
 
@@ -204,9 +205,39 @@ If the need arises:
    `-serializer-fury`.
 5. `SerializerWithFallbackDeserializers` for format migration.
 
+## Amendment (2026-07-26): shipped defaults reconciled with this ADR
+
+The first implementation of `JacksonObjectMapperFactory.defaults()`
+shipped the OPPOSITE of the mapper prescribed above: it enabled
+`FAIL_ON_UNKNOWN_PROPERTIES` (and `FAIL_ON_NULL_FOR_PRIMITIVES`),
+omitting `ADJUST_DATES_TO_CONTEXT_TIME_ZONE`. Combined with the
+dispatcher insta-disabling events on deserialization failure, a rolling
+deploy that added a DTO field permanently disabled every event of that
+type claimed by an outdated replica.
+
+The code is now reconciled with this ADR:
+
+- `FAIL_ON_UNKNOWN_PROPERTIES` disabled — unknown fields are ignored,
+  as the "good evolution story" rationale above always intended.
+- `ADJUST_DATES_TO_CONTEXT_TIME_ZONE` disabled, per the snippet above.
+- `FAIL_ON_NULL_FOR_PRIMITIVES` left at its default (disabled). An
+  earlier draft of this amendment considered enabling it as a
+  data-corruption guard, but for record DTOs (the norm per ADR-0003)
+  Jackson routes an *absent* primitive component through the same null
+  path as an explicit null — enabling the feature breaks the
+  add-a-primitive-field evolution case this mapper must survive.
+- Deserialization failures now route through the FailureHandler chain
+  (retry with backoff, DISABLED only after the attempt budget) instead
+  of finalizing to DISABLED on first failure — see ADR-0007 amendment.
+
+Applications wanting strict deserialization opt in with their own
+mapper (`@Bean("outboxObjectMapper")` in the starter).
+
 ## Related decisions
 
 - [ADR-0003](0003-explicit-dto-payload.md) — payload is an explicit DTO.
 - [ADR-0012](0012-extract-lock-key-on-handler.md) — `lockKey` is derived
   from the deserialized payload (Jackson's cheap deserialization makes
   this acceptable).
+- [ADR-0007](0007-failure-handler-chain-of-responsibility.md) —
+  deserialization failures are handled by the failure chain.

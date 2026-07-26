@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (deserialization failures now route
+through the chain; see the Amendment section at the bottom)
 
 ## Date
 
@@ -226,6 +227,26 @@ dispatcher rather than by a chain decorator.
 - Users must grasp the composition pattern (but it is not rocket science).
 - Custom `FailureHandler`s must be thread-safe.
 
+## Amendment (2026-07-26): deserialization failures go through the chain
+
+Originally the dispatcher finalized a payload deserialization failure
+straight to `DISABLED`, bypassing the chain and the attempt budget —
+with no re-enable API, a single schema hiccup (typically mixed-version
+replicas during a rolling deploy) was irreversible.
+
+Deserialization failures now route through the same
+`applyFailureDecision` path as handler failures, with
+`FailureContext.payload = null` (the record was designed for this —
+its javadoc always documented null as "failure occurred before
+deserialization") and `outcome = null`. Consequences:
+
+- A transient failure retries with the chain's backoff and heals when
+  an updated replica claims the retry; attempts are consumed.
+- A truly poisoned payload still ends in `DISABLED` (or `DELETE`),
+  but only after `MaxRetriesFailureHandler`'s budget.
+- `OutboxListener.onEventSerializationError` still fires on every
+  failed deserialization, before the chain runs.
+
 ## Related decisions
 
 - [ADR-0013](0013-outbox-listener-for-observability.md) —
@@ -234,3 +255,6 @@ dispatcher rather than by a chain decorator.
   storage commit).
 - [ADR-0015](0015-at-least-once-semantics.md) — the retry model is built on
   at-least-once.
+- [ADR-0011](0011-jackson-json-only-in-mvp.md) — the evolution-friendly
+  Jackson defaults that make deserialization failures rare in the first
+  place.

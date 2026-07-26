@@ -7,6 +7,24 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **Payload deserialization failures are recoverable.** They now route
+  through the `FailureHandler` chain (retry with backoff, `DISABLED` only
+  after the attempt budget) instead of finalizing to `DISABLED` on the
+  first failure with no recovery path. A rolling deploy with mixed-version
+  replicas no longer permanently disables events; `onEventSerializationError`
+  still fires on every failed attempt. Amends ADR-0007.
+
+### Changed
+- **Jackson defaults are evolution-friendly**, as ADR-0011 always
+  prescribed (the implementation had shipped the opposite):
+  `FAIL_ON_UNKNOWN_PROPERTIES` and `ADJUST_DATES_TO_CONTEXT_TIME_ZONE`
+  are now disabled, `FAIL_ON_NULL_FOR_PRIMITIVES` is no longer enabled
+  (it breaks add-a-primitive-field evolution for record DTOs). Adding or
+  removing DTO fields is now safe across a rolling deploy. Behavioral
+  change vs 0.2.0; strictness is available via a custom
+  `@Bean("outboxObjectMapper")`.
+
 ### Added
 - **Capacity-coupled polling.** The poller now claims
   `min(claim-batch-size, free executor capacity)`, stops claiming entirely

@@ -74,11 +74,39 @@ class JacksonEventSerializerTest {
   }
 
   @Test
-  void failsOnUnknownPropertiesByDefault() {
+  void ignoresUnknownPropertiesByDefault() {
+    // ADR-0011: evolution-friendly default — a payload written by a NEWER DTO version (extra
+    // field) must deserialize on an older replica during a rolling deploy.
     String json = "{\"orderId\":\"ord-1\",\"count\":1,\"occurredAt\":\"2026-04-21T12:00:00Z\",\"ghostField\":true}";
 
-    assertThatThrownBy(() -> serializer.deserialize(json, OrderCreated.class))
-        .isInstanceOf(PayloadDeserializationException.class);
+    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+
+    assertThat(parsed)
+        .isEqualTo(new OrderCreated("ord-1", 1, Instant.parse("2026-04-21T12:00:00Z")));
+  }
+
+  @Test
+  void toleratesMissingFieldWithPrimitiveDefault() {
+    // A payload written by an OLDER DTO version (field not yet present) must deserialize on a
+    // newer replica: absent primitive → default value.
+    String json = "{\"orderId\":\"ord-1\",\"occurredAt\":\"2026-04-21T12:00:00Z\"}";
+
+    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+
+    assertThat(parsed.count()).isZero();
+  }
+
+  @Test
+  void toleratesExplicitNullForPrimitive() {
+    // FAIL_ON_NULL_FOR_PRIMITIVES is deliberately off: for record DTOs Jackson routes an ABSENT
+    // primitive component through the same null path as an explicit null, so enabling the
+    // feature would break the add-a-primitive-field evolution case. Both resolve to the default.
+    String json =
+        "{\"orderId\":\"ord-1\",\"count\":null,\"occurredAt\":\"2026-04-21T12:00:00Z\"}";
+
+    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+
+    assertThat(parsed.count()).isZero();
   }
 
   @Test
