@@ -41,6 +41,8 @@
         <module>event-outboxer-lock-redis</module>
         <module>event-outboxer-cache-redis</module>
         <module>event-outboxer-metrics-micrometer</module>
+        <module>event-outboxer-admin-actuator</module>
+        <module>event-outboxer-admin-rest</module>
         <module>event-outboxer-testkit</module>
         <module>event-outboxer-spring-boot-starter</module>
     </modules>
@@ -210,6 +212,16 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-metrics-micrometer</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-admin-actuator</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-admin-rest</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

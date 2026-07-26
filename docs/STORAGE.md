@@ -597,21 +597,27 @@ LEFT JOIN event_outboxer.events e
     ON e.claimed_by = w.worker_id AND e.status = 'PROCESSING'
 GROUP BY w.worker_id, w.host;
 
--- DISABLED events for investigation
-SELECT id, event_type, attempts, last_fail_reason, created_at
-FROM event_outboxer.events
-WHERE status = 'DISABLED'
-ORDER BY created_at DESC
-LIMIT 50;
+```
 
--- Reviving a DISABLED event (admin)
-UPDATE event_outboxer.events
-SET status = 'PENDING',
-    attempts = 0,
-    last_fail_reason = 'manually re-enabled',
-    version = version + 1
-WHERE id = :event_id
-  AND status = 'DISABLED';
+### Admin API (preferred over raw SQL)
+
+Investigating and reviving `DISABLED` events, archive lookups and
+retention purges no longer require hand-written SQL: the
+`OutboxAdmin` SPI port (ADR-0019) exposes `findByStatus` (keyset
+pagination), `findInArchive`, `reenable` / `reenableAll` (back to
+`PENDING` with a fresh attempts budget and a correct `version` bump),
+`purgeDisabled` and `purgeArchive`. Consume it as a Spring bean, via
+the `event-outboxer-admin-actuator` endpoint, or via the opt-in
+`event-outboxer-admin-rest` controller — see
+[CONFIGURATION.md](CONFIGURATION.md#event-outboxeradminrest-and-the-admin-modules).
+
+Migration `V003__outbox_admin_index.sql` backs these operations with a
+partial index:
+
+```sql
+CREATE INDEX idx_events_disabled_created_at
+    ON event_outboxer.events (created_at, id)
+    WHERE status = 'DISABLED';
 ```
 
 ---

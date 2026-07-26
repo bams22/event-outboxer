@@ -38,4 +38,13 @@
             stripComments="false"
             endDelimiter=";"/>
     </changeSet>
+
+    <changeSet id="outbox-core-003-admin-index" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="db/migration/outbox/core/V003__outbox_admin_index.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
 </databaseChangeLog>

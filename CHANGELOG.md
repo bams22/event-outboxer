@@ -7,6 +7,21 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- **Admin and retention surface (ADR-0019).** New `OutboxAdmin` SPI port
+  (list events by status with keyset pagination, archive lookup via the new
+  `ArchivedEvent` type, `reenable`/`reenableAll` with a fresh attempts
+  budget, `purgeDisabled`/`purgeArchive`), implemented by both storage
+  adapters and pinned by a shared contract test. Migration V003 adds a
+  partial index over `DISABLED` rows. Two new opt-in surface modules:
+  `event-outboxer-admin-actuator` (endpoint `outboxadmin`, standard
+  Actuator exposure/security model) and `event-outboxer-admin-rest`
+  (disabled by default; guarded by `@PreAuthorize` with the authority from
+  `event-outboxer.admin.rest.required-authority`, failing fast at startup
+  when Spring Security is present without `@EnableMethodSecurity`).
+  A shipped `RetentionTask` (off by default, `event-outboxer.retention.*`)
+  batch-purges the archive and old `DISABLED` rows. 15 modules total.
+
 ### Fixed
 - **Payload deserialization failures are recoverable.** They now route
   through the `FailureHandler` chain (retry with backoff, `DISABLED` only

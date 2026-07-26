@@ -373,6 +373,16 @@ public final class InMemoryEventStore implements EventStore {
   // helpers
   // ---------------------------------------------------------------------------------------------
 
+  /** Backing rows, exposed for {@link InMemoryOutboxAdmin} in this package. */
+  ConcurrentMap<UUID, EventRow> rows() {
+    return rows;
+  }
+
+  /** Clock this store stamps rows with, exposed for {@link InMemoryOutboxAdmin}. */
+  Clock clock() {
+    return clock;
+  }
+
   /** Must be called under {@code synchronized (row)}. */
   private static boolean matchesClaim(EventRow row, WorkerId workerId, long claimedVersion) {
     return row.status == EventStatus.PROCESSING

@@ -75,7 +75,7 @@ asynchronously with atomicity guarantees relative to business transactions.
 
 ## Module layout
 
-The library consists of 12 Maven modules:
+The library consists of 15 Maven modules:
 
 ```
 event-outboxer (parent pom)
@@ -90,6 +90,8 @@ event-outboxer (parent pom)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
+├── event-outboxer-admin-actuator           Actuator endpoint over OutboxAdmin
+├── event-outboxer-admin-rest               REST controller over OutboxAdmin
 ├── event-outboxer-testkit                  Test utilities (SettableClock, ManualEngine)
 └── event-outboxer-spring-boot-starter      Autoconfiguration + SmartLifecycle
 ```

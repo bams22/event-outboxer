@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (archive lookup and retention now exist
+via the OutboxAdmin port; see the Amendment section at the bottom)
 
 ## Date
 
@@ -159,6 +160,23 @@ archive (for admin investigation). The application chooses explicitly.
   and active data.
 - The archive is enabled by a separate migration (the user must add the
   path to Flyway locations).
+
+## Amendment (2026-07-26): archive lookup and retention realized via OutboxAdmin
+
+Two commitments of this ADR stayed unimplemented until ADR-0019:
+
+- **Archive lookup.** The `findByIdIncludingArchived` method described
+  above was never added to `EventStore`. It is now realized as
+  `OutboxAdmin.findInArchive(id)` — a separate port (ADR-0019), a
+  separate `ArchivedEvent` domain record, and the admin surfaces
+  (Actuator / REST) combine active + archive lookup per id.
+- **Retention.** "An independent job" is no longer purely the user's
+  homework: the library ships `RetentionTask`
+  (`event-outboxer.retention.archive-older-than`, off by default) plus
+  `OutboxAdmin.purgeArchive` / `purgeDisabled` for manual scheduling.
+  DISABLED rows in the hot table — this ADR's "few (only real
+  failures)" assumption — also got a retention path and a partial
+  index (migration V003).
 
 ## Related decisions
 

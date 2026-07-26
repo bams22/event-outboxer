@@ -12,9 +12,11 @@ package io.github.bams22.outboxer.spring.storage;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryConnectionSupplier;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
+import io.github.bams22.outboxer.storage.inmemory.InMemoryOutboxAdmin;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -52,5 +54,12 @@ public class InMemoryStorageAutoConfiguration {
   @ConditionalOnMissingBean(ConnectionSupplier.class)
   public InMemoryConnectionSupplier outboxConnectionSupplier() {
     return new InMemoryConnectionSupplier();
+  }
+
+  @Bean
+  @ConditionalOnMissingBean(OutboxAdmin.class)
+  @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(InMemoryEventStore.class)
+  public InMemoryOutboxAdmin outboxAdmin(InMemoryEventStore store) {
+    return new InMemoryOutboxAdmin(store);
   }
 }

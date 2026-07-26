@@ -11,10 +11,12 @@ package io.github.bams22.outboxer.spring.storage;
 
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
+import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.github.bams22.outboxer.storage.postgres.PostgresEventStore;
+import io.github.bams22.outboxer.storage.postgres.PostgresOutboxAdmin;
 import io.github.bams22.outboxer.storage.postgres.PostgresStorageProperties;
 import io.github.bams22.outboxer.storage.postgres.PostgresWorkerRegistry;
 import java.sql.Connection;
@@ -50,6 +52,13 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 @ConditionalOnBean(DataSource.class)
 @ConditionalOnProperty(prefix = "event-outboxer.storage", name = "type", havingValue = "postgres")
 public class PostgresStorageAutoConfiguration {
+
+  @Bean
+  @ConditionalOnMissingBean(OutboxAdmin.class)
+  public PostgresOutboxAdmin outboxAdmin(
+      ConnectionSupplier connections, PostgresStorageProperties properties) {
+    return new PostgresOutboxAdmin(connections, properties);
+  }
 
   @Bean
   @ConditionalOnMissingBean(ConnectionSupplier.class)
