@@ -120,6 +120,19 @@ event-outboxer:
     # empty = no influence on /actuator/health/liveness or /readiness.
     # For k8s rolling restart: [readiness] is the recommended minimum.
     probe-groups: []
+
+  retention:
+    archive-older-than: null         # e.g. 30d; null (default) = archive retention off
+    disabled-older-than: null        # e.g. 90d; null (default) = DISABLED retention off
+    batch-size: 1000                 # rows per DELETE; a pass loops until a short batch
+    interval: 1h                     # delay between retention passes
+
+  admin:
+    rest:                            # requires the event-outboxer-admin-rest module
+      enabled: false                 # write-capable HTTP surface — strictly opt-in
+      base-path: /outbox-admin
+      required-authority: OUTBOX_ADMIN
+      enforce-authority: true        # fail startup if @PreAuthorize would be silently ignored
 ```
 
 ---
@@ -329,6 +342,42 @@ Spring Boot Actuator integration.
   `<name>State` contributor. See [docs/OBSERVABILITY.md §Kubernetes probes](OBSERVABILITY.md#kubernetes-probes)
   for the tradeoffs between probe-driven pod lifecycle and
   metric-driven alerting.
+
+### `event-outboxer.retention.*`
+
+Optional cleanup of the archive table and of accumulated `DISABLED`
+events (ADR-0019), executed by a maintenance task on the engine's
+scheduler. **Both thresholds default to off** — deleting data is never
+a surprise default; enable with one line, e.g.
+`retention.archive-older-than: 30d`. `disabled-older-than` ages by
+`created_at` (the schema does not record the moment of disabling).
+Requires the storage adapter's `OutboxAdmin` (wired automatically by
+the starter).
+
+### `event-outboxer.admin.rest.*` and the admin modules
+
+Operational surface over the `OutboxAdmin` SPI port (ADR-0019): list
+events by status with keyset pagination, look events up in the
+archive, re-enable `DISABLED` events (single or bulk, with a fresh
+attempts budget), purge old rows. Two interchangeable surfaces, each
+activated by adding its module next to the starter:
+
+- **`event-outboxer-admin-actuator`** — Actuator endpoint
+  `outboxadmin`. Not exposed by default; expose with
+  `management.endpoints.web.exposure.include=outboxadmin` and secure
+  it like any other Actuator endpoint. No `event-outboxer.*`
+  properties of its own.
+- **`event-outboxer-admin-rest`** — REST controller under
+  `base-path`. `enabled` defaults to `false`. Every operation requires
+  the authority named by `required-authority` on the authenticated
+  principal, enforced via `@PreAuthorize` + Spring **method
+  security**. Security posture:
+  - no Spring Security on the classpath → the API runs unprotected
+    (accepted for security-less apps);
+  - Spring Security present but `@EnableMethodSecurity` missing →
+    **startup fails** with an actionable message, because the
+    annotation would otherwise be silently ignored;
+    `enforce-authority: false` is the explicit opt-out.
 
 ### Serialization
 

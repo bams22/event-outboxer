@@ -125,6 +125,7 @@ public class OutboxEngineAutoConfiguration {
       WorkerId workerId,
       OutboxProperties properties,
       io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
+      ObjectProvider<io.github.bams22.outboxer.spi.OutboxAdmin> adminProvider,
       ObjectProvider<EventHandler<?>> handlerProvider,
       @Qualifier("outboxDefaultFailureHandler") ObjectProvider<FailureHandler<?>>
               defaultFailureHandlerProvider,
@@ -146,7 +147,9 @@ public class OutboxEngineAutoConfiguration {
             .workerIdSupplier(() -> workerId)
             .wakeHub(wakeHub)
             .maintenance(mapMaintenance(properties.getMaintenance()))
+            .retention(mapRetention(properties.getRetention()))
             .dispatcher(mapDispatcher(properties.getDispatcher()));
+    adminProvider.ifAvailable(builder::admin);
 
     // Thin merge (CONFIGURATION.md §Per-type override): user defaults overlay the library
     // defaults, and each per-type override overlays the resolved defaults field by field —
@@ -217,6 +220,16 @@ public class OutboxEngineAutoConfiguration {
         .watchdogInterval(m.getWatchdogInterval())
         .reclaimBatchSize(m.getReclaimBatchSize())
         .shutdownTimeout(m.getShutdownTimeout())
+        .build();
+  }
+
+  private static io.github.bams22.outboxer.core.config.RetentionConfig mapRetention(
+      OutboxProperties.Retention r) {
+    return io.github.bams22.outboxer.core.config.RetentionConfig.builder()
+        .archiveOlderThan(r.getArchiveOlderThan())
+        .disabledOlderThan(r.getDisabledOlderThan())
+        .batchSize(r.getBatchSize())
+        .interval(r.getInterval())
         .build();
   }
 

@@ -1,0 +1,63 @@
+/*
+ * Copyright the event-outboxer authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ */
+package io.github.bams22.outboxer.domain;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * A successfully processed event as stored in the opt-in archive table (ADR-0008). Deliberately a
+ * separate type from {@link Event}: archived rows have no status, claim or version — modelling
+ * them as an {@code Event} would require a synthetic {@code EventStatus} value the store never
+ * persists.
+ *
+ * @param id original event id
+ * @param eventType event type
+ * @param payload serialized payload as stored
+ * @param payloadClass FQCN recorded at publish time
+ * @param priority publish-time priority
+ * @param attempts attempts consumed before the successful run
+ * @param createdAt original publish time
+ * @param runAt effective run-at of the successful delivery
+ * @param lastFailReason last failure reason prior to success, if any
+ * @param traceContext propagated trace context
+ * @param archivedAt time the row was moved to the archive
+ * @param archivedBy worker that finalized the event
+ */
+public record ArchivedEvent(
+    UUID id,
+    String eventType,
+    String payload,
+    String payloadClass,
+    short priority,
+    int attempts,
+    Instant createdAt,
+    Instant runAt,
+    @Nullable String lastFailReason,
+    Map<String, String> traceContext,
+    Instant archivedAt,
+    String archivedBy) {
+
+  public ArchivedEvent {
+    Objects.requireNonNull(id, "id must not be null");
+    Objects.requireNonNull(eventType, "eventType must not be null");
+    Objects.requireNonNull(payload, "payload must not be null");
+    Objects.requireNonNull(payloadClass, "payloadClass must not be null");
+    Objects.requireNonNull(createdAt, "createdAt must not be null");
+    Objects.requireNonNull(runAt, "runAt must not be null");
+    Objects.requireNonNull(traceContext, "traceContext must not be null");
+    Objects.requireNonNull(archivedAt, "archivedAt must not be null");
+    Objects.requireNonNull(archivedBy, "archivedBy must not be null");
+    traceContext = Map.copyOf(traceContext);
+  }
+}

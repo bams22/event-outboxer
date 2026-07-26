@@ -46,6 +46,7 @@ public class OutboxProperties {
   private final Metrics metrics = new Metrics();
   private final Health health = new Health();
   private final Cache cache = new Cache();
+  private final Retention retention = new Retention();
 
   // =============================================================================================
   // nested groups
@@ -135,6 +136,29 @@ public class OutboxProperties {
   public enum NoTxPolicy {
     FAIL,
     IGNORE
+  }
+
+  /**
+   * Retention of the archive table and of accumulated {@code DISABLED} events (ADR-0019). Both
+   * thresholds default to {@code null} = off — deleting data is never a surprise default.
+   */
+  @Getter
+  @Setter
+  public static class Retention {
+    /** Delete archive rows older than this. {@code null} (default): archive retention off. */
+    private @Nullable Duration archiveOlderThan;
+
+    /**
+     * Delete {@code DISABLED} events created earlier than this ago (age approximated by
+     * {@code created_at}). {@code null} (default): off.
+     */
+    private @Nullable Duration disabledOlderThan;
+
+    /** Rows deleted per statement; a pass loops until a batch comes back short. */
+    private int batchSize = 1000;
+
+    /** Delay between retention passes. */
+    private Duration interval = Duration.ofHours(1);
   }
 
   @Getter

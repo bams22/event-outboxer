@@ -29,6 +29,7 @@ public final class MaintenanceScheduler {
   private final OrphanRecoveryTask orphanRecovery;
   private final WatchdogTask watchdog;
   private final EngineHealthCheckTask engineHealthCheck;
+  private final @org.jspecify.annotations.Nullable RetentionTask retention;
   private final MaintenanceConfig config;
 
   private @org.jspecify.annotations.Nullable ScheduledExecutorService executor;
@@ -38,11 +39,13 @@ public final class MaintenanceScheduler {
       OrphanRecoveryTask orphanRecovery,
       WatchdogTask watchdog,
       EngineHealthCheckTask engineHealthCheck,
+      @org.jspecify.annotations.Nullable RetentionTask retention,
       MaintenanceConfig config) {
     this.heartbeat = Objects.requireNonNull(heartbeat);
     this.orphanRecovery = Objects.requireNonNull(orphanRecovery);
     this.watchdog = Objects.requireNonNull(watchdog);
     this.engineHealthCheck = Objects.requireNonNull(engineHealthCheck);
+    this.retention = retention;
     this.config = Objects.requireNonNull(config);
   }
 
@@ -58,6 +61,9 @@ public final class MaintenanceScheduler {
     scheduleFixed(executor, watchdog, config.watchdogInterval());
     // Crash detection ticks at the same cadence as the watchdog — no new config knob.
     scheduleFixed(executor, engineHealthCheck, config.watchdogInterval());
+    if (retention != null) {
+      scheduleFixed(executor, retention, retention.interval());
+    }
   }
 
   /**

@@ -525,7 +525,8 @@ public final class PostgresEventStore implements EventStore {
         rs.getLong("version"));
   }
 
-  private static Event readEvent(ResultSet rs) throws SQLException {
+  /** Package-private: reused by {@link PostgresOutboxAdmin}. */
+  static Event readEvent(ResultSet rs) throws SQLException {
     String statusStr = rs.getString("status");
     @Nullable String claimedByStr = rs.getString("claimed_by");
     @Nullable Timestamp claimedAt = rs.getTimestamp("claimed_at");

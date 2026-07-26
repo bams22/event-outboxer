@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.core.concurrent.NamedThreadFactory;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
+import io.github.bams22.outboxer.core.config.RetentionConfig;
 import io.github.bams22.outboxer.core.dispatch.DispatcherConfig;
 import io.github.bams22.outboxer.core.dispatch.EventHandlerResolver;
 import io.github.bams22.outboxer.core.dispatch.FailureHandlerResolver;
@@ -29,6 +30,7 @@ import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
 import io.github.bams22.outboxer.core.maintenance.EngineHealthCheckTask;
+import io.github.bams22.outboxer.core.maintenance.RetentionTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
 import io.github.bams22.outboxer.core.polling.LockAndFetchStrategy;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
@@ -44,6 +46,7 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -96,6 +99,8 @@ public final class OutboxEngineBuilder {
   private @Nullable Function<EventTypeConfig, ExecutorService> handlerExecutorFactory;
   private @Nullable PollStrategy pollStrategy;
   private @Nullable PollerWakeHub wakeHub;
+  private @Nullable OutboxAdmin admin;
+  private RetentionConfig retentionConfig = RetentionConfig.disabled();
 
   // ---------------------------------------------------------------------------------------------
   // required collaborators
@@ -232,6 +237,22 @@ public final class OutboxEngineBuilder {
     return this;
   }
 
+  /**
+   * Admin port used by the optional retention task. The engine itself never calls admin
+   * operations; the port is only consumed when {@link #retention(RetentionConfig)} enables at
+   * least one threshold.
+   */
+  public OutboxEngineBuilder admin(OutboxAdmin admin) {
+    this.admin = Objects.requireNonNull(admin);
+    return this;
+  }
+
+  /** Retention thresholds (ADR-0019). Default: fully disabled. */
+  public OutboxEngineBuilder retention(RetentionConfig config) {
+    this.retentionConfig = Objects.requireNonNull(config);
+    return this;
+  }
+
   // ---------------------------------------------------------------------------------------------
   // build
   // ---------------------------------------------------------------------------------------------
@@ -331,9 +352,13 @@ public final class OutboxEngineBuilder {
                 e.markCrashed(reason, cause);
               }
             });
+    RetentionTask retention =
+        admin != null && retentionConfig.enabled()
+            ? new RetentionTask(admin, clock, retentionConfig)
+            : null;
     MaintenanceScheduler maintenance =
         new MaintenanceScheduler(
-            heartbeat, orphanTask, watchdog, engineHealthCheck, maintenanceConfig);
+            heartbeat, orphanTask, watchdog, engineHealthCheck, retention, maintenanceConfig);
 
     OutboxEngine engine =
         new OutboxEngine(
