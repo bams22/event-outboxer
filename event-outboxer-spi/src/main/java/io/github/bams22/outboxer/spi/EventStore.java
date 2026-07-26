@@ -49,9 +49,15 @@ public interface EventStore {
    * Insert a single pending event. Participates in the caller's transaction via the {@link
    * ConnectionSupplier} port when the PostgreSQL adapter is used (ADR-0002).
    *
+   * <p>When {@code event.dedupKey()} is set, the insert is conditional (ADR-0021): if a
+   * {@code PENDING} event with the same {@code (eventType, dedupKey)} already exists, nothing is
+   * inserted and {@code false} is returned. Events without a dedup key always insert.
+   *
+   * @return {@code true} if the row was inserted; {@code false} if it was coalesced away by an
+   *     existing PENDING event with the same dedup key
    * @throws EventStoreException if the write fails
    */
-  void save(PendingEvent event);
+  boolean save(PendingEvent event);
 
   /**
    * Batch-insert pending events. Adapters should prefer a single multi-value INSERT or a
@@ -59,9 +65,26 @@ public interface EventStore {
    * ADR-0011 the operation is fail-fast: any violation rolls the whole batch back through the
    * enclosing transaction.
    *
+   * <p>Events with a dedup key are NOT allowed here — coalescing needs the per-row feedback of
+   * {@link #save(PendingEvent)}; the publisher routes such requests individually.
+   *
    * @throws EventStoreException if the batch fails
+   * @throws IllegalArgumentException if any event carries a dedup key
    */
   void saveAll(List<PendingEvent> events);
+
+  /**
+   * Find the {@code PENDING} event with the given {@code (eventType, dedupKey)} and — for
+   * adapters that participate in the caller's transaction — lock its row so that claim queries
+   * (which use {@code FOR UPDATE SKIP LOCKED}) skip it until the caller's transaction commits.
+   * This is the coalescing visibility guarantee of ADR-0021: the transaction whose publish was
+   * coalesced into an existing event is always committed before that event is handled.
+   *
+   * @return the id of the locked PENDING event, or empty if none exists (claimed, finalized or
+   *     never published) — callers should retry the insert then
+   * @throws EventStoreException if the query fails
+   */
+  Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey);
 
   /**
    * Claim up to {@code request.limit()} events of {@code request.eventType()} for processing by

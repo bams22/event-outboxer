@@ -91,6 +91,12 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     return publish(eventType, payload, PublishOptions.builder().runAt(runAt).build());
   }
 
+  /**
+   * Bounded retry for the coalescing race: the conditional insert conflicted, but the
+   * conflicting PENDING row got claimed or finalized before we could lock it — re-insert.
+   */
+  private static final int DEDUP_RACE_RETRIES = 3;
+
   @Override
   public UUID publish(String eventType, Object payload, @Nullable PublishOptions options) {
     validate(eventType, payload);
@@ -99,7 +105,17 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
     PendingEvent pending = buildPending(eventType, payload, resolved);
     try {
-      store.save(pending);
+      if (pending.dedupKey() != null) {
+        CoalescingResult result = saveCoalescing(pending);
+        if (!result.inserted()) {
+          // Coalesced into an existing PENDING event. No listener, no wake — nothing new was
+          // inserted, and the existing row is pinned (FOR UPDATE) inside this transaction, so
+          // claims skip it until we commit and its handler is guaranteed to see our changes.
+          return result.existingId();
+        }
+      } else {
+        store.save(pending);
+      }
     } catch (StorageException ex) {
       throw new PublishFailedException(
           "storage rejected event " + pending.id() + " of type " + eventType, ex);
@@ -107,6 +123,64 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     emitPublished(pending);
     scheduleWake(Set.of(eventType));
     return pending.id();
+  }
+
+  private record CoalescingResult(boolean inserted, @Nullable UUID existingId) {}
+
+  /**
+   * ADR-0021 coalescing insert. Each loop iteration ends in exactly one of three outcomes:
+   *
+   * <ol>
+   *   <li><b>Inserted</b> — no PENDING event with this {@code (type, key)} existed; the partial
+   *       unique index arbitrated atomically ({@code ON CONFLICT}), which is why the insert goes
+   *       FIRST: the common case (first publish of a key) resolves in a single statement, and a
+   *       lock-first ordering would have the mirrored insert-after-check race anyway.
+   *   <li><b>Coalesced</b> — the conflicting PENDING row was found and locked ({@code SELECT ...
+   *       FOR UPDATE}) inside the caller's transaction. From this moment the claim query
+   *       ({@code FOR UPDATE SKIP LOCKED}) skips the row until our commit, so its handler is
+   *       guaranteed to observe this transaction's changes. If the lock lands on a DIFFERENT
+   *       row than the one that caused the conflict (old one finalized, another publisher
+   *       inserted anew), that is equally correct: any pinned PENDING event of this key carries
+   *       the work and runs after our commit.
+   *   <li><b>Vanished</b> — the row that conflicted with our insert is no longer PENDING by the
+   *       time we try to lock it (claimed, possibly already finalized). This is not a missed
+   *       race but the semantically REQUIRED branch: an event claimed before our commit may run
+   *       against a snapshot without our changes, so coalescing into it would lose our update —
+   *       we must loop and insert our own event (the old row no longer occupies the
+   *       PENDING-scoped unique index, so the retry succeeds unless yet another publisher got
+   *       there first).
+   * </ol>
+   *
+   * <p>The lock probe cannot read stale state: if the row is being claimed concurrently, our
+   * {@code SELECT ... FOR UPDATE} blocks on the claim's row lock and PostgreSQL re-evaluates
+   * the {@code status = 'PENDING'} predicate against the committed row version afterwards
+   * (EvalPlanQual) — we either hold the lock on a genuinely PENDING row or see empty.
+   *
+   * <p>Reaching the retry bound requires a fresh PENDING row of the same key to appear AND
+   * disappear in the microsecond window between our conflict and our lock, {@code
+   * DEDUP_RACE_RETRIES} times in a row — a pathological churn that the bound converts from a
+   * theoretical livelock into a loud failure.
+   */
+  private CoalescingResult saveCoalescing(PendingEvent pending) {
+    for (int attempt = 0; attempt < DEDUP_RACE_RETRIES; attempt++) {
+      if (store.save(pending)) {
+        return new CoalescingResult(true, null);
+      }
+      var existing = store.lockPendingByDedupKey(pending.eventType(), pending.dedupKey());
+      if (existing.isPresent()) {
+        return new CoalescingResult(false, existing.get());
+      }
+      // The PENDING row vanished under us — loop and insert our own.
+    }
+    throw new PublishFailedException(
+        "could not publish event with dedupKey '"
+            + pending.dedupKey()
+            + "' of type "
+            + pending.eventType()
+            + " after "
+            + DEDUP_RACE_RETRIES
+            + " attempts (pathological claim/finalize churn on the key)",
+        null);
   }
 
   @Override
@@ -117,27 +191,40 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
     enforceTransactionPolicy();
 
-    List<PendingEvent> pendings = new ArrayList<>(requests.size());
+    // Requests with a dedup key need per-row coalescing feedback and go through save(...) one
+    // by one; the rest batch through saveAll. Returned ids stay aligned with request order.
+    List<PendingEvent> batch = new ArrayList<>(requests.size());
     List<UUID> ids = new ArrayList<>(requests.size());
-    for (PublishRequest r : requests) {
-      Objects.requireNonNull(r, "request element must not be null");
-      validate(r.eventType(), r.payload());
-      PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
-      PendingEvent pe = buildPending(r.eventType(), r.payload(), opts);
-      pendings.add(pe);
-      ids.add(pe.id());
-    }
-
+    List<PendingEvent> inserted = new ArrayList<>(requests.size());
     try {
-      store.saveAll(pendings);
+      for (PublishRequest r : requests) {
+        Objects.requireNonNull(r, "request element must not be null");
+        validate(r.eventType(), r.payload());
+        PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
+        PendingEvent pe = buildPending(r.eventType(), r.payload(), opts);
+        if (pe.dedupKey() != null) {
+          CoalescingResult result = saveCoalescing(pe);
+          if (result.inserted()) {
+            inserted.add(pe);
+            ids.add(pe.id());
+          } else {
+            ids.add(result.existingId());
+          }
+        } else {
+          batch.add(pe);
+          ids.add(pe.id());
+        }
+      }
+      store.saveAll(batch);
+      inserted.addAll(batch);
     } catch (StorageException ex) {
-      throw new PublishFailedException("publishAll(" + pendings.size() + ") failed", ex);
+      throw new PublishFailedException("publishAll(" + requests.size() + ") failed", ex);
     }
-    for (PendingEvent pe : pendings) {
+    for (PendingEvent pe : inserted) {
       emitPublished(pe);
     }
     Set<String> types = new LinkedHashSet<>();
-    for (PendingEvent pe : pendings) {
+    for (PendingEvent pe : inserted) {
       types.add(pe.eventType());
     }
     scheduleWake(types);
@@ -193,6 +280,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         .priority(priority)
         .runAt(runAt)
         .traceContext(traceContext)
+        .dedupKey(options.dedupKey())
         .build();
   }
 

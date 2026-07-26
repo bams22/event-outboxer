@@ -175,6 +175,59 @@ class DefaultOutboxEventPublisherTest {
     assertThat(store.findById(id)).isPresent();
   }
 
+  @Test
+  void dedupKeyCoalescesIntoExistingPendingEvent() {
+    InMemoryEventStore store = new InMemoryEventStore();
+    java.util.concurrent.atomic.AtomicInteger published =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.List<String> wakes = new java.util.ArrayList<>();
+    DefaultOutboxEventPublisher publisher =
+        new DefaultOutboxEventPublisher(
+            store,
+            new StringEventSerializer(),
+            Clock.system(),
+            TransactionContext.alwaysActive(),
+            NoTransactionPolicy.FAIL,
+            new OutboxListener() {
+              @Override
+              public void onEventPublished(EventPublishedInfo info) {
+                published.incrementAndGet();
+              }
+            },
+            wakes::add);
+    PublishOptions keyed = PublishOptions.builder().dedupKey("order-1").build();
+
+    UUID first = publisher.publish("SYNC", "v1", keyed);
+    UUID second = publisher.publish("SYNC", "v2", keyed);
+    UUID third = publisher.publish("SYNC", "v3", PublishOptions.builder().dedupKey("order-2").build());
+
+    assertThat(second).isEqualTo(first); // coalesced into the existing pending event
+    assertThat(third).isNotEqualTo(first);
+    assertThat(published).hasValue(2); // listener only for real inserts
+    assertThat(wakes).containsExactly("SYNC", "SYNC"); // wake only for real inserts
+    assertThat(store.findById(first)).isPresent();
+  }
+
+  @Test
+  void publishAllRoutesDedupRequestsIndividually() {
+    InMemoryEventStore store = new InMemoryEventStore();
+    DefaultOutboxEventPublisher publisher = plain(store);
+    PublishOptions keyed = PublishOptions.builder().dedupKey("k").build();
+
+    java.util.List<UUID> ids =
+        publisher.publishAll(
+            java.util.List.of(
+                new io.github.bams22.outboxer.api.publish.PublishRequest("A", "a1", keyed),
+                new io.github.bams22.outboxer.api.publish.PublishRequest("A", "a2", keyed),
+                new io.github.bams22.outboxer.api.publish.PublishRequest("A", "plain", null)));
+
+    assertThat(ids).hasSize(3);
+    assertThat(ids.get(1)).isEqualTo(ids.get(0)); // second keyed request coalesced
+    assertThat(ids.get(2)).isNotEqualTo(ids.get(0));
+    assertThat(store.findById(ids.get(0))).isPresent();
+    assertThat(store.findById(ids.get(2))).isPresent();
+  }
+
   private static final OutboxListener NOOP = new OutboxListener() {};
 
   private static DefaultOutboxEventPublisher plain(InMemoryEventStore store) {

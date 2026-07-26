@@ -57,6 +57,7 @@ public final class PostgresEventStore implements EventStore {
   private final Clock clock;
 
   private final String sqlInsert;
+  private final String sqlLockPendingByDedupKey;
   private final String sqlClaim;
   private final String sqlMarkProcessedNoArchive;
   private final String sqlMarkProcessedWithArchive;
@@ -83,11 +84,24 @@ public final class PostgresEventStore implements EventStore {
     this.metricsCache = Objects.requireNonNull(metricsCache, "metricsCache must not be null");
     this.tables = new SchemaResolver(properties);
 
+    // ON CONFLICT targets the partial unique index over PENDING rows (V004): an insert with a
+    // dedup key coalesces into an existing PENDING event of the same (type, key) — see
+    // ADR-0021. Rows without a dedup key never match the partial index and always insert;
+    // a duplicate primary key still raises normally (the conflict target names only the index).
     this.sqlInsert =
         "INSERT INTO "
             + tables.events()
-            + " (id, event_type, payload, payload_class, priority, status, created_at, run_at, trace_context) "
-            + "VALUES (?, ?, ?::jsonb, ?, ?, 'PENDING', now(), ?, ?::jsonb)";
+            + " (id, event_type, payload, payload_class, priority, status, created_at, run_at, "
+            + "trace_context, dedup_key) "
+            + "VALUES (?, ?, ?::jsonb, ?, ?, 'PENDING', now(), ?, ?::jsonb, ?) "
+            + "ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND dedup_key IS NOT NULL "
+            + "DO NOTHING";
+
+    this.sqlLockPendingByDedupKey =
+        "SELECT id FROM "
+            + tables.events()
+            + " WHERE event_type = ? AND dedup_key = ? AND status = 'PENDING' "
+            + "FOR UPDATE";
 
     this.sqlClaim =
         "WITH picked AS ("
@@ -190,7 +204,8 @@ public final class PostgresEventStore implements EventStore {
 
     this.sqlFindById =
         "SELECT id, event_type, payload, payload_class, priority, attempts, status, "
-            + "created_at, run_at, claimed_by, claimed_at, last_fail_reason, trace_context, version "
+            + "created_at, run_at, claimed_by, claimed_at, last_fail_reason, trace_context, version, "
+            + "dedup_key "
             + "FROM "
             + tables.events()
             + " WHERE id = ?";
@@ -209,12 +224,30 @@ public final class PostgresEventStore implements EventStore {
   // ---------------------------------------------------------------------------------------------
 
   @Override
-  public void save(PendingEvent event) {
+  public boolean save(PendingEvent event) {
     Objects.requireNonNull(event, "event must not be null");
     try {
-      jdbc.update(sqlInsert, ps -> bindPending(ps, event));
+      return jdbc.update(sqlInsert, ps -> bindPending(ps, event)) > 0;
     } catch (SQLException ex) {
       throw new EventStoreException("failed to save event " + event.id(), ex);
+    }
+  }
+
+  @Override
+  public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
+    Objects.requireNonNull(eventType, "eventType must not be null");
+    Objects.requireNonNull(dedupKey, "dedupKey must not be null");
+    try {
+      return jdbc.queryOne(
+          sqlLockPendingByDedupKey,
+          ps -> {
+            ps.setString(1, eventType);
+            ps.setString(2, dedupKey);
+          },
+          rs -> (UUID) rs.getObject("id"));
+    } catch (SQLException ex) {
+      throw new EventStoreException(
+          "lockPendingByDedupKey(" + eventType + ", " + dedupKey + ") failed", ex);
     }
   }
 
@@ -223,6 +256,14 @@ public final class PostgresEventStore implements EventStore {
     Objects.requireNonNull(events, "events must not be null");
     if (events.isEmpty()) {
       return;
+    }
+    for (PendingEvent e : events) {
+      if (e.dedupKey() != null) {
+        throw new IllegalArgumentException(
+            "saveAll does not accept events with a dedup key (event "
+                + e.id()
+                + "); the publisher must route them through save(...)");
+      }
     }
     try {
       jdbc.doWork(
@@ -542,6 +583,7 @@ public final class PostgresEventStore implements EventStore {
     ps.setShort(5, event.priority());
     ps.setTimestamp(6, Timestamp.from(event.runAt()));
     ps.setObject(7, JsonbHandler.jsonb(FlatMapJson.serialize(event.traceContext())));
+    ps.setString(8, event.dedupKey());
   }
 
   private static ClaimedEvent readClaimed(ResultSet rs) throws SQLException {
@@ -577,7 +619,8 @@ public final class PostgresEventStore implements EventStore {
         toInstantNullable(claimedAt),
         rs.getString("last_fail_reason"),
         toTraceContext(rs.getString("trace_context")),
-        rs.getLong("version"));
+        rs.getLong("version"),
+        rs.getString("dedup_key"));
   }
 
   private static Map<String, String> toTraceContext(@Nullable String json) {

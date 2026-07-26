@@ -262,6 +262,30 @@ liquibase.update(new Contexts());
 
 ## Key queries
 
+### Insert with coalescing dedup key (ADR-0021)
+
+```sql
+INSERT INTO event_outboxer.events (id, event_type, payload, payload_class, priority,
+                                   status, created_at, run_at, trace_context, dedup_key)
+VALUES (:id, :type, :payload::jsonb, :payload_class, :priority,
+        'PENDING', now(), :run_at, :trace::jsonb, :dedup_key)
+ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND dedup_key IS NOT NULL
+DO NOTHING;
+
+-- On conflict the publisher pins the coalesced-into row INSIDE its own transaction:
+SELECT id FROM event_outboxer.events
+WHERE event_type = :type AND dedup_key = :dedup_key AND status = 'PENDING'
+FOR UPDATE;
+```
+
+The pin is what makes coalescing safe: the claim query below uses
+`FOR UPDATE SKIP LOCKED`, so a pinned pending row is invisible to
+workers until the publishing transaction commits — the handler is
+guaranteed to see the coalesced transaction's changes. The unique
+index (migration V004) is partial over PENDING: PROCESSING events do
+not block the key (a new event inserts and runs afterwards), and
+neither do DISABLED ones.
+
 ### Claim (hot path)
 
 A single atomic SQL (CTE + UPDATE + RETURNING):

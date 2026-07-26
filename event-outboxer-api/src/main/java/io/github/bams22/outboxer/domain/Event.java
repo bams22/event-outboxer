@@ -56,7 +56,8 @@ public record Event(
     @Nullable Instant claimedAt,
     @Nullable String lastFailReason,
     Map<String, String> traceContext,
-    long version) {
+    long version,
+    @Nullable String dedupKey) {
 
   public Event {
     Objects.requireNonNull(id, "id must not be null");

@@ -63,7 +63,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
         new StringBuilder(
             "SELECT id, event_type, payload, payload_class, priority, attempts, status, "
                 + "created_at, run_at, claimed_by, claimed_at, last_fail_reason, trace_context, "
-                + "version FROM ");
+                + "version, dedup_key FROM ");
     sql.append(tables.events()).append(" WHERE status = ?");
     List<Object> params = new ArrayList<>();
     params.add(status.name());

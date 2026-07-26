@@ -364,8 +364,13 @@ class OutboxEngineRecoveryTest {
     }
 
     @Override
-    public void save(io.github.bams22.outboxer.domain.PendingEvent event) {
-      delegate.save(event);
+    public boolean save(io.github.bams22.outboxer.domain.PendingEvent event) {
+      return delegate.save(event);
+    }
+
+    @Override
+    public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
+      return delegate.lockPendingByDedupKey(eventType, dedupKey);
     }
 
     @Override

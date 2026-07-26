@@ -417,6 +417,72 @@ public abstract class AbstractEventStoreContractTest {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // dedup key coalescing (ADR-0021)
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("save() coalesces a second PENDING event with the same (type, dedupKey)")
+  void save_coalescesOnPendingDuplicate() {
+    assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "p1", "order-1"))).isTrue();
+
+    assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "p2", "order-1"))).isFalse();
+    assertThat(store.save(pendingWithKey(EVENT_TYPE_B, "p3", "order-1"))).isTrue();
+    assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "p4", "order-2"))).isTrue();
+    assertThat(store.save(pending(EVENT_TYPE_A, "no-key", Instant.now()))).isTrue();
+  }
+
+  @Test
+  @DisplayName("the dedup scope is PENDING only: PROCESSING and DISABLED rows do not block the key")
+  void save_dedupScopedToPending() {
+    PendingEvent first = pendingWithKey(EVENT_TYPE_A, "v1", "order-9");
+    assertThat(store.save(first)).isTrue();
+    ClaimedEvent claimed = claimOneById(EVENT_TYPE_A, first.id());
+
+    // PROCESSING: a new event with the same key must insert — it will run afterwards with
+    // fresh data (the coalescing-visibility guarantee of ADR-0021).
+    PendingEvent second = pendingWithKey(EVENT_TYPE_A, "v2", "order-9");
+    assertThat(store.save(second)).isTrue();
+
+    // DISABLED: the failed first event must not block the key either.
+    ClaimedEvent secondClaimed = claimOneById(EVENT_TYPE_A, second.id());
+    store.markDisabled(secondClaimed.id(), WORKER_1, secondClaimed.claimedVersion(), "boom");
+    assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "v3", "order-9"))).isTrue();
+  }
+
+  @Test
+  @DisplayName("after markProcessed the key is free again — in-flight coalescing, not exactly-once")
+  void save_keyFreeAfterProcessing() {
+    PendingEvent first = pendingWithKey(EVENT_TYPE_A, "v1", "order-5");
+    assertThat(store.save(first)).isTrue();
+    ClaimedEvent claimed = claimOneById(EVENT_TYPE_A, first.id());
+    assertThat(store.markProcessed(claimed.id(), WORKER_1, claimed.claimedVersion())).isTrue();
+
+    assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "v2", "order-5"))).isTrue();
+  }
+
+  @Test
+  @DisplayName("lockPendingByDedupKey finds the PENDING row and misses non-PENDING ones")
+  void lockPendingByDedupKey_findsOnlyPending() {
+    PendingEvent p = pendingWithKey(EVENT_TYPE_A, "v1", "order-7");
+    store.save(p);
+
+    assertThat(store.lockPendingByDedupKey(EVENT_TYPE_A, "order-7")).contains(p.id());
+    assertThat(store.lockPendingByDedupKey(EVENT_TYPE_A, "unknown")).isEmpty();
+    assertThat(store.lockPendingByDedupKey(EVENT_TYPE_B, "order-7")).isEmpty();
+
+    claimOneById(EVENT_TYPE_A, p.id());
+    assertThat(store.lockPendingByDedupKey(EVENT_TYPE_A, "order-7")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("saveAll rejects events carrying a dedup key")
+  void saveAll_rejectsDedupKeys() {
+    assertThatThrownBy(
+            () -> store.saveAll(List.of(pendingWithKey(EVENT_TYPE_A, "x", "k"))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // release / releaseClaimed
   // ---------------------------------------------------------------------------------------------
 
@@ -648,6 +714,26 @@ public abstract class AbstractEventStoreContractTest {
    */
   protected static String jsonString(String raw) {
     return "\"" + raw.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+  }
+
+  protected PendingEvent pendingWithKey(String type, String rawPayload, String dedupKey) {
+    return PendingEvent.builder()
+        .id(UUID.randomUUID())
+        .eventType(type)
+        .payload(jsonString(rawPayload))
+        .payloadClass("java.lang.String")
+        .priority((short) 0)
+        .runAt(Instant.now().minusSeconds(1))
+        .traceContext(Map.of())
+        .dedupKey(dedupKey)
+        .build();
+  }
+
+  protected ClaimedEvent claimOneById(String type, UUID id) {
+    return store.claim(new ClaimRequest(type, WORKER_1, 100)).stream()
+        .filter(ce -> ce.id().equals(id))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("event not claimed: " + id));
   }
 
   protected ClaimedEvent publishAndClaim(String type, String payload, WorkerId worker) {

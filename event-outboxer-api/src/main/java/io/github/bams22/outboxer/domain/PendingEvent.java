@@ -40,6 +40,8 @@ import lombok.Builder;
  * @param priority higher values are picked first; zero by default
  * @param runAt earliest wall-clock time the event is eligible for claim
  * @param traceContext optional W3C trace/baggage context; never null (empty map allowed)
+ * @param dedupKey optional coalescing key: at most one PENDING event per {@code (eventType,
+ *     dedupKey)} at a time (ADR-0021); {@code null} = no coalescing
  */
 @Builder
 public record PendingEvent(
@@ -49,7 +51,8 @@ public record PendingEvent(
     String payloadClass,
     short priority,
     Instant runAt,
-    Map<String, String> traceContext) {
+    Map<String, String> traceContext,
+    @org.jspecify.annotations.Nullable String dedupKey) {
 
   public PendingEvent {
     Objects.requireNonNull(id, "id must not be null");
@@ -62,5 +65,9 @@ public record PendingEvent(
     Objects.requireNonNull(runAt, "runAt must not be null");
     traceContext =
         traceContext == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(traceContext));
+    if (dedupKey != null && (dedupKey.isBlank() || dedupKey.length() > 256)) {
+      throw new IllegalArgumentException(
+          "dedupKey must be non-blank and at most 256 characters when set");
+    }
   }
 }
