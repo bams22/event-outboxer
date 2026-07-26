@@ -35,29 +35,39 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      # Pull the "## [X.Y.Z]" section out of CHANGELOG.md for this release's
+      # notes. Runs BEFORE the deploy on purpose: publishing to Maven
+      # Central is irreversible, so every fallible validation must happen
+      # first — a missing changelog section aborts the release with nothing
+      # published. The flag-based awk is used instead of a range expression
+      # because `/pat1/,/pat2/` tests both patterns against the starting
+      # line, and `^## \[` matches the version header itself — collapsing
+      # the range to a single line. The header line itself is excluded from
+      # the notes (the GitHub Release title already carries the version).
+      - name: Extract release notes from CHANGELOG
+        run: |
+          awk -v v="${{ steps.ver.outputs.version }}" '
+            $0 ~ "^## \\[" {flag=0}
+            $0 ~ "^## \\[" v "\\]" {flag=1; next}
+            flag
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## [${{ steps.ver.outputs.version }}]' section — refusing to release." >&2
+            exit 1
+          fi
+
+      # Full build with unit tests before anything leaves this runner. The
+      # deploy step below then skips tests instead of silently releasing an
+      # untested commit.
+      - name: Build and test
+        run: ./mvnw -B -ntp clean verify -Drevision=${{ steps.ver.outputs.version }}
+
       - name: Deploy to Sonatype Central
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_TOKEN: ${{ secrets.CENTRAL_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: ./mvnw -B -ntp -Prelease deploy -Drevision=${{ steps.ver.outputs.version }} -DskipTests
-
-      # Pull the "## [X.Y.Z]" section out of CHANGELOG.md for this release's
-      # notes. The flag-based awk is used instead of a range expression
-      # because `/pat1/,/pat2/` tests both patterns against the starting
-      # line, and `^## \[` matches the version header itself — collapsing
-      # the range to a single line.
-      - name: Extract release notes from CHANGELOG
-        run: |
-          awk -v v="${{ steps.ver.outputs.version }}" '
-            $0 ~ "^## \\[" {flag=0}
-            $0 ~ "^## \\[" v "\\]" {flag=1}
-            flag
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "::error::CHANGELOG.md has no '## [${{ steps.ver.outputs.version }}]' section — refusing to create an empty GitHub Release." >&2
-            exit 1
-          fi
 
       - name: Create GitHub Release
         env:

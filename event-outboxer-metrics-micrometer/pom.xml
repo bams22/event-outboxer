@@ -52,4 +52,34 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+<build>
+        <plugins>
+            <!--
+                Adapters must not depend on event-outboxer-core (CLAUDE.md
+                invariant 2): they are wired through -api / -spi only, so
+                that core internals stay swappable without breaking adapters.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>ban-core-in-adapter</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>io.github.bams22:event-outboxer-core</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

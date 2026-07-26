@@ -70,7 +70,7 @@
             never see the property placeholder. Release runbook lives in
             RELEASING.md.
         -->
-        <revision>0.1.0-SNAPSHOT</revision>
+        <revision>0.3.0-SNAPSHOT</revision>
 
         <!--
             Baseline Java 17 (ADR-0017). The library compiles against the
