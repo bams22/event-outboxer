@@ -121,8 +121,22 @@ public final class HandlerDispatcher {
     } catch (RuntimeException ex) {
       listener.onEventSerializationError(
           new SerializationErrorInfo(claimed.id(), claimed.eventType(), claimed.payloadClass(), ex));
-      String reason = "payload deserialization failed: " + rootMessage(ex);
-      finaliseDisable(claimed, reason, ex);
+      // Route through the FailureHandler chain instead of insta-disabling: a deserialization
+      // failure is often transient (mixed-version replicas during a rolling deploy reading each
+      // other's payload format) and heals on a retry picked up by an updated instance. A truly
+      // poisoned payload still ends up DISABLED once the chain's attempt budget is exhausted.
+      try {
+        applyFailureDecision(claimed, handler, null, null, ex);
+      } catch (RuntimeException finalizeEx) {
+        log.error(
+            "finalize after deserialization failure failed for eventId={} type={}; "
+                + "releasing back to PENDING: {}",
+            claimed.id(),
+            claimed.eventType(),
+            finalizeEx.toString(),
+            finalizeEx);
+        releaseAfterFinalizeFailure(claimed, finalizeEx);
+      }
       return;
     }
 
@@ -440,7 +454,7 @@ public final class HandlerDispatcher {
       ClaimedEvent claimed,
       EventHandler<?> handler,
       @Nullable Object payload,
-      EventOutcome outcome,
+      @Nullable EventOutcome outcome,
       @Nullable Throwable cause) {
     FailureHandler fh = failureHandlers.resolve(handler);
     FailureContext ctx =

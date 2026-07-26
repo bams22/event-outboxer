@@ -353,8 +353,9 @@ class OutboxEngineRecoveryTest {
 
   /**
    * Forwards every {@code EventStore} call to a delegate; test doubles override single methods.
+   * Package-private so sibling engine tests can reuse it.
    */
-  private static class DelegatingEventStore implements io.github.bams22.outboxer.spi.EventStore {
+  static class DelegatingEventStore implements io.github.bams22.outboxer.spi.EventStore {
 
     private final io.github.bams22.outboxer.spi.EventStore delegate;
 
