@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.ToDoubleFunction;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -181,7 +182,7 @@ public class MicrometerAutoConfiguration {
     return Optional.empty();
   }
 
-  private static double ageSeconds(Instant from, Instant now) {
+  private static double ageSeconds(@Nullable Instant from, Instant now) {
     if (from == null) {
       return 0.0;
     }

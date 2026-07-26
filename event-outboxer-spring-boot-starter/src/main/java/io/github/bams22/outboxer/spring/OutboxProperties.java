@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -186,23 +187,23 @@ public class OutboxProperties {
   @Getter
   @Setter
   public static class EventType {
-    private Duration pollMinInterval;
-    private Duration pollMaxInterval;
-    private Double pollMultiplier;
-    private Integer claimBatchSize;
-    private Integer handlerPoolSize;
-    private Integer handlerQueueCapacity;
-    private Duration handlerMaxRuntime;
-    private Duration lockTtl;
+    private @Nullable Duration pollMinInterval;
+    private @Nullable Duration pollMaxInterval;
+    private @Nullable Double pollMultiplier;
+    private @Nullable Integer claimBatchSize;
+    private @Nullable Integer handlerPoolSize;
+    private @Nullable Integer handlerQueueCapacity;
+    private @Nullable Duration handlerMaxRuntime;
+    private @Nullable Duration lockTtl;
   }
 
   @Getter
   @Setter
   public static class Worker {
     /** Explicit worker id. When null, the engine generates one. */
-    private String id;
+    private @Nullable String id;
     /** Explicit hostname. When null, the engine resolves it. */
-    private String host;
+    private @Nullable String host;
     private Map<String, String> metadata = new LinkedHashMap<>();
   }
 

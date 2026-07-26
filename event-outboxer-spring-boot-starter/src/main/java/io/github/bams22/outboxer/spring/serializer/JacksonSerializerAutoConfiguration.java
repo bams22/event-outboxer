@@ -19,8 +19,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.annotation.Bean;
-import org.springframework.lang.Nullable;
 
 /**
  * Autoconfiguration for the Jackson {@link EventSerializer}. Resolves the underlying

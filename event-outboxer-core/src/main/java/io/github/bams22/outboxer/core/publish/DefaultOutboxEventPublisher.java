@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Default {@link OutboxEventPublisher} implementation. Holds no per-call state — a single
@@ -79,7 +80,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   }
 
   @Override
-  public UUID publish(String eventType, Object payload, PublishOptions options) {
+  public UUID publish(String eventType, Object payload, @Nullable PublishOptions options) {
     validate(eventType, payload);
     PublishOptions resolved = options == null ? PublishOptions.defaults() : options;
     enforceTransactionPolicy();
