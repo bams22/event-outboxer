@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.core.config;
 import java.time.Duration;
 import java.util.Objects;
 import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Engine-wide maintenance cadence: heartbeat, orphan recovery, watchdog, and graceful-shutdown
@@ -29,6 +30,12 @@ import lombok.Builder;
  *     handlers
  * @param reclaimBatchSize upper bound on dead workers processed per orphan-recovery pass
  * @param shutdownTimeout budget for in-flight handlers to complete during graceful stop
+ * @param staleClaimThreshold age of a {@code PROCESSING} claim before the stale-claim sweeper
+ *     returns it to {@code PENDING}; {@code null} (default) derives {@code 2 × max
+ *     handlerMaxRuntime} across the registered types at engine build time. An explicit value
+ *     must exceed every per-type {@code handlerMaxRuntime} — validated by the engine builder
+ * @param staleClaimSweepInterval cadence of the stale-claim sweeper; {@code null} defaults to
+ *     5 minutes
  */
 @Builder
 public record MaintenanceConfig(
@@ -37,7 +44,9 @@ public record MaintenanceConfig(
     Duration orphanRecoveryInterval,
     Duration watchdogInterval,
     int reclaimBatchSize,
-    Duration shutdownTimeout) {
+    Duration shutdownTimeout,
+    @Nullable Duration staleClaimThreshold,
+    Duration staleClaimSweepInterval) {
 
   public MaintenanceConfig {
     Objects.requireNonNull(heartbeatInterval, "heartbeatInterval must not be null");
@@ -71,6 +80,19 @@ public record MaintenanceConfig(
     if (shutdownTimeout.isNegative()) {
       throw new IllegalArgumentException(
           "shutdownTimeout must not be negative, got " + shutdownTimeout);
+    }
+    if (staleClaimThreshold != null
+        && (staleClaimThreshold.isNegative() || staleClaimThreshold.isZero())) {
+      throw new IllegalArgumentException(
+          "staleClaimThreshold must be positive, got " + staleClaimThreshold);
+    }
+    // Normalized default so existing builder call sites need not set it.
+    if (staleClaimSweepInterval == null) {
+      staleClaimSweepInterval = Duration.ofMinutes(5);
+    }
+    if (staleClaimSweepInterval.isNegative() || staleClaimSweepInterval.isZero()) {
+      throw new IllegalArgumentException(
+          "staleClaimSweepInterval must be positive, got " + staleClaimSweepInterval);
     }
   }
 

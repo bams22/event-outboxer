@@ -107,7 +107,22 @@ public final class HandlerDispatcher {
     listener.onEventClaimed(
         new EventClaimedInfo(
             claimed.id(), claimed.eventType(), claimed.attempts() + 1, claimed.claimedAt(), workerId));
+    // Register for the WHOLE dispatch — deserialization, lock acquisition, handler, finalize —
+    // so the watchdog can force-reclaim a hang anywhere in the pipeline (a stuck lock backend
+    // used to leave the row PROCESSING outside any registry). handlerMaxRuntime therefore
+    // budgets the full processing of a claim, not just handler.handle().
+    inFlight.register(
+        claimed.id(),
+        new InFlightRegistry.Entry(
+            claimed.id(), claimed.eventType(), workerId, claimed.claimedVersion(), clock.now()));
+    try {
+      dispatchRegistered(claimed);
+    } finally {
+      inFlight.unregister(claimed.id());
+    }
+  }
 
+  private void dispatchRegistered(ClaimedEvent claimed) {
     Optional<EventHandler<?>> handlerOpt = handlers.find(claimed.eventType());
     if (handlerOpt.isEmpty()) {
       handleUnknownType(claimed);
@@ -350,11 +365,7 @@ public final class HandlerDispatcher {
   }
 
   private EventOutcome invokeHandler(ClaimedEvent claimed, EventHandler<?> handler, Object payload) {
-    Instant started = clock.now();
-    inFlight.register(
-        claimed.id(),
-        new InFlightRegistry.Entry(
-            claimed.id(), claimed.eventType(), workerId, claimed.claimedVersion(), started));
+    // In-flight registration happens in dispatch() and brackets the whole pipeline.
     try {
       EventContext ctx =
           new EventContext(
@@ -371,8 +382,6 @@ public final class HandlerDispatcher {
           new HandlerErrorInfo(claimed.id(), claimed.eventType(), claimed.attempts() + 1, ex));
       String msg = ex.getMessage();
       return new EventOutcome.Retry(msg != null ? msg : ex.getClass().getSimpleName(), null, ex);
-    } finally {
-      inFlight.unregister(claimed.id());
     }
   }
 

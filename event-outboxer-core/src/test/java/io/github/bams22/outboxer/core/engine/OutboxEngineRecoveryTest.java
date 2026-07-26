@@ -412,6 +412,11 @@ class OutboxEngineRecoveryTest {
     }
 
     @Override
+    public int sweepStale(java.time.Duration olderThan, int limit) {
+      return delegate.sweepStale(olderThan, limit);
+    }
+
+    @Override
     public int reclaimOrphans(List<WorkerId> deadWorkers, Instant now) {
       return delegate.reclaimOrphans(deadWorkers, now);
     }

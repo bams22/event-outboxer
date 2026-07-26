@@ -274,6 +274,37 @@ public final class InMemoryEventStore implements EventStore {
   }
 
   @Override
+  public int sweepStale(java.time.Duration olderThan, int limit) {
+    Objects.requireNonNull(olderThan, "olderThan must not be null");
+    if (limit <= 0) {
+      throw new IllegalArgumentException("limit must be positive, got " + limit);
+    }
+    Instant cutoff = clock.now().minus(olderThan);
+    int swept = 0;
+    for (EventRow row : rows.values()) {
+      if (swept >= limit) {
+        break;
+      }
+      synchronized (row) {
+        Instant claimedAt = row.claimedAt;
+        if (row.status == EventStatus.PROCESSING
+            && claimedAt != null
+            && claimedAt.isBefore(cutoff)) {
+          row.status = EventStatus.PENDING;
+          row.claimedBy = null;
+          row.claimedAt = null;
+          row.attempts += 1;
+          row.version += 1;
+          row.lastFailReason = "swept: stale PROCESSING claim";
+          row.runAt = clock.now();
+          swept++;
+        }
+      }
+    }
+    return swept;
+  }
+
+  @Override
   public int reclaimOrphans(List<WorkerId> deadWorkers, Instant now) {
     Objects.requireNonNull(deadWorkers, "deadWorkers must not be null");
     Objects.requireNonNull(now, "now must not be null");

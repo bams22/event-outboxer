@@ -60,6 +60,13 @@ public abstract class AbstractEventStoreContractTest {
   /** Build a fresh {@link EventStore} backed by whatever state the adapter needs. */
   protected abstract EventStore newStore();
 
+  /**
+   * Force the stored {@code claimed_at} of a PROCESSING row to the (past) instant {@code at}.
+   * Adapters stamp claims with their own time source, so the staleness scenarios of
+   * {@code sweepStale} have to inject age through a direct write.
+   */
+  protected abstract void backdateClaim(UUID id, Instant at);
+
   @BeforeEach
   void setUpStore() {
     store = newStore();
@@ -496,6 +503,54 @@ public abstract class AbstractEventStoreContractTest {
     boolean lateFinalize = store.markProcessed(claimed.id(), WORKER_1, claimed.claimedVersion());
     assertThat(lateFinalize).isFalse();
     assertThat(store.findById(claimed.id()).orElseThrow().status())
+        .isEqualTo(EventStatus.PENDING);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // sweepStale
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("sweepStale() reclaims only PROCESSING rows older than the threshold")
+  void sweepStale_reclaimsOnlyStaleRows() {
+    ClaimedEvent stale = publishAndClaim(EVENT_TYPE_A, "stale", WORKER_1);
+    ClaimedEvent fresh = publishAndClaim(EVENT_TYPE_A, "fresh", WORKER_1);
+    backdateClaim(stale.id(), Instant.now().minus(Duration.ofHours(1)));
+
+    int swept = store.sweepStale(Duration.ofMinutes(30), 100);
+
+    assertThat(swept).isEqualTo(1);
+    Event after = store.findById(stale.id()).orElseThrow();
+    assertThat(after.status()).isEqualTo(EventStatus.PENDING);
+    assertThat(after.claimedBy()).isNull();
+    assertThat(after.attempts()).isEqualTo(stale.attempts() + 1);
+    assertThat(after.version()).isGreaterThan(stale.claimedVersion());
+    assertThat(store.findById(fresh.id()).orElseThrow().status())
+        .isEqualTo(EventStatus.PROCESSING);
+  }
+
+  @Test
+  @DisplayName("sweepStale() honours the limit")
+  void sweepStale_respectsLimit() {
+    for (int i = 0; i < 3; i++) {
+      ClaimedEvent c = publishAndClaim(EVENT_TYPE_A, "s-" + i, WORKER_1);
+      backdateClaim(c.id(), Instant.now().minus(Duration.ofHours(1)));
+    }
+
+    assertThat(store.sweepStale(Duration.ofMinutes(30), 2)).isEqualTo(2);
+    assertThat(store.sweepStale(Duration.ofMinutes(30), 100)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("a late finalize from the swept claim loses the optimistic-lock race")
+  void sweepStale_defeatsLateFinalize() {
+    ClaimedEvent stale = publishAndClaim(EVENT_TYPE_A, "stuck", WORKER_1);
+    backdateClaim(stale.id(), Instant.now().minus(Duration.ofHours(1)));
+
+    assertThat(store.sweepStale(Duration.ofMinutes(30), 100)).isEqualTo(1);
+
+    assertThat(store.markProcessed(stale.id(), WORKER_1, stale.claimedVersion())).isFalse();
+    assertThat(store.findById(stale.id()).orElseThrow().status())
         .isEqualTo(EventStatus.PENDING);
   }
 

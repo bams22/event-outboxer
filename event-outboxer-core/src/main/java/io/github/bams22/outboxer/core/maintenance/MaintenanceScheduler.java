@@ -30,6 +30,7 @@ public final class MaintenanceScheduler {
   private final WatchdogTask watchdog;
   private final EngineHealthCheckTask engineHealthCheck;
   private final @org.jspecify.annotations.Nullable RetentionTask retention;
+  private final @org.jspecify.annotations.Nullable StaleClaimSweeperTask staleClaimSweeper;
   private final MaintenanceConfig config;
 
   private @org.jspecify.annotations.Nullable ScheduledExecutorService executor;
@@ -40,12 +41,14 @@ public final class MaintenanceScheduler {
       WatchdogTask watchdog,
       EngineHealthCheckTask engineHealthCheck,
       @org.jspecify.annotations.Nullable RetentionTask retention,
+      @org.jspecify.annotations.Nullable StaleClaimSweeperTask staleClaimSweeper,
       MaintenanceConfig config) {
     this.heartbeat = Objects.requireNonNull(heartbeat);
     this.orphanRecovery = Objects.requireNonNull(orphanRecovery);
     this.watchdog = Objects.requireNonNull(watchdog);
     this.engineHealthCheck = Objects.requireNonNull(engineHealthCheck);
     this.retention = retention;
+    this.staleClaimSweeper = staleClaimSweeper;
     this.config = Objects.requireNonNull(config);
   }
 
@@ -63,6 +66,9 @@ public final class MaintenanceScheduler {
     scheduleFixed(executor, engineHealthCheck, config.watchdogInterval());
     if (retention != null) {
       scheduleFixed(executor, retention, retention.interval());
+    }
+    if (staleClaimSweeper != null) {
+      scheduleFixed(executor, staleClaimSweeper, staleClaimSweeper.interval());
     }
   }
 

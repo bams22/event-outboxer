@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (a DB-side stale-claim sweeper added as
+the last line of defence; see the Amendment section at the bottom)
 
 ## Date
 
@@ -148,6 +149,38 @@ GROUP BY w.worker_id, w.host;
 - Active-reclaim watchdog is slightly more complex than a passive timeout.
 - Requires an explicit cleanup for the "event without worker row" edge
   case.
+
+## Amendment (2026-07-26): stale-claim sweeper as the last line of defence
+
+The original recovery model had a blind spot: the watchdog only sees
+the LOCAL in-flight registry, and orphan recovery only reclaims events
+of DEAD workers. A row stranded in `PROCESSING` on a live worker
+without an in-flight registration — an `unknown-handler-policy=FAIL`
+row, a claim lost to a hang before registration, a double release
+failure during a storage outage — was invisible to both, forever.
+
+Two changes (ADR-0019 era):
+
+1. **In-flight registration now brackets the whole dispatch** —
+   deserialization, lock acquisition, handler, finalize — so the
+   watchdog catches hangs anywhere in the pipeline.
+   `handlerMaxRuntime` therefore budgets the full processing of a
+   claim, not just `handler.handle()`.
+2. **`StaleClaimSweeperTask`** periodically runs
+   `EventStore.sweepStale(threshold, batch)`: every `PROCESSING` row
+   with `claimed_at` older than the threshold returns to `PENDING`
+   (attempts+1, crash-path semantics), regardless of owner — served by
+   the `idx_events_processing_claimed_at` partial index V001 created
+   for exactly this scan (previously unused). The threshold must
+   exceed every per-type `handlerMaxRuntime` (the sweeper cannot see
+   any JVM's registry): unset, it derives `2 × max handlerMaxRuntime`;
+   an explicit smaller value fails the engine build. Registered rows
+   never live long enough to be swept — the watchdog force-reclaims
+   them first.
+
+Recovery layers, in firing order: watchdog (local, `handlerMaxRuntime`)
+→ orphan recovery (dead workers, `dead-threshold`) → stale-claim
+sweeper (everything else, `stale-claim-threshold`).
 
 ## Related decisions
 

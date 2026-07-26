@@ -46,6 +46,12 @@ public final class HandlerExecutorManager {
 
   private static final Logger log = LoggerFactory.getLogger(HandlerExecutorManager.class);
 
+  /** Total budget for waiting out the synchronous-handoff lag before giving up. */
+  private static final long HANDOFF_RETRY_BUDGET_NANOS = 50_000_000L; // 50ms
+
+  /** Pause between handoff retries. */
+  private static final long HANDOFF_RETRY_PAUSE_NANOS = 1_000_000L; // 1ms
+
   private final Function<EventTypeConfig, ExecutorService> factory;
   private final Map<String, EventTypeConfig> configs;
   private final Map<String, Slot> slots;
@@ -183,18 +189,44 @@ public final class HandlerExecutorManager {
             "handler executor for type " + eventType + " is not running");
       }
       gen.inFlight.incrementAndGet();
+      Runnable wrapped =
+          () -> {
+            try {
+              command.run();
+            } finally {
+              completeTask(gen);
+            }
+          };
       try {
-        gen.executor.execute(
-            () -> {
-              try {
-                command.run();
-              } finally {
-                completeTask(gen);
-              }
-            });
+        submitWithHandoffRetry(gen, wrapped);
       } catch (RejectedExecutionException ex) {
         gen.inFlight.decrementAndGet();
         throw ex;
+      }
+    }
+
+    /**
+     * The in-flight counter is the capacity source of truth, but with a synchronous handoff
+     * (queue capacity 0) there is an inherent lag between a task's finally-block decrement and
+     * its worker thread returning to {@code queue.take()} — a submit inside that window is
+     * rejected even though capacity logically exists. Since callers only submit within the
+     * counter's budget, briefly waiting out the lag and retrying is correct, not optimistic:
+     * the worker arrives within microseconds. A submission still rejected after the budget
+     * (shutdown race, a user-supplied executor with different semantics) propagates to the
+     * caller's rejection safety net.
+     */
+    private void submitWithHandoffRetry(Generation gen, Runnable wrapped) {
+      long deadline = System.nanoTime() + HANDOFF_RETRY_BUDGET_NANOS;
+      while (true) {
+        try {
+          gen.executor.execute(wrapped);
+          return;
+        } catch (RejectedExecutionException ex) {
+          if (gen != current || gen.executor.isShutdown() || System.nanoTime() >= deadline) {
+            throw ex;
+          }
+          java.util.concurrent.locks.LockSupport.parkNanos(HANDOFF_RETRY_PAUSE_NANOS);
+        }
       }
     }
 
