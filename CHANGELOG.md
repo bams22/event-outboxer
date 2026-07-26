@@ -5,6 +5,65 @@ All notable changes to this project are documented here. Format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- `EventStore.release(...)` and `EventStore.releaseClaimed(...)` SPI operations:
+  return claimed events to `PENDING` **without** incrementing `attempts`. Used
+  for lock contention, executor backpressure, unknown-handler SKIP, transient
+  finalize failures and shutdown — none of these consume the retry budget any
+  more.
+- `event-outboxer.dispatcher.dispatch-rejected-retry-delay` property (default
+  `1s`) — reschedule delay for dispatches rejected by a saturated handler
+  executor.
+- Enforcer rule `ban-core-in-adapter` in every adapter module: the
+  "adapters must not depend on core" invariant is now build-enforced.
+- Apache-2.0 license headers in `examples/`.
+
+### Fixed
+- **Stranded `PROCESSING` events.** Four recovery-path bugs could leave a
+  claimed event invisible to both the watchdog and orphan recovery while the
+  worker stayed alive: a dispatch rejected by a saturated executor was never
+  unclaimed; a graceful shutdown deregistered the worker while unfinished
+  events were still claimed (making them unrecoverable forever); a transient
+  storage error during finalize dropped the event silently; and
+  `unknown-handler-policy=FAIL` rows were wrongly documented as recoverable.
+  Rejected dispatches and finalize failures now release the event back to
+  `PENDING`; shutdown releases all still-claimed rows before deregistering
+  (and skips deregister if the release fails, leaving the `graceful_stop` row
+  for peer recovery).
+- **Archive-mode `markProcessed` race.** The archive INSERT and the events
+  DELETE ran as two statements; losing the optimistic-lock race between them
+  committed an orphan archive row that blocked every future finalize of that
+  event on the archive PK. The finalize is now a single atomic
+  `DELETE ... RETURNING` → `INSERT` CTE.
+- **Engine restart.** `stop()` permanently shut down the handler executors,
+  so a restarted engine claimed events it could never dispatch. Executors are
+  now recreated on every `start()`.
+- **Heartbeat re-registration.** A live worker whose registry row was reaped
+  by a peer (GC pause / DB outage longer than `dead-threshold`) now
+  re-registers on the next heartbeat tick instead of running unregistered.
+- **`graceful_stop` semantics.** `findDead` treated the flag as "never
+  reclaim"; per the SPI contract it now means "reclaim immediately", so a JVM
+  killed mid-shutdown no longer strands its events.
+- **Worker-liveness clock skew.** The PostgreSQL adapter stamps and compares
+  `last_heartbeat` with the database clock (`now()`), removing false-dead /
+  false-alive verdicts caused by application-JVM clock skew.
+- **Per-type "thin merge".** `event-types.overrides.<type>` previously reset
+  every unset field to hard-coded class defaults, silently ignoring
+  `event-types.defaults`. Overrides now merge field-by-field over the resolved
+  defaults, as documented.
+- `docs/CONFIGURATION.md` rewritten to match the actual `OutboxProperties`
+  binding (property names, defaults, removed never-implemented subtrees).
+- Release workflow now runs the full test suite and validates the changelog
+  section **before** the irreversible deploy to Maven Central.
+
+### Changed
+- `OutboxEngine` constructor takes the `EventStore`, `Clock` and a
+  `HandlerExecutorManager` (engine-owned executor lifecycle); `HeartbeatTask`
+  takes `WorkerInfo` instead of `WorkerId`. Plain-Java users going through
+  `OutboxEngineBuilder` are unaffected.
+
 ## [0.2.0] — 2026-04-22
 
 ### Added

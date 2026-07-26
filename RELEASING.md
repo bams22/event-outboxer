@@ -126,15 +126,18 @@ triggers `.github/workflows/release.yml`, which:
 
 1. Strips the leading `v` from the tag name to derive
    `-Drevision=0.2.0`.
-2. Runs `./mvnw -Prelease deploy -Drevision=0.2.0 -DskipTests` on a
-   JDK 17 GitHub Actions runner. `flatten-maven-plugin` produces
-   `.flattened-pom.xml` with the resolved version;
-   `central-publishing-maven-plugin` uploads it plus jars and `.asc`
-   signatures to Sonatype Central.
-3. Extracts the `## [0.2.0]` section from `CHANGELOG.md` and creates a
-   GitHub Release at tag `v0.2.0` with those notes. **The job fails
-   fast** if the section is missing — so a release tag without a
-   matching CHANGELOG entry is rejected before it's announced.
+2. Extracts the `## [0.2.0]` section from `CHANGELOG.md`. **The job
+   fails fast here** if the section is missing — this runs before
+   anything is deployed, so a tag without a matching CHANGELOG entry
+   publishes nothing at all.
+3. Runs `./mvnw clean verify -Drevision=0.2.0` — the full unit-test
+   suite must pass on the release runner before anything leaves it.
+4. Runs `./mvnw -Prelease deploy -Drevision=0.2.0 -DskipTests` (tests
+   already ran in the previous step) on a JDK 17 GitHub Actions
+   runner. `flatten-maven-plugin` produces `.flattened-pom.xml` with
+   the resolved version; `central-publishing-maven-plugin` uploads it
+   plus jars and `.asc` signatures to Sonatype Central.
+5. Creates a GitHub Release at tag `v0.2.0` with the extracted notes.
 
 There is no "Release X.Y.Z" or "Bump to X.Y.(Z+1)-SNAPSHOT" commit in
 git history — the tag itself marks the release.
