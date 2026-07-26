@@ -1,7 +1,9 @@
 # Configuration
 
 Full reference for `application.yml` used by
-`event-outboxer-spring-boot-starter`.
+`event-outboxer-spring-boot-starter`. Every property below is bound by
+`OutboxProperties` (prefix `event-outboxer`); defaults shown are the
+values the starter actually applies.
 
 ## Contents
 
@@ -16,17 +18,12 @@ Full reference for `application.yml` used by
 
 ## Quick start
 
-Minimal configuration for PostgreSQL + Redis lock:
+Minimal configuration for PostgreSQL:
 
 ```yaml
 event-outboxer:
   storage:
-    type: postgres
-  lock:
-    type: redis
-    redis:
-      host: ${KEYDB_HOST:localhost}
-      port: ${KEYDB_PORT:6379}
+    type: postgres      # default is inmemory — set explicitly for production
 
 spring:
   flyway:
@@ -35,7 +32,10 @@ spring:
       - classpath:db/migration/outbox/core
 ```
 
-Everything else comes from the defaults. Good enough for simple cases.
+Everything else comes from the defaults. To add the Redis/KeyDB entity
+lock, set `event-outboxer.lock.type: redis` and provide a Lettuce
+`StatefulRedisConnection<String, String>` bean (see
+[`event-outboxer.lock.*`](#event-outboxerlock)).
 
 ---
 
@@ -45,64 +45,70 @@ Everything else comes from the defaults. Good enough for simple cases.
 event-outboxer:
   enabled: true                      # master switch, default=true
 
-  worker-id: null                    # override WorkerId; null = host-pid-uuid autogeneration
-  worker-metadata:                   # arbitrary Map<String,String> → event_outboxer.workers.metadata JSONB
-    app: my-service
-    version: ${git.commit.sha:unknown}
-    environment: production
+  worker:
+    id: null                         # override WorkerId; null = {hostname}-{pid}-{uuid8}
+    host: null                       # override hostname; null = resolved automatically
+    metadata:                        # arbitrary Map<String,String> → event_outboxer.workers.metadata JSONB
+      app: my-service
+      version: ${git.commit.sha:unknown}
 
   publisher:
-    no-transaction-policy: FAIL      # FAIL | AUTO | IGNORE
-
-  handlers:
-    defaults:
-      handler-pool-size: 3           # fixed per-type thread pool (core == max, no scaling)
-      handler-queue-capacity: 100    # bounded LinkedBlockingQueue; SynchronousQueue when 0
-      polling-interval: 10s          # base poll interval
-      max-idle-polling-interval: 30s # upper bound during adaptive backoff
-      claim-batch-size: 10           # how many events to fetch per poll
-      handler-max-runtime: 30m       # watchdog threshold
-      lock-ttl: 5m                   # lock TTL when entityLocker.tryLock() is called
-      lock-busy-retry-delay: 1s      # delay when lock is busy
-      unknown-handler-policy: DISABLE  # SKIP | DISABLE | FAIL
-      failure:
-        max-attempts: 10
-        exhausted-action: DISABLE    # DISABLE | DELETE
-        strategy: exponential        # exponential | fixed | none
-        base-delay: 5s
-        multiplier: 2.0
-        max-delay: 1h
-        jitter: 0.2                  # [0.0, 1.0]
-        log-level: WARN              # WARN | INFO | ERROR | OFF
-
-    types:
-      SEND_EMAIL:
-        handler-pool-size: 20
-        polling-interval: 2s
-        failure:
-          max-attempts: 5            # remaining failure fields are inherited
-      UPDATE_CACHE:
-        handler-pool-size: 30
-        polling-interval: 500ms
-        handler-max-runtime: 1m
-
-  lifecycle:
-    heartbeat-interval: 30s          # how often writers update event_outboxer.workers
-    dead-threshold: 90s              # seconds of silence before a worker is considered dead
-    orphan-recovery-interval: 1m     # orphan-recovery task period
-    watchdog-interval: 30s           # stuck-handler watchdog period
-    maintenance-pool-size: 3         # shared ScheduledExecutorService
-    shutdown-timeout: 30s            # max wait for in-flight handlers on shutdown
+    no-transaction-policy: FAIL      # FAIL | IGNORE
 
   storage:
-    type: postgres                   # postgres | inmemory
+    type: inmemory                   # inmemory (default) | postgres
     # schema is shared between the adapter (SQL) and the classpath
     # migrations (Flyway ${eventOutboxerSchema} placeholder). Default
     # name is specific to avoid conflicts with other libraries.
     schema: event_outboxer
     table-prefix: ""                 # optional table-name prefix (event_outboxer.<prefix>events)
-    archive-enabled: false           # enable archiving of successful events
-    metrics-cache-ttl: 30s
+    archive-enabled: false           # move successful events to the archive table
+    metrics-cache-ttl: 30s           # TTL of the metricsSnapshot() cache
+
+  lock:
+    type: noop                       # noop (default) | postgres | redis
+    key-prefix: "outbox:lock:"
+
+  cache:
+    type: memory                     # memory (default) | redis | noop
+    redis:
+      key-prefix: "outbox:metrics:"  # shared key namespace when type=redis
+
+  event-types:
+    defaults:
+      poll-min-interval: 500ms       # floor of the adaptive poll interval
+      poll-max-interval: 10s         # ceiling of the adaptive poll interval
+      poll-multiplier: 1.5           # growth factor after an empty poll; must be > 1.0
+      claim-batch-size: 10           # events claimed per poll
+      handler-pool-size: 3           # fixed per-type thread pool (core == max, no scaling)
+      handler-queue-capacity: 100    # bounded queue; 0 = synchronous handoff (fail fast)
+      handler-max-runtime: 5m        # watchdog threshold for a stuck handler
+      lock-ttl: 5m                   # TTL passed to EntityLocker.tryLock()
+    overrides:                       # thin merge: set only the fields you change
+      SEND_EMAIL:
+        handler-pool-size: 20
+        poll-min-interval: 2s
+      UPDATE_CACHE:
+        handler-pool-size: 30
+        poll-min-interval: 500ms
+        handler-max-runtime: 1m
+
+  dispatcher:
+    unknown-handler-policy: SKIP     # SKIP (default) | DISABLE | FAIL
+    unknown-handler-retry-delay: 1m  # reschedule delay when policy=SKIP
+    lock-busy-retry-delay: 1s        # reschedule delay when the entity lock is busy
+    dispatch-rejected-retry-delay: 1s # reschedule delay when the handler executor is saturated
+
+  maintenance:
+    heartbeat-interval: 5s           # how often the worker refreshes event_outboxer.workers
+    dead-threshold: 30s              # heartbeat silence before a worker counts as dead
+    orphan-recovery-interval: 30s    # orphan-recovery task period
+    watchdog-interval: 10s           # stuck-handler watchdog period
+    reclaim-batch-size: 50           # max dead workers processed per orphan-recovery pass
+    shutdown-timeout: 30s            # max wait for in-flight handlers on shutdown
+
+  handler-executor:
+    type: platform                   # platform | virtual
 
   metrics:
     # Prefix applied to every Micrometer counter/timer/summary. Default
@@ -114,36 +120,6 @@ event-outboxer:
     # empty = no influence on /actuator/health/liveness or /readiness.
     # For k8s rolling restart: [readiness] is the recommended minimum.
     probe-groups: []
-
-  lock:
-    type: postgres                   # postgres | redis | noop; auto-detected by classpath if omitted
-    redis:
-      host: ${KEYDB_HOST:localhost}
-      port: ${KEYDB_PORT:6379}
-      database: 3
-      timeout: 5s
-      key-prefix: "outbox:lock:"
-
-  serializer:
-    type: jackson
-    jackson:
-      fail-on-unknown-properties: false
-      write-dates-with-zone-id: true
-
-  handler-executor:
-    type: platform                   # platform | virtual
-
-  cache:
-    type: memory                     # memory (default) | redis | noop
-    redis:
-      key-prefix: "outbox:metrics:"  # shared key namespace when type=redis
-
-  listener:
-    micrometer:
-      enabled: true                  # auto-enabled when micrometer is on the classpath
-    logging:
-      enabled: true                  # default LoggingOutboxListener
-      level: INFO
 ```
 
 ---
@@ -156,88 +132,36 @@ Master switch. `false` — the library does not activate, no beans, no
 pollers. Useful for dev/staging environments where the outbox is not
 needed.
 
-### `event-outboxer.worker-id`
+### `event-outboxer.worker.*`
 
-Override for the autogenerated WorkerId. By default it is generated as
-`{hostname}-{pid}-{uuid8}` (e.g. `api-srv-01-4817-a3f2b1c9`). Typically
-untouched.
-
-### `event-outboxer.worker-metadata`
-
-An arbitrary Map<String,String> written to `event_outboxer.workers.metadata JSONB`
-on registration. Useful for debugging: application version, git-sha,
-environment, Docker image tag.
+- `id` — override for the autogenerated WorkerId. By default it is
+  generated as `{hostname}-{pid}-{uuid8}`
+  (e.g. `api-srv-01-4817-a3f2b1c9`). Typically untouched.
+- `host` — explicit hostname stored in the worker registry; resolved
+  automatically when unset.
+- `metadata` — an arbitrary `Map<String,String>` written to
+  `event_outboxer.workers.metadata JSONB` on registration. Useful for
+  debugging: application version, git-sha, environment, image tag.
 
 ### `event-outboxer.publisher.no-transaction-policy`
 
-Behavior of `OutboxEventPublisher.publish()` when called outside an active
-transaction:
+Behavior of `OutboxEventPublisher.publish()` when called outside an
+active transaction:
 
 - `FAIL` (default) — `NoTransactionException` is thrown. Safe: prevents
   accidentally publishing without atomicity.
-- `AUTO` — opens a short-lived autonomous TX. Convenient for simple
-  scripts but loses the main outbox property.
-- `IGNORE` — writes without a TX. Unsafe, for tests only.
-
-### `event-outboxer.handlers.defaults` / `event-outboxer.handlers.types.<type>`
-
-Handler settings. Defaults apply to everyone; per-type overrides adjust
-individually (see [thin merge](#per-type-override-thin-merge)).
-
-- `handler-pool-size`, `handler-queue-capacity` — fixed-size
-  `ThreadPoolTaskExecutor` per event type. The pool does not scale
-  (`core == max`, `keepAliveSeconds = 0`, no thread turnover); size
-  `handler-pool-size` for expected handler concurrency. A zero
-  `handler-queue-capacity` makes dispatch fail fast (surfaces as
-  `onDispatchRejected`).
-- `polling-interval` — base interval between polls of this type.
-- `max-idle-polling-interval` — upper bound for adaptive backoff (after a
-  sequence of empty polls).
-- `claim-batch-size` — how many events to claim per poll.
-- `handler-max-runtime` — watchdog threshold. A longer-running handler is
-  force-reclaimed (thread leak, see ADR-0005).
-- `lock-ttl` — lock TTL passed to `EntityLocker.tryLock()`.
-- `lock-busy-retry-delay` — delay between retries when the lock is busy.
-- `unknown-handler-policy` — what to do with events whose type has no
-  handler (see ADR-0013).
-
-### `event-outboxer.handlers.*.failure`
-
-`FailureHandler` chain settings (see ADR-0007).
-
-- `max-attempts` — number of attempts before exhaustion.
-- `exhausted-action` — `DISABLE` (move to DISABLED) or `DELETE` (drop).
-- `strategy` — `exponential` (exp backoff), `fixed` (constant delay),
-  `none` (no retry, immediate exhaust).
-- `base-delay`, `multiplier`, `max-delay`, `jitter` — backoff parameters.
-- `log-level` — log level for each failure.
-
-### `event-outboxer.lifecycle.*`
-
-Maintenance-process parameters.
-
-- `heartbeat-interval` — how often writers execute
-  `UPDATE event_outboxer.workers SET last_heartbeat=now()`.
-- `dead-threshold` — how many seconds of silence mark a worker as dead.
-  **Invariant**: `dead-threshold >= 3 × heartbeat-interval` (protection
-  against GC-stall false positives).
-- `orphan-recovery-interval` — period of `OrphanRecoveryTask`.
-- `watchdog-interval` — period of `WatchdogTask`.
-- `maintenance-pool-size` — shared `ScheduledExecutorService` size.
-- `shutdown-timeout` — maximum wait for in-flight handlers during graceful
-  shutdown. See [docs/ARCHITECTURE.md §SmartLifecycle phases](ARCHITECTURE.md#3-smartlifecycle-phases)
-  for the drain sequence.
-
-> See [docs/OBSERVABILITY.md](OBSERVABILITY.md) for what these knobs
-> look like from the outside — the health endpoint, the Micrometer
-> metric list and five troubleshooting recipes.
+- `IGNORE` — writes without a surrounding transaction. Unsafe, for
+  tests only.
 
 ### `event-outboxer.storage.*`
 
 Storage adapter settings.
 
-- `type` — `postgres` (default when `storage-postgres` is on the
-  classpath) or `inmemory` (for tests).
+- `type` — `inmemory` (**default**) or `postgres`. There is no
+  classpath auto-detection: production deployments must set
+  `type: postgres` explicitly (the in-memory default keeps tests and
+  first-run experiences dependency-free). The PostgreSQL adapter also
+  requires a `DataSource` bean.
 - `schema` — schema name. **Default: `event_outboxer`** — a specific
   name chosen to avoid clashing with other libraries or application
   tables in a shared database. The value is propagated into both the
@@ -245,16 +169,130 @@ Storage adapter settings.
   used by the classpath migrations, so changing it once updates both.
 - `table-prefix` — optional table prefix (e.g. `v1_` →
   `event_outboxer.v1_events`).
-- `archive-enabled` — enables archiving (requires an additional
-  migration; see ADR-0008).
+- `archive-enabled` — enables archiving of successful events (requires
+  the archive migration; see ADR-0008).
 - `metrics-cache-ttl` — TTL applied by the default in-memory cache and
   (when `event-outboxer.cache.type=redis`) as the PX expire on the Redis key.
   Ignored when `event-outboxer.cache.type=noop` or a custom
   `@Bean MetricsSnapshotCache` takes over.
 
+### `event-outboxer.lock.*`
+
+`EntityLocker` selection. There is no classpath auto-detection — the
+default is `noop` and other backends are opt-in:
+
+- `type: noop` (**default**) — no business-key locking.
+- `type: postgres` — `pg_advisory_lock`-based locker; requires
+  `event-outboxer-lock-postgres` on the classpath and a `DataSource`
+  bean.
+- `type: redis` — Redis/KeyDB locker; requires
+  `event-outboxer-lock-redis` on the classpath and a user-provided
+  Lettuce `StatefulRedisConnection<String, String>` bean (the starter
+  does not manage Redis connections itself).
+- `key-prefix` — prefix for lock keys, default `outbox:lock:`.
+
+### `event-outboxer.cache.*`
+
+Backs `EventStore.metricsSnapshot()` caching. See
+[docs/STORAGE.md §Pluggable metrics cache](STORAGE.md#pluggable-metrics-cache)
+for the motivation (consistent snapshot across pods) and the full
+Redis wiring recipe.
+
+- `type` — one of:
+  - `memory` (default) — per-JVM `AtomicReference` TTL cache, keyed off
+    `event-outboxer.storage.metrics-cache-ttl`.
+  - `noop` — caching disabled; every `metricsSnapshot()` call hits the
+    database. Useful for tests that need live state.
+  - `redis` — shared Redis/KeyDB-backed cache; requires
+    `event-outboxer-cache-redis` on the classpath and a
+    `StatefulRedisConnection<String, String>` bean.
+- `redis.key-prefix` — prefix prepended to the cache key when
+  `type=redis`. Default `outbox:metrics:`; the cache writes a single
+  key `<key-prefix>snapshot`.
+
+A user-defined `@Bean MetricsSnapshotCache` wins over every autowired
+variant regardless of `type`.
+
+### `event-outboxer.event-types.defaults` / `event-outboxer.event-types.overrides.<type>`
+
+Per-event-type engine settings. Defaults apply to every type;
+per-type overrides adjust individual fields (see
+[thin merge](#per-type-override-thin-merge)).
+
+- `poll-min-interval` / `poll-max-interval` / `poll-multiplier` — the
+  adaptive poller starts at the min interval, multiplies the wait by
+  `poll-multiplier` after every empty poll, and caps it at the max
+  interval; any non-empty poll resets the wait to the minimum.
+- `claim-batch-size` — how many events to claim per poll.
+- `handler-pool-size`, `handler-queue-capacity` — fixed-size
+  executor per event type (`core == max`, no scaling). A zero
+  `handler-queue-capacity` makes dispatch a synchronous handoff that
+  fails fast. A rejected dispatch is not lost: the event is released
+  back to `PENDING` (without consuming an attempt) and retried after
+  `dispatcher.dispatch-rejected-retry-delay`.
+- `handler-max-runtime` — watchdog threshold. A handler running longer
+  is force-reclaimed (see ADR-0005).
+- `lock-ttl` — lock TTL passed to `EntityLocker.tryLock()`.
+
+### `event-outboxer.dispatcher.*`
+
+Cross-type dispatcher knobs.
+
+- `unknown-handler-policy` — what to do with a claimed event whose type
+  has no registered handler (see ADR-0013): `SKIP` (default —
+  reschedule after `unknown-handler-retry-delay` without consuming an
+  attempt), `DISABLE` (move to `DISABLED`), `FAIL` (leave the row
+  `PROCESSING` as a visible poison-pill marker; it is released back to
+  `PENDING` on engine shutdown).
+- `unknown-handler-retry-delay` — reschedule delay for `SKIP`.
+- `lock-busy-retry-delay` — reschedule delay when the entity lock is
+  busy or errored. Lock contention does not consume the attempts
+  budget.
+- `dispatch-rejected-retry-delay` — reschedule delay when the per-type
+  handler executor rejects a dispatch (pool and queue saturated).
+  Backpressure does not consume the attempts budget either.
+
+### `event-outboxer.maintenance.*`
+
+Maintenance-process parameters.
+
+- `heartbeat-interval` — how often the worker refreshes its
+  `event_outboxer.workers` row. The PostgreSQL adapter stamps the
+  database clock (`now()`), so worker liveness is immune to
+  application-JVM clock skew.
+- `dead-threshold` — heartbeat silence before a worker is considered
+  dead. **Invariant**: `dead-threshold >= 3 × heartbeat-interval`
+  (protection against GC-stall false positives).
+- `orphan-recovery-interval` — period of `OrphanRecoveryTask`.
+- `watchdog-interval` — period of `WatchdogTask` (also used by the
+  engine crash detector).
+- `reclaim-batch-size` — maximum number of dead workers processed per
+  orphan-recovery pass.
+- `shutdown-timeout` — maximum wait for in-flight handlers during
+  graceful shutdown. Events still claimed after the drain (queued or
+  interrupted) are released back to `PENDING` before the worker
+  deregisters. See
+  [docs/ARCHITECTURE.md §SmartLifecycle phases](ARCHITECTURE.md#3-smartlifecycle-phases)
+  for the drain sequence.
+
+> See [docs/OBSERVABILITY.md](OBSERVABILITY.md) for what these knobs
+> look like from the outside — the health endpoint, the Micrometer
+> metric list and five troubleshooting recipes.
+
+### `event-outboxer.handler-executor.type`
+
+- `platform` (default) — `ThreadPoolTaskExecutor` on platform threads.
+- `virtual` — virtual-thread-per-task `ExecutorService` wrapped in
+  `ContextPropagatingExecutorService`. Requires JDK 21+ at runtime
+  (baseline is Java 17, virtual-thread APIs invoked via reflection);
+  JDK 25+ additionally eliminates `synchronized` pinning via JEP 491,
+  making the variant safe with JDBC drivers.
+
 ### `event-outboxer.metrics.*`
 
-Micrometer listener settings.
+Micrometer listener settings. `MicrometerOutboxListener` registers
+automatically when Micrometer and the `event-outboxer-metrics-micrometer`
+module are on the classpath and a `MeterRegistry` bean exists.
 
 - `prefix` — prefix applied to every counter / timer / summary
   registered by `MicrometerOutboxListener`. **Default:
@@ -279,108 +317,71 @@ Spring Boot Actuator integration.
   for the tradeoffs between probe-driven pod lifecycle and
   metric-driven alerting.
 
-### `event-outboxer.lock.*`
+### Serialization
 
-EntityLocker settings. `type` is auto-detected based on which modules are
-on the classpath:
-- `lock-postgres` → `postgres`.
-- `lock-redis` → `redis`.
-- Neither → `noop`.
+The MVP ships Jackson only (see ADR-0011); it activates automatically
+when Jackson is on the classpath. There are no
+`event-outboxer.serializer.*` properties — customise serialization by
+providing an `ObjectMapper` bean named `outboxObjectMapper` (falls back
+to the primary `ObjectMapper`, then to library defaults) or by
+registering your own `@Bean EventSerializer`.
 
-An explicit `type` takes precedence.
+### Failure handling
 
-### `event-outboxer.serializer.*`
-
-In MVP — Jackson only (see ADR-0011).
-
-### `event-outboxer.handler-executor.type`
-
-- `platform` (default) — `ThreadPoolTaskExecutor` on platform threads.
-- `virtual` — virtual-thread-per-task `ExecutorService` wrapped in
-  `ContextPropagatingExecutorService`. Requires JDK 21+ at runtime
-  (baseline is Java 17, virtual-thread APIs invoked via reflection);
-  JDK 25+ additionally eliminates `synchronized` pinning via JEP 491,
-  making the variant safe with JDBC drivers.
-
-### `event-outboxer.cache.*`
-
-Backs `EventStore.metricsSnapshot()` caching. See
-[docs/STORAGE.md §Pluggable metrics cache](STORAGE.md#pluggable-metrics-cache)
-for the motivation (consistent snapshot across pods) and the full
-Redis wiring recipe.
-
-- `type` — one of:
-  - `memory` (default) — per-JVM `AtomicReference` TTL cache, keyed off
-    `event-outboxer.storage.metrics-cache-ttl`.
-  - `noop` — caching disabled; every `metricsSnapshot()` call hits the
-    database. Useful for tests that need live state.
-  - `redis` — shared Redis/KeyDB-backed cache; requires
-    `event-outboxer-cache-redis` on the classpath and a
-    `StatefulRedisConnection<String, String>` bean.
-- `redis.key-prefix` — prefix prepended to the cache key when
-  `type=redis`. Default `outbox:metrics:`; the cache writes a single
-  key `<key-prefix>snapshot`.
-
-A user-defined `@Bean MetricsSnapshotCache` wins over every autowired
-variant regardless of `type`.
-
-### `event-outboxer.listener.*`
-
-- `micrometer.enabled` — registers `MicrometerOutboxListener` when
-  Micrometer is on the classpath.
-- `logging.enabled` — registers the default `LoggingOutboxListener`.
-- `logging.level` — log level for that listener.
+Retry/backoff policy is configured **in Java, not YAML**: provide a
+`@Bean` `FailureHandler` (qualifier `outboxDefaultFailureHandler` for
+the global default, or the `outboxPerTypeFailureHandlers` map for
+per-type chains), or override `EventHandler.failureHandler()` on a
+specific handler. The default chain is
+`FailureHandlers.defaults()` — logging + max-attempts (10, then
+DISABLE) + exponential backoff. See ADR-0007 and
+[Overriding through Java code](#overriding-through-java-code).
 
 ---
 
 ## Per-type override (thin merge)
 
-`event-outboxer.handlers.types.<type>` overrides `event-outboxer.handlers.defaults`
-**field by field, independently**. For example:
+`event-outboxer.event-types.overrides.<type>` overrides
+`event-outboxer.event-types.defaults` **field by field,
+independently**. Unset fields in `defaults` fall back to the library
+defaults (`EventTypeConfig.defaults()`). For example:
 
 ```yaml
-event-outboxer.handlers:
-  defaults:
-    polling-interval: 10s
-    failure:
-      max-attempts: 10
-      strategy: exponential
-      base-delay: 5s
-      multiplier: 2.0
-  types:
-    SEND_EMAIL:
-      failure:
-        max-attempts: 5     # ONLY this is overridden
+event-outboxer:
+  event-types:
+    defaults:
+      poll-min-interval: 250ms
+      claim-batch-size: 42
+    overrides:
+      SEND_EMAIL:
+        handler-pool-size: 20   # ONLY this is overridden
 ```
 
 Effective configuration for `SEND_EMAIL`:
-- `polling-interval: 10s` (from defaults)
-- `failure.max-attempts: 5` (override)
-- `failure.strategy: exponential` (from defaults)
-- `failure.base-delay: 5s` (from defaults)
-- `failure.multiplier: 2.0` (from defaults)
+- `handler-pool-size: 20` (override)
+- `poll-min-interval: 250ms` (from defaults)
+- `claim-batch-size: 42` (from defaults)
+- everything else — library defaults.
 
-This is a recursive thin merge performed in `EventTypeConfigProvider` of
-the core engine.
+The merge is performed by the starter when it maps `OutboxProperties`
+to the core `EventTypeConfig` objects.
 
 ---
 
 ## Invariant validation
 
-At application startup `OutboxPropertiesValidator` checks:
+Violations fail fast at startup — the configuration records validate
+their invariants in their constructors, so a bad value aborts context
+refresh:
 
-| Rule | Why |
-|---|---|
-| `dead-threshold >= 3 × heartbeat-interval` | Protect against GC-stall false positives |
-| `handler-max-runtime > 0` | Sanity |
-| `handler-pool-size > 0`, `handler-queue-capacity >= 0` | Pool is fixed-size and bounded |
-| `claim-batch-size > 0` | Sanity |
-| `failure.strategy=NONE ⇒ max-attempts=1` | Consistency |
-| `failure.strategy=EXPONENTIAL ⇒ multiplier > 1.0` | Exp backoff needs growth |
-| `failure.jitter ∈ [0.0, 1.0]` | Sanity |
-| `polling-interval <= max-idle-polling-interval` | Adaptive growth cannot shrink |
-
-On violation — `InvariantViolationException`; the pod fails to start.
+| Rule | Where | Why |
+|---|---|---|
+| `dead-threshold >= 3 × heartbeat-interval` | `MaintenanceConfig` | Protect against GC-stall false positives |
+| `poll-min-interval > 0`, `poll-max-interval >= poll-min-interval` | `EventTypeConfig` | Adaptive backoff needs a sane range |
+| `poll-multiplier > 1.0` | `EventTypeConfig` | Adaptive backoff needs growth |
+| `claim-batch-size > 0`, `handler-pool-size > 0`, `handler-queue-capacity >= 0` | `EventTypeConfig` | Pool is fixed-size and bounded |
+| `handler-max-runtime > 0`, `lock-ttl > 0` | `EventTypeConfig` | Sanity |
+| retry delays not negative | `DispatcherConfig` | Sanity |
 
 ---
 
