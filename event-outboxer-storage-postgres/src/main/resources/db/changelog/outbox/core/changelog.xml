@@ -47,4 +47,13 @@
             stripComments="false"
             endDelimiter=";"/>
     </changeSet>
+
+    <changeSet id="outbox-core-004-dedup-key" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="db/migration/outbox/core/V004__outbox_dedup_key.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
 </databaseChangeLog>

@@ -60,19 +60,65 @@ public final class InMemoryEventStore implements EventStore {
   // save / saveAll / findById
   // ---------------------------------------------------------------------------------------------
 
+  /** Serializes dedup-key inserts — the in-memory analogue of the partial unique index. */
+  private final Object dedupInsertMonitor = new Object();
+
   @Override
-  public void save(PendingEvent event) {
+  public boolean save(PendingEvent event) {
     Objects.requireNonNull(event, "event must not be null");
+    if (event.dedupKey() == null) {
+      return insert(event);
+    }
+    // Coarse but correct for test infrastructure: one monitor makes the exists-check and the
+    // insert atomic, mirroring the PG partial unique index over PENDING rows (ADR-0021).
+    synchronized (dedupInsertMonitor) {
+      if (findPendingByDedupKey(event.eventType(), event.dedupKey()).isPresent()) {
+        return false;
+      }
+      return insert(event);
+    }
+  }
+
+  private boolean insert(PendingEvent event) {
     EventRow row = EventRow.fromPending(event, clock.now());
     EventRow previous = rows.putIfAbsent(row.id, row);
     if (previous != null) {
       throw new EventStoreException("duplicate event id: " + row.id);
     }
+    return true;
+  }
+
+  @Override
+  public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
+    Objects.requireNonNull(eventType, "eventType must not be null");
+    Objects.requireNonNull(dedupKey, "dedupKey must not be null");
+    // No transactions in the in-memory adapter, hence nothing to pin: the coalescing
+    // visibility race of ADR-0021 cannot occur here (every save is immediately visible).
+    return findPendingByDedupKey(eventType, dedupKey);
+  }
+
+  private Optional<UUID> findPendingByDedupKey(String eventType, String dedupKey) {
+    for (EventRow row : rows.values()) {
+      synchronized (row) {
+        if (row.status == EventStatus.PENDING
+            && eventType.equals(row.eventType)
+            && dedupKey.equals(row.dedupKey)) {
+          return Optional.of(row.id);
+        }
+      }
+    }
+    return Optional.empty();
   }
 
   @Override
   public void saveAll(List<PendingEvent> events) {
     Objects.requireNonNull(events, "events must not be null");
+    for (PendingEvent e : events) {
+      if (e.dedupKey() != null) {
+        throw new IllegalArgumentException(
+            "saveAll does not accept events with a dedup key (event " + e.id() + ")");
+      }
+    }
     for (PendingEvent e : events) {
       save(e);
     }
@@ -443,6 +489,7 @@ public final class InMemoryEventStore implements EventStore {
     @Nullable Instant claimedAt;
     @Nullable String lastFailReason;
     long version;
+    final @Nullable String dedupKey;
 
     private EventRow(PendingEvent source, Instant createdAt) {
       this.id = source.id();
@@ -452,6 +499,7 @@ public final class InMemoryEventStore implements EventStore {
       this.priority = source.priority();
       this.createdAt = createdAt;
       this.traceContext = source.traceContext();
+      this.dedupKey = source.dedupKey();
       this.attempts = 0;
       this.status = EventStatus.PENDING;
       this.runAt = source.runAt();
@@ -480,7 +528,8 @@ public final class InMemoryEventStore implements EventStore {
           claimedAt,
           lastFailReason,
           traceContext,
-          version);
+          version,
+          dedupKey);
     }
 
     ClaimedEvent toClaimed() {

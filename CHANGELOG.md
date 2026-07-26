@@ -8,6 +8,19 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Coalescing dedup key — single in-flight event per key (ADR-0021).**
+  `PublishOptions.dedupKey`: at most one PENDING event per
+  `(event-type, dedup-key)`; a coalesced publish returns the existing
+  event's id (listener/wake fire only on real inserts). The design closes
+  the lost-update race of naive dedup: the unique index (migration V004)
+  is partial over PENDING — an event already PROCESSING does not swallow
+  a new publish — and on conflict the publisher pins the pending row with
+  `SELECT ... FOR UPDATE` inside the caller's transaction, so claims
+  (`SKIP LOCKED`) skip it until commit and the handler always sees the
+  coalescing transaction's changes. This is work coalescing, not
+  exactly-once: handler idempotency remains required. SPI:
+  `EventStore.save` now returns whether the row was inserted; new
+  `lockPendingByDedupKey`.
 - **Stale-claim sweeper — last line of defence (amends ADR-0005).** New
   `EventStore.sweepStale(olderThan, limit)` + a maintenance task that
   returns `PROCESSING` rows older than `maintenance.stale-claim-threshold`
