@@ -31,7 +31,11 @@ import lombok.Builder;
  *     synchronous handoff that fails fast (triggers {@code onDispatchRejected})
  * @param handlerMaxRuntime maximum handler wall-clock time before the watchdog force-reclaims the
  *     row
- * @param lockTtl safety timeout passed to {@code EntityLocker.tryLock(...)}
+ * @param lockTtl safety timeout passed to {@code EntityLocker.tryLock(...)}. Must be {@code >=
+ *     handlerMaxRuntime} (validated): for TTL-honouring lockers (Redis) a shorter TTL would let
+ *     the entity lock expire while a legitimate handler is still running, breaking per-key
+ *     serialization. Recommended {@code >= 2 x handlerMaxRuntime} — the TTL is the crash-release
+ *     mechanism, and the margin covers a zombie handler that outlives its force-reclaimed claim
  */
 @Builder(toBuilder = true)
 public record EventTypeConfig(
@@ -83,6 +87,16 @@ public record EventTypeConfig(
     if (lockTtl.isNegative() || lockTtl.isZero()) {
       throw new IllegalArgumentException("lockTtl must be positive, got " + lockTtl);
     }
+    if (lockTtl.compareTo(handlerMaxRuntime) < 0) {
+      throw new IllegalArgumentException(
+          "lockTtl ("
+              + lockTtl
+              + ") must be >= handlerMaxRuntime ("
+              + handlerMaxRuntime
+              + "): a TTL shorter than the handler budget lets the entity lock expire while a "
+              + "legitimate handler is still running, breaking per-key serialization for "
+              + "TTL-honouring lockers (Redis). Recommended: lockTtl >= 2 x handlerMaxRuntime.");
+    }
   }
 
   /**
@@ -98,7 +112,9 @@ public record EventTypeConfig(
         .handlerPoolSize(3)
         .handlerQueueCapacity(100)
         .handlerMaxRuntime(Duration.ofMinutes(5))
-        .lockTtl(Duration.ofMinutes(5))
+        // 2 x handlerMaxRuntime: the TTL is the crash-release mechanism, and the margin covers
+        // a zombie handler finishing after its row was already force-reclaimed by the watchdog.
+        .lockTtl(Duration.ofMinutes(10))
         .build();
   }
 }

@@ -53,6 +53,12 @@ public interface EntityLocker {
    * intrinsic TTL support (PG session-scoped advisory locks, for example) still honour the {@code
    * ttl} contract by relying on handler-level timeouts — see the adapter's documentation.
    *
+   * <p>Exclusion guarantees differ per backend (ADR-0012 amendment): TTL-honouring lockers
+   * release the lock at {@code min(close, ttl)} — the engine therefore requires {@code lockTtl >=
+   * handlerMaxRuntime} so a legitimate handler can never outlive its own lock; session-scoped
+   * lockers hold until close or connection loss, at the price of one pooled connection per held
+   * lock.
+   *
    * @throws LockAcquisitionException if the locker backend is unreachable or returns an error
    *     distinct from "lock is busy"
    */

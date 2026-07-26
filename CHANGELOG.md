@@ -44,6 +44,16 @@ All notable changes to this project are documented here. Format follows
   still fires on every failed attempt. Amends ADR-0007.
 
 ### Changed
+- **Entity-lock contract made honest and enforced (amends ADR-0012).**
+  `lockTtl >= handlerMaxRuntime` is now validated at startup (a shorter
+  TTL let the Redis lock expire under a legitimately running handler),
+  and the default `lock-ttl` rose from 5m to 10m (2 × the handler
+  budget). Configs that set `lock-ttl` below `handler-max-runtime` fail
+  fast with instructions. The starter warns when `lock.type=postgres`
+  and the total handler pool size reaches HikariCP's maximum-pool-size
+  (each held advisory lock pins a pooled connection — self-deadlock
+  risk). ADR-0012 now documents the per-backend guarantees, including
+  the no-fencing best-effort nature of the Redis locker.
 - **BREAKING: in-memory storage is no longer a configuration option
   (ADR-0020).** `event-outboxer.storage.type` has no default and accepts
   only `postgres`; an unconfigured outbox fails at startup with an

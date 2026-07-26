@@ -26,6 +26,8 @@ import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
+import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import io.github.bams22.outboxer.spring.executor.HandlerExecutorFactory;
 import io.github.bams22.outboxer.spring.lifecycle.OutboxSmartLifecycle;
 import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
@@ -62,6 +64,9 @@ import org.springframework.context.annotation.Bean;
 @EnableConfigurationProperties(OutboxProperties.class)
 @ConditionalOnProperty(prefix = "event-outboxer", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxEngineAutoConfiguration {
+
+  private static final org.slf4j.Logger log =
+      org.slf4j.LoggerFactory.getLogger(OutboxEngineAutoConfiguration.class);
 
   @Bean
   @ConditionalOnMissingBean
@@ -125,6 +130,7 @@ public class OutboxEngineAutoConfiguration {
       OutboxProperties properties,
       io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
       ObjectProvider<io.github.bams22.outboxer.spi.OutboxAdmin> adminProvider,
+      ObjectProvider<DataSource> dataSourceProvider,
       ObjectProvider<EventHandler<?>> handlerProvider,
       @Qualifier("outboxDefaultFailureHandler") ObjectProvider<FailureHandler<?>>
               defaultFailureHandlerProvider,
@@ -169,7 +175,10 @@ public class OutboxEngineAutoConfiguration {
       builder.workerMetadata(m.getKey(), m.getValue());
     }
 
-    handlerProvider.forEach(builder::handler);
+    java.util.List<EventHandler<?>> handlers = new java.util.ArrayList<>();
+    handlerProvider.forEach(handlers::add);
+    handlers.forEach(builder::handler);
+    warnIfPgLockCanExhaustPool(properties, resolvedDefaults, handlers, dataSourceProvider);
     defaultFailureHandlerProvider.ifAvailable(builder::defaultFailureHandler);
     perTypeFailureHandlersProvider.ifAvailable(
         map -> map.forEach(builder::failureHandlerFor));
@@ -246,6 +255,74 @@ public class OutboxEngineAutoConfiguration {
         .lockBusyRetryDelay(d.getLockBusyRetryDelay())
         .dispatchRejectedRetryDelay(d.getDispatchRejectedRetryDelay())
         .build();
+  }
+
+  /**
+   * The PostgreSQL entity locker holds one pooled connection for every concurrently-held lock
+   * (session-scoped advisory locks, ADR-0012). If every handler thread can hold a lock at once,
+   * the fleet can exhaust the shared HikariCP pool and deadlock against its own handlers —
+   * warn at startup when the sums line up that way.
+   */
+  private void warnIfPgLockCanExhaustPool(
+      OutboxProperties properties,
+      EventTypeConfig resolvedDefaults,
+      java.util.List<EventHandler<?>> handlers,
+      ObjectProvider<DataSource> dataSourceProvider) {
+    if (properties.getLock().getType() != OutboxProperties.LockType.postgres) {
+      return;
+    }
+    DataSource dataSource = dataSourceProvider.getIfAvailable();
+    Integer maxPoolSize = hikariMaxPoolSize(dataSource);
+    if (maxPoolSize == null) {
+      return; // not HikariCP (or no DataSource) — nothing reliable to compare against
+    }
+    int totalHandlerThreads = 0;
+    for (EventHandler<?> h : handlers) {
+      OutboxProperties.EventType override =
+          properties.getEventTypes().getOverrides().get(h.eventType());
+      EventTypeConfig cfg =
+          override != null ? mergeEventType(override, resolvedDefaults) : resolvedDefaults;
+      totalHandlerThreads += cfg.handlerPoolSize();
+    }
+    pgLockPoolWarning(totalHandlerThreads, maxPoolSize).ifPresent(log::warn);
+  }
+
+  /** Package-private for tests. */
+  static java.util.Optional<String> pgLockPoolWarning(int totalHandlerThreads, int maxPoolSize) {
+    if (totalHandlerThreads < maxPoolSize) {
+      return java.util.Optional.empty();
+    }
+    return java.util.Optional.of(
+        "event-outboxer.lock.type=postgres holds one pooled connection per concurrently-held "
+            + "entity lock, and the total handler pool size ("
+            + totalHandlerThreads
+            + ") >= HikariCP maximum-pool-size ("
+            + maxPoolSize
+            + "): a saturated handler fleet can exhaust the connection pool and deadlock "
+            + "against its own handlers. Raise spring.datasource.hikari.maximum-pool-size or "
+            + "reduce the per-type handler pools (ADR-0012).");
+  }
+
+  private static @Nullable Integer hikariMaxPoolSize(@Nullable DataSource dataSource) {
+    if (dataSource == null
+        || !org.springframework.util.ClassUtils.isPresent(
+            "com.zaxxer.hikari.HikariDataSource",
+            OutboxEngineAutoConfiguration.class.getClassLoader())) {
+      return null;
+    }
+    return HikariSupport.maxPoolSize(dataSource);
+  }
+
+  /** Loaded only after the classpath check above — keeps Hikari a truly optional dependency. */
+  private static final class HikariSupport {
+
+    private HikariSupport() {}
+
+    static @Nullable Integer maxPoolSize(DataSource ds) {
+      return ds instanceof com.zaxxer.hikari.HikariDataSource hikari
+          ? hikari.getMaximumPoolSize()
+          : null;
+    }
   }
 
   /**

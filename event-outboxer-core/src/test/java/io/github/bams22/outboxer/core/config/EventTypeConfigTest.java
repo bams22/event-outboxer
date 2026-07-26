@@ -51,6 +51,28 @@ class EventTypeConfigTest {
   }
 
   @Test
+  void lockTtlMustCoverHandlerMaxRuntime() {
+    // Shorter TTL than the handler budget → the entity lock could expire mid-handler.
+    assertThatThrownBy(
+            () ->
+                EventTypeConfig.defaults().toBuilder()
+                    .handlerMaxRuntime(Duration.ofMinutes(10))
+                    .lockTtl(Duration.ofMinutes(5))
+                    .build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("lockTtl");
+    // Equality is the minimum allowed; the default keeps a 2x margin.
+    EventTypeConfig equal =
+        EventTypeConfig.defaults().toBuilder()
+            .handlerMaxRuntime(Duration.ofMinutes(10))
+            .lockTtl(Duration.ofMinutes(10))
+            .build();
+    assertThat(equal.lockTtl()).isEqualTo(equal.handlerMaxRuntime());
+    assertThat(EventTypeConfig.defaults().lockTtl())
+        .isEqualTo(EventTypeConfig.defaults().handlerMaxRuntime().multipliedBy(2));
+  }
+
+  @Test
   void providerReturnsOverrideWhenPresent() {
     EventTypeConfig alt = EventTypeConfig.defaults().toBuilder().claimBatchSize(99).build();
     EventTypeConfigProvider provider =
