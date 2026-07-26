@@ -88,6 +88,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
 ├── event-outboxer-lock-postgres            pg_advisory_lock EntityLocker
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
+├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
 ├── event-outboxer-testkit                  Test utilities (SettableClock, ManualEngine)
 └── event-outboxer-spring-boot-starter      Autoconfiguration + SmartLifecycle

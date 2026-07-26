@@ -16,7 +16,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 12 modules
+### 13 modules
 
 ```
 event-outboxer (root parent pom)
@@ -29,6 +29,7 @@ event-outboxer (root parent pom)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
 ├── event-outboxer-lock-postgres            pg_advisory_lock EntityLocker
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
+├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
 ├── event-outboxer-testkit                  Test utilities
 └── event-outboxer-spring-boot-starter      Autoconfiguration + SmartLifecycle
@@ -202,8 +203,9 @@ The BOM POM manages:
 
 ### Negative consequences
 
-- 12 modules — more than a monorepo. That is the price of the pluggable
-  architecture.
+- 13 modules — more than a monorepo. That is the price of the pluggable
+  architecture. (`event-outboxer-cache-redis` was added after the
+  original decision when `MetricsSnapshotCache` became an SPI port.)
 - An SPI breaking change requires updates to every adapter.
 
 ## Related decisions
