@@ -18,36 +18,40 @@ import io.github.bams22.outboxer.storage.inmemory.InMemoryConnectionSupplier;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryOutboxAdmin;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 /**
- * Registers the in-memory {@code EventStore} / {@code WorkerRegistry} when {@code
- * outbox.storage.type=inmemory} (the default). Suitable for tests and local development where
- * durability is not required.
+ * NON-DURABLE in-memory outbox wiring for TESTS. Deliberately a plain {@code @Configuration},
+ * never an auto-configuration (ADR-0020): events stored here do not participate in the caller's
+ * transaction and do not survive a restart, so in-memory storage must be an unmistakably
+ * explicit choice, unreachable through {@code event-outboxer.*} properties. Use it in Spring
+ * tests only:
+ *
+ * <pre>
+ * &#64;SpringBootTest
+ * &#64;Import(OutboxInMemoryTestConfiguration.class)
+ * class MyOutboxTest { ... }
+ * </pre>
+ *
+ * <p>Requires {@code event-outboxer-storage-inmemory} on the (test) classpath.
  */
-@AutoConfiguration
-@ConditionalOnClass(InMemoryEventStore.class)
-@ConditionalOnProperty(
-    prefix = "event-outboxer.storage",
-    name = "type",
-    havingValue = "inmemory",
-    matchIfMissing = true)
-public class InMemoryStorageAutoConfiguration {
+@Configuration(proxyBeanMethods = false)
+public class OutboxInMemoryTestConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(EventStore.class)
-  public InMemoryEventStore outboxEventStore(Clock clock) {
-    return new InMemoryEventStore(clock);
+  public InMemoryEventStore outboxEventStore(ObjectProvider<Clock> clock) {
+    return new InMemoryEventStore(clock.getIfAvailable(Clock::system));
   }
 
   @Bean
   @ConditionalOnMissingBean(WorkerRegistry.class)
-  public InMemoryWorkerRegistry outboxWorkerRegistry(Clock clock) {
-    return new InMemoryWorkerRegistry(clock);
+  public InMemoryWorkerRegistry outboxWorkerRegistry(ObjectProvider<Clock> clock) {
+    return new InMemoryWorkerRegistry(clock.getIfAvailable(Clock::system));
   }
 
   @Bean
@@ -58,7 +62,7 @@ public class InMemoryStorageAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(OutboxAdmin.class)
-  @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(InMemoryEventStore.class)
+  @ConditionalOnBean(InMemoryEventStore.class)
   public InMemoryOutboxAdmin outboxAdmin(InMemoryEventStore store) {
     return new InMemoryOutboxAdmin(store);
   }

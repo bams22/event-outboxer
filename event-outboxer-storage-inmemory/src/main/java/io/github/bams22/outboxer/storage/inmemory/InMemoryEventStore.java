@@ -34,7 +34,8 @@ import java.util.concurrent.ConcurrentMap;
 import org.jspecify.annotations.Nullable;
 
 /**
- * In-memory {@link EventStore}. Stores every row in a {@link ConcurrentHashMap} keyed by event id
+ * In-memory {@link EventStore} — TEST INFRASTRUCTURE, deliberately unreachable through starter
+ * configuration (ADR-0020). Stores every row in a {@link ConcurrentHashMap} keyed by event id
  * and synchronizes state transitions on the row object so that concurrent claim / finalize / force
  * reclaim calls observe strict linearisability per-row.
  *

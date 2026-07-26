@@ -55,8 +55,13 @@ public class OutboxProperties {
   @Getter
   @Setter
   public static class Storage {
-    /** {@code inmemory} or {@code postgres}. Default: {@code inmemory}. */
-    private StorageType type = StorageType.inmemory;
+    /**
+     * Storage adapter. REQUIRED for production — there is no default and no in-memory option
+     * (ADR-0020): a silently non-durable outbox would betray the library's whole contract.
+     * Tests without a database import {@code OutboxInMemoryTestConfiguration} explicitly
+     * instead of configuring a type.
+     */
+    private @Nullable StorageType type;
 
     /**
      * Schema name for the PG adapter. Default: {@code event_outboxer} — a
@@ -79,7 +84,6 @@ public class OutboxProperties {
   }
 
   public enum StorageType {
-    inmemory,
     postgres
   }
 

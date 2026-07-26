@@ -84,7 +84,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-spi                      Ports for adapters
 ├── event-outboxer-core                     Engine + default publisher
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
-├── event-outboxer-storage-inmemory         In-memory adapter for tests/dev
+├── event-outboxer-storage-inmemory         Test infrastructure (never a production storage, ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
 ├── event-outboxer-lock-postgres            pg_advisory_lock EntityLocker
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker

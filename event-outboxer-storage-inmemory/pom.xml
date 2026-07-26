@@ -11,9 +11,11 @@
     <artifactId>event-outboxer-storage-inmemory</artifactId>
 
     <name>event-outboxer (in-memory storage adapter)</name>
-    <description>In-memory implementation of EventStore, WorkerRegistry and
-        EntityLocker. Intended for fast unit tests and for development
-        setups where durability is not required.</description>
+    <description>TEST INFRASTRUCTURE for event-outboxer (ADR-0020): in-memory
+        EventStore/WorkerRegistry/OutboxAdmin used by the SPI contract
+        tests, the testkit and Spring test contexts via
+        OutboxInMemoryTestConfiguration. Deliberately not reachable
+        through starter configuration — never a production storage.</description>
 
     <dependencies>
         <dependency>

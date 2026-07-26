@@ -44,6 +44,19 @@ All notable changes to this project are documented here. Format follows
   still fires on every failed attempt. Amends ADR-0007.
 
 ### Changed
+- **BREAKING: in-memory storage is no longer a configuration option
+  (ADR-0020).** `event-outboxer.storage.type` has no default and accepts
+  only `postgres`; an unconfigured outbox fails at startup with an
+  actionable diagnosis (new failure analyzer) instead of silently running
+  on a non-durable store that ignores transactions and loses events on
+  restart. Migration: production — set
+  `event-outboxer.storage.type=postgres`; Spring tests — replace the
+  property with `@Import(OutboxInMemoryTestConfiguration.class)` plus
+  `event-outboxer-storage-inmemory` in test scope. The
+  `event-outboxer-storage-inmemory` module remains published as test
+  infrastructure (contract tests, testkit, the test import). This
+  supersedes the previously planned "fail-fast when a DataSource is
+  present" guard with a stronger measure.
 - **Jackson defaults are evolution-friendly**, as ADR-0011 always
   prescribed (the implementation had shipped the opposite):
   `FAIL_ON_UNKNOWN_PROPERTIES` and `ADJUST_DATES_TO_CONTEXT_TIME_ZONE`

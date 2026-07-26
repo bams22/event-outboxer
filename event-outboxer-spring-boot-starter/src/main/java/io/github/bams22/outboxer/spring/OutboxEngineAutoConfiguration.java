@@ -33,7 +33,6 @@ import io.github.bams22.outboxer.spring.lock.PostgresLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.publisher.SpringTransactionContext;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
-import io.github.bams22.outboxer.spring.storage.InMemoryStorageAutoConfiguration;
 import io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration;
 import java.util.List;
 import java.util.Map;
@@ -47,13 +46,13 @@ import org.springframework.context.annotation.Bean;
 
 /**
  * Central wiring of the outbox engine. Consumes the lower-level auto-configurations
- * ({@code InMemoryStorageAutoConfiguration}, {@code PostgresStorageAutoConfiguration}, lock and
- * serializer variants) and composes them into a single {@link OutboxEngine} managed by
- * {@link OutboxSmartLifecycle}.
+ * ({@code PostgresStorageAutoConfiguration}, lock and serializer variants) and composes them
+ * into a single {@link OutboxEngine} managed by {@link OutboxSmartLifecycle}. There is no
+ * in-memory storage auto-configuration on purpose (ADR-0020): a durable store is the point of
+ * the library; tests import {@code OutboxInMemoryTestConfiguration} explicitly.
  */
 @AutoConfiguration(
     after = {
-      InMemoryStorageAutoConfiguration.class,
       PostgresStorageAutoConfiguration.class,
       NoOpLockAutoConfiguration.class,
       PostgresLockAutoConfiguration.class,
