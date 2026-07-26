@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.env.EnvironmentPostProcessor;
@@ -109,7 +110,7 @@ public class OutboxProbeGroupsEnvironmentPostProcessor implements EnvironmentPos
    *       then append {@code outbox}.
    * </ul>
    */
-  private static String mergeInclude(String existing, String group) {
+  private static String mergeInclude(@Nullable String existing, String group) {
     Set<String> merged = new LinkedHashSet<>();
     if (existing == null || existing.isBlank()) {
       merged.add(group + "State");

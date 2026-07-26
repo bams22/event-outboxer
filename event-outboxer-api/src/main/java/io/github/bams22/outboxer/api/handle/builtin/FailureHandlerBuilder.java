@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.api.handle.builtin;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
 import java.time.Duration;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.event.Level;
 
 /**
@@ -36,9 +37,9 @@ import org.slf4j.event.Level;
  */
 public final class FailureHandlerBuilder<T> {
 
-  private Level logLevel;
-  private Integer maxAttempts;
-  private MaxRetriesFailureHandler.ExhaustedAction exhaustedAction;
+  private @Nullable Level logLevel;
+  private @Nullable Integer maxAttempts;
+  private MaxRetriesFailureHandler.@Nullable ExhaustedAction exhaustedAction;
 
   FailureHandlerBuilder() {}
 

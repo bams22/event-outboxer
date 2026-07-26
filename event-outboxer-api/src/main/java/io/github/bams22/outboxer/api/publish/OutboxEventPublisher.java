@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Public entry point for persisting events into the outbox.
@@ -64,9 +65,10 @@ public interface OutboxEventPublisher {
   /**
    * Publishes a single event with explicit options.
    *
+   * @param options publish options, or {@code null} to use {@code PublishOptions.defaults()}
    * @return the id of the persisted event; the same value is visible through {@code Event.id()}
    */
-  UUID publish(String eventType, Object payload, PublishOptions options);
+  UUID publish(String eventType, Object payload, @Nullable PublishOptions options);
 
   /**
    * Publishes a batch of events fail-fast. On success the returned list has the same size and

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Minimalist JDBC helper used by the PostgreSQL adapter. Holds no per-call state, every method is
@@ -122,7 +123,7 @@ public final class OutboxJdbcRunner {
    * issue multiple {@link PreparedStatement}s against the same connection — useful for
    * archive-on-success, where the INSERT and DELETE must be atomic with respect to each other.
    */
-  public <T> T doWork(ConnectionCallback<T> callback) throws SQLException {
+  public <T> @Nullable T doWork(ConnectionCallback<T> callback) throws SQLException {
     Connection conn = connections.get();
     try {
       return callback.run(conn);
@@ -138,7 +139,7 @@ public final class OutboxJdbcRunner {
    * when the adapter discovers an active transaction it assumes the caller is managing commit /
    * rollback and only executes the work.
    */
-  public <T> T doWorkInTransaction(ConnectionCallback<T> callback) throws SQLException {
+  public <T> @Nullable T doWorkInTransaction(ConnectionCallback<T> callback) throws SQLException {
     Connection conn = connections.get();
     boolean owned = false;
     boolean restoreAutoCommit = false;
@@ -149,7 +150,7 @@ public final class OutboxJdbcRunner {
         restoreAutoCommit = true;
       }
       try {
-        T result = callback.run(conn);
+        @Nullable T result = callback.run(conn);
         if (owned) {
           conn.commit();
         }
@@ -180,7 +181,7 @@ public final class OutboxJdbcRunner {
   /** Callback that runs against a single JDBC connection. */
   @FunctionalInterface
   public interface ConnectionCallback<T> {
-    T run(Connection conn) throws SQLException;
+    @Nullable T run(Connection conn) throws SQLException;
   }
 
   /** Binds positional parameters to a {@link PreparedStatement}. */
@@ -195,6 +196,6 @@ public final class OutboxJdbcRunner {
   /** Maps a {@link ResultSet} row to a domain object. */
   @FunctionalInterface
   public interface ResultSetMapper<T> {
-    T map(ResultSet rs) throws SQLException;
+    @Nullable T map(ResultSet rs) throws SQLException;
   }
 }

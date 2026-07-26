@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Metadata supplied when a worker registers itself through {@code WorkerRegistry.register(...)}.
@@ -30,7 +31,11 @@ import lombok.Builder;
  */
 @Builder
 public record WorkerInfo(
-    WorkerId id, String host, Integer pid, Instant startedAt, Map<String, String> metadata) {
+    WorkerId id,
+    String host,
+    @Nullable Integer pid,
+    @Nullable Instant startedAt,
+    Map<String, String> metadata) {
 
   public WorkerInfo {
     Objects.requireNonNull(id, "id must not be null");

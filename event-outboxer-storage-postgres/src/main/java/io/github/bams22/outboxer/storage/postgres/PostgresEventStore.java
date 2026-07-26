@@ -42,6 +42,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import io.github.bams22.outboxer.spi.Clock;
+import org.jspecify.annotations.Nullable;
 
 /**
  * PostgreSQL implementation of {@link EventStore}. Every SQL statement is the one documented in
@@ -424,8 +425,8 @@ public final class PostgresEventStore implements EventStore {
       long totalPending = 0;
       long totalProcessing = 0;
       long totalDisabled = 0;
-      Instant oldestPending = null;
-      Instant oldestClaimed = null;
+      @Nullable Instant oldestPending = null;
+      @Nullable Instant oldestClaimed = null;
       Map<String, long[]> perTypeCounts = new HashMap<>();
       Map<String, Instant> perTypeOldestPending = new HashMap<>();
       for (MetricsRow row : rows) {
@@ -438,7 +439,7 @@ public final class PostgresEventStore implements EventStore {
               if (oldestPending == null || row.oldestPending.isBefore(oldestPending)) {
                 oldestPending = row.oldestPending;
               }
-              Instant cur = perTypeOldestPending.get(row.eventType);
+              @Nullable Instant cur = perTypeOldestPending.get(row.eventType);
               if (cur == null || row.oldestPending.isBefore(cur)) {
                 perTypeOldestPending.put(row.eventType, row.oldestPending);
               }
@@ -526,8 +527,8 @@ public final class PostgresEventStore implements EventStore {
 
   private static Event readEvent(ResultSet rs) throws SQLException {
     String statusStr = rs.getString("status");
-    String claimedByStr = rs.getString("claimed_by");
-    Timestamp claimedAt = rs.getTimestamp("claimed_at");
+    @Nullable String claimedByStr = rs.getString("claimed_by");
+    @Nullable Timestamp claimedAt = rs.getTimestamp("claimed_at");
     return new Event(
         (UUID) rs.getObject("id"),
         rs.getString("event_type"),
@@ -545,7 +546,7 @@ public final class PostgresEventStore implements EventStore {
         rs.getLong("version"));
   }
 
-  private static Map<String, String> toTraceContext(String json) {
+  private static Map<String, String> toTraceContext(@Nullable String json) {
     if (json == null || json.isEmpty()) {
       return Map.of();
     }
@@ -556,7 +557,7 @@ public final class PostgresEventStore implements EventStore {
     return ts.toInstant();
   }
 
-  private static Instant toInstantNullable(Timestamp ts) {
+  private static @Nullable Instant toInstantNullable(@Nullable Timestamp ts) {
     return ts == null ? null : ts.toInstant();
   }
 
@@ -567,7 +568,11 @@ public final class PostgresEventStore implements EventStore {
 
   /** Internal row type for the metrics GROUP BY query. */
   private record MetricsRow(
-      String eventType, String status, long cnt, Instant oldestPending, Instant oldestClaimed) {}
+      String eventType,
+      String status,
+      long cnt,
+      @Nullable Instant oldestPending,
+      @Nullable Instant oldestClaimed) {}
 
   // suppress unused import warning (Types is referenced by the adapter's future work on JSONB nulls)
   @SuppressWarnings("unused")
