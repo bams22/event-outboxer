@@ -83,7 +83,7 @@ event-outboxer:
       handler-pool-size: 3           # fixed per-type thread pool (core == max, no scaling)
       handler-queue-capacity: 100    # bounded queue; 0 = synchronous handoff (fail fast)
       handler-max-runtime: 5m        # watchdog threshold for a stuck handler
-      lock-ttl: 5m                   # TTL passed to EntityLocker.tryLock()
+      lock-ttl: 10m                  # entity-lock TTL; must be >= handler-max-runtime (2x recommended)
     overrides:                       # thin merge: set only the fields you change
       SEND_EMAIL:
         handler-pool-size: 20
@@ -263,7 +263,19 @@ per-type overrides adjust individual fields (see
   after `dispatcher.dispatch-rejected-retry-delay`.
 - `handler-max-runtime` — watchdog threshold. A handler running longer
   is force-reclaimed (see ADR-0005).
-- `lock-ttl` — lock TTL passed to `EntityLocker.tryLock()`.
+- `lock-ttl` — entity-lock TTL passed to `EntityLocker.tryLock()`.
+  **Must be `>= handler-max-runtime`** (validated at startup): for
+  TTL-honouring lockers (Redis) a shorter TTL would let the lock
+  expire while a legitimate handler still runs, breaking per-key
+  serialization. Default 10m = 2 × the default handler budget —
+  keep the 2× margin (the TTL is the crash-release mechanism, and the
+  margin covers a zombie handler that outlives its force-reclaimed
+  claim). Raising `handler-max-runtime` above `lock-ttl` fails
+  startup until `lock-ttl` is raised too. See the ADR-0012 amendment
+  for the per-backend guarantee table; note that
+  `lock.type=postgres` holds one pooled connection per held lock —
+  the starter warns when `Σ handler-pool-size >=
+  spring.datasource.hikari.maximum-pool-size` (self-deadlock risk).
 
 ### `event-outboxer.dispatcher.*`
 

@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (per-backend guarantees made explicit,
+lockTtl >= handlerMaxRuntime now enforced; the PublishOptions.lockKey
+mention below was contradictory and is corrected; see the Amendment
+section at the bottom)
 
 ## Date
 
@@ -172,8 +175,10 @@ option was chosen.
 
 - Publish API: `publisher.publish(type, payload)` — no options in 99% of
   cases.
-- For a custom lockKey (override) — via `PublishOptions.builder().lockKey(...)`
-  (an optional escape hatch for rare cases).
+- The lock key comes exclusively from `EventHandler.extractLockKey(payload)`
+  — there is deliberately no `PublishOptions.lockKey` escape hatch
+  (§Schema impact above; an earlier draft of this section referenced a
+  builder method that never existed).
 - Handlers can declare `extractLockKey(payload)` to serialize processing
   per aggregate.
 - The handler itself does not deal with `LockHandle`.
@@ -198,6 +203,40 @@ option was chosen.
   locks).
 - `lockKey` is not directly visible as a column in the DB (but can be
   extracted from the payload via JSONB queries).
+
+## Amendment (2026-07-26): guarantees made explicit and enforced
+
+The original text promised "serialize processing per aggregate"
+unconditionally. The real guarantees differ per backend and are now
+documented and partially enforced:
+
+| Backend | Exclusion holds until | Crash release | Cost |
+|---|---|---|---|
+| Redis/KeyDB (`SET NX PX` + token-checked release) | `min(close(), ttl)` | TTL expiry (≤ ttl) | one Redis key |
+| PostgreSQL advisory (session-scoped) | `close()` or connection loss | connection drop, immediate | **one pooled connection per held lock** |
+
+Consequences and the measures added:
+
+1. **`lockTtl >= handlerMaxRuntime` is enforced** in
+   `EventTypeConfig` (startup failure otherwise), and the default
+   `lockTtl` was raised from 5m (equal to the handler budget — a race
+   at the boundary) to 10m (2×). Recommendation: keep ≥ 2× — the
+   margin covers a zombie handler finishing after its claim was
+   force-reclaimed by the watchdog.
+2. **Redis is best-effort without fencing.** The watchdog does not
+   interrupt handler threads; a zombie running past
+   `handlerMaxRuntime` can outlive the TTL and overlap the next
+   holder. Full exclusion under arbitrary stalls requires fencing
+   tokens checked at the protected resource — out of scope (the
+   classic distributed-locks argument). Lock renewal (heartbeat-style
+   TTL extension) remains a Post-MVP option.
+3. **The PG locker's pool coupling is now visible.** Each held lock
+   pins one connection of the application's shared pool; with
+   `Σ handlerPoolSize >= maximum-pool-size` a saturated fleet can
+   deadlock against its own handlers (locker holds the last
+   connection, handler waits for one). The starter logs a startup
+   WARNING when the sums line up that way; the fix is a larger pool
+   or smaller handler pools.
 
 ## Related decisions
 

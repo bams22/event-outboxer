@@ -39,11 +39,21 @@ import org.slf4j.LoggerFactory;
  * only on match. Without this, holder A whose TTL elapsed would otherwise erase holder B's lock
  * on {@code close()}.
  *
- * <h2>TTL</h2>
+ * <h2>TTL — best effort, no fencing (ADR-0012 amendment)</h2>
  *
  * Always honoured; if the handler stalls past the TTL, the lock frees itself and the Lua
  * compare-and-delete becomes a no-op (distinct from the PG advisory adapter, whose TTL is
- * merely documentational).
+ * merely documentational). Consequences to understand:
+ *
+ * <ul>
+ *   <li>The TTL is the crash-release mechanism: a dead JVM's lock frees itself after at most
+ *       {@code ttl}.
+ *   <li>There is no renewal and no fencing token at the protected resource: a zombie handler
+ *       that outlives the TTL (and its force-reclaimed claim) can overlap with the next holder.
+ *       The engine enforces {@code lockTtl >= handlerMaxRuntime} (default 2x) so this can only
+ *       happen to handlers already past their runtime budget — full exclusion under arbitrary
+ *       stalls requires fencing at the resource itself and is out of scope.
+ * </ul>
  */
 public final class RedisEntityLocker implements EntityLocker {
 
