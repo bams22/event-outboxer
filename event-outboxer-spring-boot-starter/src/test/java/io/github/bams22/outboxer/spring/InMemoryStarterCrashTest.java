@@ -32,6 +32,8 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import org.springframework.context.annotation.Bean;
 
 /**
@@ -46,7 +48,6 @@ import org.springframework.context.annotation.Bean;
 @SpringBootTest(
     classes = InMemoryStarterCrashTest.TestApp.class,
     properties = {
-      "event-outboxer.storage.type=inmemory",
       "event-outboxer.publisher.no-transaction-policy=IGNORE",
       "event-outboxer.event-types.defaults.poll-min-interval=20ms",
       "event-outboxer.event-types.defaults.poll-max-interval=50ms",
@@ -56,6 +57,7 @@ import org.springframework.context.annotation.Bean;
       "event-outboxer.maintenance.orphan-recovery-interval=500ms",
       "event-outboxer.maintenance.watchdog-interval=100ms"
     })
+@Import(OutboxInMemoryTestConfiguration.class)
 class InMemoryStarterCrashTest {
 
   @Autowired OutboxEngine engine;

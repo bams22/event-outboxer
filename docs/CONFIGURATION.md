@@ -56,7 +56,7 @@ event-outboxer:
     no-transaction-policy: FAIL      # FAIL | IGNORE
 
   storage:
-    type: inmemory                   # inmemory (default) | postgres
+    type: postgres                   # REQUIRED — no default, no in-memory option (ADR-0020)
     # schema is shared between the adapter (SQL) and the classpath
     # migrations (Flyway ${eventOutboxerSchema} placeholder). Default
     # name is specific to avoid conflicts with other libraries.
@@ -172,11 +172,14 @@ active transaction:
 
 Storage adapter settings.
 
-- `type` — `inmemory` (**default**) or `postgres`. There is no
-  classpath auto-detection: production deployments must set
-  `type: postgres` explicitly (the in-memory default keeps tests and
-  first-run experiences dependency-free). The PostgreSQL adapter also
-  requires a `DataSource` bean.
+- `type` — **required, no default** (ADR-0020). The only value is
+  `postgres` (requires a `DataSource` bean and the
+  `event-outboxer-storage-postgres` dependency). There is deliberately
+  no in-memory option: a silently non-durable outbox would not
+  participate in your transactions and would lose events on restart —
+  the exact failure this library exists to prevent. An unconfigured
+  outbox fails at startup with an actionable message. For tests, see
+  [Testing without a database](#testing-without-a-database).
 - `schema` — schema name. **Default: `event_outboxer`** — a specific
   name chosen to avoid clashing with other libraries or application
   tables in a shared database. The value is propagated into both the
@@ -392,6 +395,31 @@ activated by adding its module next to the starter:
     **startup fails** with an actionable message, because the
     annotation would otherwise be silently ignored;
     `enforce-authority: false` is the explicit opt-out.
+
+### Testing without a database
+
+In-memory storage exists solely as test infrastructure and is
+unreachable through `event-outboxer.*` properties (ADR-0020). In
+Spring tests, opt in explicitly:
+
+```java
+@SpringBootTest
+@Import(OutboxInMemoryTestConfiguration.class)
+class MyOutboxTest { ... }
+```
+
+with `event-outboxer-storage-inmemory` on the test classpath:
+
+```xml
+<dependency>
+    <groupId>io.github.bams22</groupId>
+    <artifactId>event-outboxer-storage-inmemory</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+For plain-Java (non-Spring) tests use the testkit's
+`OutboxTestContext`, which wires the in-memory store directly.
 
 ### Serialization
 

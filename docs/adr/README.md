@@ -48,6 +48,7 @@ why, which alternatives were considered and rejected. The format is based on
 ### Operations
 
 - [ADR-0019: Admin and retention surface](0019-admin-and-retention-surface.md)
+- [ADR-0020: In-memory storage is test infrastructure only](0020-no-inmemory-storage-in-production.md)
 
 ### Code conventions
 
