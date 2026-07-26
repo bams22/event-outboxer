@@ -195,6 +195,10 @@ public final class Poller {
           claimed.id(),
           claimed.eventType(),
           ex.toString());
+      // The row is already PROCESSING/claimed but never reached the executor — release it back
+      // to PENDING, otherwise it stays invisible to watchdog and orphan recovery for as long as
+      // this worker lives.
+      dispatcher.releaseRejected(claimed);
       return false;
     }
   }

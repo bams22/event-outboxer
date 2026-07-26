@@ -34,6 +34,16 @@ public abstract class AbstractWorkerRegistryContractTest {
 
   protected abstract WorkerRegistry newRegistry();
 
+  /**
+   * Force the stored heartbeat of {@code id} to the (past) instant {@code at}. Adapters that
+   * stamp heartbeats with their own time source — the PostgreSQL adapter uses the database
+   * clock, ignoring the {@code at} argument of {@code heartbeat()} — must override this with a
+   * direct write so the staleness scenarios below can be simulated.
+   */
+  protected void backdateHeartbeat(WorkerId id, Instant at) {
+    registry.heartbeat(id, at);
+  }
+
   @BeforeEach
   void setUpRegistry() {
     registry = newRegistry();
@@ -102,11 +112,26 @@ public abstract class AbstractWorkerRegistryContractTest {
     registry.register(workerInfo(stale, "host-stale"));
 
     registry.heartbeat(fresh, now);
-    registry.heartbeat(stale, now.minus(Duration.ofMinutes(10)));
+    backdateHeartbeat(stale, now.minus(Duration.ofMinutes(10)));
 
     List<WorkerInfo> dead = registry.findDead(Duration.ofMinutes(1), 100);
 
     assertThat(dead).extracting(w -> w.id().value()).containsExactly("stale");
+  }
+
+  @Test
+  @DisplayName("findDead() includes graceful-stop workers immediately, without waiting for the threshold")
+  void findDead_includesGracefulStopWorkers() {
+    WorkerId fresh = new WorkerId("fresh");
+    WorkerId stopping = new WorkerId("stopping");
+    registry.register(workerInfo(fresh, "h-fresh"));
+    registry.register(workerInfo(stopping, "h-stopping"));
+
+    registry.markGracefulStop(stopping);
+
+    List<WorkerInfo> dead = registry.findDead(Duration.ofMinutes(10), 100);
+
+    assertThat(dead).extracting(w -> w.id().value()).containsExactly("stopping");
   }
 
   @Test
@@ -116,7 +141,7 @@ public abstract class AbstractWorkerRegistryContractTest {
     for (int i = 0; i < 10; i++) {
       WorkerId id = new WorkerId("w-" + i);
       registry.register(workerInfo(id, "h-" + i));
-      registry.heartbeat(id, stale);
+      backdateHeartbeat(id, stale);
     }
 
     List<WorkerInfo> dead = registry.findDead(Duration.ofMinutes(1), 3);

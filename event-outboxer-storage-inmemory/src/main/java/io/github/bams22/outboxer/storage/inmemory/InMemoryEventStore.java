@@ -205,6 +205,52 @@ public final class InMemoryEventStore implements EventStore {
   }
 
   @Override
+  public boolean release(
+      UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt) {
+    Objects.requireNonNull(id, "id must not be null");
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    Objects.requireNonNull(reason, "reason must not be null");
+    Objects.requireNonNull(runAt, "runAt must not be null");
+    EventRow row = rows.get(id);
+    if (row == null) {
+      return false;
+    }
+    synchronized (row) {
+      if (!matchesClaim(row, workerId, claimedVersion)) {
+        return false;
+      }
+      row.status = EventStatus.PENDING;
+      row.claimedBy = null;
+      row.claimedAt = null;
+      row.version += 1;
+      row.lastFailReason = reason;
+      row.runAt = runAt;
+      return true;
+    }
+  }
+
+  @Override
+  public int releaseClaimed(WorkerId workerId, Instant now) {
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    Objects.requireNonNull(now, "now must not be null");
+    int released = 0;
+    for (EventRow row : rows.values()) {
+      synchronized (row) {
+        if (row.status == EventStatus.PROCESSING && workerId.equals(row.claimedBy)) {
+          row.status = EventStatus.PENDING;
+          row.claimedBy = null;
+          row.claimedAt = null;
+          row.version += 1;
+          row.lastFailReason = "released: worker shutdown";
+          row.runAt = now;
+          released++;
+        }
+      }
+    }
+    return released;
+  }
+
+  @Override
   public boolean forceReclaim(UUID id, WorkerId workerId, long claimedVersion, Instant runAt) {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(workerId, "workerId must not be null");

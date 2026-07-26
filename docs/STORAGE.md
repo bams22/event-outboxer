@@ -305,61 +305,71 @@ WHERE worker_id = :worker_id;
 
 One row, regardless of in-flight event count.
 
-### Orphan recovery (atomic TX)
+### Orphan recovery (idempotent two-step flow)
+
+`OrphanRecoveryTask` runs three independent statements — find dead
+workers, reclaim their events, delete the worker rows. Each statement
+is atomic on its own; joint atomicity is not needed because the flow
+is idempotent: if `removeDead` fails after a successful reclaim, the
+dead rows survive to the next pass, where reclaiming their (now zero)
+events is a no-op.
 
 ```sql
-BEGIN;
+-- 1. findDead: stale heartbeat OR graceful_stop. The graceful_stop flag
+--    counts as immediately dead — a worker that set it either owns no
+--    claimed rows any more (it released them during shutdown) or died
+--    mid-shutdown; both cases are safe to reclaim early. Heartbeats are
+--    written and compared with the DATABASE clock (now()) so liveness
+--    does not depend on application-JVM clock skew.
+SELECT worker_id, host, pid, started_at, last_heartbeat, metadata
+FROM event_outboxer.workers
+WHERE (last_heartbeat < now() - make_interval(secs => :dead_threshold_seconds)
+       OR graceful_stop)
+ORDER BY last_heartbeat
+LIMIT :batch_size;
 
-WITH dead AS (
-    SELECT worker_id
-    FROM event_outboxer.workers
-    WHERE last_heartbeat < now() - (:dead_threshold_seconds * interval '1 second')
-      AND graceful_stop = FALSE
-    ORDER BY last_heartbeat
-    LIMIT :batch_size
-    FOR UPDATE SKIP LOCKED
-)
+-- 2. reclaimOrphans: return every PROCESSING row of the dead workers.
 UPDATE event_outboxer.events e
 SET status           = 'PENDING',
     attempts         = attempts + 1,
-    last_fail_reason = 'orphan-recovered: worker ' || e.claimed_by
-                     || ' was stale at ' || now(),
+    last_fail_reason = 'orphan-recovered: worker ' || e.claimed_by || ' was stale',
     claimed_by       = NULL,
     claimed_at       = NULL,
-    version          = version + 1
-FROM dead d
-WHERE e.claimed_by = d.worker_id
-  AND e.status     = 'PROCESSING'
-RETURNING e.id, e.event_type, d.worker_id;
+    version          = version + 1,
+    run_at           = :now
+WHERE e.claimed_by = ANY(:dead_worker_ids)
+  AND e.status     = 'PROCESSING';
 
-DELETE FROM event_outboxer.workers w
-USING dead d
-WHERE w.worker_id = d.worker_id;
-
-COMMIT;
+-- 3. removeDead
+DELETE FROM event_outboxer.workers WHERE worker_id = ANY(:dead_worker_ids);
 ```
 
-Concurrency is guarded by `FOR UPDATE SKIP LOCKED` on `event_outboxer.workers`: one
-instance claims each dead worker, the others skip it.
+Two concurrent recovery passes may both reclaim the same worker's
+events; the second `UPDATE` simply matches zero rows.
 
-### Edge case: orphaned events without a worker row
+### Shutdown release (no orphan window)
 
-A separate query in the same `OrphanRecoveryTask`:
+Graceful shutdown guarantees the invariant **"the worker row outlives
+its claims"**: after draining the handler executors the engine runs
+`releaseClaimed` (below) to return every still-claimed row to
+`PENDING`, and only then flags `graceful_stop` and deregisters. If the
+release fails, the engine deliberately skips deregister and leaves the
+`graceful_stop`-flagged row in place — a peer's orphan recovery
+(which treats the flag as immediately dead) reclaims the leftover
+events and removes the row.
 
 ```sql
-UPDATE event_outboxer.events e
+-- releaseClaimed: bulk return of everything this worker still holds.
+-- No attempts increment: queued-but-never-started events never ran.
+UPDATE event_outboxer.events
 SET status           = 'PENDING',
-    attempts         = attempts + 1,
-    last_fail_reason = 'orphan: claimed_by worker no longer exists',
     claimed_by       = NULL,
     claimed_at       = NULL,
-    version          = version + 1
-WHERE e.status = 'PROCESSING'
-  AND e.claimed_at < now() - (:dead_threshold_seconds * interval '1 second')
-  AND NOT EXISTS (
-      SELECT 1 FROM event_outboxer.workers w WHERE w.worker_id = e.claimed_by
-  )
-RETURNING e.id;
+    version          = version + 1,
+    last_fail_reason = 'released: worker shutdown',
+    run_at           = :now
+WHERE claimed_by = :worker_id
+  AND status     = 'PROCESSING';
 ```
 
 ### Force reclaim (stuck-handler watchdog)
@@ -383,6 +393,29 @@ The version check prevents a race: if the handler suddenly woke up and
 finalized first, the `version` has already been incremented, and the
 force-reclaim does not apply.
 
+### Release (contention / backpressure, no attempts bump)
+
+Used when the engine could not run the handler at all: the entity lock
+was busy or errored, the handler executor rejected the dispatch, the
+event type has no registered handler (`unknown-handler-policy=SKIP`),
+or a finalize call failed transiently. Identical to `markForRetry`
+except `attempts` stays untouched — contention and backpressure must
+not push an event toward `DISABLED`.
+
+```sql
+UPDATE event_outboxer.events
+SET status           = 'PENDING',
+    claimed_by       = NULL,
+    claimed_at       = NULL,
+    version          = version + 1,
+    last_fail_reason = :reason,
+    run_at           = :run_at
+WHERE id          = :event_id
+  AND version     = :claimed_version
+  AND claimed_by  = :worker_id
+  AND status      = 'PROCESSING';
+```
+
 ### Mark processed (success, DELETE)
 
 ```sql
@@ -395,28 +428,30 @@ WHERE id = :event_id
 
 ### Mark processed with archive
 
+One atomic CTE — the guarded `DELETE ... RETURNING` feeds the archive
+`INSERT`, so there is no window in which a concurrent version bump
+could leave an orphan archive row (which would block every future
+`markProcessed` of the same event on the archive PK):
+
 ```sql
-BEGIN;
+WITH del AS (
+    DELETE FROM event_outboxer.events
+    WHERE id = :event_id
+      AND version = :claimed_version
+      AND claimed_by = :worker_id
+      AND status = 'PROCESSING'
+    RETURNING id, event_type, payload, payload_class, priority,
+              attempts, created_at, run_at, last_fail_reason, trace_context
+)
 INSERT INTO event_outboxer.event_archive (
     id, event_type, payload, payload_class, priority,
     attempts, created_at, run_at, last_fail_reason,
     trace_context, archived_at, archived_by
 )
-SELECT
-    id, event_type, payload, payload_class, priority,
-    attempts, created_at, run_at, last_fail_reason,
-    trace_context, now(), :worker_id
-FROM event_outboxer.events
-WHERE id = :event_id
-  AND version = :claimed_version
-  AND claimed_by = :worker_id
-  AND status = 'PROCESSING';
-
-DELETE FROM event_outboxer.events
-WHERE id = :event_id
-  AND version = :claimed_version
-  AND claimed_by = :worker_id;
-COMMIT;
+SELECT id, event_type, payload, payload_class, priority,
+       attempts, created_at, run_at, last_fail_reason,
+       trace_context, now(), :worker_id
+FROM del;
 ```
 
 ### Metrics snapshot (cached in the adapter)

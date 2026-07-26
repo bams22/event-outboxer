@@ -120,6 +120,35 @@ public interface EventStore {
   boolean markDisabled(UUID id, WorkerId workerId, long claimedVersion, String reason);
 
   /**
+   * Return a claimed event to {@code PENDING} <em>without</em> incrementing {@code attempts}.
+   * Used when the engine could not run the handler at all — the business-key lock was busy, the
+   * handler executor rejected the dispatch, no handler is registered for the type, or a finalize
+   * call failed transiently. In all of these cases no handler execution took place (or its
+   * outcome could not be recorded), so burning an attempt would let pure contention or
+   * backpressure push an event toward {@code DISABLED} (see {@code MaxRetriesFailureHandler}).
+   *
+   * <p>Bumps {@code version}, clears {@code claimed_by}/{@code claimed_at}, records {@code
+   * reason} and the new {@code runAt}. Guarded by {@code WHERE id = :id AND version =
+   * :claimedVersion AND claimed_by = :workerId}.
+   *
+   * @throws EventStoreException if the SQL fails
+   */
+  boolean release(UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt);
+
+  /**
+   * Return <em>every</em> event currently claimed by the given worker to {@code PENDING} without
+   * incrementing {@code attempts}. Called by the engine at the end of a graceful shutdown, after
+   * the handler executors have drained (or timed out): any row still {@code PROCESSING} under
+   * this worker at that point was either queued-but-never-started or interrupted mid-run, and
+   * once the worker deregisters no orphan recovery would ever find it. Bumps {@code version} so
+   * a late finalize from an interrupted handler loses the race cleanly.
+   *
+   * @return the number of rows released
+   * @throws EventStoreException if the SQL fails
+   */
+  int releaseClaimed(WorkerId workerId, Instant now);
+
+  /**
    * Forcibly reclaim an event whose handler has been running longer than {@code
    * handlerMaxRuntime} (watchdog path). The watchdog, not orphan recovery, is the caller: the
    * worker is still alive and heartbeating, but a specific handler is stuck.

@@ -132,13 +132,18 @@ public class OutboxEngineAutoConfiguration {
             .transactionContext(txContext)
             .noTransactionPolicy(mapNoTxPolicy(properties.getPublisher().getNoTransactionPolicy()))
             .workerIdSupplier(() -> workerId)
-            .defaultEventTypeConfig(mapEventType(properties.getEventTypes().getDefaults()))
             .maintenance(mapMaintenance(properties.getMaintenance()))
             .dispatcher(mapDispatcher(properties.getDispatcher()));
 
+    // Thin merge (CONFIGURATION.md §Per-type override): user defaults overlay the library
+    // defaults, and each per-type override overlays the resolved defaults field by field —
+    // an override that sets only handler-pool-size keeps every other default intact.
+    EventTypeConfig resolvedDefaults =
+        mergeEventType(properties.getEventTypes().getDefaults(), EventTypeConfig.defaults());
+    builder.defaultEventTypeConfig(resolvedDefaults);
     for (Map.Entry<String, OutboxProperties.EventType> e :
         properties.getEventTypes().getOverrides().entrySet()) {
-      builder.eventTypeConfig(e.getKey(), mapEventType(e.getValue()));
+      builder.eventTypeConfig(e.getKey(), mergeEventType(e.getValue(), resolvedDefaults));
     }
 
     String host = properties.getWorker().getHost();
@@ -212,19 +217,33 @@ public class OutboxEngineAutoConfiguration {
             })
         .unknownHandlerRetryDelay(d.getUnknownHandlerRetryDelay())
         .lockBusyRetryDelay(d.getLockBusyRetryDelay())
+        .dispatchRejectedRetryDelay(d.getDispatchRejectedRetryDelay())
         .build();
   }
 
-  private static EventTypeConfig mapEventType(OutboxProperties.EventType e) {
+  /**
+   * Field-by-field overlay of a (possibly sparse) properties object onto a fully resolved base
+   * config — the "thin merge" documented in CONFIGURATION.md. Package-private for tests.
+   */
+  static EventTypeConfig mergeEventType(OutboxProperties.EventType e, EventTypeConfig base) {
     return EventTypeConfig.builder()
-        .pollMinInterval(e.getPollMinInterval())
-        .pollMaxInterval(e.getPollMaxInterval())
-        .pollMultiplier(e.getPollMultiplier())
-        .claimBatchSize(e.getClaimBatchSize())
-        .handlerPoolSize(e.getHandlerPoolSize())
-        .handlerQueueCapacity(e.getHandlerQueueCapacity())
-        .handlerMaxRuntime(e.getHandlerMaxRuntime())
-        .lockTtl(e.getLockTtl())
+        .pollMinInterval(
+            e.getPollMinInterval() != null ? e.getPollMinInterval() : base.pollMinInterval())
+        .pollMaxInterval(
+            e.getPollMaxInterval() != null ? e.getPollMaxInterval() : base.pollMaxInterval())
+        .pollMultiplier(
+            e.getPollMultiplier() != null ? e.getPollMultiplier() : base.pollMultiplier())
+        .claimBatchSize(
+            e.getClaimBatchSize() != null ? e.getClaimBatchSize() : base.claimBatchSize())
+        .handlerPoolSize(
+            e.getHandlerPoolSize() != null ? e.getHandlerPoolSize() : base.handlerPoolSize())
+        .handlerQueueCapacity(
+            e.getHandlerQueueCapacity() != null
+                ? e.getHandlerQueueCapacity()
+                : base.handlerQueueCapacity())
+        .handlerMaxRuntime(
+            e.getHandlerMaxRuntime() != null ? e.getHandlerMaxRuntime() : base.handlerMaxRuntime())
+        .lockTtl(e.getLockTtl() != null ? e.getLockTtl() : base.lockTtl())
         .build();
   }
 

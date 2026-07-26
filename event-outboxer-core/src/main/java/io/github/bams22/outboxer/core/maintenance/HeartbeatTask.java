@@ -11,7 +11,8 @@ package io.github.bams22.outboxer.core.maintenance;
 
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
-import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
+import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.util.Objects;
@@ -19,23 +20,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Periodic task that writes a fresh heartbeat for the current {@link WorkerId} in the {@code
+ * Periodic task that writes a fresh heartbeat for the current worker in the {@code
  * outbox.workers} table. One instance per running engine; scheduled by {@link
  * MaintenanceScheduler} at the cadence defined in {@code MaintenanceConfig.heartbeatInterval()}.
+ *
+ * <p>If the heartbeat reports that the worker row no longer exists — a peer's orphan recovery
+ * reaped it during a long GC pause or database outage exceeding the dead threshold — the task
+ * re-registers the worker immediately. Without that, a reaped-but-alive worker keeps claiming
+ * events with no registry row, and a later crash would leave those events invisible to orphan
+ * recovery forever.
  */
 public final class HeartbeatTask implements Runnable {
 
   private static final Logger log = LoggerFactory.getLogger(HeartbeatTask.class);
 
   private final WorkerRegistry registry;
-  private final WorkerId workerId;
+  private final WorkerInfo workerInfo;
   private final Clock clock;
   private final OutboxListener listener;
 
   public HeartbeatTask(
-      WorkerRegistry registry, WorkerId workerId, Clock clock, OutboxListener listener) {
+      WorkerRegistry registry, WorkerInfo workerInfo, Clock clock, OutboxListener listener) {
     this.registry = Objects.requireNonNull(registry);
-    this.workerId = Objects.requireNonNull(workerId);
+    this.workerInfo = Objects.requireNonNull(workerInfo);
     this.clock = Objects.requireNonNull(clock);
     this.listener = Objects.requireNonNull(listener);
   }
@@ -43,15 +50,18 @@ public final class HeartbeatTask implements Runnable {
   @Override
   public void run() {
     try {
-      boolean updated = registry.heartbeat(workerId, clock.now());
+      boolean updated = registry.heartbeat(workerInfo.id(), clock.now());
       if (!updated) {
         log.warn(
-            "heartbeat row not found for worker {} — was it reaped by peer orphan recovery?",
-            workerId);
+            "heartbeat row not found for worker {} (reaped by peer orphan recovery?) — "
+                + "re-registering",
+            workerInfo.id());
+        registry.register(workerInfo);
+        listener.onWorkerRegistered(new WorkerRegisteredInfo(workerInfo));
       }
     } catch (RuntimeException ex) {
-      listener.onHeartbeatFailed(new HeartbeatFailedInfo(workerId, ex));
-      log.warn("heartbeat failed for worker {}: {}", workerId, ex.toString());
+      listener.onHeartbeatFailed(new HeartbeatFailedInfo(workerInfo.id(), ex));
+      log.warn("heartbeat failed for worker {}: {}", workerInfo.id(), ex.toString());
     }
   }
 }

@@ -19,8 +19,8 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Root {@code @ConfigurationProperties} for {@code outbox.*}. See CONFIGURATION.md for the
- * documented YAML shape.
+ * Root {@code @ConfigurationProperties} for {@code event-outboxer.*}. See CONFIGURATION.md for
+ * the documented YAML shape.
  *
  * <p>Defaults match the per-class library defaults ({@code EventTypeConfig.defaults()},
  * {@code MaintenanceConfig.defaults()}, {@code DispatcherConfig.defaults()}) so that a user who
@@ -155,6 +155,7 @@ public class OutboxProperties {
 
     private Duration unknownHandlerRetryDelay = Duration.ofMinutes(1);
     private Duration lockBusyRetryDelay = Duration.ofSeconds(1);
+    private Duration dispatchRejectedRetryDelay = Duration.ofSeconds(1);
   }
 
   public enum UnknownPolicy {
@@ -167,21 +168,32 @@ public class OutboxProperties {
   @Setter
   public static class EventTypes {
     private EventType defaults = new EventType();
-    /** Per-type overrides keyed by event type. Each entry overrides the corresponding field. */
+
+    /**
+     * Per-type overrides keyed by event type. Thin merge: each entry overrides only the fields
+     * it sets explicitly; every unset field falls back to {@code defaults} (which in turn falls
+     * back to the library defaults).
+     */
     private Map<String, EventType> overrides = new LinkedHashMap<>();
   }
 
+  /**
+   * Per-event-type knobs. All fields are nullable on purpose: {@code null} means "not set here",
+   * which is what makes the thin merge in {@code OutboxEngineAutoConfiguration} possible —
+   * a populated default would be indistinguishable from an explicit user value. Library
+   * defaults live in {@code EventTypeConfig.defaults()} (core).
+   */
   @Getter
   @Setter
   public static class EventType {
-    private Duration pollMinInterval = Duration.ofMillis(500);
-    private Duration pollMaxInterval = Duration.ofSeconds(10);
-    private double pollMultiplier = 1.5;
-    private int claimBatchSize = 10;
-    private int handlerPoolSize = 3;
-    private int handlerQueueCapacity = 100;
-    private Duration handlerMaxRuntime = Duration.ofMinutes(5);
-    private Duration lockTtl = Duration.ofMinutes(5);
+    private Duration pollMinInterval;
+    private Duration pollMaxInterval;
+    private Double pollMultiplier;
+    private Integer claimBatchSize;
+    private Integer handlerPoolSize;
+    private Integer handlerQueueCapacity;
+    private Duration handlerMaxRuntime;
+    private Duration lockTtl;
   }
 
   @Getter

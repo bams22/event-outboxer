@@ -410,6 +410,96 @@ public abstract class AbstractEventStoreContractTest {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // release / releaseClaimed
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("release() reverts to PENDING and bumps version WITHOUT incrementing attempts")
+  void release_revertsToPending_withoutAttemptsBump() {
+    ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
+    Instant nextRun =
+        Instant.now().plusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+
+    boolean ok =
+        store.release(claimed.id(), WORKER_1, claimed.claimedVersion(), "lock busy", nextRun);
+
+    assertThat(ok).isTrue();
+    Event after = store.findById(claimed.id()).orElseThrow();
+    assertThat(after.status()).isEqualTo(EventStatus.PENDING);
+    assertThat(after.claimedBy()).isNull();
+    assertThat(after.claimedAt()).isNull();
+    assertThat(after.attempts()).isEqualTo(claimed.attempts());
+    assertThat(after.version()).isGreaterThan(claimed.claimedVersion());
+    assertThat(after.lastFailReason()).isEqualTo("lock busy");
+    assertThat(after.runAt()).isEqualTo(nextRun);
+  }
+
+  @Test
+  @DisplayName("release() returns false on a stale version")
+  void release_false_onStaleVersion() {
+    ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
+
+    boolean ok =
+        store.release(
+            claimed.id(),
+            WORKER_1,
+            claimed.claimedVersion() - 1,
+            "no-op",
+            Instant.now().plusSeconds(10));
+
+    assertThat(ok).isFalse();
+    assertThat(store.findById(claimed.id()).orElseThrow().status())
+        .isEqualTo(EventStatus.PROCESSING);
+  }
+
+  @Test
+  @DisplayName("release() returns false when the caller is a different worker")
+  void release_false_onDifferentWorker() {
+    ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
+
+    boolean ok =
+        store.release(
+            claimed.id(), WORKER_2, claimed.claimedVersion(), "no-op", Instant.now());
+
+    assertThat(ok).isFalse();
+  }
+
+  @Test
+  @DisplayName("releaseClaimed() reverts every PROCESSING row of the worker without touching attempts")
+  void releaseClaimed_revertsAllOwnRows() {
+    ClaimedEvent c1 = publishAndClaim(EVENT_TYPE_A, "1", WORKER_1);
+    ClaimedEvent c2 = publishAndClaim(EVENT_TYPE_B, "2", WORKER_1);
+    ClaimedEvent other = publishAndClaim(EVENT_TYPE_A, "3", WORKER_2);
+    Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+
+    int released = store.releaseClaimed(WORKER_1, now);
+
+    assertThat(released).isEqualTo(2);
+    for (ClaimedEvent ce : List.of(c1, c2)) {
+      Event after = store.findById(ce.id()).orElseThrow();
+      assertThat(after.status()).isEqualTo(EventStatus.PENDING);
+      assertThat(after.claimedBy()).isNull();
+      assertThat(after.attempts()).isEqualTo(ce.attempts());
+      assertThat(after.version()).isGreaterThan(ce.claimedVersion());
+    }
+    assertThat(store.findById(other.id()).orElseThrow().status())
+        .isEqualTo(EventStatus.PROCESSING);
+  }
+
+  @Test
+  @DisplayName("releaseClaimed() makes a late finalize from the old claim lose the race")
+  void releaseClaimed_defeatsLateFinalize() {
+    ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
+
+    assertThat(store.releaseClaimed(WORKER_1, Instant.now())).isEqualTo(1);
+
+    boolean lateFinalize = store.markProcessed(claimed.id(), WORKER_1, claimed.claimedVersion());
+    assertThat(lateFinalize).isFalse();
+    assertThat(store.findById(claimed.id()).orElseThrow().status())
+        .isEqualTo(EventStatus.PENDING);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // reclaimOrphans
   // ---------------------------------------------------------------------------------------------
 
