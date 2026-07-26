@@ -210,9 +210,11 @@ the poll interval; cross-pod pickup and delayed events remain poll-bound
 ### 2. Consume flow
 
 ```
-Poller[SEND_EMAIL] (adaptive timer / after-commit wake from a local publish)
+Poller[SEND_EMAIL] (adaptive timer / after-commit wake / capacity-available wake)
     │
-    │ batchSize = claimBatchSize (fixed per type)
+    │ batchSize = min(claimBatchSize, executor.freeCapacity())
+    │   freeCapacity == 0 → no claim at all (park until a handler slot frees)
+    │   full batch claimed → immediate re-poll (throughput bound by handlers, not the timer)
     ▼
 PollStrategy.runOnce()
     │

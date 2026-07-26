@@ -230,11 +230,19 @@ per-type overrides adjust individual fields (see
   milliseconds regardless of the poll intervals (ADR-0006 amendment).
 - `claim-batch-size` — how many events to claim per poll.
 - `handler-pool-size`, `handler-queue-capacity` — fixed-size
-  executor per event type (`core == max`, no scaling). A zero
-  `handler-queue-capacity` makes dispatch a synchronous handoff that
-  fails fast. A rejected dispatch is not lost: the event is released
-  back to `PENDING` (without consuming an attempt) and retried after
-  `dispatcher.dispatch-rejected-retry-delay`.
+  executor per event type (`core == max`, no scaling). Their sum is the
+  type's **in-flight budget**: the poller claims at most
+  `min(claim-batch-size, free capacity)` per poll and stops claiming
+  entirely while the budget is exhausted, resuming the moment a handler
+  slot frees. A full claimed batch triggers an immediate re-poll, so
+  sustained throughput is bounded by the pool and the database — not by
+  `claim-batch-size / poll-min-interval`. For
+  `handler-executor.type: virtual` the same sum acts as a soft
+  in-flight cap (the executor itself is unbounded). A zero
+  `handler-queue-capacity` makes dispatch a synchronous handoff. A
+  rejected dispatch (rare capacity race) is not lost: the event is
+  released back to `PENDING` (without consuming an attempt) and retried
+  after `dispatcher.dispatch-rejected-retry-delay`.
 - `handler-max-runtime` — watchdog threshold. A handler running longer
   is force-reclaimed (see ADR-0005).
 - `lock-ttl` — lock TTL passed to `EntityLocker.tryLock()`.
