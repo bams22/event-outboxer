@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,7 @@ public final class Poller {
 
   private volatile boolean running;
   private @org.jspecify.annotations.Nullable Thread thread;
+  private final AtomicBoolean wakeRequested = new AtomicBoolean();
 
   public Poller(
       String eventType,
@@ -108,6 +110,24 @@ public final class Poller {
   }
 
   /**
+   * Ask the poller to claim as soon as possible instead of sleeping out its current adaptive
+   * wait. Called (via {@link PollerWakeHub}) after a local transaction that published an event
+   * of this type commits. Safe from any thread; a wake on a stopped poller is a no-op.
+   *
+   * <p>Race-free by construction: a wake arriving before the park makes the loop skip the park
+   * (flag check); a wake arriving during the park unparks it; a wake arriving while a tick is
+   * running leaves either the flag or the {@code LockSupport} permit set, so the next park
+   * returns immediately.
+   */
+  public void wake() {
+    wakeRequested.set(true);
+    Thread t = thread;
+    if (running && t != null) {
+      LockSupport.unpark(t);
+    }
+  }
+
+  /**
    * Returns {@code true} if this poller is supposed to be running but its backing thread has
    * died. Checked periodically by the engine health-check task to detect unrecoverable poller
    * crashes (uncaught {@code Error} from the strategy, JVM thread kill, etc.). Returns
@@ -130,8 +150,11 @@ public final class Poller {
           int dispatched = tick();
           waiter.record(dispatched);
           long waitNanos = waiter.nextWait().toNanos();
-          if (waitNanos > 0) {
+          // A wake that arrived during the tick cancels the park entirely; one that arrives
+          // mid-park unparks it (and the leftover LockSupport permit covers the in-between).
+          if (waitNanos > 0 && !wakeRequested.getAndSet(false)) {
             LockSupport.parkNanos(waitNanos);
+            wakeRequested.set(false);
             if (Thread.interrupted()) {
               // stop() may have interrupted us mid-park; re-check running.
             }

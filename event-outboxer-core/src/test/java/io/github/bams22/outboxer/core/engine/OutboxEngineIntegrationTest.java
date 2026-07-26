@@ -188,6 +188,44 @@ class OutboxEngineIntegrationTest {
   }
 
   @Test
+  @DisplayName("after-commit wake: publish is handled fast even with a long poll interval")
+  void publishWakesPollerBypassingPollInterval() {
+    AtomicInteger handled = new AtomicInteger();
+    // Poll intervals deliberately long: without the wake the first claim after publish would
+    // take >= 2s (and >= 8s from deep backoff). With the wake the event must be handled almost
+    // immediately: alwaysActive() runs the afterCommit hook right away.
+    EventTypeConfig slowPolling =
+        EventTypeConfig.defaults().toBuilder()
+            .pollMinInterval(Duration.ofSeconds(2))
+            .pollMaxInterval(Duration.ofSeconds(8))
+            .build();
+    engine =
+        fastEngine()
+            .defaultEventTypeConfig(slowPolling)
+            .handler(
+                recordingHandler(
+                    "WAKE",
+                    (ctx, payload) -> {
+                      handled.incrementAndGet();
+                      return EventOutcome.Success.INSTANCE;
+                    }))
+            .build();
+    engine.start();
+
+    // Let the poller run its first tick (empty) and settle into a multi-second park.
+    sleepQuietly(300);
+
+    long publishedAt = System.nanoTime();
+    UUID id = engine.publisher().publish("WAKE", "payload");
+
+    await().atMost(Duration.ofMillis(1500)).until(() -> store.findById(id).isEmpty());
+    long tookMillis = (System.nanoTime() - publishedAt) / 1_000_000;
+    assertThat(handled).hasValueGreaterThanOrEqualTo(1);
+    // Far below pollMinInterval=2s: proves the park was cut short by the wake, not by polling.
+    assertThat(tookMillis).isLessThan(1500);
+  }
+
+  @Test
   @DisplayName("unknown handler (policy=SKIP) reschedules the event back to PENDING")
   void unknownHandlerReschedules() {
     engine =

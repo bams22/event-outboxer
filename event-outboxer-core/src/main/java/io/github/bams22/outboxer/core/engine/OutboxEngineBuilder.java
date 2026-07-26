@@ -33,6 +33,7 @@ import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
 import io.github.bams22.outboxer.core.polling.LockAndFetchStrategy;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
 import io.github.bams22.outboxer.core.polling.Poller;
+import io.github.bams22.outboxer.core.polling.PollerWakeHub;
 import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
@@ -94,6 +95,7 @@ public final class OutboxEngineBuilder {
   private final Map<String, String> workerMetadata = new LinkedHashMap<>();
   private @Nullable Function<EventTypeConfig, ExecutorService> handlerExecutorFactory;
   private @Nullable PollStrategy pollStrategy;
+  private @Nullable PollerWakeHub wakeHub;
 
   // ---------------------------------------------------------------------------------------------
   // required collaborators
@@ -219,6 +221,17 @@ public final class OutboxEngineBuilder {
     return this;
   }
 
+  /**
+   * Externally owned {@link PollerWakeHub} to register this engine's pollers in. Used by the
+   * Spring Boot starter, where the {@code OutboxEventPublisher} bean is built independently of
+   * the engine and both must share one hub. When unset, the builder creates a private hub for
+   * the engine-internal publisher.
+   */
+  public OutboxEngineBuilder wakeHub(PollerWakeHub hub) {
+    this.wakeHub = Objects.requireNonNull(hub);
+    return this;
+  }
+
   // ---------------------------------------------------------------------------------------------
   // build
   // ---------------------------------------------------------------------------------------------
@@ -280,18 +293,21 @@ public final class OutboxEngineBuilder {
     }
     HandlerExecutorManager executors = new HandlerExecutorManager(executorFactory, executorConfigs);
 
+    PollerWakeHub hub = wakeHub != null ? wakeHub : new PollerWakeHub();
     List<Poller> pollers = new ArrayList<>(handlers.size());
     for (EventHandler<?> h : handlers) {
       String type = h.eventType();
       EventTypeConfig cfg = executorConfigs.get(type);
-      pollers.add(
+      Poller poller =
           new Poller(
-              type, workerId, strategy, dispatcher, executors.executorFor(type), listener, cfg));
+              type, workerId, strategy, dispatcher, executors.executorFor(type), listener, cfg);
+      hub.register(poller);
+      pollers.add(poller);
     }
 
     OutboxEventPublisher publisher =
         new DefaultOutboxEventPublisher(
-            eventStore, eventSerializer, clock, txContext, noTxPolicy, listener);
+            eventStore, eventSerializer, clock, txContext, noTxPolicy, listener, hub);
 
     HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
     OrphanRecoveryTask orphanTask =

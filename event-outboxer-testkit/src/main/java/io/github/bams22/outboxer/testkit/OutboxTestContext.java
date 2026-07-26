@@ -371,7 +371,9 @@ public final class OutboxTestContext {
               resolvedClock,
               resolvedTxCtx,
               noTransactionPolicy,
-              listeners);
+              listeners,
+              // ManualEngine has no pollers to wake — ticks are driven explicitly by the test.
+              io.github.bams22.outboxer.core.polling.PollerWaker.NOOP);
 
       WorkerInfo workerInfo =
           WorkerInfo.builder()

@@ -198,14 +198,21 @@ DefaultOutboxEventPublisher
           │
           ▼
         COMMIT / ROLLBACK of the caller determines visibility
+          │
+          ▼ (COMMIT only — registered via TransactionContext.afterCommit)
+        PollerWakeHub.wake(eventType) → local poller claims immediately
 ```
+
+Same-JVM publish→handle latency is therefore bounded by the handler, not
+the poll interval; cross-pod pickup and delayed events remain poll-bound
+(ADR-0006 amendment).
 
 ### 2. Consume flow
 
 ```
-Poller[SEND_EMAIL] (timer / afterDone callback)
+Poller[SEND_EMAIL] (adaptive timer / after-commit wake from a local publish)
     │
-    │ batchSize = upperLimit - currentlyInFlight
+    │ batchSize = claimBatchSize (fixed per type)
     ▼
 PollStrategy.runOnce()
     │
@@ -228,7 +235,7 @@ For each claimedEvent:
         │       2. serializer.deserialize(payload, handler.payloadType())
         │       3. lockKey = handler.extractLockKey(payload)
         │       4. if lockKey != null: locker.tryLock(lockKey, ttl)
-        │          if busy: markForRetry(lockBusyDelay); return
+        │          if busy: release(lockBusyDelay) — attempts not consumed; return
         │       5. try:
         │            outcome = handler.handle(ctx, payload)
         │            switch outcome:
