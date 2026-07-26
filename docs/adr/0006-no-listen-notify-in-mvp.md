@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (same-JVM after-commit wake-up implemented,
+replacing the never-built `afterDone` mitigation; see the Amendment
+section at the bottom)
 
 ## Date
 
@@ -137,6 +139,44 @@ If real demand emerges:
    routing.
 4. Auto-configuration via `@ConditionalOnClass` + `@ConditionalOnProperty`.
 5. Documentation — explicit warning about transaction-mode pgbouncer.
+
+## Amendment (2026-07-26): same-JVM after-commit wake-up
+
+Two corrections to the original text.
+
+**1. The `afterDone` mitigation was never built.** The Decision section
+above cites "Wake-up via an `afterDone` callback ... via
+`Waiter.wakeOrSkipNextWait()`" and the Rationale claims "observed
+publish→handle latency is hundreds of milliseconds". No such mechanism
+existed in the implementation: `AdaptiveWaiter` had no wake method and
+`Poller` parked unconditionally, so the real latency floor was
+`pollMinInterval..pollMaxInterval` (500 ms – 10 s), and after an idle
+period — the ceiling.
+
+**2. It has been replaced by a publish-side after-commit wake-up**, which
+captures most of LISTEN/NOTIFY's benefit while defeating every objection
+this ADR raised against it (no extra connection, no daemon thread, no
+pgbouncer caveat):
+
+- `TransactionContext` gained `default void afterCommit(Runnable)`;
+  the Spring implementation defers the action through
+  `TransactionSynchronizationManager.registerSynchronization`, so it runs
+  only after a real commit and never on rollback.
+- `DefaultOutboxEventPublisher` registers a hook that wakes the local
+  poller(s) of the just-published event type(s) via `PollerWakeHub` →
+  `Poller.wake()` (`LockSupport.unpark`).
+- Purely an optimization: polling remains the correctness mechanism; a
+  missed wake merely costs one poll interval.
+
+Resulting latency profile:
+
+- **Same JVM (the common embedded-outbox case, ADR-0001)**: publish→handle
+  is bounded by the handler, not the poll interval — milliseconds.
+- **Cross-pod** (another instance claims the event) and delayed events
+  (`runAt` in the future): still poll-bound, `pollMinInterval..pollMaxInterval`.
+
+The Post-MVP path below (LISTEN/NOTIFY as an opt-in push source for
+cross-pod latency) remains valid and unchanged.
 
 ## Related decisions
 

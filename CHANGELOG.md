@@ -8,6 +8,14 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Same-JVM after-commit poller wake-up.** `OutboxEventPublisher` now wakes
+  the local poller of a published event type as soon as the publishing
+  transaction commits (`TransactionContext.afterCommit` +
+  `PollerWakeHub`/`Poller.wake()`), dropping same-JVM publish→handle latency
+  from the poll interval (up to `poll-max-interval`, 10s default) to
+  milliseconds. Rollbacks never wake; cross-pod pickup stays poll-bound.
+  Always on, no configuration. Amends ADR-0006 (the `afterDone` mitigation
+  cited there was never built).
 - `EventStore.release(...)` and `EventStore.releaseClaimed(...)` SPI operations:
   return claimed events to `PENDING` **without** incrementing `attempts`. Used
   for lock contention, executor backpressure, unknown-handler SKIP, transient

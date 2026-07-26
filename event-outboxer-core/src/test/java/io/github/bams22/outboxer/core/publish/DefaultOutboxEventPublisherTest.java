@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
+import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
@@ -46,7 +47,8 @@ class DefaultOutboxEventPublisherTest {
               public void onEventPublished(EventPublishedInfo info) {
                 captured.set(info);
               }
-            });
+            },
+            PollerWaker.NOOP);
 
     UUID id = publisher.publish("T", "hello");
 
@@ -78,7 +80,8 @@ class DefaultOutboxEventPublisherTest {
             Clock.system(),
             TransactionContext.neverActive(),
             NoTransactionPolicy.FAIL,
-            NOOP);
+            NOOP,
+            PollerWaker.NOOP);
 
     assertThatThrownBy(() -> publisher.publish("T", "hello"))
         .isInstanceOf(NoTransactionException.class);
@@ -94,7 +97,8 @@ class DefaultOutboxEventPublisherTest {
             Clock.system(),
             TransactionContext.neverActive(),
             NoTransactionPolicy.IGNORE,
-            NOOP);
+            NOOP,
+            PollerWaker.NOOP);
 
     UUID id = publisher.publish("T", "hello");
     assertThat(store.findById(id)).isPresent();
@@ -107,6 +111,70 @@ class DefaultOutboxEventPublisherTest {
         .isInstanceOf(PublishValidationException.class);
   }
 
+  @Test
+  void wakeFiresOnlyAfterCommitAndOncePerType() {
+    InMemoryEventStore store = new InMemoryEventStore();
+    // TransactionContext that buffers afterCommit actions until the test "commits".
+    java.util.List<Runnable> pendingCommitHooks = new java.util.ArrayList<>();
+    TransactionContext buffering =
+        new TransactionContext() {
+          @Override
+          public boolean isActive() {
+            return true;
+          }
+
+          @Override
+          public void afterCommit(Runnable action) {
+            pendingCommitHooks.add(action);
+          }
+        };
+    java.util.List<String> wakes = new java.util.ArrayList<>();
+    DefaultOutboxEventPublisher publisher =
+        new DefaultOutboxEventPublisher(
+            store,
+            new StringEventSerializer(),
+            Clock.system(),
+            buffering,
+            NoTransactionPolicy.FAIL,
+            NOOP,
+            wakes::add);
+
+    publisher.publishAll(
+        java.util.List.of(
+            new io.github.bams22.outboxer.api.publish.PublishRequest("A", "a1", null),
+            new io.github.bams22.outboxer.api.publish.PublishRequest("A", "a2", null),
+            new io.github.bams22.outboxer.api.publish.PublishRequest("B", "b1", null)));
+    publisher.publish("C", "c1");
+
+    // Nothing may be woken before the surrounding transaction commits.
+    assertThat(wakes).isEmpty();
+
+    pendingCommitHooks.forEach(Runnable::run);
+
+    // Each distinct type exactly once per publish call.
+    assertThat(wakes).containsExactly("A", "B", "C");
+  }
+
+  @Test
+  void throwingWakerDoesNotBreakPublish() {
+    InMemoryEventStore store = new InMemoryEventStore();
+    DefaultOutboxEventPublisher publisher =
+        new DefaultOutboxEventPublisher(
+            store,
+            new StringEventSerializer(),
+            Clock.system(),
+            TransactionContext.alwaysActive(),
+            NoTransactionPolicy.FAIL,
+            NOOP,
+            type -> {
+              throw new IllegalStateException("waker exploded");
+            });
+
+    UUID id = publisher.publish("T", "hello");
+
+    assertThat(store.findById(id)).isPresent();
+  }
+
   private static final OutboxListener NOOP = new OutboxListener() {};
 
   private static DefaultOutboxEventPublisher plain(InMemoryEventStore store) {
@@ -116,6 +184,7 @@ class DefaultOutboxEventPublisherTest {
         Clock.system(),
         TransactionContext.alwaysActive(),
         NoTransactionPolicy.FAIL,
-        NOOP);
+        NOOP,
+        PollerWaker.NOOP);
   }
 }

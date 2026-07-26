@@ -223,6 +223,11 @@ per-type overrides adjust individual fields (see
   adaptive poller starts at the min interval, multiplies the wait by
   `poll-multiplier` after every empty poll, and caps it at the max
   interval; any non-empty poll resets the wait to the minimum.
+  Note: these intervals bound the pickup latency only for events
+  published by *other* JVMs and for delayed events (`runAt` in the
+  future). Events published in this JVM wake their poller right after
+  the publishing transaction commits, so same-JVM latency is
+  milliseconds regardless of the poll intervals (ADR-0006 amendment).
 - `claim-batch-size` — how many events to claim per poll.
 - `handler-pool-size`, `handler-queue-capacity` — fixed-size
   executor per event type (`core == max`, no scaling). A zero

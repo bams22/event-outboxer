@@ -20,17 +20,22 @@ import io.github.bams22.outboxer.domain.exception.PublishFailedException;
 import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.domain.exception.PublishValidationException;
 import io.github.bams22.outboxer.domain.exception.StorageException;
+import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Default {@link OutboxEventPublisher} implementation. Holds no per-call state — a single
@@ -42,9 +47,13 @@ import org.jspecify.annotations.Nullable;
  *   <li>Serialize the payload via {@link EventSerializer}.
  *   <li>Build a {@link PendingEvent} and hand it to {@link EventStore#save(PendingEvent)}.
  *   <li>Fire {@code OutboxListener.onEventPublished(...)}.
+ *   <li>Register an after-commit hook that wakes the local poller of the published type, so
+ *       same-JVM publish→handle latency is bounded by the handler, not by the poll interval.
  * </ol>
  */
 public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
+
+  private static final Logger log = LoggerFactory.getLogger(DefaultOutboxEventPublisher.class);
 
   private final EventStore store;
   private final EventSerializer serializer;
@@ -52,6 +61,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   private final TransactionContext txContext;
   private final NoTransactionPolicy noTxPolicy;
   private final OutboxListener listener;
+  private final PollerWaker waker;
 
   public DefaultOutboxEventPublisher(
       EventStore store,
@@ -59,13 +69,15 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
       Clock clock,
       TransactionContext txContext,
       NoTransactionPolicy noTxPolicy,
-      OutboxListener listener) {
+      OutboxListener listener,
+      PollerWaker waker) {
     this.store = Objects.requireNonNull(store, "store must not be null");
     this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
     this.txContext = Objects.requireNonNull(txContext, "txContext must not be null");
     this.noTxPolicy = Objects.requireNonNull(noTxPolicy, "noTxPolicy must not be null");
     this.listener = Objects.requireNonNull(listener, "listener must not be null");
+    this.waker = Objects.requireNonNull(waker, "waker must not be null");
   }
 
   @Override
@@ -93,6 +105,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
           "storage rejected event " + pending.id() + " of type " + eventType, ex);
     }
     emitPublished(pending);
+    scheduleWake(Set.of(eventType));
     return pending.id();
   }
 
@@ -123,6 +136,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     for (PendingEvent pe : pendings) {
       emitPublished(pe);
     }
+    Set<String> types = new LinkedHashSet<>();
+    for (PendingEvent pe : pendings) {
+      types.add(pe.eventType());
+    }
+    scheduleWake(types);
     return List.copyOf(ids);
   }
 
@@ -181,5 +199,27 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   private void emitPublished(PendingEvent pe) {
     listener.onEventPublished(
         new EventPublishedInfo(pe.id(), pe.eventType(), clock.now(), pe.runAt(), pe.priority()));
+  }
+
+  /**
+   * Wake the local pollers of the published types once the surrounding transaction commits.
+   * Purely an optimization — every path is swallowed on failure so a wake can never break the
+   * caller's commit.
+   */
+  private void scheduleWake(Set<String> eventTypes) {
+    try {
+      txContext.afterCommit(
+          () -> {
+            for (String type : eventTypes) {
+              try {
+                waker.wake(type);
+              } catch (RuntimeException ex) {
+                log.debug("poller wake failed for type {}: {}", type, ex.toString());
+              }
+            }
+          });
+    } catch (RuntimeException ex) {
+      log.debug("afterCommit registration failed: {}", ex.toString());
+    }
   }
 }

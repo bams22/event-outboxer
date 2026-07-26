@@ -76,6 +76,16 @@ public class OutboxEngineAutoConfiguration {
     return new SpringTransactionContext();
   }
 
+  /**
+   * Shared wake hub: the publisher bean below and the engine's pollers are constructed
+   * independently, so the after-commit poller wake-up needs one hub visible to both.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public io.github.bams22.outboxer.core.polling.PollerWakeHub outboxPollerWakeHub() {
+    return new io.github.bams22.outboxer.core.polling.PollerWakeHub();
+  }
+
   @Bean
   @ConditionalOnMissingBean
   public WorkerId outboxWorkerId(OutboxProperties properties) {
@@ -93,13 +103,14 @@ public class OutboxEngineAutoConfiguration {
       Clock clock,
       TransactionContext txContext,
       OutboxProperties properties,
+      io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
       List<OutboxListener> listeners) {
     NoTransactionPolicy policy = mapNoTxPolicy(properties.getPublisher().getNoTransactionPolicy());
     // Publisher fires listener callbacks directly; the engine's ListenerRegistry will subsume
     // these when the engine starts — for now, aggregate all application-registered listeners.
     OutboxListener fanout = new FanOutListener(listeners);
     return new io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher(
-        store, serializer, clock, txContext, policy, fanout);
+        store, serializer, clock, txContext, policy, fanout, wakeHub);
   }
 
   @Bean
@@ -113,6 +124,7 @@ public class OutboxEngineAutoConfiguration {
       TransactionContext txContext,
       WorkerId workerId,
       OutboxProperties properties,
+      io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
       ObjectProvider<EventHandler<?>> handlerProvider,
       @Qualifier("outboxDefaultFailureHandler") ObjectProvider<FailureHandler<?>>
               defaultFailureHandlerProvider,
@@ -132,6 +144,7 @@ public class OutboxEngineAutoConfiguration {
             .transactionContext(txContext)
             .noTransactionPolicy(mapNoTxPolicy(properties.getPublisher().getNoTransactionPolicy()))
             .workerIdSupplier(() -> workerId)
+            .wakeHub(wakeHub)
             .maintenance(mapMaintenance(properties.getMaintenance()))
             .dispatcher(mapDispatcher(properties.getDispatcher()));
 
