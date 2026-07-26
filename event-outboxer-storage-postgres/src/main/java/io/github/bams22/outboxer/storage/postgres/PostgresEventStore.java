@@ -65,6 +65,7 @@ public final class PostgresEventStore implements EventStore {
   private final String sqlReleaseClaimed;
   private final String sqlMarkDisabled;
   private final String sqlForceReclaim;
+  private final String sqlSweepStale;
   private final String sqlReclaimOrphans;
   private final String sqlFindById;
   private final String sqlMetrics;
@@ -165,6 +166,19 @@ public final class PostgresEventStore implements EventStore {
             + "attempts = attempts + 1, version = version + 1, "
             + "last_fail_reason = 'stuck: handler exceeded handlerMaxRuntime', run_at = ? "
             + "WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'";
+
+    // Served by idx_events_processing_claimed_at (partial, WHERE status='PROCESSING') — the
+    // index V001 created for exactly this scan. DB-clock comparison, consistent with findDead.
+    this.sqlSweepStale =
+        "UPDATE "
+            + tables.events()
+            + " SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, "
+            + "attempts = attempts + 1, version = version + 1, "
+            + "last_fail_reason = 'swept: stale PROCESSING claim', run_at = now() "
+            + "WHERE id IN (SELECT id FROM "
+            + tables.events()
+            + " WHERE status = 'PROCESSING' AND claimed_at < now() - make_interval(secs => ?) "
+            + "LIMIT ?)";
 
     this.sqlReclaimOrphans =
         "UPDATE "
@@ -365,6 +379,25 @@ public final class PostgresEventStore implements EventStore {
           ps.setLong(3, claimedVersion);
           ps.setString(4, workerId.value());
         });
+  }
+
+  @Override
+  public int sweepStale(java.time.Duration olderThan, int limit) {
+    Objects.requireNonNull(olderThan, "olderThan must not be null");
+    if (limit <= 0) {
+      throw new IllegalArgumentException("limit must be positive, got " + limit);
+    }
+    double thresholdSeconds = olderThan.toMillis() / 1000.0;
+    try {
+      return jdbc.update(
+          sqlSweepStale,
+          ps -> {
+            ps.setDouble(1, thresholdSeconds);
+            ps.setInt(2, limit);
+          });
+    } catch (SQLException ex) {
+      throw new EventStoreException("sweepStale failed", ex);
+    }
   }
 
   @Override

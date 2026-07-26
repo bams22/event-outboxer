@@ -13,6 +13,12 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.contracts.AbstractEventStoreContractTest;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 
 class PostgresEventStoreIT extends AbstractEventStoreContractTest {
@@ -35,5 +41,21 @@ class PostgresEventStoreIT extends AbstractEventStoreContractTest {
             Clock.system(),
             MetricsSnapshotCache.noop());
     return eventStore;
+  }
+
+  @Override
+  protected void backdateClaim(UUID id, Instant at) {
+    String sql =
+        "UPDATE "
+            + PostgresTestEnvironment.SCHEMA
+            + ".events SET claimed_at = ? WHERE id = ?";
+    try (Connection conn = PostgresTestEnvironment.dataSource().getConnection();
+        PreparedStatement ps = conn.prepareStatement(sql)) {
+      ps.setTimestamp(1, Timestamp.from(at));
+      ps.setObject(2, id);
+      ps.executeUpdate();
+    } catch (SQLException e) {
+      throw new IllegalStateException("failed to backdate claim for " + id, e);
+    }
   }
 }

@@ -31,6 +31,7 @@ import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
 import io.github.bams22.outboxer.core.maintenance.EngineHealthCheckTask;
 import io.github.bams22.outboxer.core.maintenance.RetentionTask;
+import io.github.bams22.outboxer.core.maintenance.StaleClaimSweeperTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
 import io.github.bams22.outboxer.core.polling.LockAndFetchStrategy;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
@@ -51,6 +52,7 @@ import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -356,9 +358,21 @@ public final class OutboxEngineBuilder {
         admin != null && retentionConfig.enabled()
             ? new RetentionTask(admin, clock, retentionConfig)
             : null;
+    StaleClaimSweeperTask staleClaimSweeper =
+        new StaleClaimSweeperTask(
+            eventStore,
+            resolveStaleClaimThreshold(maintenanceConfig, executorConfigs.values()),
+            maintenanceConfig.staleClaimSweepInterval(),
+            maintenanceConfig.reclaimBatchSize());
     MaintenanceScheduler maintenance =
         new MaintenanceScheduler(
-            heartbeat, orphanTask, watchdog, engineHealthCheck, retention, maintenanceConfig);
+            heartbeat,
+            orphanTask,
+            watchdog,
+            engineHealthCheck,
+            retention,
+            staleClaimSweeper,
+            maintenanceConfig);
 
     OutboxEngine engine =
         new OutboxEngine(
@@ -374,6 +388,37 @@ public final class OutboxEngineBuilder {
             maintenanceConfig.shutdownTimeout());
     engineRef.set(engine);
     return engine;
+  }
+
+  /**
+   * The sweep threshold must exceed every per-type {@code handlerMaxRuntime}: the sweeper cannot
+   * see any JVM's in-flight registry, so a smaller threshold would reclaim a legitimately
+   * long-running handler's row on another pod. When unset, derive {@code 2 × max}; an explicit
+   * value that violates the invariant fails the build. Heterogeneous fleets (a rolling deploy
+   * that raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
+   */
+  static Duration resolveStaleClaimThreshold(
+      MaintenanceConfig maintenance, java.util.Collection<EventTypeConfig> typeConfigs) {
+    Duration maxRuntime = Duration.ZERO;
+    for (EventTypeConfig cfg : typeConfigs) {
+      if (cfg.handlerMaxRuntime().compareTo(maxRuntime) > 0) {
+        maxRuntime = cfg.handlerMaxRuntime();
+      }
+    }
+    Duration explicit = maintenance.staleClaimThreshold();
+    if (explicit == null) {
+      return maxRuntime.multipliedBy(2);
+    }
+    if (explicit.compareTo(maxRuntime) <= 0) {
+      throw new IllegalArgumentException(
+          "staleClaimThreshold ("
+              + explicit
+              + ") must exceed the largest per-type handlerMaxRuntime ("
+              + maxRuntime
+              + ") — otherwise the sweeper would reclaim rows of legitimately running handlers "
+              + "on other instances");
+    }
+    return explicit;
   }
 
   // ---------------------------------------------------------------------------------------------

@@ -170,6 +170,16 @@ public class OutboxProperties {
     private Duration watchdogInterval = Duration.ofSeconds(10);
     private int reclaimBatchSize = 50;
     private Duration shutdownTimeout = Duration.ofSeconds(30);
+
+    /**
+     * Age of a PROCESSING claim before the stale-claim sweeper returns it to PENDING. Default
+     * {@code null} = derived as 2 × the largest per-type handler-max-runtime. An explicit value
+     * must exceed every handler-max-runtime (validated at startup).
+     */
+    private @Nullable Duration staleClaimThreshold;
+
+    /** Cadence of the stale-claim sweeper. */
+    private Duration staleClaimSweepInterval = Duration.ofMinutes(5);
   }
 
   @Getter

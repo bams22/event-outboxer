@@ -220,6 +220,8 @@ public class OutboxEngineAutoConfiguration {
         .watchdogInterval(m.getWatchdogInterval())
         .reclaimBatchSize(m.getReclaimBatchSize())
         .shutdownTimeout(m.getShutdownTimeout())
+        .staleClaimThreshold(m.getStaleClaimThreshold())
+        .staleClaimSweepInterval(m.getStaleClaimSweepInterval())
         .build();
   }
 

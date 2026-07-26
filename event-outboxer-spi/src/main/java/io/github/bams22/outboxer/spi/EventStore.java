@@ -163,6 +163,24 @@ public interface EventStore {
   boolean forceReclaim(UUID id, WorkerId workerId, long claimedVersion, Instant runAt);
 
   /**
+   * Return every {@code PROCESSING} row whose {@code claimed_at} is older than {@code olderThan}
+   * to {@code PENDING}, regardless of which worker owns the claim. Last-line safety net for rows
+   * invisible to both the watchdog (never registered in-flight) and orphan recovery (the owning
+   * worker is alive and heartbeating): unknown-handler {@code FAIL} rows, claims stranded by a
+   * hang between claim and in-flight registration, double release failures. Increments
+   * {@code attempts} and {@code version} — crash-path semantics, mirroring
+   * {@link #forceReclaim} and {@link #reclaimOrphans}.
+   *
+   * <p>Callers must pick {@code olderThan} comfortably above the largest per-type
+   * {@code handlerMaxRuntime}: this method cannot see any in-flight registry and would
+   * otherwise reclaim a legitimately long-running handler's row on another JVM.
+   *
+   * @return the number of rows swept
+   * @throws EventStoreException if the SQL fails
+   */
+  int sweepStale(java.time.Duration olderThan, int limit);
+
+  /**
    * Reclaim all events owned by the given set of dead workers back to {@code PENDING} in a single
    * transaction. Increments {@code attempts} and {@code version}, clears {@code
    * claimed_by}/{@code claimed_at}, sets {@code run_at} to {@code now} so the events are

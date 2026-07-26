@@ -8,6 +8,19 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Stale-claim sweeper — last line of defence (amends ADR-0005).** New
+  `EventStore.sweepStale(olderThan, limit)` + a maintenance task that
+  returns `PROCESSING` rows older than `maintenance.stale-claim-threshold`
+  to `PENDING` regardless of owner — covering rows invisible to both the
+  watchdog and orphan recovery (`unknown-handler-policy=FAIL` rows, claims
+  stranded by a hang before in-flight registration, double release
+  failures). The threshold derives as 2 × the largest `handler-max-runtime`
+  (an explicit smaller value fails startup); served by the previously
+  unused V001 partial index. The in-flight registration now brackets the
+  whole dispatch, so the watchdog also catches hangs in deserialization
+  and entity-lock acquisition — `handler-max-runtime` budgets the full
+  processing of a claim. The executor gate additionally absorbs the
+  synchronous-handoff rejection race with a short bounded retry.
 - **Admin and retention surface (ADR-0019).** New `OutboxAdmin` SPI port
   (list events by status with keyset pagination, archive lookup via the new
   `ArchivedEvent` type, `reenable`/`reenableAll` with a fresh attempts

@@ -372,6 +372,36 @@ WHERE claimed_by = :worker_id
   AND status     = 'PROCESSING';
 ```
 
+### Stale-claim sweep (last line of defence)
+
+Executed by `StaleClaimSweeperTask` on every instance: any
+`PROCESSING` row whose claim is older than the threshold returns to
+`PENDING`, regardless of owner — the safety net for rows invisible to
+both the watchdog (never registered in-flight) and orphan recovery
+(the owning worker is alive). Served by the partial index
+`idx_events_processing_claimed_at` from V001.
+
+```sql
+UPDATE event_outboxer.events
+SET status           = 'PENDING',
+    claimed_by       = NULL,
+    claimed_at       = NULL,
+    attempts         = attempts + 1,
+    version          = version + 1,
+    last_fail_reason = 'swept: stale PROCESSING claim',
+    run_at           = now()
+WHERE id IN (
+    SELECT id FROM event_outboxer.events
+    WHERE status = 'PROCESSING'
+      AND claimed_at < now() - make_interval(secs => :threshold_seconds)
+    LIMIT :batch_size);
+```
+
+The threshold always exceeds every per-type `handlerMaxRuntime`
+(derived as 2 × the maximum unless configured explicitly), so
+legitimately running handlers are never swept — their rows are
+force-reclaimed by the watchdog long before.
+
 ### Force reclaim (stuck-handler watchdog)
 
 ```sql

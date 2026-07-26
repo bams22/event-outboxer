@@ -11,11 +11,27 @@ package io.github.bams22.outboxer.storage.inmemory;
 
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.contracts.AbstractEventStoreContractTest;
+import java.time.Instant;
+import java.util.UUID;
 
 class InMemoryEventStoreTest extends AbstractEventStoreContractTest {
 
+  private InMemoryEventStore inMemoryStore;
+
   @Override
   protected EventStore newStore() {
-    return new InMemoryEventStore();
+    inMemoryStore = new InMemoryEventStore();
+    return inMemoryStore;
+  }
+
+  @Override
+  protected void backdateClaim(UUID id, Instant at) {
+    InMemoryEventStore.EventRow row = inMemoryStore.rows().get(id);
+    if (row == null) {
+      throw new AssertionError("no row for " + id);
+    }
+    synchronized (row) {
+      row.claimedAt = at;
+    }
   }
 }

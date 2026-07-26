@@ -106,6 +106,8 @@ event-outboxer:
     watchdog-interval: 10s           # stuck-handler watchdog period
     reclaim-batch-size: 50           # max dead workers processed per orphan-recovery pass
     shutdown-timeout: 30s            # max wait for in-flight handlers on shutdown
+    stale-claim-threshold: null      # null = derived: 2 × max handler-max-runtime
+    stale-claim-sweep-interval: 5m   # stale-claim sweeper period
 
   handler-executor:
     type: platform                   # platform | virtual
@@ -300,6 +302,18 @@ Maintenance-process parameters.
   deregisters. See
   [docs/ARCHITECTURE.md §SmartLifecycle phases](ARCHITECTURE.md#3-smartlifecycle-phases)
   for the drain sequence.
+- `stale-claim-threshold` — age of a `PROCESSING` claim before the
+  stale-claim sweeper returns it to `PENDING` (last line of defence
+  for rows invisible to the watchdog and orphan recovery). Default:
+  derived as 2 × the largest per-type `handler-max-runtime`. An
+  explicit value must exceed every `handler-max-runtime` — validated
+  at startup. Heterogeneous fleets (a rolling deploy raising
+  `handler-max-runtime`) should set it explicitly with headroom.
+- `stale-claim-sweep-interval` — cadence of the sweeper (default 5m).
+
+Note on `handler-max-runtime` semantics: since the in-flight bracket
+covers the whole dispatch, the budget includes payload deserialization
+and entity-lock acquisition, not just `handler.handle()`.
 
 > See [docs/OBSERVABILITY.md](OBSERVABILITY.md) for what these knobs
 > look like from the outside — the health endpoint, the Micrometer
