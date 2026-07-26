@@ -57,6 +57,13 @@ public final class HandlerDispatcher {
 
   private static final Logger log = LoggerFactory.getLogger(HandlerDispatcher.class);
 
+  /**
+   * Backoff before an event whose finalize call failed becomes claimable again. Deliberately
+   * not configurable: the condition is a transient storage error, and the value only needs to
+   * be long enough to avoid a hot retry loop against a struggling database.
+   */
+  private static final Duration FINALIZE_FAILURE_RETRY_DELAY = Duration.ofSeconds(5);
+
   private final EventStore store;
   private final EntityLocker locker;
   private final EventSerializer serializer;
@@ -131,9 +138,82 @@ public final class HandlerDispatcher {
         }
       }
       EventOutcome outcome = invokeHandler(claimed, handler, payload);
-      routeOutcome(claimed, handler, payload, outcome);
+      try {
+        routeOutcome(claimed, handler, payload, outcome);
+      } catch (RuntimeException ex) {
+        // A finalize call (markProcessed / markForRetry / markDisabled) failed — most likely a
+        // transient storage error. Without recovery the row would stay PROCESSING forever:
+        // it is no longer in the in-flight registry (watchdog can't see it) and this worker is
+        // alive (orphan recovery won't touch it). Best-effort: release it back to PENDING so
+        // the at-least-once contract holds; if that also fails, the storage is down and the
+        // event stays claimed until crash recovery or shutdown release picks it up.
+        log.error(
+            "finalize failed for eventId={} type={}; releasing back to PENDING: {}",
+            claimed.id(),
+            claimed.eventType(),
+            ex.toString(),
+            ex);
+        releaseAfterFinalizeFailure(claimed, ex);
+      }
     } finally {
       closeLock(claimed, lockKey, lock);
+    }
+  }
+
+  /**
+   * Called by the poller when the per-type handler executor rejected the dispatch (pool and
+   * queue saturated). The event was already claimed, so it must be returned to {@code PENDING}
+   * — nothing else will: it never reached the in-flight registry, and this worker keeps
+   * heartbeating. Does not increment {@code attempts}: rejection is backpressure, not a handler
+   * failure.
+   */
+  public void releaseRejected(ClaimedEvent claimed) {
+    Objects.requireNonNull(claimed, "claimed must not be null");
+    Instant when = clock.now().plus(dispatcherConfig.dispatchRejectedRetryDelay());
+    try {
+      boolean ok =
+          store.release(
+              claimed.id(),
+              workerId,
+              claimed.claimedVersion(),
+              "dispatch rejected: handler executor saturated",
+              when);
+      if (ok) {
+        listener.onEventRetryScheduled(
+            new EventRetryScheduledInfo(
+                claimed.id(),
+                claimed.eventType(),
+                claimed.attempts() + 1,
+                when,
+                "dispatch rejected",
+                null));
+      }
+    } catch (RuntimeException ex) {
+      log.error(
+          "failed to release rejected dispatch for eventId={} type={}: {}",
+          claimed.id(),
+          claimed.eventType(),
+          ex.toString(),
+          ex);
+    }
+  }
+
+  private void releaseAfterFinalizeFailure(ClaimedEvent claimed, RuntimeException finalizeError) {
+    Instant when = clock.now().plus(FINALIZE_FAILURE_RETRY_DELAY);
+    try {
+      store.release(
+          claimed.id(),
+          workerId,
+          claimed.claimedVersion(),
+          "finalize failed: " + rootMessage(finalizeError),
+          when);
+    } catch (RuntimeException ex) {
+      log.error(
+          "release after finalize failure also failed for eventId={}; event stays PROCESSING "
+              + "until crash recovery or shutdown release: {}",
+          claimed.id(),
+          ex.toString(),
+          ex);
     }
   }
 
@@ -146,8 +226,10 @@ public final class HandlerDispatcher {
     switch (dispatcherConfig.unknownHandlerPolicy()) {
       case SKIP -> {
         Instant when = clock.now().plus(dispatcherConfig.unknownHandlerRetryDelay());
+        // release, not markForRetry: no handler ran, so the attempt budget must not shrink —
+        // otherwise an event published before its handler is deployed gets DISABLED for free.
         boolean ok =
-            store.markForRetry(
+            store.release(
                 claimed.id(),
                 workerId,
                 claimed.claimedVersion(),
@@ -167,7 +249,10 @@ public final class HandlerDispatcher {
       case DISABLE ->
           finaliseDisable(claimed, "no handler for eventType " + claimed.eventType(), null);
       case FAIL -> {
-        // Leave the row PROCESSING; orphan recovery / watchdog will pick it up.
+        // Deliberately leave the row PROCESSING as a visible poison-pill marker. Note: while
+        // this worker lives, neither the watchdog (event never entered the in-flight registry)
+        // nor orphan recovery (worker is heartbeating) will touch it — it surfaces via the
+        // totalProcessing metric and is released back to PENDING on engine shutdown.
         log.error(
             "unknown handler for eventType={} (policy=FAIL); leaving event PROCESSING",
             claimed.eventType());
@@ -201,7 +286,9 @@ public final class HandlerDispatcher {
       listener.onLockAcquisitionFailed(
           new LockAcquisitionInfo(claimed.id(), claimed.eventType(), lockKey));
       Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
-      store.markForRetry(
+      // release, not markForRetry: the handler never ran, so lock contention or a flaky lock
+      // backend must not consume the retry budget (MaxRetriesFailureHandler counts attempts).
+      store.release(
           claimed.id(),
           workerId,
           claimed.claimedVersion(),
@@ -214,7 +301,7 @@ public final class HandlerDispatcher {
           new LockAcquisitionInfo(claimed.id(), claimed.eventType(), lockKey));
       Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
       boolean ok =
-          store.markForRetry(
+          store.release(
               claimed.id(),
               workerId,
               claimed.claimedVersion(),

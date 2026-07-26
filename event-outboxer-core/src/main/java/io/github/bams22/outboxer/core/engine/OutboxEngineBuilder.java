@@ -274,21 +274,26 @@ public final class OutboxEngineBuilder {
     Function<EventTypeConfig, ExecutorService> executorFactory =
         handlerExecutorFactory != null ? handlerExecutorFactory : defaultExecutorFactory();
 
-    Map<String, ExecutorService> executors = new LinkedHashMap<>();
+    Map<String, EventTypeConfig> executorConfigs = new LinkedHashMap<>();
+    for (EventHandler<?> h : handlers) {
+      executorConfigs.put(h.eventType(), typeConfig.forType(h.eventType()));
+    }
+    HandlerExecutorManager executors = new HandlerExecutorManager(executorFactory, executorConfigs);
+
     List<Poller> pollers = new ArrayList<>(handlers.size());
     for (EventHandler<?> h : handlers) {
       String type = h.eventType();
-      EventTypeConfig cfg = typeConfig.forType(type);
-      ExecutorService executor = executorFactory.apply(cfg);
-      executors.put(type, executor);
-      pollers.add(new Poller(type, workerId, strategy, dispatcher, executor, listener, cfg));
+      EventTypeConfig cfg = executorConfigs.get(type);
+      pollers.add(
+          new Poller(
+              type, workerId, strategy, dispatcher, executors.executorFor(type), listener, cfg));
     }
 
     OutboxEventPublisher publisher =
         new DefaultOutboxEventPublisher(
             eventStore, eventSerializer, clock, txContext, noTxPolicy, listener);
 
-    HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerId, clock, listener);
+    HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
     OrphanRecoveryTask orphanTask =
         new OrphanRecoveryTask(workerRegistry, eventStore, clock, maintenanceConfig, listener);
     WatchdogTask watchdog =
@@ -315,6 +320,8 @@ public final class OutboxEngineBuilder {
         new OutboxEngine(
             workerRegistry,
             workerInfo,
+            eventStore,
+            clock,
             publisher,
             maintenance,
             pollers,

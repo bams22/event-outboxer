@@ -58,9 +58,10 @@ public final class PostgresEventStore implements EventStore {
   private final String sqlInsert;
   private final String sqlClaim;
   private final String sqlMarkProcessedNoArchive;
-  private final String sqlArchiveInsert;
-  private final String sqlMarkProcessedDeleteWithArchive;
+  private final String sqlMarkProcessedWithArchive;
   private final String sqlMarkForRetry;
+  private final String sqlRelease;
+  private final String sqlReleaseClaimed;
   private final String sqlMarkDisabled;
   private final String sqlForceReclaim;
   private final String sqlReclaimOrphans;
@@ -109,20 +110,24 @@ public final class PostgresEventStore implements EventStore {
             + tables.events()
             + " WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'";
 
-    this.sqlArchiveInsert =
-        "INSERT INTO "
+    // Single-statement archive finalize: the guarded DELETE and the archive INSERT run as one
+    // atomic CTE. A two-statement variant (INSERT ... SELECT, then DELETE) had a race window —
+    // if the watchdog / orphan recovery bumped `version` between the two, the committed archive
+    // INSERT became an orphan row whose PK blocked every future markProcessed of that event.
+    this.sqlMarkProcessedWithArchive =
+        "WITH del AS ("
+            + "  DELETE FROM "
+            + tables.events()
+            + "  WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'"
+            + "  RETURNING id, event_type, payload, payload_class, priority, attempts, "
+            + "created_at, run_at, last_fail_reason, trace_context"
+            + ") "
+            + "INSERT INTO "
             + tables.archive()
             + " (id, event_type, payload, payload_class, priority, attempts, created_at, run_at, "
             + "last_fail_reason, trace_context, archived_at, archived_by) "
-            + "SELECT id, event_type, payload, payload_class, priority, attempts, created_at, run_at, "
-            + "last_fail_reason, trace_context, now(), ? FROM "
-            + tables.events()
-            + " WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'";
-
-    this.sqlMarkProcessedDeleteWithArchive =
-        "DELETE FROM "
-            + tables.events()
-            + " WHERE id = ? AND version = ? AND claimed_by = ?";
+            + "SELECT id, event_type, payload, payload_class, priority, attempts, created_at, "
+            + "run_at, last_fail_reason, trace_context, now(), ? FROM del";
 
     this.sqlMarkForRetry =
         "UPDATE "
@@ -130,6 +135,20 @@ public final class PostgresEventStore implements EventStore {
             + " SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, "
             + "attempts = attempts + 1, version = version + 1, last_fail_reason = ?, run_at = ? "
             + "WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'";
+
+    this.sqlRelease =
+        "UPDATE "
+            + tables.events()
+            + " SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, "
+            + "version = version + 1, last_fail_reason = ?, run_at = ? "
+            + "WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'";
+
+    this.sqlReleaseClaimed =
+        "UPDATE "
+            + tables.events()
+            + " SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, "
+            + "version = version + 1, last_fail_reason = 'released: worker shutdown', run_at = ? "
+            + "WHERE claimed_by = ? AND status = 'PROCESSING'";
 
     this.sqlMarkDisabled =
         "UPDATE "
@@ -255,31 +274,14 @@ public final class PostgresEventStore implements EventStore {
             ps.setString(3, workerId.value());
           });
     }
-    try {
-      return jdbc.doWorkInTransaction(
-          conn -> {
-            int inserted;
-            try (PreparedStatement ins = conn.prepareStatement(sqlArchiveInsert)) {
-              ins.setString(1, workerId.value());
-              ins.setObject(2, id);
-              ins.setLong(3, claimedVersion);
-              ins.setString(4, workerId.value());
-              inserted = ins.executeUpdate();
-            }
-            if (inserted == 0) {
-              return Boolean.FALSE;
-            }
-            try (PreparedStatement del = conn.prepareStatement(sqlMarkProcessedDeleteWithArchive)) {
-              del.setObject(1, id);
-              del.setLong(2, claimedVersion);
-              del.setString(3, workerId.value());
-              int deleted = del.executeUpdate();
-              return deleted > 0;
-            }
-          });
-    } catch (SQLException ex) {
-      throw new EventStoreException("markProcessed(" + id + ") failed", ex);
-    }
+    return runFinalize(
+        sqlMarkProcessedWithArchive,
+        ps -> {
+          ps.setObject(1, id);
+          ps.setLong(2, claimedVersion);
+          ps.setString(3, workerId.value());
+          ps.setString(4, workerId.value());
+        });
   }
 
   @Override
@@ -298,6 +300,40 @@ public final class PostgresEventStore implements EventStore {
           ps.setLong(4, claimedVersion);
           ps.setString(5, workerId.value());
         });
+  }
+
+  @Override
+  public boolean release(
+      UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt) {
+    Objects.requireNonNull(id, "id must not be null");
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    Objects.requireNonNull(reason, "reason must not be null");
+    Objects.requireNonNull(runAt, "runAt must not be null");
+    return runFinalize(
+        sqlRelease,
+        ps -> {
+          ps.setString(1, trim(reason));
+          ps.setTimestamp(2, Timestamp.from(runAt));
+          ps.setObject(3, id);
+          ps.setLong(4, claimedVersion);
+          ps.setString(5, workerId.value());
+        });
+  }
+
+  @Override
+  public int releaseClaimed(WorkerId workerId, Instant now) {
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    Objects.requireNonNull(now, "now must not be null");
+    try {
+      return jdbc.update(
+          sqlReleaseClaimed,
+          ps -> {
+            ps.setTimestamp(1, Timestamp.from(now));
+            ps.setString(2, workerId.value());
+          });
+    } catch (SQLException ex) {
+      throw new EventStoreException("releaseClaimed(" + workerId + ") failed", ex);
+    }
   }
 
   @Override

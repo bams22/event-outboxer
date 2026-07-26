@@ -19,14 +19,13 @@ import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.polling.Poller;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
+import io.github.bams22.outboxer.spi.Clock;
+import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,9 +44,11 @@ public final class OutboxEngine {
 
   private final WorkerRegistry registry;
   private final WorkerInfo workerInfo;
+  private final EventStore store;
+  private final Clock clock;
   private final MaintenanceScheduler maintenance;
   private final List<Poller> pollers;
-  private final Map<String, ExecutorService> handlerExecutors;
+  private final HandlerExecutorManager handlerExecutors;
   private final OutboxEventPublisher publisher;
   private final OutboxListener listener;
   private final Duration shutdownTimeout;
@@ -65,18 +66,22 @@ public final class OutboxEngine {
   public OutboxEngine(
       WorkerRegistry registry,
       WorkerInfo workerInfo,
+      EventStore store,
+      Clock clock,
       OutboxEventPublisher publisher,
       MaintenanceScheduler maintenance,
       List<Poller> pollers,
-      Map<String, ExecutorService> handlerExecutors,
+      HandlerExecutorManager handlerExecutors,
       OutboxListener listener,
       Duration shutdownTimeout) {
     this.registry = Objects.requireNonNull(registry);
     this.workerInfo = Objects.requireNonNull(workerInfo);
+    this.store = Objects.requireNonNull(store);
+    this.clock = Objects.requireNonNull(clock);
     this.publisher = Objects.requireNonNull(publisher);
     this.maintenance = Objects.requireNonNull(maintenance);
     this.pollers = List.copyOf(pollers);
-    this.handlerExecutors = Map.copyOf(handlerExecutors);
+    this.handlerExecutors = Objects.requireNonNull(handlerExecutors);
     this.listener = Objects.requireNonNull(listener);
     this.shutdownTimeout = Objects.requireNonNull(shutdownTimeout);
   }
@@ -101,6 +106,7 @@ public final class OutboxEngine {
       registry.register(workerInfo);
       listener.onWorkerRegistered(new WorkerRegisteredInfo(workerInfo));
       maintenance.start();
+      handlerExecutors.start();
       for (Poller p : pollers) {
         p.start();
       }
@@ -110,6 +116,11 @@ public final class OutboxEngine {
       // Best-effort rollback so half-started state does not leak into tests / retries.
       try {
         pollers.forEach(Poller::stop);
+      } catch (RuntimeException ignored) {
+        // swallow
+      }
+      try {
+        handlerExecutors.drain(Duration.ofSeconds(1));
       } catch (RuntimeException ignored) {
         // swallow
       }
@@ -153,7 +164,28 @@ public final class OutboxEngine {
       }
     }
 
-    drainHandlers(timeout);
+    handlerExecutors.drain(timeout);
+
+    // Any row still PROCESSING under this worker was queued-but-never-started or interrupted by
+    // the drain timeout. Once we deregister, no orphan recovery would ever find those rows —
+    // release them back to PENDING first (without burning an attempt).
+    boolean claimsReleased = false;
+    try {
+      int released = store.releaseClaimed(workerInfo.id(), clock.now());
+      claimsReleased = true;
+      if (released > 0) {
+        log.info(
+            "released {} unfinished event(s) back to PENDING during shutdown of worker {}",
+            released,
+            workerInfo.id());
+      }
+    } catch (RuntimeException ex) {
+      log.warn(
+          "releaseClaimed failed for {} — leftover PROCESSING rows will be reclaimed by peers "
+              + "via the graceful_stop flag: {}",
+          workerInfo.id(),
+          ex.toString());
+    }
 
     try {
       registry.markGracefulStop(workerInfo.id());
@@ -164,11 +196,20 @@ public final class OutboxEngine {
 
     maintenance.stop(timeout);
 
-    try {
-      registry.deregister(workerInfo.id());
-      listener.onWorkerDeregistered(new WorkerDeregisteredInfo(workerInfo.id()));
-    } catch (RuntimeException ex) {
-      log.warn("deregister failed for {}: {}", workerInfo.id(), ex.toString());
+    // Invariant: the worker row must outlive its claims. If releaseClaimed failed, keep the
+    // graceful_stop-flagged row so a peer's orphan recovery (which treats graceful_stop as
+    // immediately dead) reclaims the leftover events and removes the row afterwards.
+    if (claimsReleased) {
+      try {
+        registry.deregister(workerInfo.id());
+        listener.onWorkerDeregistered(new WorkerDeregisteredInfo(workerInfo.id()));
+      } catch (RuntimeException ex) {
+        log.warn("deregister failed for {}: {}", workerInfo.id(), ex.toString());
+      }
+    } else {
+      log.info(
+          "skipping deregister of {} — worker row left flagged graceful_stop for peer recovery",
+          workerInfo.id());
     }
 
     state = State.STOPPED;
@@ -223,24 +264,6 @@ public final class OutboxEngine {
           new EngineCrashedInfo(reason, cause, Instant.now(), workerInfo.id()));
     } catch (RuntimeException ex) {
       log.warn("onEngineCrashed listener threw: {}", ex.toString(), ex);
-    }
-  }
-
-  private void drainHandlers(Duration timeout) {
-    for (ExecutorService exec : handlerExecutors.values()) {
-      exec.shutdown();
-    }
-    long deadline = System.nanoTime() + timeout.toNanos();
-    for (ExecutorService exec : handlerExecutors.values()) {
-      long remaining = Math.max(0, deadline - System.nanoTime());
-      try {
-        if (!exec.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
-          exec.shutdownNow();
-        }
-      } catch (InterruptedException e) {
-        exec.shutdownNow();
-        Thread.currentThread().interrupt();
-      }
     }
   }
 

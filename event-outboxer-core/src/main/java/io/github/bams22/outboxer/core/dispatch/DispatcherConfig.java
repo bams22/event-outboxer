@@ -23,17 +23,23 @@ import lombok.Builder;
  * @param unknownHandlerRetryDelay delay applied when {@code unknownHandlerPolicy=SKIP}
  * @param lockBusyRetryDelay delay applied when {@code EntityLocker.tryLock} returns empty —
  *     short, so the event is tried again soon after the competing worker releases the lock
+ * @param dispatchRejectedRetryDelay delay applied when the per-type handler executor rejects a
+ *     dispatch (pool and queue saturated); the claimed event is released back to {@code PENDING}
+ *     without burning an attempt and becomes eligible again after this delay
  */
 @Builder
 public record DispatcherConfig(
     UnknownHandlerPolicy unknownHandlerPolicy,
     Duration unknownHandlerRetryDelay,
-    Duration lockBusyRetryDelay) {
+    Duration lockBusyRetryDelay,
+    Duration dispatchRejectedRetryDelay) {
 
   public DispatcherConfig {
     Objects.requireNonNull(unknownHandlerPolicy, "unknownHandlerPolicy must not be null");
     Objects.requireNonNull(unknownHandlerRetryDelay, "unknownHandlerRetryDelay must not be null");
     Objects.requireNonNull(lockBusyRetryDelay, "lockBusyRetryDelay must not be null");
+    Objects.requireNonNull(
+        dispatchRejectedRetryDelay, "dispatchRejectedRetryDelay must not be null");
     if (unknownHandlerRetryDelay.isNegative()) {
       throw new IllegalArgumentException(
           "unknownHandlerRetryDelay must not be negative, got " + unknownHandlerRetryDelay);
@@ -42,6 +48,10 @@ public record DispatcherConfig(
       throw new IllegalArgumentException(
           "lockBusyRetryDelay must not be negative, got " + lockBusyRetryDelay);
     }
+    if (dispatchRejectedRetryDelay.isNegative()) {
+      throw new IllegalArgumentException(
+          "dispatchRejectedRetryDelay must not be negative, got " + dispatchRejectedRetryDelay);
+    }
   }
 
   public static DispatcherConfig defaults() {
@@ -49,6 +59,7 @@ public record DispatcherConfig(
         .unknownHandlerPolicy(UnknownHandlerPolicy.SKIP)
         .unknownHandlerRetryDelay(Duration.ofMinutes(1))
         .lockBusyRetryDelay(Duration.ofSeconds(1))
+        .dispatchRejectedRetryDelay(Duration.ofSeconds(1))
         .build();
   }
 }

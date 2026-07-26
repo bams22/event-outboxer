@@ -335,8 +335,16 @@ public final class OutboxTestContext {
               typeCfg,
               resolvedDispatcher);
 
+      WorkerInfo heartbeatWorkerInfo =
+          WorkerInfo.builder()
+              .id(resolvedWorkerId)
+              .host(host)
+              .pid((int) ProcessHandle.current().pid())
+              .startedAt(resolvedClock.now())
+              .metadata(Map.of())
+              .build();
       HeartbeatTask heartbeat =
-          new HeartbeatTask(resolvedRegistry, resolvedWorkerId, resolvedClock, listeners);
+          new HeartbeatTask(resolvedRegistry, heartbeatWorkerInfo, resolvedClock, listeners);
       OrphanRecoveryTask orphan =
           new OrphanRecoveryTask(
               resolvedRegistry, resolvedStore, resolvedClock, resolvedMaintenance, listeners);

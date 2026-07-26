@@ -73,8 +73,10 @@ public final class InMemoryWorkerRegistry implements WorkerRegistry {
       throw new IllegalArgumentException("limit must be positive, got " + limit);
     }
     Instant cutoff = clock.now().minus(deadThreshold);
+    // graceful_stop counts as immediately dead — the SPI documents the flag as a hint to
+    // reclaim without waiting for the dead threshold (mirrors the PostgreSQL adapter).
     return entries.values().stream()
-        .filter(e -> e.lastHeartbeat.isBefore(cutoff))
+        .filter(e -> e.gracefulStop || e.lastHeartbeat.isBefore(cutoff))
         .sorted(Comparator.comparing(e -> e.lastHeartbeat))
         .limit(limit)
         .map(Entry::info)

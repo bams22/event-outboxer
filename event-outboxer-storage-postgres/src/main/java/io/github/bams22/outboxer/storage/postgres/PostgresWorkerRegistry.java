@@ -54,30 +54,36 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
     this.jdbc = new OutboxJdbcRunner(Objects.requireNonNull(connections, "connections"));
     SchemaResolver tables = new SchemaResolver(Objects.requireNonNull(properties, "properties"));
 
+    // last_heartbeat is written and compared with the DATABASE clock (now()) on purpose:
+    // liveness decisions must not depend on application-JVM clock skew across pods.
     this.sqlUpsert =
         "INSERT INTO "
             + tables.workers()
             + " (worker_id, host, pid, started_at, last_heartbeat, graceful_stop, metadata) "
-            + "VALUES (?, ?, ?, ?, ?, FALSE, ?::jsonb) "
+            + "VALUES (?, ?, ?, ?, now(), FALSE, ?::jsonb) "
             + "ON CONFLICT (worker_id) DO UPDATE SET "
             + "host = EXCLUDED.host, "
             + "pid = EXCLUDED.pid, "
             + "started_at = EXCLUDED.started_at, "
-            + "last_heartbeat = EXCLUDED.last_heartbeat, "
+            + "last_heartbeat = now(), "
             + "graceful_stop = FALSE, "
             + "metadata = EXCLUDED.metadata";
 
     this.sqlHeartbeat =
-        "UPDATE " + tables.workers() + " SET last_heartbeat = ? WHERE worker_id = ?";
+        "UPDATE " + tables.workers() + " SET last_heartbeat = now() WHERE worker_id = ?";
     this.sqlGracefulStop =
         "UPDATE " + tables.workers() + " SET graceful_stop = TRUE WHERE worker_id = ?";
     this.sqlDelete = "DELETE FROM " + tables.workers() + " WHERE worker_id = ?";
 
+    // A graceful_stop row counts as immediately dead: the SPI documents the flag as a hint to
+    // reclaim without waiting for the dead threshold. A worker that set the flag either owns no
+    // claimed rows any more (releaseClaimed ran first) or died mid-shutdown — in both cases
+    // reclaiming early is safe and waiting is not.
     this.sqlFindDead =
         "SELECT worker_id, host, pid, started_at, last_heartbeat, metadata "
             + "FROM "
             + tables.workers()
-            + " WHERE last_heartbeat < ? AND graceful_stop = FALSE "
+            + " WHERE (last_heartbeat < now() - make_interval(secs => ?) OR graceful_stop) "
             + "ORDER BY last_heartbeat LIMIT ?";
 
     this.sqlRemoveDead = "DELETE FROM " + tables.workers() + " WHERE worker_id = ANY(?)";
@@ -109,8 +115,7 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
               ps.setNull(3, Types.INTEGER);
             }
             ps.setTimestamp(4, Timestamp.from(started));
-            ps.setTimestamp(5, Timestamp.from(started));
-            ps.setObject(6, JsonbHandler.jsonb(FlatMapJson.serialize(info.metadata())));
+            ps.setObject(5, JsonbHandler.jsonb(FlatMapJson.serialize(info.metadata())));
           });
     } catch (SQLException ex) {
       throw new WorkerRegistryException("failed to register worker " + info.id(), ex);
@@ -122,13 +127,9 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(at, "at must not be null");
     try {
-      return jdbc.update(
-              sqlHeartbeat,
-              ps -> {
-                ps.setTimestamp(1, Timestamp.from(at));
-                ps.setString(2, id.value());
-              })
-          > 0;
+      // `at` is intentionally unused here: the adapter stamps the DB clock (now()) so that
+      // findDead comparisons never mix application and database time sources.
+      return jdbc.update(sqlHeartbeat, ps -> ps.setString(1, id.value())) > 0;
     } catch (SQLException ex) {
       throw new WorkerRegistryException("heartbeat failed for worker " + id, ex);
     }
@@ -160,12 +161,12 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
     if (limit <= 0) {
       throw new IllegalArgumentException("limit must be positive, got " + limit);
     }
-    Instant cutoff = Instant.now().minus(deadThreshold);
+    double thresholdSeconds = deadThreshold.toMillis() / 1000.0;
     try {
       return jdbc.queryList(
           sqlFindDead,
           ps -> {
-            ps.setTimestamp(1, Timestamp.from(cutoff));
+            ps.setDouble(1, thresholdSeconds);
             ps.setInt(2, limit);
           },
           PostgresWorkerRegistry::readWorkerInfo);
