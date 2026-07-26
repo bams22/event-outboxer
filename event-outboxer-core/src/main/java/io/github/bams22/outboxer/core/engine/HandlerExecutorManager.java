@@ -10,29 +10,41 @@
 package io.github.bams22.outboxer.core.engine;
 
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
+import io.github.bams22.outboxer.core.polling.HandlerExecutorGate;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Owns the per-event-type handler executors on behalf of {@link OutboxEngine}. Executors are
  * created on {@link #start()} and drained on {@link #drain(Duration)} so that the engine can be
  * stopped and started again — a fresh {@code start()} installs fresh pools instead of reusing
- * the shut-down ones (a terminated {@code ExecutorService} rejects every submission, which
- * previously made a restarted engine claim batches it could never dispatch).
+ * the shut-down ones.
  *
- * <p>Pollers hold a stable per-type {@link Executor} facade (see {@link #executorFor(String)})
- * that delegates to whatever pool is currently installed; while the engine is stopped the facade
- * throws {@link RejectedExecutionException}, which the poller already treats as backpressure.
+ * <p>Each per-type slot doubles as the poller-facing {@link HandlerExecutorGate}: it tracks the
+ * number of in-flight tasks against a capacity budget of {@code handlerPoolSize +
+ * handlerQueueCapacity} and reports the saturated→free transition, so the poller claims only
+ * what the executor can actually absorb and wakes up the moment a slot frees. For the
+ * virtual-thread executor flavour the same budget acts as a soft in-flight cap (the underlying
+ * executor itself is unbounded).
+ *
+ * <p>In-flight accounting is generation-scoped: every {@code start()} creates a fresh counter
+ * captured by the tasks submitted to that generation's pool, so a handler that outlives a
+ * stop/start cycle decrements its own generation, never the new one.
  */
 public final class HandlerExecutorManager {
+
+  private static final Logger log = LoggerFactory.getLogger(HandlerExecutorManager.class);
 
   private final Function<EventTypeConfig, ExecutorService> factory;
   private final Map<String, EventTypeConfig> configs;
@@ -43,17 +55,18 @@ public final class HandlerExecutorManager {
     this.factory = Objects.requireNonNull(factory, "factory must not be null");
     this.configs = Map.copyOf(Objects.requireNonNull(configs, "configs must not be null"));
     Map<String, Slot> s = new LinkedHashMap<>();
-    for (String type : configs.keySet()) {
-      s.put(type, new Slot(type));
+    for (Map.Entry<String, EventTypeConfig> e : configs.entrySet()) {
+      EventTypeConfig cfg = e.getValue();
+      s.put(e.getKey(), new Slot(e.getKey(), cfg.handlerPoolSize() + cfg.handlerQueueCapacity()));
     }
     this.slots = s;
   }
 
   /**
-   * Stable executor facade for the given event type. Safe to hand to a poller before
-   * {@link #start()} has run.
+   * Stable per-type gate handed to the poller. Safe to use before {@link #start()} has run
+   * (submissions are rejected, {@code freeCapacity()} is zero).
    */
-  public Executor executorFor(String eventType) {
+  public HandlerExecutorGate executorFor(String eventType) {
     Slot slot = slots.get(eventType);
     if (slot == null) {
       throw new IllegalArgumentException("no handler executor configured for type " + eventType);
@@ -62,7 +75,8 @@ public final class HandlerExecutorManager {
   }
 
   /**
-   * Create and install a fresh {@code ExecutorService} per event type.
+   * Create and install a fresh {@code ExecutorService} (and a fresh in-flight generation) per
+   * event type.
    */
   public synchronized void start() {
     for (Map.Entry<String, Slot> e : slots.entrySet()) {
@@ -72,69 +86,132 @@ public final class HandlerExecutorManager {
 
   /**
    * Drain all executors: reject new work, wait up to {@code timeout} for in-flight handlers,
-   * then force-shutdown whatever is left. After this call the facades reject submissions until
-   * the next {@link #start()}.
+   * then force-shutdown whatever is left. After this call the gates reject submissions and
+   * report zero capacity until the next {@link #start()}.
    */
   public synchronized void drain(Duration timeout) {
     for (Slot slot : slots.values()) {
-      ExecutorService exec = slot.uninstall();
-      if (exec != null) {
-        exec.shutdown();
+      Generation gen = slot.uninstall();
+      if (gen != null) {
+        gen.executor.shutdown();
       }
     }
     long deadline = System.nanoTime() + timeout.toNanos();
     for (Slot slot : slots.values()) {
-      ExecutorService exec = slot.drained;
-      if (exec == null) {
+      Generation gen = slot.drained;
+      if (gen == null) {
         continue;
       }
       long remaining = Math.max(0, deadline - System.nanoTime());
       try {
-        if (!exec.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
-          exec.shutdownNow();
+        if (!gen.executor.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
+          // Queued-but-never-started tasks are dropped here and will never run their finally
+          // blocks — compensate their increments so the generation's counter stays truthful
+          // for any still-running abandoned handlers.
+          List<Runnable> dropped = gen.executor.shutdownNow();
+          gen.inFlight.addAndGet(-dropped.size());
         }
       } catch (InterruptedException e) {
-        exec.shutdownNow();
+        List<Runnable> dropped = gen.executor.shutdownNow();
+        gen.inFlight.addAndGet(-dropped.size());
         Thread.currentThread().interrupt();
       }
       slot.drained = null;
     }
   }
 
+  /** One installed executor plus the in-flight counter scoped to its lifetime. */
+  private static final class Generation {
+
+    final ExecutorService executor;
+    final AtomicInteger inFlight = new AtomicInteger();
+
+    Generation(ExecutorService executor) {
+      this.executor = executor;
+    }
+  }
+
   /**
-   * Mutable holder pollers submit through. {@code current} is the live pool (or {@code null}
-   * while the engine is stopped); {@code drained} keeps the shut-down pool referenced between
-   * the reject-new-work and await-termination phases of {@link #drain(Duration)}.
+   * Mutable holder pollers submit through and observe capacity on. {@code current} is the live
+   * generation (or {@code null} while the engine is stopped); {@code drained} keeps the
+   * shut-down generation referenced between the reject-new-work and await-termination phases of
+   * {@link #drain(Duration)}.
    */
-  private static final class Slot implements Executor {
+  private final class Slot implements HandlerExecutorGate {
 
     private final String eventType;
-    private volatile @Nullable ExecutorService current;
-    private @Nullable ExecutorService drained;
+    private final int capacityLimit;
+    private volatile @Nullable Generation current;
+    private @Nullable Generation drained;
+    private volatile @Nullable Runnable capacityCallback;
 
-    private Slot(String eventType) {
+    private Slot(String eventType, int capacityLimit) {
       this.eventType = eventType;
+      this.capacityLimit = capacityLimit;
     }
 
     private void install(ExecutorService exec) {
-      current = exec;
+      current = new Generation(exec);
     }
 
-    private @Nullable ExecutorService uninstall() {
-      ExecutorService exec = current;
+    private @Nullable Generation uninstall() {
+      Generation gen = current;
       current = null;
-      drained = exec;
-      return exec;
+      drained = gen;
+      return gen;
+    }
+
+    @Override
+    public int freeCapacity() {
+      Generation gen = current;
+      if (gen == null) {
+        return 0;
+      }
+      return Math.max(0, capacityLimit - gen.inFlight.get());
+    }
+
+    @Override
+    public void onCapacityAvailable(Runnable callback) {
+      this.capacityCallback = Objects.requireNonNull(callback, "callback must not be null");
     }
 
     @Override
     public void execute(Runnable command) {
-      ExecutorService exec = current;
-      if (exec == null) {
+      Generation gen = current;
+      if (gen == null) {
         throw new RejectedExecutionException(
             "handler executor for type " + eventType + " is not running");
       }
-      exec.execute(command);
+      gen.inFlight.incrementAndGet();
+      try {
+        gen.executor.execute(
+            () -> {
+              try {
+                command.run();
+              } finally {
+                completeTask(gen);
+              }
+            });
+      } catch (RejectedExecutionException ex) {
+        gen.inFlight.decrementAndGet();
+        throw ex;
+      }
+    }
+
+    private void completeTask(Generation gen) {
+      int remaining = gen.inFlight.decrementAndGet();
+      // Fire only on the saturated→free edge, and only for the LIVE generation — completions
+      // of abandoned tasks from a drained generation must not wake anyone.
+      if (remaining == capacityLimit - 1 && gen == current) {
+        Runnable callback = capacityCallback;
+        if (callback != null) {
+          try {
+            callback.run();
+          } catch (RuntimeException ex) {
+            log.debug("capacity-available callback failed for type {}: {}", eventType, ex.toString());
+          }
+        }
+      }
     }
   }
 }

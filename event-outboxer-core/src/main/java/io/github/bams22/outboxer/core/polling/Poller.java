@@ -17,9 +17,9 @@ import io.github.bams22.outboxer.core.dispatch.HandlerDispatcher;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.StorageException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
@@ -44,7 +44,7 @@ public final class Poller {
   private final WorkerId workerId;
   private final PollStrategy strategy;
   private final HandlerDispatcher dispatcher;
-  private final Executor handlerExecutor;
+  private final HandlerExecutorGate handlerExecutor;
   private final OutboxListener listener;
   private final EventTypeConfig config;
   private final AdaptiveWaiter waiter;
@@ -58,7 +58,7 @@ public final class Poller {
       WorkerId workerId,
       PollStrategy strategy,
       HandlerDispatcher dispatcher,
-      Executor handlerExecutor,
+      HandlerExecutorGate handlerExecutor,
       OutboxListener listener,
       EventTypeConfig config) {
     this.eventType = Objects.requireNonNull(eventType, "eventType must not be null");
@@ -147,18 +147,23 @@ public final class Poller {
     try {
       while (running) {
         try {
-          int dispatched = tick();
-          waiter.record(dispatched);
-          long waitNanos = waiter.nextWait().toNanos();
-          // A wake that arrived during the tick cancels the park entirely; one that arrives
-          // mid-park unparks it (and the leftover LockSupport permit covers the in-between).
-          if (waitNanos > 0 && !wakeRequested.getAndSet(false)) {
-            LockSupport.parkNanos(waitNanos);
-            wakeRequested.set(false);
-            if (Thread.interrupted()) {
-              // stop() may have interrupted us mid-park; re-check running.
-            }
+          int free = handlerExecutor.freeCapacity();
+          if (free <= 0) {
+            // Executor saturated: claiming now would only produce rejected dispatches and
+            // claim/release churn. Park with a bounded fallback — the gate's
+            // capacity-available callback wakes us the moment a slot frees.
+            parkUnlessWoken(config.pollMinInterval());
+            continue;
           }
+          int requested = Math.min(config.claimBatchSize(), free);
+          int claimed = tick(requested);
+          waiter.record(claimed);
+          if (claimed == requested && claimed > 0) {
+            // Full batch: the store almost certainly has more ready rows — re-poll
+            // immediately. Bounded by free capacity, so this cannot outrun the handlers.
+            continue;
+          }
+          parkUnlessWoken(waiter.nextWait());
         } catch (Error err) {
           // Errors (OOM, StackOverflow, test-injected fakes, unexpected linkage
           // failures) terminate the poller thread deliberately through a clean exit
@@ -182,10 +187,26 @@ public final class Poller {
     }
   }
 
-  private int tick() {
+  /**
+   * Park for at most {@code wait} unless a wake arrived. A wake that arrived before the park
+   * cancels it entirely (flag check); one that arrives mid-park unparks it; the leftover
+   * {@code LockSupport} permit covers the in-between race.
+   */
+  private void parkUnlessWoken(Duration wait) {
+    long waitNanos = wait.toNanos();
+    if (waitNanos > 0 && !wakeRequested.getAndSet(false)) {
+      LockSupport.parkNanos(waitNanos);
+      wakeRequested.set(false);
+      if (Thread.interrupted()) {
+        // stop() may have interrupted us mid-park; the loop re-checks running.
+      }
+    }
+  }
+
+  private int tick(int limit) {
     List<ClaimedEvent> batch;
     try {
-      batch = strategy.pollOnce(eventType, workerId, config.claimBatchSize());
+      batch = strategy.pollOnce(eventType, workerId, limit);
     } catch (StorageException ex) {
       listener.onStorageError(new StorageErrorInfo("claim[" + eventType + "]", ex));
       log.warn("claim failed for type {}: {}", eventType, ex.toString());
@@ -197,13 +218,12 @@ public final class Poller {
     if (batch.isEmpty()) {
       return 0;
     }
-    int dispatched = 0;
     for (ClaimedEvent claimed : batch) {
-      if (submit(claimed)) {
-        dispatched++;
-      }
+      submit(claimed);
     }
-    return dispatched;
+    // Claimed count, not dispatched: a rejected dispatch (rare capacity race, already released
+    // back to PENDING by submit) still means the store had a full batch of ready rows.
+    return batch.size();
   }
 
   private boolean submit(ClaimedEvent claimed) {

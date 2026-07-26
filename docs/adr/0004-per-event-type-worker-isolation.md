@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-26 (claiming is now capacity-coupled to the
+per-type executor; see the Amendment section at the bottom)
 
 ## Date
 
@@ -104,9 +105,53 @@ Shared across all types:
   by adaptive backoff after N consecutive empty polls.
 - Slightly more memory for registries and stopped states.
 
+## Amendment (2026-07-26): capacity-coupled claiming
+
+The original per-type pipeline claimed a fixed `claimBatchSize` on a
+fixed timer, with no feedback from the executor. That had two flaws:
+
+1. **A throughput ceiling independent of the pool size** —
+   `claimBatchSize / pollMinInterval` (20 events/s with defaults) per
+   type per pod, no matter how large `handler-pool-size` was.
+2. **Claim/release churn under overload** — with the pool and queue
+   full, every poll claimed rows (`UPDATE`, `version++`) whose
+   dispatches were rejected and released back (`UPDATE`, `version++`):
+   two wasted hot-table writes per unit of useful work.
+
+The poller and its executor are now coupled through
+`HandlerExecutorGate` (implemented by `HandlerExecutorManager`'s
+per-type slot, which tracks in-flight tasks against a budget of
+`handlerPoolSize + handlerQueueCapacity`):
+
+- **Capacity-aware claim**: each poll claims
+  `min(claimBatchSize, freeCapacity)`; at zero free capacity the poller
+  does not claim at all.
+- **Full-batch immediate re-poll**: a poll that returns a full batch
+  re-polls immediately (bounded by free capacity), so sustained
+  throughput is limited by the handlers and the database, not by the
+  poll timer.
+- **Capacity-available wake**: the executor's saturated→free transition
+  wakes the poller (`Poller.wake()`, shared with the after-commit wake
+  of ADR-0006), so "handler finished → next event claimed" costs
+  microseconds instead of up to `pollMinInterval`. This is the
+  `afterDone` mechanism the original ADR-0006 text described but never
+  built.
+
+For the virtual-thread executor flavour (`handler-executor.type:
+virtual`, ADR-0017) the same budget acts as a soft in-flight cap —
+previously `handler-pool-size`/`handler-queue-capacity` were ignored
+for virtual executors, leaving in-flight growth unbounded.
+
+Dispatch rejection (`RejectedExecutionException` → release back to
+PENDING without an attempts bump) remains as a safety net for capacity
+races, but is no longer a steady-state occurrence.
+
 ## Related decisions
 
 - [ADR-0009](0009-spring-task-executor-in-starter.md) — the executors are
   Spring `ThreadPoolTaskExecutor` instances with a `TaskDecorator`.
 - [ADR-0005](0005-workers-heartbeat-table.md) — heartbeat is shared per JVM,
   not per type.
+- [ADR-0006](0006-no-listen-notify-in-mvp.md) — the publish-side
+  after-commit wake; together with the capacity wake it bounds latency
+  at both ends of the pipeline.

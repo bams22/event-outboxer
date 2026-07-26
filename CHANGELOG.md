@@ -8,6 +8,16 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Capacity-coupled polling.** The poller now claims
+  `min(claim-batch-size, free executor capacity)`, stops claiming entirely
+  while the per-type executor is saturated, re-polls immediately after a
+  full batch, and is woken the moment a saturated executor frees a slot.
+  This removes the `claim-batch-size / poll-min-interval` throughput
+  ceiling (20 events/s per type with defaults, regardless of pool size)
+  and eliminates the claim/release write churn under overload (previously
+  ~2 wasted hot-table writes per event while the pool was full).
+  `handler-pool-size + handler-queue-capacity` now also acts as a soft
+  in-flight cap for `handler-executor.type: virtual`. Amends ADR-0004.
 - **Same-JVM after-commit poller wake-up.** `OutboxEventPublisher` now wakes
   the local poller of a published event type as soon as the publishing
   transaction commits (`TransactionContext.afterCommit` +

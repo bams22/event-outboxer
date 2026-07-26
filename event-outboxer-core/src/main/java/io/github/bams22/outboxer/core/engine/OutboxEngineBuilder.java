@@ -298,9 +298,12 @@ public final class OutboxEngineBuilder {
     for (EventHandler<?> h : handlers) {
       String type = h.eventType();
       EventTypeConfig cfg = executorConfigs.get(type);
-      Poller poller =
-          new Poller(
-              type, workerId, strategy, dispatcher, executors.executorFor(type), listener, cfg);
+      io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate =
+          executors.executorFor(type);
+      Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
+      // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the
+      // poller immediately instead of costing the remainder of the poll interval.
+      gate.onCapacityAvailable(poller::wake);
       hub.register(poller);
       pollers.add(poller);
     }
