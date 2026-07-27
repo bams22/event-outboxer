@@ -31,7 +31,8 @@ import org.jspecify.annotations.Nullable;
 import io.github.bams22.outboxer.spring.executor.HandlerExecutorFactory;
 import io.github.bams22.outboxer.spring.lifecycle.OutboxSmartLifecycle;
 import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
-import io.github.bams22.outboxer.spring.lock.PostgresLockAutoConfiguration;
+import io.github.bams22.outboxer.spring.lock.PostgresAdvisoryLockAutoConfiguration;
+import io.github.bams22.outboxer.spring.lock.PostgresLeaseLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.publisher.SpringTransactionContext;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
@@ -57,7 +58,8 @@ import org.springframework.context.annotation.Bean;
     after = {
       PostgresStorageAutoConfiguration.class,
       NoOpLockAutoConfiguration.class,
-      PostgresLockAutoConfiguration.class,
+      PostgresLeaseLockAutoConfiguration.class,
+      PostgresAdvisoryLockAutoConfiguration.class,
       RedisLockAutoConfiguration.class,
       JacksonSerializerAutoConfiguration.class
     })
@@ -260,17 +262,19 @@ public class OutboxEngineAutoConfiguration {
   }
 
   /**
-   * The PostgreSQL entity locker holds one pooled connection for every concurrently-held lock
-   * (session-scoped advisory locks, ADR-0012). If every handler thread can hold a lock at once,
-   * the fleet can exhaust the shared HikariCP pool and deadlock against its own handlers —
-   * warn at startup when the sums line up that way.
+   * The session-scoped advisory locker ({@code lock.type=postgres-advisory}) holds one pooled
+   * connection for every concurrently-held lock (ADR-0012). If every handler thread can hold a
+   * lock at once, the fleet can exhaust the shared HikariCP pool and deadlock against its own
+   * handlers — warn at startup when the sums line up that way. The default lease locker
+   * ({@code lock.type=postgres-lease}, ADR-0022) holds no connection during the handler, so the
+   * scenario is structurally impossible there and the warning stays silent.
    */
   private void warnIfPgLockCanExhaustPool(
       OutboxProperties properties,
       EventTypeConfig resolvedDefaults,
       java.util.List<EventHandler<?>> handlers,
       ObjectProvider<DataSource> dataSourceProvider) {
-    if (properties.getLock().getType() != OutboxProperties.LockType.postgres) {
+    if (properties.getLock().getType() != OutboxProperties.LockType.postgres_advisory) {
       return;
     }
     DataSource dataSource = dataSourceProvider.getIfAvailable();
@@ -295,14 +299,16 @@ public class OutboxEngineAutoConfiguration {
       return java.util.Optional.empty();
     }
     return java.util.Optional.of(
-        "event-outboxer.lock.type=postgres holds one pooled connection per concurrently-held "
-            + "entity lock, and the total handler pool size ("
+        "event-outboxer.lock.type=postgres-advisory holds one pooled connection per "
+            + "concurrently-held entity lock, and the total handler pool size ("
             + totalHandlerThreads
             + ") >= HikariCP maximum-pool-size ("
             + maxPoolSize
             + "): a saturated handler fleet can exhaust the connection pool and deadlock "
-            + "against its own handlers. Raise spring.datasource.hikari.maximum-pool-size or "
-            + "reduce the per-type handler pools (ADR-0012).");
+            + "against its own handlers. Raise spring.datasource.hikari.maximum-pool-size, "
+            + "reduce the per-type handler pools, or switch to the lease locker "
+            + "(event-outboxer.lock.type=postgres-lease, ADR-0022), which holds no connection "
+            + "while the handler runs (ADR-0012).");
   }
 
   private static @Nullable Integer hikariMaxPoolSize(@Nullable DataSource dataSource) {

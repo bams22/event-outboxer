@@ -27,7 +27,7 @@ Two primary tables plus two optional:
   start / heartbeat / graceful_stop / orphan reclaim.
 - **`event_outboxer.event_archive`** (opt-in) — archive of successfully processed
   events. Immutable after insert.
-- **`event_outboxer.entity_locks`** (opt-in, `lock.type=postgres`) — lease rows
+- **`event_outboxer.entity_locks`** (opt-in, `lock.type=postgres-lease`) — lease rows
   of the entity locker (ADR-0022). One row per held (or recently
   expired) business-key lock.
 
@@ -182,7 +182,7 @@ archiving.
 ## Optional table `event_outboxer.entity_locks`
 
 Backs the lease-based `PgLeaseEntityLocker`
-(`event-outboxer.lock.type=postgres`, ADR-0022). Applied only when the
+(`event-outboxer.lock.type=postgres-lease`, ADR-0022). Applied only when the
 application configures Flyway/Liquibase to include the `lock/`
 location. Not needed for `lock.type=noop`, `redis`, or
 `postgres-advisory`.
@@ -296,7 +296,7 @@ locker.
 
 The library ships migrations as classpath resources
 (`event-outboxer-storage-postgres` for core/archive,
-`event-outboxer-lock-postgres` for lock):
+`event-outboxer-lock-postgres-lease` for lock):
 
 ```
 event-outboxer-storage-postgres/src/main/resources/db/migration/outbox/
@@ -307,7 +307,7 @@ event-outboxer-storage-postgres/src/main/resources/db/migration/outbox/
 └── archive/
     └── V002__outbox_archive.sql       ← opt-in: event_archive
 
-event-outboxer-lock-postgres/src/main/resources/db/migration/outbox/
+event-outboxer-lock-postgres-lease/src/main/resources/db/migration/outbox/
 └── lock/
     └── V005__outbox_entity_locks.sql  ← opt-in: entity_locks (ADR-0022)
 ```
@@ -328,7 +328,7 @@ spring:
       - classpath:db/migration                  # application migrations
       - classpath:db/migration/outbox/core      # required
       - classpath:db/migration/outbox/archive   # only if archive is enabled
-      - classpath:db/migration/outbox/lock      # only if lock.type=postgres
+      - classpath:db/migration/outbox/lock      # only if lock.type=postgres-lease
 ```
 
 ### Configurable schema name
@@ -362,7 +362,7 @@ Flyway.configure()
 
 A Liquibase changelog that reuses the same SQL files is shipped on
 the classpath of `event-outboxer-storage-postgres` (core/archive) and
-`event-outboxer-lock-postgres` (lock):
+`event-outboxer-lock-postgres-lease` (lock):
 
 - `classpath:db/changelog/outbox/core/changelog.xml` — core schema.
 - `classpath:db/changelog/outbox/archive/changelog.xml` — optional

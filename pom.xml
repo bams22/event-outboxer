@@ -37,7 +37,8 @@
         <module>event-outboxer-storage-inmemory</module>
         <module>event-outboxer-storage-postgres</module>
         <module>event-outboxer-serializer-jackson</module>
-        <module>event-outboxer-lock-postgres</module>
+        <module>event-outboxer-lock-postgres-advisory</module>
+        <module>event-outboxer-lock-postgres-lease</module>
         <module>event-outboxer-lock-redis</module>
         <module>event-outboxer-cache-redis</module>
         <module>event-outboxer-metrics-micrometer</module>
@@ -202,7 +203,12 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>event-outboxer-lock-postgres</artifactId>
+                <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-lock-postgres-lease</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

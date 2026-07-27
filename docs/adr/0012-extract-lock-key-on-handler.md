@@ -216,7 +216,7 @@ documented and partially enforced:
 | Backend | Exclusion holds until | Crash release | Cost |
 |---|---|---|---|
 | Redis/KeyDB (`SET NX PX` + token-checked release) | `min(close(), ttl)` | TTL expiry (≤ ttl) | one Redis key |
-| PostgreSQL lease table (`lock.type=postgres` since ADR-0022) | `min(close(), ttl)` | lease expiry (≤ ttl) | 2 short autocommit statements per locked event; zero held connections |
+| PostgreSQL lease table (`lock.type=postgres-lease` since ADR-0022) | `min(close(), ttl)` | lease expiry (≤ ttl) | 2 short autocommit statements per locked event; zero held connections |
 | PostgreSQL advisory (session-scoped, `lock.type=postgres-advisory`) | `close()` or connection loss | clean process death: immediate (backend EOF); hard crash/partition: until TCP keepalive reaps the backend (hours with Linux defaults) | **one pooled connection per held lock** |
 
 *(2026-07-27: the lease row was added and the advisory row's crash

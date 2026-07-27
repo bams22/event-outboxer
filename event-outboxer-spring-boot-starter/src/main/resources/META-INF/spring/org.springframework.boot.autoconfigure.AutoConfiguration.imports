@@ -2,7 +2,8 @@ io.github.bams22.outboxer.spring.cache.CacheAutoConfiguration
 io.github.bams22.outboxer.spring.cache.RedisCacheAutoConfiguration
 io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration
 io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
-io.github.bams22.outboxer.spring.lock.PostgresLockAutoConfiguration
+io.github.bams22.outboxer.spring.lock.PostgresLeaseLockAutoConfiguration
+io.github.bams22.outboxer.spring.lock.PostgresAdvisoryLockAutoConfiguration
 io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration
 io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration
 io.github.bams22.outboxer.spring.metrics.MicrometerAutoConfiguration

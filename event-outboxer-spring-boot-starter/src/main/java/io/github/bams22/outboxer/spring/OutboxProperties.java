@@ -90,15 +90,25 @@ public class OutboxProperties {
   @Getter
   @Setter
   public static class Lock {
-    /** {@code noop}, {@code postgres} or {@code redis}. */
+    /**
+     * {@code noop}, {@code postgres-lease} (lease table, ADR-0022), {@code postgres-advisory}
+     * (session-scoped advisory locks, pre-ADR-0022 behaviour) or {@code redis}. The pre-ADR-0022
+     * value {@code postgres} no longer binds — startup fails listing the valid values, forcing
+     * an explicit choice between the two PostgreSQL backends.
+     */
     private LockType type = LockType.noop;
 
     private String keyPrefix = "outbox:lock:";
   }
 
+  /**
+   * Entity-locker backend. {@code postgres_lease} / {@code postgres_advisory} bind from
+   * {@code postgres-lease} / {@code postgres-advisory} via relaxed binding.
+   */
   public enum LockType {
     noop,
-    postgres,
+    postgres_lease,
+    postgres_advisory,
     redis
   }
 

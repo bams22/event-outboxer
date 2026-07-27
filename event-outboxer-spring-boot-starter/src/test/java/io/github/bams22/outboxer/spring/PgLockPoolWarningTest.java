@@ -28,7 +28,11 @@ class PgLockPoolWarningTest {
         .isPresent()
         .get()
         .asString()
-        .contains("maximum-pool-size");
+        .contains("maximum-pool-size")
+        // Since ADR-0022 the self-deadlock applies to the advisory opt-out only; the
+        // message must name the mode and point at the lease locker as the fix.
+        .contains("postgres-advisory")
+        .contains("lock.type=postgres-lease,");
     assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(23, 10)).isPresent();
   }
 

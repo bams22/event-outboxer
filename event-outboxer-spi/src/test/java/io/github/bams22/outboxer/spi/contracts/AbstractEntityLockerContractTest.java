@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,27 @@ public abstract class AbstractEntityLockerContractTest {
   protected EntityLocker locker;
 
   protected abstract EntityLocker newLocker();
+
+  /**
+   * Opt-in hook for TTL-honouring lockers (ADR-0022). Return {@code true} and implement {@link
+   * #forceExpire(String)} to activate the TTL-expiry contract tests; the default keeps them
+   * skipped, which preserves the historic contract for lockers whose TTL is best-effort or
+   * ignored (PG advisory) and for backends where expiry cannot be forced deterministically.
+   */
+  protected boolean supportsTtlExpiry() {
+    return false;
+  }
+
+  /**
+   * Force the lease/lock of {@code key} into the expired state, as if its TTL had elapsed —
+   * without waiting wall-clock time. Only called when {@link #supportsTtlExpiry()} is {@code
+   * true}. Implementations that track both an acquisition and an expiry timestamp must backdate
+   * both (the lease table's CHECK requires {@code expires_at > acquired_at}).
+   */
+  protected void forceExpire(String key) {
+    throw new UnsupportedOperationException(
+        "forceExpire() must be implemented when supportsTtlExpiry() returns true");
+  }
 
   @BeforeEach
   void setUpLocker() {
@@ -87,6 +109,37 @@ public abstract class AbstractEntityLockerContractTest {
     LockHandle handle = locker.tryLock("key-twice", Duration.ofSeconds(30)).orElseThrow();
     handle.close();
     handle.close();
+  }
+
+  @Test
+  @DisplayName("an expired lock is available to the next acquirer (TTL-honouring lockers only)")
+  void ttlExpiry_allowsTakeover() {
+    Assumptions.assumeTrue(supportsTtlExpiry(), "locker does not support deterministic expiry");
+    LockHandle dead = locker.tryLock("expiring", Duration.ofSeconds(30)).orElseThrow();
+    forceExpire("expiring");
+
+    Optional<LockHandle> successor = locker.tryLock("expiring", Duration.ofSeconds(30));
+    assertThat(successor).isPresent();
+    successor.orElseThrow().close();
+    dead.close();
+  }
+
+  @Test
+  @DisplayName("a stale close() must not release the successor's lock (TTL-honouring lockers only)")
+  void ttlExpiry_staleCloseDoesNotReleaseSuccessor() {
+    Assumptions.assumeTrue(supportsTtlExpiry(), "locker does not support deterministic expiry");
+    LockHandle zombie = locker.tryLock("contested", Duration.ofSeconds(30)).orElseThrow();
+    forceExpire("contested");
+    LockHandle successor = locker.tryLock("contested", Duration.ofSeconds(30)).orElseThrow();
+
+    // The zombie's token no longer matches the row/key — its close() must be a silent no-op.
+    zombie.close();
+
+    Optional<LockHandle> third = locker.tryLock("contested", Duration.ofSeconds(30));
+    assertThat(third)
+        .as("successor's lock must survive the zombie's stale close()")
+        .isEmpty();
+    successor.close();
   }
 
   @Test

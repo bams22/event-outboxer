@@ -29,12 +29,15 @@ import java.util.Optional;
  * retry and does <em>not</em> invoke the handler. If lock acquisition throws, the engine treats it
  * as a storage failure.
  *
- * <p>MVP ships three implementations:
+ * <p>MVP ships four implementations:
  *
  * <ul>
  *   <li>{@link #NOOP} — no-op locker used when no {@code EntityLocker} bean is present and no
  *       handler declares a lock key;
- *   <li>{@code PgAdvisoryLocker} in {@code event-outboxer-lock-postgres} — PG advisory locks;
+ *   <li>{@code PgLeaseEntityLocker} in {@code event-outboxer-lock-postgres-lease} — lease row
+ *       in the {@code entity_locks} table, the PostgreSQL default (ADR-0022);
+ *   <li>{@code PgAdvisoryLocker} in {@code event-outboxer-lock-postgres-advisory} — session-scoped
+ *       PG advisory locks (opt-out);
  *   <li>{@code RedisEntityLocker} in {@code event-outboxer-lock-redis} — {@code SET NX PX} on
  *       KeyDB/Redis with a fencing token.
  * </ul>

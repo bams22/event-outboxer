@@ -1,11 +1,17 @@
-# ADR-0022: Lease-table PostgreSQL EntityLocker (default for `lock.type=postgres`)
+# ADR-0022: Lease-table PostgreSQL EntityLocker (`lock.type=postgres-lease`)
 
 ## Status
 
 Accepted — supersedes the PG-advisory row of the ADR-0012 guarantee
 table; `PgAdvisoryLocker` stays available as the `postgres-advisory`
 opt-out. Design verified empirically on PostgreSQL 15 (see
-§Concurrency semantics); implementation pending.
+§Concurrency semantics). Amended 2026-07-27 at implementation time:
+the locker ships as its own Maven module
+`event-outboxer-lock-postgres-lease` (maintainer decision), not inside
+the advisory module as originally written; the advisory module was
+renamed `event-outboxer-lock-postgres` →
+`event-outboxer-lock-postgres-advisory` in the same release — see the
+Amendment section.
 
 ## Date
 
@@ -95,11 +101,16 @@ verification run, is summarized in this ADR):
 
 ## Decision
 
-Add **`PgLeaseEntityLocker`** to `event-outboxer-lock-postgres`
-(package `io.github.bams22.outboxer.lock.postgres`, beside
-`PgAdvisoryLocker` — ADR-0016 module↔package mapping unchanged, no new
-module). `event-outboxer.lock.type=postgres` now selects the lease
-locker; the advisory locker remains available as
+Add **`PgLeaseEntityLocker`** in its own Maven module
+**`event-outboxer-lock-postgres-lease`** (package
+`io.github.bams22.outboxer.lock.postgres.lease`, preserving ADR-0016's
+module↔package 1-to-1 mapping; *amended 2026-07-27 — the original text
+placed the class inside the advisory module (then named
+`event-outboxer-lock-postgres`), see the Amendment
+section*). `event-outboxer.lock.type=postgres-lease` selects the
+lease locker (*amended 2026-07-27: originally the value was the plain
+`postgres`; it was renamed together with the module split — see the
+Amendment section*); the advisory locker remains available as
 `lock.type=postgres-advisory`.
 
 The module is deliberately **not** generalized to a dialect-portable
@@ -310,7 +321,7 @@ nor steal one early. Two caveats are documented rather than solved:
 | Backend | Exclusion holds until | Crash release | Cost |
 |---|---|---|---|
 | Redis/KeyDB (`SET NX PX` + token-checked release) | `min(close(), ttl)` | TTL expiry (≤ ttl) | one Redis key |
-| **PostgreSQL lease (`entity_locks`) — new default** | `min(close(), ttl)` | lease expiry (≤ ttl) | 2 short autocommit statements per locked event; **zero** connections held during the handler |
+| **PostgreSQL lease (`entity_locks`, `lock.type=postgres-lease`) — recommended** | `min(close(), ttl)` | lease expiry (≤ ttl) | 2 short autocommit statements per locked event; **zero** connections held during the handler |
 | PostgreSQL advisory (session-scoped, `postgres-advisory`) | `close()` or connection loss | **clean process death:** immediate (backend sees EOF); **hard crash / partition:** until TCP keepalive reaps the backend — *hours* with Linux defaults | one pinned pooled connection per held lock |
 
 The advisory row's original "connection drop, immediate" was true only
@@ -324,18 +335,23 @@ checked-out connections — and must be fixed in the implementation PR.)
 ### Starter integration
 
 - `OutboxProperties.LockType` gains `postgres_advisory` (bound from
-  `postgres-advisory` via relaxed binding). Lease-vs-advisory
-  selection **branches on the bound enum inside one
-  `PostgresLockAutoConfiguration`** (condition: adapter class on the
-  classpath + `DataSource` bean + `lock.type` ∈
-  {`postgres`, `postgres-advisory`}), *not* on raw
-  `@ConditionalOnProperty(havingValue=...)` string matching — a user
+  `postgres-advisory` via relaxed binding). *(Amended 2026-07-27 with
+  the module split:)* selection is **two autoconfiguration classes** —
+  `PostgresLeaseLockAutoConfiguration` (gated on the lease adapter
+  class + `lock.type=postgres-lease`) and `PostgresAdvisoryLockAutoConfiguration`
+  (gated on the advisory adapter class) — because each module needs
+  its own `@ConditionalOnClass`; both gates are **Binder-based
+  conditions** (`LockTypeCondition` subclasses), since with hyphenated
+  values the trap below applies to both. They deliberately avoid raw
+  `@ConditionalOnProperty(havingValue=...)` string matching: a user
   writing `postgres_advisory` in YAML binds fine to the enum but fails
-  a raw string gate, yielding a cryptic missing-`EntityLocker`
-  context failure. Both lockers keep taking the **raw** `DataSource`
-  (never the transaction-aware proxy): lock statements must not join
-  the caller's transaction — for the lease locker this is a
-  correctness requirement (JDBC contract item 1), not a preference.
+  a raw string gate, yielding a cryptic missing-`EntityLocker` context
+  failure; binding through `Binder` keeps every accepted spelling in
+  lockstep with the enum. Both lockers keep taking the **raw**
+  `DataSource` (never the transaction-aware proxy): lock statements
+  must not join the caller's transaction — for the lease locker this
+  is a correctness requirement (JDBC contract item 1), not a
+  preference.
 - **Fail-fast probe:** at startup the starter runs
   `SELECT 1 FROM <schema>.entity_locks LIMIT 1` and converts a missing
   table into an actionable error naming migration V005 and the
@@ -367,7 +383,7 @@ checked-out connections — and must be fixed in the implementation PR.)
 ### Migrations
 
 `V005__outbox_entity_locks.sql` ships in
-`event-outboxer-lock-postgres` under a new opt-in location
+`event-outboxer-lock-postgres-lease` under a new opt-in location
 `classpath:db/migration/outbox/lock` (same `${eventOutboxerSchema}`
 placeholder; V005 continues the shared numbering sequence — core:
 V001/V003/V004, archive: V002 — so aggregated Flyway locations never
@@ -404,15 +420,21 @@ time.
 
 ### Rollout for existing users
 
-`lock.type=postgres` changes meaning in place (safe-by-default: the
-advisory mode's pgBouncer failure is silent-exclusion-loss grade, its
-pool coupling is fleet-deadlock grade; users who want the old
-behaviour set `postgres-advisory`). During a rolling deploy old pods
-(advisory) and new pods (lease) form **disjoint exclusion domains** —
-per-key serialization is best-effort across the fleet for the rollout
-window. Guidance: apply V005 before the deploy (the fail-fast probe
-enforces this), flip during low traffic, and treat the window like the
-zombie-overlap case the ADR-0012 amendment already documents.
+*(Amended 2026-07-27 — the original text described an in-place
+semantics change of `lock.type=postgres`; the value rename below
+supersedes it.)* The pre-ADR-0022 `postgres` value was split into
+`postgres-lease` and `postgres-advisory` and itself **no longer
+binds**: existing configurations fail at startup with the valid values
+listed, so there is no silent behaviour flip — every user makes an
+explicit choice (the lease is the recommended one: the advisory mode's
+pgBouncer failure is silent-exclusion-loss grade, its pool coupling is
+fleet-deadlock grade). When moving a fleet from advisory to lease:
+during a rolling deploy old pods (advisory) and new pods (lease) form
+**disjoint exclusion domains** — per-key serialization is best-effort
+across the fleet for the rollout window. Guidance: apply V005 before
+the deploy (the fail-fast probe enforces this), flip during low
+traffic, and treat the window like the zombie-overlap case the
+ADR-0012 amendment already documents.
 
 ## Rationale
 
@@ -499,6 +521,60 @@ zombie-overlap case the ADR-0012 amendment already documents.
 - Capped backoff for the lock-busy retry path.
 - Admin surface: expose live leases (list / force-release) through the
   `OutboxAdmin` SPI and the actuator endpoint (ADR-0019).
+
+## Amendment (2026-07-27): separate Maven module + implementation notes
+
+Applied at implementation time, in the same PR as the code.
+
+**1. Separate module (maintainer decision).** The locker ships as
+`event-outboxer-lock-postgres-lease`, not inside the advisory module
+as the Decision originally said; in the same release the advisory
+module itself was renamed `event-outboxer-lock-postgres` →
+`event-outboxer-lock-postgres-advisory` (package
+`io.github.bams22.outboxer.lock.postgres.advisory`, starter class
+`PostgresAdvisoryLockAutoConfiguration`) so each PostgreSQL locker
+backend carries an explicit suffix — pre-1.0, no published consumers.
+Rationale: one artifact per locker backend keeps the classpath an
+explicit choice (ADR-0016 §Starter strategy — users pull exactly the
+adapter they run, and the advisory module keeps its footprint for
+existing users), and the two lockers share no code — only the SPI.
+Consequences: 16 modules; package
+`io.github.bams22.outboxer.lock.postgres.lease` (ADR-0016 mapping
+holds); migration V005 and the Liquibase changelog ship in the new
+module; the BOM, the root aggregator and the starter's optional
+dependencies gained the artifact. The Decision, Migrations and Starter
+integration sections above were corrected in place (marked
+*amended 2026-07-27*).
+
+**2. `lock.type` value rename.** The lease locker is selected by
+`postgres-lease`, not by re-pointing the plain `postgres` value as the
+Decision originally specified. The old value no longer binds — startup
+fails listing the valid values — so the silent in-place semantics
+change (and its rollout hazard) disappears: every pre-ADR-0022
+`postgres` user is forced to choose `postgres-lease` or
+`postgres-advisory` explicitly. Consequently both starter gates are
+Binder-based `LockTypeCondition` subclasses: with hyphenated values
+the relaxed-binding trap (§Starter integration) applies to both
+backends.
+
+**3. Implementation notes (delta against the design text).**
+
+- Starter selection is two autoconfiguration classes, not one class
+  branching on the enum — forced by the module split (each needs its
+  own `@ConditionalOnClass`); the relaxed-binding trap is still
+  covered by the Binder-based `OnPostgresAdvisoryLockCondition`
+  (§Starter integration, amended above).
+- `entity_locks.owner_worker` is fed from `event-outboxer.worker.id`
+  when set; otherwise the adapter derives `{hostname}-{pid}` itself —
+  the engine-generated WorkerId does not exist yet when the locker
+  bean is created.
+- The fail-fast table probe and the sweep back off silently when a
+  user-defined `EntityLocker` bean displaces the lease locker — they
+  belong to the lease table, not to the lock SPI.
+- The contract-test TTL hook landed as
+  `supportsTtlExpiry()`/`forceExpire(key)` (Assumptions-gated, default
+  off), and the held-lease Micrometer gauge as a `MeterBinder`
+  (`<metrics.prefix>.entity_locks.held`, `NaN` on query failure).
 
 ## Related decisions
 

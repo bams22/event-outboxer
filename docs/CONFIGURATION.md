@@ -34,7 +34,7 @@ spring:
 
 Everything else comes from the defaults. To add the
 PostgreSQL-backed entity lock, set `event-outboxer.lock.type:
-postgres` and include the `classpath:db/migration/outbox/lock` Flyway
+postgres-lease` and include the `classpath:db/migration/outbox/lock` Flyway
 location; for the Redis/KeyDB lock, set `event-outboxer.lock.type:
 redis` and provide a Lettuce
 `StatefulRedisConnection<String, String>` bean (see
@@ -69,7 +69,7 @@ event-outboxer:
     metrics-cache-ttl: 30s           # TTL of the metricsSnapshot() cache
 
   lock:
-    type: noop                       # noop (default) | postgres | postgres-advisory | redis
+    type: noop                       # noop (default) | postgres-lease | postgres-advisory | redis
     key-prefix: "outbox:lock:"
 
   cache:
@@ -205,10 +205,10 @@ Storage adapter settings.
 default is `noop` and other backends are opt-in:
 
 - `type: noop` (**default**) — no business-key locking.
-- `type: postgres` — **lease-table locker** (`PgLeaseEntityLocker`,
+- `type: postgres-lease` — **lease-table locker** (`PgLeaseEntityLocker`,
   ADR-0022): a row in `event_outboxer.entity_locks` per held lock,
   acquire/release as single autocommit statements. Requires
-  `event-outboxer-lock-postgres` on the classpath, a `DataSource`
+  `event-outboxer-lock-postgres-lease` on the classpath, a `DataSource`
   bean, and migration V005 (Flyway location
   `classpath:db/migration/outbox/lock` or the Liquibase changelog
   `db/changelog/outbox/lock/changelog.xml`) — the starter fail-fast
@@ -217,7 +217,8 @@ default is `noop` and other backends are opt-in:
   safe behind pgBouncer transaction pooling. TTL (`lock-ttl`) is
   honoured: crash release ≤ ttl.
 - `type: postgres-advisory` — the pre-ADR-0022 session-scoped
-  `pg_advisory_lock` locker. Kept for users who want immediate lock
+  `pg_advisory_lock` locker (`event-outboxer-lock-postgres-advisory` on the
+  classpath). Kept for users who want immediate lock
   release on clean process death and accept the costs: one pinned
   pooled connection per held lock (the starter warns when
   `Σ handler-pool-size >= maximum-pool-size` — self-deadlock risk),
@@ -232,17 +233,20 @@ default is `noop` and other backends are opt-in:
 - `key-prefix` — prefix for lock keys, default `outbox:lock:`
   (Redis locker only; the PG lockers store/hash the raw key).
 
-Upgrade note: before ADR-0022, `type: postgres` selected the advisory
-locker. The meaning changed in place — set `postgres-advisory`
-explicitly to keep the old behaviour. During a rolling deploy across
-the switch, old and new pods form disjoint exclusion domains for the
-rollout window (see ADR-0022 §Rollout).
+Upgrade note: before ADR-0022 there was a single `type: postgres`
+value (the advisory locker). It was split into `postgres-lease` and
+`postgres-advisory`; the old `postgres` value no longer binds —
+startup fails listing the valid values, forcing an explicit choice
+instead of a silent semantics change. When moving a fleet from
+advisory to lease, apply V005 first; during the rolling deploy old
+and new pods form disjoint exclusion domains for the rollout window
+(see ADR-0022 §Rollout).
 
 #### Running behind pgBouncer
 
 With pgBouncer in **transaction** (or statement) pooling mode:
 
-- Polling, claim, finalize, heartbeat and the `postgres` (lease) and
+- Polling, claim, finalize, heartbeat and the `postgres-lease` and
   `redis` lockers are safe — no session state.
 - `postgres-advisory` is **not** usable: session-scoped advisory locks
   silently lose mutual exclusion when statements multiplex across
@@ -342,7 +346,7 @@ Cross-type dispatcher knobs.
 - `unknown-handler-retry-delay` — reschedule delay for `SKIP`.
 - `lock-busy-retry-delay` — reschedule delay when the entity lock is
   busy or errored. Lock contention does not consume the attempts
-  budget. With the lease locker (`lock.type=postgres`), expect a burst
+  budget. With the lease locker (`lock.type=postgres-lease`), expect a burst
   of busy-retries after a JVM crash: orphan recovery returns the dead
   worker's events after ~`dead-threshold` (30s), but the dead holder's
   lease blocks the key until `lock-ttl` expires — at the default 1s

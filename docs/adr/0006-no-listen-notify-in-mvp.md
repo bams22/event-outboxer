@@ -198,7 +198,7 @@ silent loss of mutual exclusion). The corrected, per-backend picture:
 
 - Polling, claim, finalize, heartbeat: safe under transaction-mode
   pgbouncer.
-- `lock.type=noop`, `redis`, and `postgres` (the
+- `lock.type=noop`, `redis`, and `postgres-lease` (the
   [ADR-0022](0022-lease-table-postgres-entity-locker.md) lease table):
   safe under transaction-mode (and statement-mode) pooling.
 - `lock.type=postgres-advisory`: **incompatible** with

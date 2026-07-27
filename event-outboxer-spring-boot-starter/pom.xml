@@ -104,7 +104,12 @@
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>event-outboxer-lock-postgres</artifactId>
+            <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-lock-postgres-lease</artifactId>
             <optional>true</optional>
         </dependency>
         <dependency>

@@ -68,7 +68,12 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>event-outboxer-lock-postgres</artifactId>
+                <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-lock-postgres-lease</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
