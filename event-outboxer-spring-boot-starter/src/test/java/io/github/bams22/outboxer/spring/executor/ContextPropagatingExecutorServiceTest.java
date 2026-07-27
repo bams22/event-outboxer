@@ -23,10 +23,8 @@ class ContextPropagatingExecutorServiceTest {
 
   @Test
   void mdcPropagatesToTaskThread() throws Exception {
-    // Uses a platform-thread executor so the test compiles on the Java 17 baseline
-    // (ADR-0017). The decorator under test is orthogonal to virtual threads — both
-    // paths flow through ContextPropagatingExecutorService the same way.
-    ExecutorService delegate = Executors.newSingleThreadExecutor();
+    ExecutorService delegate =
+        Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("test-vt-", 0L).factory());
     ContextPropagatingExecutorService exec =
         new ContextPropagatingExecutorService(delegate, new CapturingMdcTaskDecorator());
 
