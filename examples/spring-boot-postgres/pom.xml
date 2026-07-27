@@ -23,8 +23,8 @@
     </parent>
 
     <properties>
-        <java.version>17</java.version>
-        <maven.compiler.release>17</maven.compiler.release>
+        <java.version>25</java.version>
+        <maven.compiler.release>25</maven.compiler.release>
         <outboxer.version>0.1.0</outboxer.version>
     </properties>
 
