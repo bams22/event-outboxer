@@ -44,6 +44,7 @@ public class OutboxProperties {
   private final Worker worker = new Worker();
   private final HandlerExecutor handlerExecutor = new HandlerExecutor();
   private final Metrics metrics = new Metrics();
+  private final Tracing tracing = new Tracing();
   private final Health health = new Health();
   private final Cache cache = new Cache();
   private final Retention retention = new Retention();
@@ -288,6 +289,17 @@ public class OutboxProperties {
      * different namespace.
      */
     private String prefix = "event_outboxer";
+  }
+
+  @Getter
+  @Setter
+  public static class Tracing {
+    /**
+     * Master switch for the auto-configured {@code OutboxTracer} adapters (ADR-0023):
+     * Micrometer Tracing and OpenTelemetry detection both back off when {@code false}. A
+     * user-defined {@code OutboxTracer} bean is always honoured regardless of this flag.
+     */
+    private boolean enabled = true;
   }
 
   @Getter

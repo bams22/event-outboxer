@@ -25,6 +25,7 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
@@ -61,7 +62,9 @@ import org.springframework.context.annotation.Bean;
       PostgresLeaseLockAutoConfiguration.class,
       PostgresAdvisoryLockAutoConfiguration.class,
       RedisLockAutoConfiguration.class,
-      JacksonSerializerAutoConfiguration.class
+      JacksonSerializerAutoConfiguration.class,
+      io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration.class,
+      io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration.class
     })
 @EnableConfigurationProperties(OutboxProperties.class)
 @ConditionalOnProperty(prefix = "event-outboxer", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -110,13 +113,14 @@ public class OutboxEngineAutoConfiguration {
       TransactionContext txContext,
       OutboxProperties properties,
       io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
+      ObjectProvider<OutboxTracer> tracerProvider,
       List<OutboxListener> listeners) {
     NoTransactionPolicy policy = mapNoTxPolicy(properties.getPublisher().getNoTransactionPolicy());
     // Publisher fires listener callbacks directly; the engine's ListenerRegistry will subsume
     // these when the engine starts — for now, aggregate all application-registered listeners.
     OutboxListener fanout = new FanOutListener(listeners);
     return new io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher(
-        store, serializer, clock, txContext, policy, fanout, wakeHub);
+        store, serializer, clock, txContext, policy, fanout, wakeHub, resolveTracer(tracerProvider));
   }
 
   @Bean
@@ -140,6 +144,7 @@ public class OutboxEngineAutoConfiguration {
               perTypeFailureHandlersProvider,
       ObjectProvider<io.github.bams22.outboxer.core.polling.PollStrategy> pollStrategyProvider,
       ObjectProvider<org.springframework.core.task.TaskDecorator> taskDecoratorProvider,
+      ObjectProvider<OutboxTracer> tracerProvider,
       List<OutboxListener> listeners) {
 
     OutboxEngineBuilder builder =
@@ -153,6 +158,7 @@ public class OutboxEngineAutoConfiguration {
             .noTransactionPolicy(mapNoTxPolicy(properties.getPublisher().getNoTransactionPolicy()))
             .workerIdSupplier(() -> workerId)
             .wakeHub(wakeHub)
+            .tracer(resolveTracer(tracerProvider))
             .maintenance(mapMaintenance(properties.getMaintenance()))
             .retention(mapRetention(properties.getRetention()))
             .dispatcher(mapDispatcher(properties.getDispatcher()));
@@ -214,6 +220,15 @@ public class OutboxEngineAutoConfiguration {
   // ---------------------------------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Resolves the tracing port (ADR-0023): a user-defined or auto-configured {@code OutboxTracer}
+   * bean when present (see {@code spring.tracing} auto-configurations), {@link OutboxTracer#NOOP}
+   * otherwise — publisher and engine share the same resolution.
+   */
+  private static OutboxTracer resolveTracer(ObjectProvider<OutboxTracer> tracerProvider) {
+    return tracerProvider.getIfAvailable(() -> OutboxTracer.NOOP);
+  }
 
   private static NoTransactionPolicy mapNoTxPolicy(OutboxProperties.NoTxPolicy p) {
     return switch (p) {
