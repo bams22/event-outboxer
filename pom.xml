@@ -8,7 +8,7 @@
     <packaging>pom</packaging>
 
     <name>event-outboxer (parent)</name>
-    <description>Embedded transactional outbox for Java 17+ / Spring Boot 3.5.6+ /
+    <description>Embedded transactional outbox for Java 25+ / Spring Boot 3.5.6+ /
         PostgreSQL 15+ / Redis/keydb. Parent POM aggregating all modules.</description>
     <url>https://github.com/bams22/event-outboxer</url>
     <inceptionYear>2026</inceptionYear>
@@ -77,19 +77,8 @@
         -->
         <revision>0.3.0-SNAPSHOT</revision>
 
-        <!--
-            Baseline Java 17 (ADR-0017). The library compiles against the
-            Java 17 API surface — no Java 21+ syntax / APIs in baseline
-            sources, to maximise the reachable audience.
-
-            Optional Java 21+ opt-ins reached via reflection at the call
-            site (see HandlerExecutorFactory.virtual): on JDK 21+ runtime
-            they use Thread.ofVirtual() natively; on JDK 17 they fail-fast
-            with a clear error message pointing at the runtime mismatch.
-            JDK 25+ runtime additionally gets JEP 491 (no synchronized
-            pinning on virtual threads) automatically.
-        -->
-        <java.version>17</java.version>
+        <!-- Baseline Java 25 (LTS) — ADR-0017. -->
+        <java.version>25</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <maven.compiler.release>${java.version}</maven.compiler.release>
@@ -479,7 +468,7 @@
                                     <version>[3.9.0,)</version>
                                 </requireMavenVersion>
                                 <requireJavaVersion>
-                                    <version>[17,)</version>
+                                    <version>[25,)</version>
                                 </requireJavaVersion>
                                 <dependencyConvergence/>
                             </rules>
