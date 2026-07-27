@@ -110,8 +110,9 @@ module and following the same rules:
   `OutboxAdmin` for PG.
 - `event-outboxer-storage-inmemory` — test infrastructure only
   (ADR-0020): contract tests, `@Import` test configuration.
-- `event-outboxer-lock-postgres` — `EntityLocker` via session-scoped
-  `pg_advisory_lock` (ADR-0012).
+- `event-outboxer-lock-postgres` — `EntityLocker` for PostgreSQL
+  (ADR-0012; originally session-scoped `pg_advisory_lock`, since
+  ADR-0022 a lease table by default with advisory as opt-out).
 - `event-outboxer-lock-redis` — `EntityLocker` via Redis/KeyDB
   (Lettuce).
 - `event-outboxer-cache-redis` — `MetricsSnapshotCache` via Redis/KeyDB.

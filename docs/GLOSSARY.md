@@ -67,7 +67,9 @@ JSON only. See [ADR-0011](adr/0011-jackson-json-only-in-mvp.md).
 `reclaimOrphans`, `findById`, `metricsSnapshot`.
 
 **EntityLocker** — SPI port for business-key locks. Implementations:
-PostgreSQL (`pg_advisory_xact_lock`), Redis/KeyDB, NoOp.
+PostgreSQL (lease table `entity_locks`, ADR-0022; session-scoped
+`pg_advisory_lock` as the `postgres-advisory` opt-out), Redis/KeyDB,
+NoOp.
 
 **event_type** — string identifier of the event type. Connects the payload
 in the DB to `EventHandler.eventType()`. Must stay stable across releases.
