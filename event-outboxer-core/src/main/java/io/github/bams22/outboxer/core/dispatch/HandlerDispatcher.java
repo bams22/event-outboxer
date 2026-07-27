@@ -30,6 +30,7 @@ import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.config.UnknownHandlerPolicy;
+import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.Clock;
@@ -37,6 +38,7 @@ import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EntityLocker.LockHandle;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -75,6 +77,7 @@ public final class HandlerDispatcher {
   private final WorkerId workerId;
   private final EventTypeConfigProvider typeConfig;
   private final DispatcherConfig dispatcherConfig;
+  private final OutboxTracer tracer;
 
   public HandlerDispatcher(
       EventStore store,
@@ -88,6 +91,34 @@ public final class HandlerDispatcher {
       WorkerId workerId,
       EventTypeConfigProvider typeConfig,
       DispatcherConfig dispatcherConfig) {
+    this(
+        store,
+        locker,
+        serializer,
+        handlers,
+        failureHandlers,
+        inFlight,
+        listener,
+        clock,
+        workerId,
+        typeConfig,
+        dispatcherConfig,
+        OutboxTracer.NOOP);
+  }
+
+  public HandlerDispatcher(
+      EventStore store,
+      EntityLocker locker,
+      EventSerializer serializer,
+      EventHandlerResolver handlers,
+      FailureHandlerResolver failureHandlers,
+      InFlightRegistry inFlight,
+      OutboxListener listener,
+      Clock clock,
+      WorkerId workerId,
+      EventTypeConfigProvider typeConfig,
+      DispatcherConfig dispatcherConfig,
+      OutboxTracer tracer) {
     this.store = Objects.requireNonNull(store);
     this.locker = Objects.requireNonNull(locker);
     this.serializer = Objects.requireNonNull(serializer);
@@ -99,6 +130,7 @@ public final class HandlerDispatcher {
     this.workerId = Objects.requireNonNull(workerId);
     this.typeConfig = Objects.requireNonNull(typeConfig);
     this.dispatcherConfig = Objects.requireNonNull(dispatcherConfig);
+    this.tracer = SafeOutboxTracer.wrap(Objects.requireNonNull(tracer));
   }
 
   /** Entry point invoked by the per-type handler executor for each claimed event. */
@@ -366,17 +398,32 @@ public final class HandlerDispatcher {
 
   private EventOutcome invokeHandler(ClaimedEvent claimed, EventHandler<?> handler, Object payload) {
     // In-flight registration happens in dispatch() and brackets the whole pipeline.
-    try {
-      EventContext ctx =
-          new EventContext(
-              claimed.id(),
-              claimed.eventType(),
-              claimed.attempts() + 1,
-              claimed.createdAt(),
-              claimed.claimedAt(),
-              workerId,
-              claimed.traceContext());
-      return invokeHandlerTyped(handler, ctx, payload);
+    // The CONSUMER span (ADR-0023) wraps only the handler invocation: it restores the trace
+    // stored at publish time as the current context, and it must close on this worker thread
+    // before outcome routing — finalize may group-commit on a different thread.
+    try (OutboxTracer.ProcessSpan span =
+        tracer.startProcessSpan(
+            new OutboxTracer.ProcessSpanInfo(
+                claimed.id(),
+                claimed.eventType(),
+                claimed.attempts() + 1,
+                workerId,
+                claimed.traceContext()))) {
+      try {
+        EventContext ctx =
+            new EventContext(
+                claimed.id(),
+                claimed.eventType(),
+                claimed.attempts() + 1,
+                claimed.createdAt(),
+                claimed.claimedAt(),
+                workerId,
+                claimed.traceContext());
+        return invokeHandlerTyped(handler, ctx, payload);
+      } catch (RuntimeException ex) {
+        span.error(ex);
+        throw ex;
+      }
     } catch (RuntimeException ex) {
       listener.onHandlerError(
           new HandlerErrorInfo(claimed.id(), claimed.eventType(), claimed.attempts() + 1, ex));

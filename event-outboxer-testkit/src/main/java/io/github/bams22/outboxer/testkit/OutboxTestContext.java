@@ -38,6 +38,7 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEntityLocker;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -178,6 +179,7 @@ public final class OutboxTestContext {
     private @Nullable WorkerId workerId;
     private String host = "test-host";
     private int defaultBatchSize = 50;
+    private OutboxTracer tracer = OutboxTracer.NOOP;
 
     private Builder() {}
 
@@ -282,6 +284,16 @@ public final class OutboxTestContext {
       return this;
     }
 
+    /**
+     * Tracing port (ADR-0023) wired into both the publisher and the dispatcher. Default:
+     * {@link OutboxTracer#NOOP}. Pass a recording fake to assert producer/consumer span
+     * lifecycles driven through {@link ManualEngine}.
+     */
+    public Builder tracer(OutboxTracer tracer) {
+      this.tracer = Objects.requireNonNull(tracer);
+      return this;
+    }
+
     public OutboxTestContext build() {
       SettableClock resolvedClock =
           clock != null ? clock : new SettableClock(Instant.now());
@@ -333,7 +345,8 @@ public final class OutboxTestContext {
               resolvedClock,
               resolvedWorkerId,
               typeCfg,
-              resolvedDispatcher);
+              resolvedDispatcher,
+              tracer);
 
       WorkerInfo heartbeatWorkerInfo =
           WorkerInfo.builder()
@@ -373,7 +386,8 @@ public final class OutboxTestContext {
               noTransactionPolicy,
               listeners,
               // ManualEngine has no pollers to wake — ticks are driven explicitly by the test.
-              io.github.bams22.outboxer.core.polling.PollerWaker.NOOP);
+              io.github.bams22.outboxer.core.polling.PollerWaker.NOOP,
+              tracer);
 
       WorkerInfo workerInfo =
           WorkerInfo.builder()
