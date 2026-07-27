@@ -49,6 +49,19 @@ All notable changes to this project are documented here. Format follows
   and stale-release semantics.
 
 ### Changed
+- **BREAKING: Java baseline raised from 17 to 25 (ADR-0017
+  amendment).** The minimum runtime and build JDK is now 25
+  (`maven.compiler.release=25`, enforcer `requireJavaVersion [25,)`).
+  `event-outboxer.handler-executor.type=virtual` now calls
+  `Thread.ofVirtual()` natively — the reflection gate and its
+  bean-creation-time JDK check are gone, and JEP 491 makes the variant
+  pin-free with `synchronized`-heavy JDBC drivers on every supported
+  runtime. Sealed-type routing in the dispatcher uses
+  pattern-matching `switch` (exhaustiveness is now compiler-enforced),
+  and Java 21/25 idioms (unnamed variables, SequencedCollection
+  accessors, `Thread.ofPlatform()` builders) were adopted across
+  modules. Applications on JDK 17/21 must upgrade the JVM before
+  taking this release.
 - **BREAKING: the `postgres` lock type is split into explicit
   values.** `event-outboxer.lock.type` now accepts
   `noop | postgres-lease | postgres-advisory | redis`:

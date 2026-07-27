@@ -133,7 +133,7 @@ triggers `.github/workflows/release.yml`, which:
 3. Runs `./mvnw clean verify -Drevision=0.2.0` — the full unit-test
    suite must pass on the release runner before anything leaves it.
 4. Runs `./mvnw -Prelease deploy -Drevision=0.2.0 -DskipTests` (tests
-   already ran in the previous step) on a JDK 17 GitHub Actions
+   already ran in the previous step) on a JDK 25 GitHub Actions
    runner. `flatten-maven-plugin` produces `.flattened-pom.xml` with
    the resolved version; `central-publishing-maven-plugin` uploads it
    plus jars and `.asc` signatures to Sonatype Central.
