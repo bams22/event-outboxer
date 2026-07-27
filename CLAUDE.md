@@ -16,13 +16,10 @@ ADR, amend the ADR in the same PR.
 
 ## Stack
 
-- **Java 17 baseline** — `maven.compiler.release=17`, enforced by
-  `maven-enforcer-plugin` (`requireJavaVersion [17,)`). No Java 21+
-  APIs in baseline sources; the single virtual-thread opt-in path
-  (`event-outboxer.handler-executor.type=virtual`) reflects into
-  `Thread.ofVirtual()` at runtime and requires JDK 21+ to engage.
-  JDK 25+ runtime additionally gets JEP 491 (no synchronized pinning)
-  automatically. See
+- **Java 25 baseline (LTS)** — `maven.compiler.release=25`, enforced by
+  `maven-enforcer-plugin` (`requireJavaVersion [25,)`). Virtual threads
+  (`event-outboxer.handler-executor.type=virtual`) work natively and
+  are pin-free thanks to JEP 491. See
   [ADR-0017](docs/adr/0017-java-25-and-spring-boot-3-5-baseline.md).
 - **Spring Boot 3.5.6** pinned via `spring-boot-dependencies` BOM
   (source of truth for Spring, Jackson, Micrometer, SLF4J, Logback
@@ -83,11 +80,10 @@ Per-module:
 ./mvnw -pl event-outboxer-storage-postgres -P it verify
 ```
 
-Auto-fix formatting (Google Java Format via Spotless, opt-in because
-Spotless 2.44.5 is incompatible with JDK 25 until the next release —
-invoke only on JDK ≤ 24):
+Auto-fix formatting (Google Java Format via Spotless; `spotless:check`
+runs in the default build):
 ```
-./mvnw -B -ntp -Pspotless spotless:apply
+./mvnw -B -ntp spotless:apply
 ```
 
 Release dry-run (stages to local dir; requires GPG key configured):

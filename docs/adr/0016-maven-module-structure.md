@@ -157,7 +157,7 @@ Users add the starter plus the adapters they need. The autoconfig uses
 
 ### Build system
 
-Maven, targeting **Java 17** (baseline) and Maven 3.9+. See
+Maven, targeting **Java 25** (baseline) and Maven 3.9+. See
 [ADR-0017](0017-java-25-and-spring-boot-3-5-baseline.md) for version
 baseline rationale.
 
@@ -202,7 +202,7 @@ The BOM POM manages:
 - Adding a new port — in `-spi`; implementations — in separate `-*`
   modules.
 - Version bumps flow through the BOM, not each module individually.
-- CI matrix: JDK 17, PG 15, Redis 7 (Testcontainers).
+- CI matrix: JDK 25, PG 15, Redis 7 (Testcontainers).
 
 ### Positive consequences
 

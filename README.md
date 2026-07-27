@@ -3,9 +3,7 @@
 [![CI](https://github.com/bams22/event-outboxer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bams22/event-outboxer/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Embedded transactional outbox for Java 17+ / Spring Boot 3.5.6 / PostgreSQL 15.
-JDK 21+ unlocks virtual-thread handler executors; JDK 25+ adds JEP 491
-(no synchronized pinning on carriers).
+Embedded transactional outbox for Java 25 / Spring Boot 3.5.6 / PostgreSQL 15.
 
 A library for asynchronous event-driven processing with atomicity guarantees
 between business transactions and event persistence. Inspired by
