@@ -93,6 +93,16 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-tracing-otel</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-tracing-micrometer</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-admin-actuator</artifactId>
                 <version>${project.version}</version>
             </dependency>
