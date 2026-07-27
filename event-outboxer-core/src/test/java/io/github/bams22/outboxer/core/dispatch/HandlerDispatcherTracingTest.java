@@ -212,7 +212,8 @@ class HandlerDispatcherTracingTest {
           }
         };
     HandlerDispatcher dispatcher =
-        dispatcher(observing, tracer, new TestHandler((ctx, payload) -> EventOutcome.Success.INSTANCE));
+        dispatcher(
+            observing, tracer, new TestHandler((ctx, payload) -> EventOutcome.Success.INSTANCE));
 
     dispatcher.dispatch(saveAndClaim(inner));
 

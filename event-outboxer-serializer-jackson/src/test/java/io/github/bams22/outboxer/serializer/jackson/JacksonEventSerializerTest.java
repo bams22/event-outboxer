@@ -15,7 +15,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.bams22.outboxer.domain.exception.PayloadDeserializationException;
 import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import java.time.Instant;
@@ -77,7 +76,8 @@ class JacksonEventSerializerTest {
   void ignoresUnknownPropertiesByDefault() {
     // ADR-0011: evolution-friendly default — a payload written by a NEWER DTO version (extra
     // field) must deserialize on an older replica during a rolling deploy.
-    String json = "{\"orderId\":\"ord-1\",\"count\":1,\"occurredAt\":\"2026-04-21T12:00:00Z\",\"ghostField\":true}";
+    String json =
+        "{\"orderId\":\"ord-1\",\"count\":1,\"occurredAt\":\"2026-04-21T12:00:00Z\",\"ghostField\":true}";
 
     OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
 
@@ -101,8 +101,7 @@ class JacksonEventSerializerTest {
     // FAIL_ON_NULL_FOR_PRIMITIVES is deliberately off: for record DTOs Jackson routes an ABSENT
     // primitive component through the same null path as an explicit null, so enabling the
     // feature would break the add-a-primitive-field evolution case. Both resolve to the default.
-    String json =
-        "{\"orderId\":\"ord-1\",\"count\":null,\"occurredAt\":\"2026-04-21T12:00:00Z\"}";
+    String json = "{\"orderId\":\"ord-1\",\"count\":null,\"occurredAt\":\"2026-04-21T12:00:00Z\"}";
 
     OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
 
@@ -116,7 +115,8 @@ class JacksonEventSerializerTest {
     SelfRef bad = new SelfRef();
     bad.self = bad;
 
-    assertThatThrownBy(() -> noSelfRef.serialize(bad)).isInstanceOf(PublishSerializationException.class);
+    assertThatThrownBy(() -> noSelfRef.serialize(bad))
+        .isInstanceOf(PublishSerializationException.class);
   }
 
   // --- fixtures ---

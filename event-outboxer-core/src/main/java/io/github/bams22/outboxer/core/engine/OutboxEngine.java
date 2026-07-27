@@ -31,11 +31,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Root composition of the event-outboxer engine. Owns and sequences the lifecycle of the
- * publisher, per-type pollers, handler executors and maintenance scheduler.
+ * Root composition of the event-outboxer engine. Owns and sequences the lifecycle of the publisher,
+ * per-type pollers, handler executors and maintenance scheduler.
  *
- * <p>Build instances through {@link OutboxEngineBuilder}; direct construction is public only so
- * the Spring Boot starter (P9) can wire Spring-managed collaborators without going through the
+ * <p>Build instances through {@link OutboxEngineBuilder}; direct construction is public only so the
+ * Spring Boot starter (P9) can wire Spring-managed collaborators without going through the
  * plain-Java builder.
  */
 public final class OutboxEngine {
@@ -56,10 +56,10 @@ public final class OutboxEngine {
   private volatile State state = State.STOPPED;
 
   /**
-   * Flipped to {@code true} by {@link #markCrashed(String, Throwable)} when the background
-   * health check determines that a poller thread has died. Independent of {@link #state} so
-   * Spring's {@code SmartLifecycle.isRunning()} (via {@link #isLifecycleActive()}) keeps
-   * returning {@code true} and {@code stop()} still runs the full cleanup.
+   * Flipped to {@code true} by {@link #markCrashed(String, Throwable)} when the background health
+   * check determines that a poller thread has died. Independent of {@link #state} so Spring's
+   * {@code SmartLifecycle.isRunning()} (via {@link #isLifecycleActive()}) keeps returning {@code
+   * true} and {@code stop()} still runs the full cleanup.
    */
   private volatile boolean crashed = false;
 
@@ -116,22 +116,22 @@ public final class OutboxEngine {
       // Best-effort rollback so half-started state does not leak into tests / retries.
       try {
         pollers.forEach(Poller::stop);
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       try {
         handlerExecutors.drain(Duration.ofSeconds(1));
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       try {
         maintenance.stop(Duration.ofSeconds(1));
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       try {
         registry.deregister(workerInfo.id());
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       throw new IllegalStateException("failed to start engine: " + ex.getMessage(), ex);
@@ -218,30 +218,29 @@ public final class OutboxEngine {
   }
 
   /**
-   * Observable engine state. Returns {@code STOPPED} whenever
-   * {@link #markCrashed(String, Throwable)} has fired, regardless of the internal lifecycle
-   * phase — this is the signal exposed to the Actuator health indicator and the
-   * {@code event_outboxer.engine.state} gauge. Use {@link #isLifecycleActive()} for the
-   * "has {@code start()} been called and {@code stop()} not yet completed" question.
+   * Observable engine state. Returns {@code STOPPED} whenever {@link #markCrashed(String,
+   * Throwable)} has fired, regardless of the internal lifecycle phase — this is the signal exposed
+   * to the Actuator health indicator and the {@code event_outboxer.engine.state} gauge. Use {@link
+   * #isLifecycleActive()} for the "has {@code start()} been called and {@code stop()} not yet
+   * completed" question.
    */
   public State state() {
     return crashed ? State.STOPPED : state;
   }
 
   /**
-   * Returns {@code true} when the engine has been started and {@code stop()} has not yet
-   * completed — ignoring any intervening crash. Used by Spring Boot's
-   * {@code SmartLifecycle.isRunning()} so a crashed engine still goes through the normal
-   * shutdown path (deregister worker, drain handlers).
+   * Returns {@code true} when the engine has been started and {@code stop()} has not yet completed
+   * — ignoring any intervening crash. Used by Spring Boot's {@code SmartLifecycle.isRunning()} so a
+   * crashed engine still goes through the normal shutdown path (deregister worker, drain handlers).
    */
   public boolean isLifecycleActive() {
     return state == State.RUNNING || state == State.STOPPING;
   }
 
   /**
-   * Mark the engine as crashed. Called by the background health-check task when it determines
-   * that a critical component is no longer alive. Idempotent; firing twice produces exactly one
-   * log entry and one {@link OutboxListener#onEngineCrashed} callback.
+   * Mark the engine as crashed. Called by the background health-check task when it determines that
+   * a critical component is no longer alive. Idempotent; firing twice produces exactly one log
+   * entry and one {@link OutboxListener#onEngineCrashed} callback.
    *
    * @param reason human-readable description of what the health check detected
    * @param cause the underlying throwable, if known; may be {@code null}
@@ -254,11 +253,7 @@ public final class OutboxEngine {
       }
       crashed = true;
     }
-    log.error(
-        "outbox engine CRASHED on worker {}: {}",
-        workerInfo.id(),
-        reason,
-        cause);
+    log.error("outbox engine CRASHED on worker {}: {}", workerInfo.id(), reason, cause);
     try {
       listener.onEngineCrashed(
           new EngineCrashedInfo(reason, cause, Instant.now(), workerInfo.id()));

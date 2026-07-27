@@ -19,10 +19,10 @@ import java.util.Optional;
  * EventHandler.handle(ctx, payload)} when the handler declares a non-null {@code
  * extractLockKey(payload)} (see ADR-0012).
  *
- * <p>Lock keys are arbitrary strings derived by the handler from the payload — for example
- * {@code "order:" + payload.orderId()}. They do NOT have to match anything persisted in the
- * outbox; the lock exists purely to serialize concurrent processing of events that touch the same
- * business aggregate (for example, two mutations on the same order).
+ * <p>Lock keys are arbitrary strings derived by the handler from the payload — for example {@code
+ * "order:" + payload.orderId()}. They do NOT have to match anything persisted in the outbox; the
+ * lock exists purely to serialize concurrent processing of events that touch the same business
+ * aggregate (for example, two mutations on the same order).
  *
  * <p>The engine treats a busy lock as "reschedule and retry later": if {@link #tryLock(String,
  * Duration)} returns {@link Optional#empty()}, the dispatcher marks the event for a short-delay
@@ -34,8 +34,8 @@ import java.util.Optional;
  * <ul>
  *   <li>{@link #NOOP} — no-op locker used when no {@code EntityLocker} bean is present and no
  *       handler declares a lock key;
- *   <li>{@code PgLeaseEntityLocker} in {@code event-outboxer-lock-postgres-lease} — lease row
- *       in the {@code entity_locks} table, the PostgreSQL default (ADR-0022);
+ *   <li>{@code PgLeaseEntityLocker} in {@code event-outboxer-lock-postgres-lease} — lease row in
+ *       the {@code entity_locks} table, the PostgreSQL default (ADR-0022);
  *   <li>{@code PgAdvisoryLocker} in {@code event-outboxer-lock-postgres-advisory} — session-scoped
  *       PG advisory locks (opt-out);
  *   <li>{@code RedisEntityLocker} in {@code event-outboxer-lock-redis} — {@code SET NX PX} on
@@ -56,8 +56,8 @@ public interface EntityLocker {
    * intrinsic TTL support (PG session-scoped advisory locks, for example) still honour the {@code
    * ttl} contract by relying on handler-level timeouts — see the adapter's documentation.
    *
-   * <p>Exclusion guarantees differ per backend (ADR-0012 amendment): TTL-honouring lockers
-   * release the lock at {@code min(close, ttl)} — the engine therefore requires {@code lockTtl >=
+   * <p>Exclusion guarantees differ per backend (ADR-0012 amendment): TTL-honouring lockers release
+   * the lock at {@code min(close, ttl)} — the engine therefore requires {@code lockTtl >=
    * handlerMaxRuntime} so a legitimate handler can never outlive its own lock; session-scoped
    * lockers hold until close or connection loss, at the price of one pooled connection per held
    * lock.

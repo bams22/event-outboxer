@@ -8,9 +8,8 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 /**
- * OpenTelemetry adapter for the {@code OutboxTracer} SPI port (ADR-0023): continues the
- * publisher's distributed trace into handler execution via the event row's {@code trace_context}
- * carrier.
+ * OpenTelemetry adapter for the {@code OutboxTracer} SPI port (ADR-0023): continues the publisher's
+ * distributed trace into handler execution via the event row's {@code trace_context} carrier.
  */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.tracing.otel;

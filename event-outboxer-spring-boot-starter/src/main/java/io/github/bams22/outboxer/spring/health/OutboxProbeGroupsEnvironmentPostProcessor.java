@@ -25,21 +25,21 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 /**
- * Appends the {@code outbox} indicator into every Actuator health group listed in
- * {@code outbox.health.probe-groups}. Intended for k8s deployments whose probes hit only
- * {@code /actuator/health/liveness} and {@code /actuator/health/readiness}: opt in and the
- * outbox's {@code UP}/{@code DOWN} state automatically propagates into the probe response.
+ * Appends the {@code outbox} indicator into every Actuator health group listed in {@code
+ * outbox.health.probe-groups}. Intended for k8s deployments whose probes hit only {@code
+ * /actuator/health/liveness} and {@code /actuator/health/readiness}: opt in and the outbox's {@code
+ * UP}/{@code DOWN} state automatically propagates into the probe response.
  *
- * <p>Merges non-destructively: the user's existing
- * {@code management.endpoint.health.group.<name>.include} is preserved, and the default
- * {@code <name>State} contributor (Spring Boot's built-in liveness/readiness probe) is carried
- * through so existing semantics are not lost.
+ * <p>Merges non-destructively: the user's existing {@code
+ * management.endpoint.health.group.<name>.include} is preserved, and the default {@code
+ * <name>State} contributor (Spring Boot's built-in liveness/readiness probe) is carried through so
+ * existing semantics are not lost.
  *
- * <p>Registered via {@code META-INF/spring.factories}; runs at
- * {@link Ordered#LOWEST_PRECEDENCE} so config files (including profile-specific) are loaded
- * first.
+ * <p>Registered via {@code META-INF/spring.factories}; runs at {@link Ordered#LOWEST_PRECEDENCE} so
+ * config files (including profile-specific) are loaded first.
  */
-public class OutboxProbeGroupsEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
+public class OutboxProbeGroupsEnvironmentPostProcessor
+    implements EnvironmentPostProcessor, Ordered {
 
   /** Indicator bean name registered by {@code OutboxHealthAutoConfiguration}. */
   static final String INDICATOR_NAME = "outbox";
@@ -68,8 +68,7 @@ public class OutboxProbeGroupsEnvironmentPostProcessor implements EnvironmentPos
       contributions.put(key, mergedValue);
     }
 
-    env.getPropertySources()
-        .addFirst(new MapPropertySource(PROPERTY_SOURCE_NAME, contributions));
+    env.getPropertySources().addFirst(new MapPropertySource(PROPERTY_SOURCE_NAME, contributions));
   }
 
   /**
@@ -78,12 +77,12 @@ public class OutboxProbeGroupsEnvironmentPostProcessor implements EnvironmentPos
    */
   private static List<String> readProbeGroups(ConfigurableEnvironment env) {
     List<String> fromBinder =
-        Binder.get(env).bind(PROBE_GROUPS_PROPERTY, String[].class).map(Arrays::asList).orElse(null);
+        Binder.get(env)
+            .bind(PROBE_GROUPS_PROPERTY, String[].class)
+            .map(Arrays::asList)
+            .orElse(null);
     if (fromBinder != null && !fromBinder.isEmpty()) {
-      return fromBinder.stream()
-          .map(String::trim)
-          .filter(s -> !s.isEmpty())
-          .toList();
+      return fromBinder.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
     String raw = env.getProperty(PROBE_GROUPS_PROPERTY);
     if (raw == null || raw.isBlank()) {
@@ -105,9 +104,9 @@ public class OutboxProbeGroupsEnvironmentPostProcessor implements EnvironmentPos
    * <ul>
    *   <li>If the user set the key, append {@code outbox} to their list (unless it is already
    *       present).
-   *   <li>If the user did not set the key, seed with Spring Boot's default
-   *       {@code <group>State} contributor so the stock liveness/readiness wiring still works,
-   *       then append {@code outbox}.
+   *   <li>If the user did not set the key, seed with Spring Boot's default {@code <group>State}
+   *       contributor so the stock liveness/readiness wiring still works, then append {@code
+   *       outbox}.
    * </ul>
    */
   private static String mergeInclude(@Nullable String existing, String group) {

@@ -16,9 +16,9 @@ import org.postgresql.util.PGobject;
 
 /**
  * Converts {@code String} JSON payloads to and from {@link PGobject} with type {@code jsonb} so
- * that {@link java.sql.PreparedStatement#setObject(int, Object)} binds them correctly. The
- * outbox persists two JSONB columns — {@code payload} and {@code trace_context} — both of which
- * arrive as already-serialized JSON strings from the {@code EventSerializer}.
+ * that {@link java.sql.PreparedStatement#setObject(int, Object)} binds them correctly. The outbox
+ * persists two JSONB columns — {@code payload} and {@code trace_context} — both of which arrive as
+ * already-serialized JSON strings from the {@code EventSerializer}.
  */
 public final class JsonbHandler {
 

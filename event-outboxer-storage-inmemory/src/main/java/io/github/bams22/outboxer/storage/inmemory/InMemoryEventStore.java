@@ -35,8 +35,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * In-memory {@link EventStore} — TEST INFRASTRUCTURE, deliberately unreachable through starter
- * configuration (ADR-0020). Stores every row in a {@link ConcurrentHashMap} keyed by event id
- * and synchronizes state transitions on the row object so that concurrent claim / finalize / force
+ * configuration (ADR-0020). Stores every row in a {@link ConcurrentHashMap} keyed by event id and
+ * synchronizes state transitions on the row object so that concurrent claim / finalize / force
  * reclaim calls observe strict linearisability per-row.
  *
  * <p>Per ADR-0008 this adapter does <em>not</em> archive successful events — {@link
@@ -393,7 +393,7 @@ public final class InMemoryEventStore implements EventStore {
 
     for (EventRow row : rows.values()) {
       synchronized (row) {
-        int[] counts = perTypeCounts.computeIfAbsent(row.eventType, k -> new int[3]);
+        int[] counts = perTypeCounts.computeIfAbsent(row.eventType, _ -> new int[3]);
         switch (row.status) {
           case PENDING -> {
             pending++;
@@ -410,8 +410,7 @@ public final class InMemoryEventStore implements EventStore {
             processing++;
             counts[1]++;
             Instant claimedAt = row.claimedAt;
-            if (claimedAt != null
-                && (oldestClaimed == null || claimedAt.isBefore(oldestClaimed))) {
+            if (claimedAt != null && (oldestClaimed == null || claimedAt.isBefore(oldestClaimed))) {
               oldestClaimed = claimedAt;
             }
           }

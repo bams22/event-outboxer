@@ -17,9 +17,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A successfully processed event as stored in the opt-in archive table (ADR-0008). Deliberately a
- * separate type from {@link Event}: archived rows have no status, claim or version — modelling
- * them as an {@code Event} would require a synthetic {@code EventStatus} value the store never
- * persists.
+ * separate type from {@link Event}: archived rows have no status, claim or version — modelling them
+ * as an {@code Event} would require a synthetic {@code EventStatus} value the store never persists.
  *
  * @param id original event id
  * @param eventType event type

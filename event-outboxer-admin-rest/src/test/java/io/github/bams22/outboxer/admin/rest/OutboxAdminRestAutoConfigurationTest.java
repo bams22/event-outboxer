@@ -24,8 +24,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 /**
- * Registration and the security fail-fast of the admin REST auto-configuration. Spring Security
- * IS on the test classpath, so with method security absent the context must refuse to start.
+ * Registration and the security fail-fast of the admin REST auto-configuration. Spring Security IS
+ * on the test classpath, so with method security absent the context must refuse to start.
  */
 class OutboxAdminRestAutoConfigurationTest {
 
@@ -48,8 +48,7 @@ class OutboxAdminRestAutoConfigurationTest {
         .run(
             ctx -> {
               assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
-                  .hasStackTraceContaining("@EnableMethodSecurity");
+              assertThat(ctx.getStartupFailure()).hasStackTraceContaining("@EnableMethodSecurity");
             });
   }
 
@@ -64,14 +63,16 @@ class OutboxAdminRestAutoConfigurationTest {
         .run(
             ctx -> {
               assertThat(ctx).hasSingleBean(OutboxAdminController.class);
-              assertThat(ctx.getBean("outboxAdminRestProperties", OutboxAdminRestProperties.class)
-                      .getRequiredAuthority())
+              assertThat(
+                      ctx.getBean("outboxAdminRestProperties", OutboxAdminRestProperties.class)
+                          .getRequiredAuthority())
                   .isEqualTo("MY_PERMIT");
             });
   }
 
   @Test
-  @DisplayName("enabled + enforce-authority=false → starts without method security (explicit opt-out)")
+  @DisplayName(
+      "enabled + enforce-authority=false → starts without method security (explicit opt-out)")
   void startsWithExplicitOptOut() {
     runner
         .withPropertyValues(

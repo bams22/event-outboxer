@@ -8,9 +8,7 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * PostgreSQL lease-table backed {@code EntityLocker} (ADR-0022).
- */
+/** PostgreSQL lease-table backed {@code EntityLocker} (ADR-0022). */
 @NullMarked
 package io.github.bams22.outboxer.lock.postgres.lease;
 

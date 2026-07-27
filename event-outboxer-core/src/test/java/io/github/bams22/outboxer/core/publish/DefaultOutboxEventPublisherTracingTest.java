@@ -139,8 +139,7 @@ class DefaultOutboxEventPublisherTracingTest {
                     new PublishRequest("B", "plain2", null)));
 
     assertThat(tracer.publishSpans).hasSize(3);
-    assertThat(tracer.publishSpans)
-        .allSatisfy(span -> assertThat(span.closeCount).hasValue(1));
+    assertThat(tracer.publishSpans).allSatisfy(span -> assertThat(span.closeCount).hasValue(1));
     // Each row stores its own span's context, including the batch-path rows saved via saveAll.
     assertThat(store.findById(ids.get(0)).orElseThrow().traceContext())
         .isEqualTo(tracer.publishSpans.get(0).context);
@@ -148,8 +147,7 @@ class DefaultOutboxEventPublisherTracingTest {
         .isEqualTo(tracer.publishSpans.get(1).context);
     assertThat(store.findById(ids.get(2)).orElseThrow().traceContext())
         .isEqualTo(tracer.publishSpans.get(2).context);
-    assertThat(tracer.publishSpans.get(0).context)
-        .isNotEqualTo(tracer.publishSpans.get(1).context);
+    assertThat(tracer.publishSpans.get(0).context).isNotEqualTo(tracer.publishSpans.get(1).context);
   }
 
   @Test

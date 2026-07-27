@@ -13,10 +13,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Payload of {@link OutboxListener#onUnknownEventType(UnknownEventTypeInfo)} — fired when a
- * claimed event has an {@code eventType} without a registered handler. The configured
- * {@code UnknownHandlerPolicy} decides what actually happens to the event (skip, disable, or
- * fail).
+ * Payload of {@link OutboxListener#onUnknownEventType(UnknownEventTypeInfo)} — fired when a claimed
+ * event has an {@code eventType} without a registered handler. The configured {@code
+ * UnknownHandlerPolicy} decides what actually happens to the event (skip, disable, or fail).
  *
  * @param eventId identifier of the event
  * @param eventType the unknown event type

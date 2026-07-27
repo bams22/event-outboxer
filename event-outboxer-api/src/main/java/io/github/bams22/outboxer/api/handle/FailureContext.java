@@ -16,8 +16,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Context passed into {@link FailureHandler#onFailure(FailureContext)}. Carries everything a
- * failure handler might need to decide what to do: the event itself (via {@code ClaimedEvent}),
- * the deserialized payload, the outcome or cause, the attempt counter, and the current time.
+ * failure handler might need to decide what to do: the event itself (via {@code ClaimedEvent}), the
+ * deserialized payload, the outcome or cause, the attempt counter, and the current time.
  *
  * @param event the event that failed, as returned from claim
  * @param payload the deserialized payload; null when the failure occurred before deserialization

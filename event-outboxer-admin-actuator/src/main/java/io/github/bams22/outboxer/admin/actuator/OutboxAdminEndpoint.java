@@ -32,9 +32,9 @@ import org.springframework.boot.actuate.endpoint.annotation.WriteOperation;
 
 /**
  * Actuator surface over {@link OutboxAdmin} (ADR-0019). Endpoint id {@code outboxadmin} — the id
- * {@code outbox} is taken by the health indicator. Not exposed by default; enable with
- * {@code management.endpoints.web.exposure.include=outboxadmin} and secure it the same way as
- * every other Actuator endpoint.
+ * {@code outbox} is taken by the health indicator. Not exposed by default; enable with {@code
+ * management.endpoints.web.exposure.include=outboxadmin} and secure it the same way as every other
+ * Actuator endpoint.
  *
  * <p>Operations map to:
  *
@@ -68,13 +68,10 @@ public class OutboxAdminEndpoint {
         status == null ? EventStatus.DISABLED : EventStatus.valueOf(status.toUpperCase());
     int resolvedLimit = limit == null ? 50 : limit;
     List<Event> page =
-        admin.findByStatus(
-            resolvedStatus, eventType, resolvedLimit, CursorCodec.decode(cursor));
+        admin.findByStatus(resolvedStatus, eventType, resolvedLimit, CursorCodec.decode(cursor));
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("events", page.stream().map(OutboxAdminEndpoint::toMap).toList());
-    body.put(
-        "nextCursor",
-        page.size() < resolvedLimit ? null : CursorCodec.encode(page.get(page.size() - 1)));
+    body.put("nextCursor", page.size() < resolvedLimit ? null : CursorCodec.encode(page.getLast()));
     return body;
   }
 
@@ -153,9 +150,9 @@ public class OutboxAdminEndpoint {
   }
 
   /**
-   * Opaque page cursor: {@code <iso-instant>_<uuid>} of the last row of the previous page. Full
-   * ISO precision on purpose — truncating to millis would make the strict keyset comparison
-   * skip rows that share a millisecond with the cursor row (PG timestamps are microsecond).
+   * Opaque page cursor: {@code <iso-instant>_<uuid>} of the last row of the previous page. Full ISO
+   * precision on purpose — truncating to millis would make the strict keyset comparison skip rows
+   * that share a millisecond with the cursor row (PG timestamps are microsecond).
    */
   static final class CursorCodec {
 

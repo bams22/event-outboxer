@@ -16,9 +16,9 @@ import java.util.Objects;
  * Supplies a resolved {@link EventTypeConfig} for a given event type. Returns the default
  * configuration when no explicit override is registered.
  *
- * <p>The starter (P9) owns the thin-merge logic: YAML binding reads every field with a fallback
- * to the default, producing a fully-populated {@code EventTypeConfig} that we store here as a
- * plain map.
+ * <p>The starter (P9) owns the thin-merge logic: YAML binding reads every field with a fallback to
+ * the default, producing a fully-populated {@code EventTypeConfig} that we store here as a plain
+ * map.
  */
 public final class EventTypeConfigProvider {
 

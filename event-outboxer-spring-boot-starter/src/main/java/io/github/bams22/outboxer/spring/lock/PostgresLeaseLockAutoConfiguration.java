@@ -43,13 +43,14 @@ import org.springframework.context.annotation.Configuration;
  *   <li>an optional Micrometer gauge for currently held leases.
  * </ul>
  *
- * <p>The locker intentionally uses the raw {@code DataSource} (never the transaction-aware
- * proxy). For the lease protocol this is a correctness requirement, not a preference: acquire and
- * release must each run as their own autocommit statement — inside a caller's transaction a mere
- * busy probe would hold the row's tuple lock until that transaction ends, blocking other
- * contenders and the holder's release (ADR-0022 §JDBC contract).
+ * <p>The locker intentionally uses the raw {@code DataSource} (never the transaction-aware proxy).
+ * For the lease protocol this is a correctness requirement, not a preference: acquire and release
+ * must each run as their own autocommit statement — inside a caller's transaction a mere busy probe
+ * would hold the row's tuple lock until that transaction ends, blocking other contenders and the
+ * holder's release (ADR-0022 §JDBC contract).
  */
-@AutoConfiguration(after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+@AutoConfiguration(
+    after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgLeaseEntityLocker.class)
 @ConditionalOnBean(DataSource.class)
 @Conditional(OnPostgresLeaseLockCondition.class)
@@ -61,9 +62,7 @@ public class PostgresLeaseLockAutoConfiguration {
   public PgLeaseEntityLocker outboxEntityLocker(
       DataSource dataSource, OutboxProperties properties) {
     return new PgLeaseEntityLocker(
-        dataSource,
-        properties.getStorage().getSchema(),
-        properties.getWorker().getId());
+        dataSource, properties.getStorage().getSchema(), properties.getWorker().getId());
   }
 
   /**

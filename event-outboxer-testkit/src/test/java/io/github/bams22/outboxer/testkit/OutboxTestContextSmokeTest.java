@@ -28,10 +28,13 @@ class OutboxTestContextSmokeTest {
     AtomicInteger invoked = new AtomicInteger();
     OutboxTestContext ctx =
         OutboxTestContext.builder()
-            .handler(stringHandler("ORDER", (c, p) -> {
-              invoked.incrementAndGet();
-              return EventOutcome.Success.INSTANCE;
-            }))
+            .handler(
+                stringHandler(
+                    "ORDER",
+                    (c, p) -> {
+                      invoked.incrementAndGet();
+                      return EventOutcome.Success.INSTANCE;
+                    }))
             .build();
 
     UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 3));
@@ -59,9 +62,7 @@ class OutboxTestContextSmokeTest {
             .handler(
                 stringHandler(
                     "ORDER",
-                    (c, p) ->
-                        new EventOutcome.Retry(
-                            "transient", Duration.ofMinutes(1), null)))
+                    (c, p) -> new EventOutcome.Retry("transient", Duration.ofMinutes(1), null)))
             .build();
 
     UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 1));

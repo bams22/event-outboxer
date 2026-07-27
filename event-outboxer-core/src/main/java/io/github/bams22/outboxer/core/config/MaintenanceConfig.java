@@ -32,10 +32,10 @@ import org.jspecify.annotations.Nullable;
  * @param shutdownTimeout budget for in-flight handlers to complete during graceful stop
  * @param staleClaimThreshold age of a {@code PROCESSING} claim before the stale-claim sweeper
  *     returns it to {@code PENDING}; {@code null} (default) derives {@code 2 × max
- *     handlerMaxRuntime} across the registered types at engine build time. An explicit value
- *     must exceed every per-type {@code handlerMaxRuntime} — validated by the engine builder
- * @param staleClaimSweepInterval cadence of the stale-claim sweeper; {@code null} defaults to
- *     5 minutes
+ *     handlerMaxRuntime} across the registered types at engine build time. An explicit value must
+ *     exceed every per-type {@code handlerMaxRuntime} — validated by the engine builder
+ * @param staleClaimSweepInterval cadence of the stale-claim sweeper; {@code null} defaults to 5
+ *     minutes
  */
 @Builder
 public record MaintenanceConfig(

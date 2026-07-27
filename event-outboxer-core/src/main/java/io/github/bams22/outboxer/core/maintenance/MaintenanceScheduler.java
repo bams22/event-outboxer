@@ -19,9 +19,9 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Owns a small scheduled executor (three threads by default) that ticks {@link HeartbeatTask},
- * {@link OrphanRecoveryTask}, {@link WatchdogTask} and {@link EngineHealthCheckTask}. The
- * executor is created on {@link #start()} and shut down on {@link #stop(Duration)} so the
- * engine's graceful-shutdown flow can drain pending work deterministically.
+ * {@link OrphanRecoveryTask}, {@link WatchdogTask} and {@link EngineHealthCheckTask}. The executor
+ * is created on {@link #start()} and shut down on {@link #stop(Duration)} so the engine's
+ * graceful-shutdown flow can drain pending work deterministically.
  */
 public final class MaintenanceScheduler {
 

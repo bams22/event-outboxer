@@ -33,8 +33,8 @@ class PostgresWorkerRegistryIT extends AbstractWorkerRegistryContractTest {
   }
 
   /**
-   * The PG adapter stamps heartbeats with the database clock and ignores the {@code at}
-   * argument, so staleness has to be injected with a direct UPDATE.
+   * The PG adapter stamps heartbeats with the database clock and ignores the {@code at} argument,
+   * so staleness has to be injected with a direct UPDATE.
    */
   @Override
   protected void backdateHeartbeat(WorkerId id, Instant at) {

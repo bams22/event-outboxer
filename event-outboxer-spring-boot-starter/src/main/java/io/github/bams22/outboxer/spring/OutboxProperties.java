@@ -20,12 +20,12 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Root {@code @ConfigurationProperties} for {@code event-outboxer.*}. See CONFIGURATION.md for
- * the documented YAML shape.
+ * Root {@code @ConfigurationProperties} for {@code event-outboxer.*}. See CONFIGURATION.md for the
+ * documented YAML shape.
  *
- * <p>Defaults match the per-class library defaults ({@code EventTypeConfig.defaults()},
- * {@code MaintenanceConfig.defaults()}, {@code DispatcherConfig.defaults()}) so that a user who
- * only sets {@code spring.datasource.url} gets a working outbox out of the box.
+ * <p>Defaults match the per-class library defaults ({@code EventTypeConfig.defaults()}, {@code
+ * MaintenanceConfig.defaults()}, {@code DispatcherConfig.defaults()}) so that a user who only sets
+ * {@code spring.datasource.url} gets a working outbox out of the box.
  */
 @Getter
 @Setter
@@ -58,19 +58,17 @@ public class OutboxProperties {
   public static class Storage {
     /**
      * Storage adapter. REQUIRED for production — there is no default and no in-memory option
-     * (ADR-0020): a silently non-durable outbox would betray the library's whole contract.
-     * Tests without a database import {@code OutboxInMemoryTestConfiguration} explicitly
-     * instead of configuring a type.
+     * (ADR-0020): a silently non-durable outbox would betray the library's whole contract. Tests
+     * without a database import {@code OutboxInMemoryTestConfiguration} explicitly instead of
+     * configuring a type.
      */
     private @Nullable StorageType type;
 
     /**
-     * Schema name for the PG adapter. Default: {@code event_outboxer} — a
-     * specific name chosen to avoid clashing with other libraries or
-     * application tables in a shared database. Propagated both into the
-     * adapter's SQL (via {@code SchemaResolver}) and into the Flyway
-     * {@code ${eventOutboxerSchema}} placeholder used by the classpath
-     * migrations.
+     * Schema name for the PG adapter. Default: {@code event_outboxer} — a specific name chosen to
+     * avoid clashing with other libraries or application tables in a shared database. Propagated
+     * both into the adapter's SQL (via {@code SchemaResolver}) and into the Flyway {@code
+     * ${eventOutboxerSchema}} placeholder used by the classpath migrations.
      */
     private String schema = "event_outboxer";
 
@@ -94,8 +92,8 @@ public class OutboxProperties {
     /**
      * {@code noop}, {@code postgres-lease} (lease table, ADR-0022), {@code postgres-advisory}
      * (session-scoped advisory locks, pre-ADR-0022 behaviour) or {@code redis}. The pre-ADR-0022
-     * value {@code postgres} no longer binds — startup fails listing the valid values, forcing
-     * an explicit choice between the two PostgreSQL backends.
+     * value {@code postgres} no longer binds — startup fails listing the valid values, forcing an
+     * explicit choice between the two PostgreSQL backends.
      */
     private LockType type = LockType.noop;
 
@@ -103,8 +101,8 @@ public class OutboxProperties {
   }
 
   /**
-   * Entity-locker backend. {@code postgres_lease} / {@code postgres_advisory} bind from
-   * {@code postgres-lease} / {@code postgres-advisory} via relaxed binding.
+   * Entity-locker backend. {@code postgres_lease} / {@code postgres_advisory} bind from {@code
+   * postgres-lease} / {@code postgres-advisory} via relaxed binding.
    */
   public enum LockType {
     noop,
@@ -117,11 +115,11 @@ public class OutboxProperties {
   @Setter
   public static class Cache {
     /**
-     * Selects the backing store for {@code MetricsSnapshotCache}. {@code memory} (default)
-     * keeps the per-JVM TTL cache from pre-SPI behaviour; {@code redis} uses the
-     * {@code event-outboxer-cache-redis} module to share a single snapshot across pods;
-     * {@code noop} disables caching entirely so each {@code metricsSnapshot()} call
-     * recomputes from the database.
+     * Selects the backing store for {@code MetricsSnapshotCache}. {@code memory} (default) keeps
+     * the per-JVM TTL cache from pre-SPI behaviour; {@code redis} uses the {@code
+     * event-outboxer-cache-redis} module to share a single snapshot across pods; {@code noop}
+     * disables caching entirely so each {@code metricsSnapshot()} call recomputes from the
+     * database.
      */
     private CacheType type = CacheType.memory;
 
@@ -164,8 +162,8 @@ public class OutboxProperties {
     private @Nullable Duration archiveOlderThan;
 
     /**
-     * Delete {@code DISABLED} events created earlier than this ago (age approximated by
-     * {@code created_at}). {@code null} (default): off.
+     * Delete {@code DISABLED} events created earlier than this ago (age approximated by {@code
+     * created_at}). {@code null} (default): off.
      */
     private @Nullable Duration disabledOlderThan;
 
@@ -208,9 +206,9 @@ public class OutboxProperties {
     private Duration dispatchRejectedRetryDelay = Duration.ofSeconds(1);
 
     /**
-     * Group-commit batching of finalize statements ({@code markProcessed} / {@code
-     * markForRetry}): concurrent finalizations coalesce into one multi-row statement. Degrades
-     * to plain single-row calls on an idle engine; disable only as a kill-switch.
+     * Group-commit batching of finalize statements ({@code markProcessed} / {@code markForRetry}):
+     * concurrent finalizations coalesce into one multi-row statement. Degrades to plain single-row
+     * calls on an idle engine; disable only as a kill-switch.
      */
     private boolean finalizeBatching = true;
 
@@ -230,18 +228,18 @@ public class OutboxProperties {
     private EventType defaults = new EventType();
 
     /**
-     * Per-type overrides keyed by event type. Thin merge: each entry overrides only the fields
-     * it sets explicitly; every unset field falls back to {@code defaults} (which in turn falls
-     * back to the library defaults).
+     * Per-type overrides keyed by event type. Thin merge: each entry overrides only the fields it
+     * sets explicitly; every unset field falls back to {@code defaults} (which in turn falls back
+     * to the library defaults).
      */
     private Map<String, EventType> overrides = new LinkedHashMap<>();
   }
 
   /**
    * Per-event-type knobs. All fields are nullable on purpose: {@code null} means "not set here",
-   * which is what makes the thin merge in {@code OutboxEngineAutoConfiguration} possible —
-   * a populated default would be indistinguishable from an explicit user value. Library
-   * defaults live in {@code EventTypeConfig.defaults()} (core).
+   * which is what makes the thin merge in {@code OutboxEngineAutoConfiguration} possible — a
+   * populated default would be indistinguishable from an explicit user value. Library defaults live
+   * in {@code EventTypeConfig.defaults()} (core).
    */
   @Getter
   @Setter
@@ -261,8 +259,10 @@ public class OutboxProperties {
   public static class Worker {
     /** Explicit worker id. When null, the engine generates one. */
     private @Nullable String id;
+
     /** Explicit hostname. When null, the engine resolves it. */
     private @Nullable String host;
+
     private Map<String, String> metadata = new LinkedHashMap<>();
   }
 
@@ -282,11 +282,10 @@ public class OutboxProperties {
   @Setter
   public static class Metrics {
     /**
-     * Prefix applied to every Micrometer metric published by the outbox.
-     * Default: {@code event_outboxer} — a specific name chosen to avoid
-     * clashing with other libraries. Override when multiple outbox
-     * instances share a registry or when an organisation requires a
-     * different namespace.
+     * Prefix applied to every Micrometer metric published by the outbox. Default: {@code
+     * event_outboxer} — a specific name chosen to avoid clashing with other libraries. Override
+     * when multiple outbox instances share a registry or when an organisation requires a different
+     * namespace.
      */
     private String prefix = "event_outboxer";
   }
@@ -295,9 +294,9 @@ public class OutboxProperties {
   @Setter
   public static class Tracing {
     /**
-     * Master switch for the auto-configured {@code OutboxTracer} adapters (ADR-0023):
-     * Micrometer Tracing and OpenTelemetry detection both back off when {@code false}. A
-     * user-defined {@code OutboxTracer} bean is always honoured regardless of this flag.
+     * Master switch for the auto-configured {@code OutboxTracer} adapters (ADR-0023): Micrometer
+     * Tracing and OpenTelemetry detection both back off when {@code false}. A user-defined {@code
+     * OutboxTracer} bean is always honoured regardless of this flag.
      */
     private boolean enabled = true;
   }
@@ -306,16 +305,14 @@ public class OutboxProperties {
   @Setter
   public static class Health {
     /**
-     * Actuator health groups into which the {@code outbox} indicator is
-     * merged. Typical values: {@code readiness}, {@code liveness}. Default
-     * is empty — no influence on any probe; the indicator lives only at
-     * {@code /actuator/health/outbox}.
+     * Actuator health groups into which the {@code outbox} indicator is merged. Typical values:
+     * {@code readiness}, {@code liveness}. Default is empty — no influence on any probe; the
+     * indicator lives only at {@code /actuator/health/outbox}.
      *
-     * <p>When set, an {@code EnvironmentPostProcessor} appends
-     * {@code outbox} to {@code management.endpoint.health.group.<name>.include}
-     * for each listed group, preserving the user's existing includes and
-     * the default {@code <name>State} contributor so Spring Boot's
-     * liveness / readiness semantics keep working.
+     * <p>When set, an {@code EnvironmentPostProcessor} appends {@code outbox} to {@code
+     * management.endpoint.health.group.<name>.include} for each listed group, preserving the user's
+     * existing includes and the default {@code <name>State} contributor so Spring Boot's liveness /
+     * readiness semantics keep working.
      */
     private List<String> probeGroups = new ArrayList<>();
   }

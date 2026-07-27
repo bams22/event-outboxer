@@ -22,11 +22,11 @@ import org.jspecify.annotations.Nullable;
  *
  * {@code publish(...)} and {@code publishAll(...)} MUST participate in the caller's current
  * transaction: if the transaction commits, the event becomes visible to the engine; if it rolls
- * back, the event is not persisted. The Spring Boot starter implements this by wrapping the
- * {@code DataSource} in a {@code TransactionAwareDataSourceProxy} (see ADR-0002).
+ * back, the event is not persisted. The Spring Boot starter implements this by wrapping the {@code
+ * DataSource} in a {@code TransactionAwareDataSourceProxy} (see ADR-0002).
  *
- * <p>When the publisher is invoked outside a transaction, behavior depends on the configured
- * policy {@code event-outboxer.publisher.no-transaction-policy}:
+ * <p>When the publisher is invoked outside a transaction, behavior depends on the configured policy
+ * {@code event-outboxer.publisher.no-transaction-policy}:
  *
  * <ul>
  *   <li>{@code FAIL} (default) — throws {@code NoTransactionException}.
@@ -46,8 +46,8 @@ import org.jspecify.annotations.Nullable;
  *       failure.
  * </ul>
  *
- * <p>{@code publishAll(...)} is fail-fast and all-or-nothing: on the first failure it throws
- * and the caller's transaction is expected to roll back, leaving the outbox untouched.
+ * <p>{@code publishAll(...)} is fail-fast and all-or-nothing: on the first failure it throws and
+ * the caller's transaction is expected to roll back, leaving the outbox untouched.
  *
  * <h2>Thread-safety</h2>
  *
@@ -58,7 +58,10 @@ public interface OutboxEventPublisher {
   /** Equivalent to {@code publish(eventType, payload, PublishOptions.defaults())}. */
   UUID publish(String eventType, Object payload);
 
-  /** Equivalent to {@code publish(eventType, payload, PublishOptions.builder().runAt(runAt).build())}. */
+  /**
+   * Equivalent to {@code publish(eventType, payload,
+   * PublishOptions.builder().runAt(runAt).build())}.
+   */
   UUID publish(String eventType, Object payload, Instant runAt);
 
   /**
@@ -70,9 +73,9 @@ public interface OutboxEventPublisher {
   UUID publish(String eventType, Object payload, @Nullable PublishOptions options);
 
   /**
-   * Publishes a batch of events fail-fast. On success the returned list has the same size and
-   * order as {@code requests}; on any failure a {@code PublishFailedException} is raised and the
-   * caller's transaction is expected to roll back, leaving the outbox untouched.
+   * Publishes a batch of events fail-fast. On success the returned list has the same size and order
+   * as {@code requests}; on any failure a {@code PublishFailedException} is raised and the caller's
+   * transaction is expected to roll back, leaving the outbox untouched.
    */
   List<UUID> publishAll(Collection<PublishRequest> requests);
 }

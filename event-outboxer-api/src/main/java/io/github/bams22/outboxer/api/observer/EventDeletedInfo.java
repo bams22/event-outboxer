@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /**
  * Payload of {@link OutboxListener#onEventDeleted(EventDeletedInfo)} — fired when the failure
- * handler chain decided to delete the event outright (rare; used by workloads that consider
- * stored failures worthless).
+ * handler chain decided to delete the event outright (rare; used by workloads that consider stored
+ * failures worthless).
  *
  * @param eventId identifier of the deleted event
  * @param eventType event type string

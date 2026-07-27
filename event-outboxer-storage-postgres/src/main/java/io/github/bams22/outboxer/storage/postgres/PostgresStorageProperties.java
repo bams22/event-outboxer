@@ -18,14 +18,14 @@ import lombok.Builder;
  * {@code @ConfigurationProperties} so the adapter can be used from plain-Java setups too — the
  * Spring Boot starter (P9) binds YAML into this record.
  *
- * @param schema database schema holding the outbox tables; defaults to
- *     {@code event_outboxer} — a specific name chosen to avoid clashing with
- *     other libraries or application tables in a shared database
+ * @param schema database schema holding the outbox tables; defaults to {@code event_outboxer} — a
+ *     specific name chosen to avoid clashing with other libraries or application tables in a shared
+ *     database
  * @param tablePrefix optional prefix applied before table names; defaults to empty. Useful when
  *     multiple outboxes share a schema.
  * @param archiveEnabled when {@code true}, {@code markProcessed} copies the row to {@code
- *     event_archive} before deleting from {@code events}. The archive migration {@code V002}
- *     must have been applied.
+ *     event_archive} before deleting from {@code events}. The archive migration {@code V002} must
+ *     have been applied.
  * @param metricsCacheTtl TTL of the in-memory cache for {@link
  *     io.github.bams22.outboxer.spi.EventStore#metricsSnapshot()}; short so dashboards stay fresh
  *     but long enough not to hammer the DB.

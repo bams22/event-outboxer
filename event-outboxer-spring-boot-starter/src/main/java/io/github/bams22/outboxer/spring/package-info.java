@@ -10,10 +10,9 @@
 
 /**
  * Spring Boot auto-configuration for event-outboxer. Binds {@code event-outboxer.*} YAML
- * properties,
- * wires Spring-aware collaborators ({@code TransactionAwareDataSourceProxy},
- * {@code ContextPropagatingTaskDecorator}), registers an {@code OutboxEngine} as a
- * {@code SmartLifecycle} bean, and optionally publishes metrics and a health indicator.
+ * properties, wires Spring-aware collaborators ({@code TransactionAwareDataSourceProxy}, {@code
+ * ContextPropagatingTaskDecorator}), registers an {@code OutboxEngine} as a {@code SmartLifecycle}
+ * bean, and optionally publishes metrics and a health indicator.
  */
 @NullMarked
 package io.github.bams22.outboxer.spring;

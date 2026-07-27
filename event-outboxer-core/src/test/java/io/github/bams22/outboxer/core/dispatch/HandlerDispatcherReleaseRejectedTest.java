@@ -32,9 +32,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Direct coverage of {@link HandlerDispatcher#releaseRejected}. With capacity-aware claiming
- * the poller almost never triggers real dispatch rejections any more, so the release path needs
- * a unit-level test of its own: the row must return to PENDING without consuming an attempt.
+ * Direct coverage of {@link HandlerDispatcher#releaseRejected}. With capacity-aware claiming the
+ * poller almost never triggers real dispatch rejections any more, so the release path needs a
+ * unit-level test of its own: the row must return to PENDING without consuming an attempt.
  */
 class HandlerDispatcherReleaseRejectedTest {
 

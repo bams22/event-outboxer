@@ -10,9 +10,9 @@
 package io.github.bams22.outboxer.core.config;
 
 /**
- * What the dispatcher does when a claimed event has no registered {@code EventHandler} for its
- * type (see ADR-0013). Expected in typical multi-service deployments where one instance rolls out
- * a new handler ahead of a peer.
+ * What the dispatcher does when a claimed event has no registered {@code EventHandler} for its type
+ * (see ADR-0013). Expected in typical multi-service deployments where one instance rolls out a new
+ * handler ahead of a peer.
  */
 public enum UnknownHandlerPolicy {
 
@@ -27,8 +27,8 @@ public enum UnknownHandlerPolicy {
 
   /**
    * Leave the event {@code PROCESSING} and raise an exception so the row falls back to orphan
-   * recovery. Reserved for strict environments that would rather fail loudly than route the
-   * event elsewhere.
+   * recovery. Reserved for strict environments that would rather fail loudly than route the event
+   * elsewhere.
    */
   FAIL
 }

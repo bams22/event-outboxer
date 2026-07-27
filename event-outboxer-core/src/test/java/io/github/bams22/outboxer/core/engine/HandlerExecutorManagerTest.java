@@ -25,8 +25,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * In-flight accounting of {@link HandlerExecutorManager}: capacity budget, rejection rollback,
- * the saturated→free wake edge, and generation isolation across drain/restart.
+ * In-flight accounting of {@link HandlerExecutorManager}: capacity budget, rejection rollback, the
+ * saturated→free wake edge, and generation isolation across drain/restart.
  */
 class HandlerExecutorManagerTest {
 
@@ -122,8 +122,7 @@ class HandlerExecutorManagerTest {
     assertThat(gate.freeCapacity()).isZero();
 
     // Force the race the capacity check normally prevents: submit into a full executor.
-    assertThatThrownBy(() -> gate.execute(() -> {}))
-        .isInstanceOf(RejectedExecutionException.class);
+    assertThatThrownBy(() -> gate.execute(() -> {})).isInstanceOf(RejectedExecutionException.class);
     assertThat(gate.freeCapacity()).isZero(); // not negative, not phantom-inflated
 
     release.countDown();
@@ -212,7 +211,7 @@ class HandlerExecutorManagerTest {
     while (System.currentTimeMillis() < deadline) {
       try {
         Thread.sleep(deadline - System.currentTimeMillis());
-      } catch (InterruptedException ignored) {
+      } catch (InterruptedException _) {
         // keep sleeping: simulates a handler that outlives the drain timeout
       }
     }

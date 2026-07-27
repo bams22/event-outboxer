@@ -15,10 +15,10 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Payload of {@link OutboxListener#onStuckHandlerReclaimed(StuckHandlerReclaimedInfo)} — fired
- * when the watchdog forcibly reclaimed an event whose handler had been running longer than
- * {@code handlerMaxRuntime}. The physical worker thread is unavoidably leaked in the JVM (see
- * ADR-0005); the event itself is returned to PENDING with {@code attempts + 1}.
+ * Payload of {@link OutboxListener#onStuckHandlerReclaimed(StuckHandlerReclaimedInfo)} — fired when
+ * the watchdog forcibly reclaimed an event whose handler had been running longer than {@code
+ * handlerMaxRuntime}. The physical worker thread is unavoidably leaked in the JVM (see ADR-0005);
+ * the event itself is returned to PENDING with {@code attempts + 1}.
  *
  * @param eventId id of the reclaimed event
  * @param eventType event type string

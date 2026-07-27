@@ -27,8 +27,6 @@ import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
-import javax.sql.DataSource;
-import org.jspecify.annotations.Nullable;
 import io.github.bams22.outboxer.spring.executor.HandlerExecutorFactory;
 import io.github.bams22.outboxer.spring.lifecycle.OutboxSmartLifecycle;
 import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
@@ -40,6 +38,8 @@ import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfigur
 import io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration;
 import java.util.List;
 import java.util.Map;
+import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -49,11 +49,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 /**
- * Central wiring of the outbox engine. Consumes the lower-level auto-configurations
- * ({@code PostgresStorageAutoConfiguration}, lock and serializer variants) and composes them
- * into a single {@link OutboxEngine} managed by {@link OutboxSmartLifecycle}. There is no
- * in-memory storage auto-configuration on purpose (ADR-0020): a durable store is the point of
- * the library; tests import {@code OutboxInMemoryTestConfiguration} explicitly.
+ * Central wiring of the outbox engine. Consumes the lower-level auto-configurations ({@code
+ * PostgresStorageAutoConfiguration}, lock and serializer variants) and composes them into a single
+ * {@link OutboxEngine} managed by {@link OutboxSmartLifecycle}. There is no in-memory storage
+ * auto-configuration on purpose (ADR-0020): a durable store is the point of the library; tests
+ * import {@code OutboxInMemoryTestConfiguration} explicitly.
  */
 @AutoConfiguration(
     after = {
@@ -67,7 +67,11 @@ import org.springframework.context.annotation.Bean;
       io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration.class
     })
 @EnableConfigurationProperties(OutboxProperties.class)
-@ConditionalOnProperty(prefix = "event-outboxer", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(
+    prefix = "event-outboxer",
+    name = "enabled",
+    havingValue = "true",
+    matchIfMissing = true)
 public class OutboxEngineAutoConfiguration {
 
   private static final org.slf4j.Logger log =
@@ -120,7 +124,14 @@ public class OutboxEngineAutoConfiguration {
     // these when the engine starts — for now, aggregate all application-registered listeners.
     OutboxListener fanout = new FanOutListener(listeners);
     return new io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher(
-        store, serializer, clock, txContext, policy, fanout, wakeHub, resolveTracer(tracerProvider));
+        store,
+        serializer,
+        clock,
+        txContext,
+        policy,
+        fanout,
+        wakeHub,
+        resolveTracer(tracerProvider));
   }
 
   @Bean
@@ -138,10 +149,10 @@ public class OutboxEngineAutoConfiguration {
       ObjectProvider<io.github.bams22.outboxer.spi.OutboxAdmin> adminProvider,
       ObjectProvider<DataSource> dataSourceProvider,
       ObjectProvider<EventHandler<?>> handlerProvider,
-      @Qualifier("outboxDefaultFailureHandler") ObjectProvider<FailureHandler<?>>
-              defaultFailureHandlerProvider,
-      @Qualifier("outboxPerTypeFailureHandlers") ObjectProvider<Map<String, FailureHandler<?>>>
-              perTypeFailureHandlersProvider,
+      @Qualifier("outboxDefaultFailureHandler")
+          ObjectProvider<FailureHandler<?>> defaultFailureHandlerProvider,
+      @Qualifier("outboxPerTypeFailureHandlers")
+          ObjectProvider<Map<String, FailureHandler<?>>> perTypeFailureHandlersProvider,
       ObjectProvider<io.github.bams22.outboxer.core.polling.PollStrategy> pollStrategyProvider,
       ObjectProvider<org.springframework.core.task.TaskDecorator> taskDecoratorProvider,
       ObjectProvider<OutboxTracer> tracerProvider,
@@ -188,8 +199,7 @@ public class OutboxEngineAutoConfiguration {
     handlers.forEach(builder::handler);
     warnIfPgLockCanExhaustPool(properties, resolvedDefaults, handlers, dataSourceProvider);
     defaultFailureHandlerProvider.ifAvailable(builder::defaultFailureHandler);
-    perTypeFailureHandlersProvider.ifAvailable(
-        map -> map.forEach(builder::failureHandlerFor));
+    perTypeFailureHandlersProvider.ifAvailable(map -> map.forEach(builder::failureHandlerFor));
     pollStrategyProvider.ifAvailable(builder::pollStrategy);
     for (OutboxListener l : listeners) {
       builder.listener(l);
@@ -203,10 +213,11 @@ public class OutboxEngineAutoConfiguration {
     org.springframework.core.task.TaskDecorator decorator =
         taskDecoratorProvider.getIfAvailable(
             org.springframework.core.task.support.ContextPropagatingTaskDecorator::new);
-    switch (properties.getHandlerExecutor().getType()) {
-      case virtual -> builder.handlerExecutorFactory(HandlerExecutorFactory.virtual(decorator));
-      case platform -> builder.handlerExecutorFactory(HandlerExecutorFactory.platform(decorator));
-    }
+    builder.handlerExecutorFactory(
+        switch (properties.getHandlerExecutor().getType()) {
+          case virtual -> HandlerExecutorFactory.virtual(decorator);
+          case platform -> HandlerExecutorFactory.platform(decorator);
+        });
 
     return builder.build();
   }
@@ -278,11 +289,11 @@ public class OutboxEngineAutoConfiguration {
 
   /**
    * The session-scoped advisory locker ({@code lock.type=postgres-advisory}) holds one pooled
-   * connection for every concurrently-held lock (ADR-0012). If every handler thread can hold a
-   * lock at once, the fleet can exhaust the shared HikariCP pool and deadlock against its own
-   * handlers — warn at startup when the sums line up that way. The default lease locker
-   * ({@code lock.type=postgres-lease}, ADR-0022) holds no connection during the handler, so the
-   * scenario is structurally impossible there and the warning stays silent.
+   * connection for every concurrently-held lock (ADR-0012). If every handler thread can hold a lock
+   * at once, the fleet can exhaust the shared HikariCP pool and deadlock against its own handlers —
+   * warn at startup when the sums line up that way. The default lease locker ({@code
+   * lock.type=postgres-lease}, ADR-0022) holds no connection during the handler, so the scenario is
+   * structurally impossible there and the warning stays silent.
    */
   private void warnIfPgLockCanExhaustPool(
       OutboxProperties properties,
@@ -387,7 +398,7 @@ public class OutboxEngineAutoConfiguration {
       for (OutboxListener l : delegates) {
         try {
           l.onEventPublished(info);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException _) {
           // isolation: one broken listener must not poison a publish
         }
       }

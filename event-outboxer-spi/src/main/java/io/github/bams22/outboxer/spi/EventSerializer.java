@@ -27,10 +27,10 @@ import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 public interface EventSerializer {
 
   /**
-   * Serialize a payload DTO to the string form stored in the outbox. Both the string itself and
-   * the payload's fully-qualified class name (obtained via {@code payload.getClass().getName()})
-   * are persisted so that {@link #deserialize(String, Class)} can later reconstruct the DTO with
-   * strict type checking.
+   * Serialize a payload DTO to the string form stored in the outbox. Both the string itself and the
+   * payload's fully-qualified class name (obtained via {@code payload.getClass().getName()}) are
+   * persisted so that {@link #deserialize(String, Class)} can later reconstruct the DTO with strict
+   * type checking.
    *
    * @throws PublishSerializationException if the payload cannot be represented in the serializer's
    *     format
@@ -41,9 +41,9 @@ public interface EventSerializer {
    * Reconstruct a payload DTO from its string form.
    *
    * <p>The adapter must enforce strict type matching: the serialized document must correspond to
-   * the provided {@code type}. For Jackson, this means honouring
-   * {@code FAIL_ON_UNKNOWN_PROPERTIES} / {@code FAIL_ON_NULL_FOR_PRIMITIVES} so that silent schema
-   * drift cannot corrupt handler inputs.
+   * the provided {@code type}. For Jackson, this means honouring {@code FAIL_ON_UNKNOWN_PROPERTIES}
+   * / {@code FAIL_ON_NULL_FOR_PRIMITIVES} so that silent schema drift cannot corrupt handler
+   * inputs.
    *
    * @throws PayloadDeserializationException if the stored document cannot be parsed into {@code
    *     type}

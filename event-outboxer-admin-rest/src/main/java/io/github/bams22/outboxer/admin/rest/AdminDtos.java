@@ -82,8 +82,7 @@ public final class AdminDtos {
 
     static EventPageResponse of(List<Event> page, int requestedLimit) {
       List<EventResponse> items = page.stream().map(EventResponse::from).toList();
-      String next =
-          page.size() < requestedLimit ? null : encodeCursor(page.get(page.size() - 1));
+      String next = page.size() < requestedLimit ? null : encodeCursor(page.getLast());
       return new EventPageResponse(items, next);
     }
   }
@@ -121,8 +120,8 @@ public final class AdminDtos {
   public record ErrorResponse(String error) {}
 
   /**
-   * Opaque page cursor: {@code <iso-instant>_<uuid>} of the last row of the previous page. Full
-   * ISO precision — millisecond truncation would make the strict keyset comparison skip rows.
+   * Opaque page cursor: {@code <iso-instant>_<uuid>} of the last row of the previous page. Full ISO
+   * precision — millisecond truncation would make the strict keyset comparison skip rows.
    */
   static @Nullable AdminCursor decodeCursor(@Nullable String cursor) {
     if (cursor == null || cursor.isBlank()) {

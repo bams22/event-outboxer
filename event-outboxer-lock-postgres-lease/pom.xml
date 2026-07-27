@@ -78,7 +78,7 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-<build>
+    <build>
         <plugins>
             <!--
                 Adapters must not depend on event-outboxer-core (CLAUDE.md

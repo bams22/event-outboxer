@@ -15,25 +15,6 @@
     <description>Bill of Materials for event-outboxer. Import this BOM to pin
         consistent versions of all event-outboxer modules.</description>
 
-    <build>
-        <plugins>
-            <!--
-                BOM override: flattenMode=bom instead of resolveCiFriendliesOnly.
-                The BOM is consumed with <scope>import</scope>, so every
-                <version>${project.version}</version> in its dependencyManagement
-                must be fully resolved to a literal version in the flattened pom
-                — consumers don't have our <revision> property in their build.
-            -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>flatten-maven-plugin</artifactId>
-                <configuration>
-                    <flattenMode>bom</flattenMode>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -123,4 +104,23 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <build>
+        <plugins>
+            <!--
+                BOM override: flattenMode=bom instead of resolveCiFriendliesOnly.
+                The BOM is consumed with <scope>import</scope>, so every
+                <version>${project.version}</version> in its dependencyManagement
+                must be fully resolved to a literal version in the flattened pom
+                — consumers don't have our <revision> property in their build.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <configuration>
+                    <flattenMode>bom</flattenMode>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

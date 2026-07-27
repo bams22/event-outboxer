@@ -11,9 +11,9 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * A claimed event could not be dispatched because no {@code EventHandler} is registered for its
- * {@code eventType}. Final action depends on the configured {@code UnknownHandlerPolicy}:
- * {@code SKIP} (leave as PENDING), {@code DISABLE} (default — mark as DISABLED), or {@code FAIL}
- * (log WARN and continue).
+ * {@code eventType}. Final action depends on the configured {@code UnknownHandlerPolicy}: {@code
+ * SKIP} (leave as PENDING), {@code DISABLE} (default — mark as DISABLED), or {@code FAIL} (log WARN
+ * and continue).
  */
 public final class UnknownEventTypeException extends HandleException {
 

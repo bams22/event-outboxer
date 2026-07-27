@@ -13,8 +13,8 @@
  * registry, maintenance tasks, default publisher and the {@code OutboxEngine} facade that composes
  * them against whatever SPI adapters are configured.
  *
- * <p>This module depends only on {@code event-outboxer-api}, {@code event-outboxer-spi} and
- * SLF4J. The {@code maven-enforcer-plugin} bans {@code org.springframework.*} and {@code
+ * <p>This module depends only on {@code event-outboxer-api}, {@code event-outboxer-spi} and SLF4J.
+ * The {@code maven-enforcer-plugin} bans {@code org.springframework.*} and {@code
  * jakarta.persistence.*} on the core classpath.
  */
 @NullMarked

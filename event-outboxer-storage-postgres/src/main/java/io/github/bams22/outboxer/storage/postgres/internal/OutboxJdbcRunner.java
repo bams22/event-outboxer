@@ -22,10 +22,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Minimalist JDBC helper used by the PostgreSQL adapter. Holds no per-call state, every method is
- * thread-safe. Connection lifecycle is delegated to {@link ConnectionSupplier}: obtain via
- * {@link ConnectionSupplier#get()}, close the {@link PreparedStatement}, release via
- * {@link ConnectionSupplier#release(Connection)}. The supplier is responsible for honouring the
- * caller's transaction (ADR-0002) — in a tx context {@code release} is a no-op.
+ * thread-safe. Connection lifecycle is delegated to {@link ConnectionSupplier}: obtain via {@link
+ * ConnectionSupplier#get()}, close the {@link PreparedStatement}, release via {@link
+ * ConnectionSupplier#release(Connection)}. The supplier is responsible for honouring the caller's
+ * transaction (ADR-0002) — in a tx context {@code release} is a no-op.
  *
  * <p>Statements are built with {@code ?} positional placeholders; callers bind via the supplied
  * {@link ParameterBinder}. SQLException is surfaced to callers as a raw {@code SQLException}; the
@@ -87,12 +87,12 @@ public final class OutboxJdbcRunner {
   }
 
   /**
-   * Run an INSERT / UPDATE / DELETE with a RETURNING clause and map each returned row. Uses
-   * {@code executeQuery} rather than {@code executeUpdate} — PostgreSQL treats {@code ... RETURNING}
-   * as a query.
+   * Run an INSERT / UPDATE / DELETE with a RETURNING clause and map each returned row. Uses {@code
+   * executeQuery} rather than {@code executeUpdate} — PostgreSQL treats {@code ... RETURNING} as a
+   * query.
    */
-  public <T> List<T> updateReturning(
-      String sql, ParameterBinder binder, ResultSetMapper<T> mapper) throws SQLException {
+  public <T> List<T> updateReturning(String sql, ParameterBinder binder, ResultSetMapper<T> mapper)
+      throws SQLException {
     Connection conn = connections.get();
     try (PreparedStatement ps = conn.prepareStatement(sql)) {
       binder.bind(ps);
@@ -168,7 +168,7 @@ public final class OutboxJdbcRunner {
         if (restoreAutoCommit) {
           try {
             conn.setAutoCommit(true);
-          } catch (SQLException ignored) {
+          } catch (SQLException _) {
             // best-effort restore; the connection is about to be released anyway
           }
         }

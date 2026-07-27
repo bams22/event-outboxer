@@ -17,25 +17,18 @@ concurrency:
 
 jobs:
   unit:
-    name: Unit tests (JDK ${{ matrix.jdk }})
+    name: Unit tests (JDK 25)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      # Don't short-circuit siblings on a single JDK failure — better to see the
-      # full compatibility picture on every push.
-      fail-fast: false
-      matrix:
-        # Baseline (17), intermediate LTS (21 — virtual threads stable),
-        # current LTS (25 — JEP 491). ADR-0017.
-        jdk: ['17', '21', '25']
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK ${{ matrix.jdk }}
+      # Baseline JDK 25 (LTS) — ADR-0017; enforcer rejects anything older.
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ matrix.jdk }}
+          java-version: '25'
           cache: maven
 
       - name: Maven verify (unit)

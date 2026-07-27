@@ -20,12 +20,12 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.core.task.TaskDecorator;
 
 /**
- * Wraps an {@link ExecutorService} and applies a {@link TaskDecorator} to every submitted
- * {@link Runnable} / {@link Callable}. Used for the virtual-thread executor where Spring's
- * {@code ThreadPoolTaskExecutor} doesn't apply: the underlying
- * {@code Executors.newThreadPerTaskExecutor(...)} is a plain {@code ExecutorService}, and we
- * still want MDC / Micrometer Observation / security context to propagate from the submitting
- * thread to the virtual thread running the task.
+ * Wraps an {@link ExecutorService} and applies a {@link TaskDecorator} to every submitted {@link
+ * Runnable} / {@link Callable}. Used for the virtual-thread executor where Spring's {@code
+ * ThreadPoolTaskExecutor} doesn't apply: the underlying {@code
+ * Executors.newThreadPerTaskExecutor(...)} is a plain {@code ExecutorService}, and we still want
+ * MDC / Micrometer Observation / security context to propagate from the submitting thread to the
+ * virtual thread running the task.
  */
 final class ContextPropagatingExecutorService implements ExecutorService {
 

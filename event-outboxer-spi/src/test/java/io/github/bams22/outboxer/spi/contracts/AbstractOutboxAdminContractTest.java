@@ -32,10 +32,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Reusable contract specification for every {@link OutboxAdmin} implementation. Subclasses
- * provide a matching {@link EventStore} + {@link OutboxAdmin} pair over the same underlying
- * storage; archive-specific behaviour is covered separately by adapter tests because the archive
- * is a PostgreSQL-only feature (ADR-0008).
+ * Reusable contract specification for every {@link OutboxAdmin} implementation. Subclasses provide
+ * a matching {@link EventStore} + {@link OutboxAdmin} pair over the same underlying storage;
+ * archive-specific behaviour is covered separately by adapter tests because the archive is a
+ * PostgreSQL-only feature (ADR-0008).
  */
 public abstract class AbstractOutboxAdminContractTest {
 
@@ -99,7 +99,7 @@ public abstract class AbstractOutboxAdminContractTest {
       for (Event e : page) {
         assertThat(seen.add(e.id())).as("duplicate row across pages: %s", e.id()).isTrue();
       }
-      Event last = page.get(page.size() - 1);
+      Event last = page.getLast();
       cursor = new AdminCursor(last.createdAt(), last.id());
       if (page.size() < 3) {
         break;
@@ -174,8 +174,7 @@ public abstract class AbstractOutboxAdminContractTest {
       assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
       assertThat(store.findById(id).orElseThrow().attempts()).isZero();
     }
-    assertThat(store.findById(disabledB).orElseThrow().status())
-        .isEqualTo(EventStatus.DISABLED);
+    assertThat(store.findById(disabledB).orElseThrow().status()).isEqualTo(EventStatus.DISABLED);
   }
 
   // ---------------------------------------------------------------------------------------------

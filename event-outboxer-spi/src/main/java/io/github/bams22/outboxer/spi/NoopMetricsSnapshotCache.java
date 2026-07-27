@@ -13,8 +13,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * No-op {@link MetricsSnapshotCache}. Exposed as the {@link MetricsSnapshotCache#noop()}
- * singleton. Every {@code get()} misses; every {@code put(...)} is dropped.
+ * No-op {@link MetricsSnapshotCache}. Exposed as the {@link MetricsSnapshotCache#noop()} singleton.
+ * Every {@code get()} misses; every {@code put(...)} is dropped.
  */
 final class NoopMetricsSnapshotCache implements MetricsSnapshotCache {
 

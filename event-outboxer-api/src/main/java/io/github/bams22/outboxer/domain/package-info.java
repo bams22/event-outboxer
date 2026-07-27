@@ -9,9 +9,9 @@
  */
 
 /**
- * Immutable value objects shared across the public API and the SPI. All types in this package
- * are {@link org.jspecify.annotations.NullMarked NullMarked}: references are non-null unless
- * explicitly annotated with {@link org.jspecify.annotations.Nullable Nullable}.
+ * Immutable value objects shared across the public API and the SPI. All types in this package are
+ * {@link org.jspecify.annotations.NullMarked NullMarked}: references are non-null unless explicitly
+ * annotated with {@link org.jspecify.annotations.Nullable Nullable}.
  */
 @NullMarked
 package io.github.bams22.outboxer.domain;

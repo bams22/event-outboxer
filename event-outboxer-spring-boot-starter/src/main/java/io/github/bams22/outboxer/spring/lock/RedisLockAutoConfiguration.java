@@ -21,9 +21,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 
 /**
- * Registers {@link RedisEntityLocker} when {@code outbox.lock.type=redis} and a
- * {@link StatefulRedisConnection} bean is available (users create one via Lettuce's
- * {@code RedisClient}).
+ * Registers {@link RedisEntityLocker} when {@code outbox.lock.type=redis} and a {@link
+ * StatefulRedisConnection} bean is available (users create one via Lettuce's {@code RedisClient}).
  */
 @AutoConfiguration
 @ConditionalOnClass(RedisEntityLocker.class)

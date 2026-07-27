@@ -11,8 +11,8 @@ package io.github.bams22.outboxer.spring.storage;
 
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
-import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.github.bams22.outboxer.storage.postgres.PostgresEventStore;
@@ -36,18 +36,19 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 
 /**
  * Autoconfiguration for the PostgreSQL storage adapter. Kicks in when {@code
- * outbox.storage.type=postgres}, the adapter classes are on the classpath, and a
- * {@link DataSource} bean is available.
+ * outbox.storage.type=postgres}, the adapter classes are on the classpath, and a {@link DataSource}
+ * bean is available.
  *
  * <h2>ADR-0002 — participate in the caller's transaction</h2>
  *
- * The starter wraps the application's {@code DataSource} in
- * {@link TransactionAwareDataSourceProxy} and resolves JDBC connections through
- * {@link DataSourceUtils#getConnection(DataSource)}. With this wiring, {@code
- * OutboxEventPublisher.publish(...)} called inside a {@code @Transactional} method shares the
- * caller's connection and commits (or rolls back) atomically with the business INSERT/UPDATE.
+ * The starter wraps the application's {@code DataSource} in {@link TransactionAwareDataSourceProxy}
+ * and resolves JDBC connections through {@link DataSourceUtils#getConnection(DataSource)}. With
+ * this wiring, {@code OutboxEventPublisher.publish(...)} called inside a {@code @Transactional}
+ * method shares the caller's connection and commits (or rolls back) atomically with the business
+ * INSERT/UPDATE.
  */
-@AutoConfiguration(after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+@AutoConfiguration(
+    after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass({PostgresEventStore.class, TransactionAwareDataSourceProxy.class})
 @ConditionalOnBean(DataSource.class)
 @ConditionalOnProperty(prefix = "event-outboxer.storage", name = "type", havingValue = "postgres")
@@ -100,13 +101,13 @@ public class PostgresStorageAutoConfiguration {
   }
 
   /**
-   * Feeds {@code outbox.storage.schema} into Flyway as the
-   * {@code ${eventOutboxerSchema}} placeholder so the library's classpath
-   * migrations pick up the same schema name as the adapter at runtime.
+   * Feeds {@code outbox.storage.schema} into Flyway as the {@code ${eventOutboxerSchema}}
+   * placeholder so the library's classpath migrations pick up the same schema name as the adapter
+   * at runtime.
    *
-   * <p>Merges with any other placeholders the user has configured via
-   * {@code spring.flyway.placeholders.*} — existing keys win on conflict,
-   * so users can always override the schema name explicitly.
+   * <p>Merges with any other placeholders the user has configured via {@code
+   * spring.flyway.placeholders.*} — existing keys win on conflict, so users can always override the
+   * schema name explicitly.
    */
   @Bean
   @ConditionalOnClass(name = "org.flywaydb.core.Flyway")
@@ -125,16 +126,15 @@ public class PostgresStorageAutoConfiguration {
     };
   }
 
-
   // ---------------------------------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------------------------------
 
   /**
-   * {@link ConnectionSupplier} that leases connections via
-   * {@link DataSourceUtils#getConnection(DataSource)}; inside a Spring-managed transaction the
-   * pool connection is shared with the caller, outside it a fresh pool connection is obtained
-   * and closed on {@code release(...)}.
+   * {@link ConnectionSupplier} that leases connections via {@link
+   * DataSourceUtils#getConnection(DataSource)}; inside a Spring-managed transaction the pool
+   * connection is shared with the caller, outside it a fresh pool connection is obtained and closed
+   * on {@code release(...)}.
    */
   private static final class DataSourceConnectionSupplier implements ConnectionSupplier {
 

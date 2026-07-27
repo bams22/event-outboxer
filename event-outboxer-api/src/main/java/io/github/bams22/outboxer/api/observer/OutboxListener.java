@@ -11,25 +11,25 @@ package io.github.bams22.outboxer.api.observer;
 
 /**
  * Observability event bus for the outbox engine. Implementations may be used to publish metrics
- * (the {@code event-outboxer-metrics-micrometer} module ships a Micrometer-backed
- * implementation), write structured logs, maintain an audit trail, trigger alerts, or power
- * distributed-tracing integrations.
+ * (the {@code event-outboxer-metrics-micrometer} module ships a Micrometer-backed implementation),
+ * write structured logs, maintain an audit trail, trigger alerts, or power distributed-tracing
+ * integrations.
  *
- * <p>Every method has a default no-op implementation so that custom listeners only have to
- * override the events they care about.
+ * <p>Every method has a default no-op implementation so that custom listeners only have to override
+ * the events they care about.
  *
  * <h2>Threading contract</h2>
  *
  * Callbacks are invoked from a variety of threads — worker threads processing events, poller
- * threads, and the shared maintenance executor. Implementations MUST be thread-safe. Callbacks
- * also run on the engine's hot path, so they MUST be fast and non-blocking: any long-running
- * work should be offloaded to a dedicated executor owned by the listener.
+ * threads, and the shared maintenance executor. Implementations MUST be thread-safe. Callbacks also
+ * run on the engine's hot path, so they MUST be fast and non-blocking: any long-running work should
+ * be offloaded to a dedicated executor owned by the listener.
  *
  * <h2>Failure isolation</h2>
  *
- * The engine wraps each listener invocation in a try/catch so that a misbehaving listener
- * cannot take other listeners or the engine down. Exceptions are logged; they are not
- * propagated to the event's processing flow.
+ * The engine wraps each listener invocation in a try/catch so that a misbehaving listener cannot
+ * take other listeners or the engine down. Exceptions are logged; they are not propagated to the
+ * event's processing flow.
  */
 public interface OutboxListener {
 
@@ -52,8 +52,8 @@ public interface OutboxListener {
   }
 
   /**
-   * Called after a handler returned {@code EventOutcome.Success} and the storage acknowledged
-   * the finalization.
+   * Called after a handler returned {@code EventOutcome.Success} and the storage acknowledged the
+   * finalization.
    */
   default void onEventProcessed(EventProcessedInfo info) {
     // no-op
@@ -100,8 +100,8 @@ public interface OutboxListener {
   }
 
   /**
-   * Called when {@code EntityLocker.tryLock(...)} returned empty because the key is held by
-   * another worker. This is the normal busy-lock path, not a technical failure.
+   * Called when {@code EntityLocker.tryLock(...)} returned empty because the key is held by another
+   * worker. This is the normal busy-lock path, not a technical failure.
    */
   default void onLockAcquisitionFailed(LockAcquisitionInfo info) {
     // no-op
@@ -170,11 +170,11 @@ public interface OutboxListener {
 
   /**
    * Called when the engine's background health check detected that a critical component is no
-   * longer alive — typically, a per-type poller thread died from an uncaught {@code Error}.
-   * After this callback {@code OutboxEngine.state()} reports {@code STOPPED}; the Actuator
-   * health indicator flips DOWN, the {@code event_outboxer.engine.state} gauge flips to
-   * {@code stopped=1}, and (with {@code outbox.health.probe-groups} configured) the readiness /
-   * liveness probe follows.
+   * longer alive — typically, a per-type poller thread died from an uncaught {@code Error}. After
+   * this callback {@code OutboxEngine.state()} reports {@code STOPPED}; the Actuator health
+   * indicator flips DOWN, the {@code event_outboxer.engine.state} gauge flips to {@code stopped=1},
+   * and (with {@code outbox.health.probe-groups} configured) the readiness / liveness probe
+   * follows.
    */
   default void onEngineCrashed(EngineCrashedInfo info) {
     // no-op

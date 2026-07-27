@@ -28,14 +28,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link EntityLocker} backed by PostgreSQL session-scoped advisory locks (see ADR-0012 and
- * risk #7 in the implementation plan).
+ * {@link EntityLocker} backed by PostgreSQL session-scoped advisory locks (see ADR-0012 and risk #7
+ * in the implementation plan).
  *
  * <h2>Scope — session, not transaction</h2>
  *
  * The handler runs on a worker thread outside any transaction that the caller opened for the
- * publisher; a transaction-scoped {@code pg_advisory_xact_lock} would therefore need the adapter
- * to synthesize a dummy transaction. Session scope sidesteps that complexity: {@link
+ * publisher; a transaction-scoped {@code pg_advisory_xact_lock} would therefore need the adapter to
+ * synthesize a dummy transaction. Session scope sidesteps that complexity: {@link
  * LockHandle#close()} explicitly calls {@code pg_advisory_unlock(key)} and returns the pool
  * connection.
  *
@@ -43,22 +43,22 @@ import org.slf4j.LoggerFactory;
  *
  * PostgreSQL advisory locks are tracked per-connection. To avoid a bug where HikariCP hands out
  * different physical connections to {@code tryLock} and {@code close}, this implementation keeps
- * the exact connection used for acquisition alive inside the returned {@link LockHandle} and
- * closes it only after the unlock succeeds.
+ * the exact connection used for acquisition alive inside the returned {@link LockHandle} and closes
+ * it only after the unlock succeeds.
  *
  * <h2>Key hashing</h2>
  *
- * {@code pg_advisory_lock} takes a signed {@code bigint}. The adapter derives a stable 64-bit
- * hash from the caller-supplied key via SHA-256 and reuses its first 8 bytes. This is
- * deterministic: the same key always maps to the same lock id. Collisions across completely
- * unrelated keys are astronomically improbable at the scale we operate.
+ * {@code pg_advisory_lock} takes a signed {@code bigint}. The adapter derives a stable 64-bit hash
+ * from the caller-supplied key via SHA-256 and reuses its first 8 bytes. This is deterministic: the
+ * same key always maps to the same lock id. Collisions across completely unrelated keys are
+ * astronomically improbable at the scale we operate.
  *
  * <h2>TTL</h2>
  *
  * The {@code ttl} parameter is documented but unused — PostgreSQL advisory locks have no built-in
- * timeout. The engine's {@code handlerMaxRuntime} + watchdog force-reclaim provides the safety
- * net; if the handler is truly stuck forever, the connection is eventually recycled by the pool
- * which releases the lock.
+ * timeout. The engine's {@code handlerMaxRuntime} + watchdog force-reclaim provides the safety net;
+ * if the handler is truly stuck forever, the connection is eventually recycled by the pool which
+ * releases the lock.
  */
 public final class PgAdvisoryLocker implements EntityLocker {
 
@@ -96,7 +96,7 @@ public final class PgAdvisoryLocker implements EntityLocker {
       if (conn != null) {
         try {
           conn.close();
-        } catch (SQLException ignored) {
+        } catch (SQLException _) {
           // best-effort
         }
       }
@@ -135,8 +135,7 @@ public final class PgAdvisoryLocker implements EntityLocker {
         return;
       }
       closed = true;
-      try (PreparedStatement ps =
-          connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+      try (PreparedStatement ps = connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {
         ps.setLong(1, hash);
         try (ResultSet rs = ps.executeQuery()) {
           if (rs.next() && !rs.getBoolean(1)) {
@@ -148,8 +147,7 @@ public final class PgAdvisoryLocker implements EntityLocker {
           }
         }
       } catch (SQLException ex) {
-        throw new LockReleaseException(
-            "pg_advisory_unlock failed for key '" + key + "'", ex);
+        throw new LockReleaseException("pg_advisory_unlock failed for key '" + key + "'", ex);
       } finally {
         try {
           connection.close();

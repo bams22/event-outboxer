@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -32,9 +33,8 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
-import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 
 @SpringBootTest(
     classes = InMemoryStarterSmokeTest.TestApp.class,
@@ -77,13 +77,25 @@ class InMemoryStarterSmokeTest {
     assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);
 
     assertThat(
-            meterRegistry.get("event_outboxer.engine.state").tag("state", "running").gauge().value())
+            meterRegistry
+                .get("event_outboxer.engine.state")
+                .tag("state", "running")
+                .gauge()
+                .value())
         .isEqualTo(1.0);
     assertThat(
-            meterRegistry.get("event_outboxer.engine.state").tag("state", "stopped").gauge().value())
+            meterRegistry
+                .get("event_outboxer.engine.state")
+                .tag("state", "stopped")
+                .gauge()
+                .value())
         .isEqualTo(0.0);
     assertThat(
-            meterRegistry.get("event_outboxer.engine.state").tag("state", "stopping").gauge().value())
+            meterRegistry
+                .get("event_outboxer.engine.state")
+                .tag("state", "stopping")
+                .gauge()
+                .value())
         .isEqualTo(0.0);
   }
 
@@ -92,10 +104,7 @@ class InMemoryStarterSmokeTest {
     // Gauges are registered eagerly at context refresh; values are pulled on scrape. The per-type
     // rows exist before any event is published — initial values are 0.
     assertThat(
-            meterRegistry
-                .get("event_outboxer.events.pending")
-                .tag("event_type", "ORDER")
-                .gauge())
+            meterRegistry.get("event_outboxer.events.pending").tag("event_type", "ORDER").gauge())
         .isNotNull();
     assertThat(
             meterRegistry
@@ -104,10 +113,7 @@ class InMemoryStarterSmokeTest {
                 .gauge())
         .isNotNull();
     assertThat(
-            meterRegistry
-                .get("event_outboxer.events.disabled")
-                .tag("event_type", "ORDER")
-                .gauge())
+            meterRegistry.get("event_outboxer.events.disabled").tag("event_type", "ORDER").gauge())
         .isNotNull();
     assertThat(
             meterRegistry
@@ -128,7 +134,8 @@ class InMemoryStarterSmokeTest {
                 .gauge()
                 .value())
         .isNotNaN();
-    assertThat(meterRegistry.get("event_outboxer.events.oldest_claimed_age_seconds").gauge().value())
+    assertThat(
+            meterRegistry.get("event_outboxer.events.oldest_claimed_age_seconds").gauge().value())
         .isNotNaN();
   }
 

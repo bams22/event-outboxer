@@ -11,8 +11,8 @@ package io.github.bams22.outboxer.admin.rest;
 
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
-import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -29,10 +29,10 @@ import org.springframework.util.ClassUtils;
  * <p>Security posture (ADR-0019): the controller is guarded by {@code @PreAuthorize}, which is
  * enforced by Spring <em>method security</em> — a separate switch from having Spring Security on
  * the classpath. To prevent the silent failure mode "security configured, annotation ignored",
- * {@link #outboxAdminRestSecurityCheck} fail-fasts at startup when Spring Security is present
- * but method security is not active. Applications without Spring Security run the API
- * unprotected by design; {@code event-outboxer.admin.rest.enforce-authority=false} opts out of
- * the check explicitly.
+ * {@link #outboxAdminRestSecurityCheck} fail-fasts at startup when Spring Security is present but
+ * method security is not active. Applications without Spring Security run the API unprotected by
+ * design; {@code event-outboxer.admin.rest.enforce-authority=false} opts out of the check
+ * explicitly.
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -46,19 +46,19 @@ public class OutboxAdminRestAutoConfiguration {
       "org.springframework.security.core.context.SecurityContextHolder";
 
   /**
-   * Bean name registered by {@code @EnableMethodSecurity}'s
-   * {@code PrePostMethodSecurityConfiguration}. Detection is name-based on purpose: the bean is
-   * declared with the {@code MethodInterceptor} interface return type and a lazy wrapper
-   * instance, so type-based lookups cannot identify it.
+   * Bean name registered by {@code @EnableMethodSecurity}'s {@code
+   * PrePostMethodSecurityConfiguration}. Detection is name-based on purpose: the bean is declared
+   * with the {@code MethodInterceptor} interface return type and a lazy wrapper instance, so
+   * type-based lookups cannot identify it.
    */
   private static final String PRE_AUTHORIZE_INTERCEPTOR_BEAN =
       "preAuthorizeAuthorizationMethodInterceptor";
 
   /**
-   * Explicit {@code @Bean} instead of {@code @EnableConfigurationProperties} so the bean gets
-   * the stable name {@code outboxAdminRestProperties} that the controller's
-   * {@code @PreAuthorize} SpEL dereferences. Binding still happens through the standard
-   * {@code @ConfigurationProperties} post-processing.
+   * Explicit {@code @Bean} instead of {@code @EnableConfigurationProperties} so the bean gets the
+   * stable name {@code outboxAdminRestProperties} that the controller's {@code @PreAuthorize} SpEL
+   * dereferences. Binding still happens through the standard {@code @ConfigurationProperties}
+   * post-processing.
    */
   @Bean
   @ConditionalOnMissingBean

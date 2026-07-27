@@ -30,23 +30,12 @@ class EventTypeConfigTest {
 
   @Test
   void rejectsInvalidFields() {
-    assertThatThrownBy(
-            () ->
-                EventTypeConfig.defaults().toBuilder()
-                    .claimBatchSize(0)
-                    .build())
+    assertThatThrownBy(() -> EventTypeConfig.defaults().toBuilder().claimBatchSize(0).build())
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> EventTypeConfig.defaults().toBuilder().pollMultiplier(1.0).build())
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
-            () ->
-                EventTypeConfig.defaults().toBuilder()
-                    .pollMultiplier(1.0)
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                EventTypeConfig.defaults().toBuilder()
-                    .handlerMaxRuntime(Duration.ZERO)
-                    .build())
+            () -> EventTypeConfig.defaults().toBuilder().handlerMaxRuntime(Duration.ZERO).build())
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -76,8 +65,7 @@ class EventTypeConfigTest {
   void providerReturnsOverrideWhenPresent() {
     EventTypeConfig alt = EventTypeConfig.defaults().toBuilder().claimBatchSize(99).build();
     EventTypeConfigProvider provider =
-        new EventTypeConfigProvider(
-            EventTypeConfig.defaults(), java.util.Map.of("type-alt", alt));
+        new EventTypeConfigProvider(EventTypeConfig.defaults(), java.util.Map.of("type-alt", alt));
 
     assertThat(provider.forType("type-default")).isEqualTo(EventTypeConfig.defaults());
     assertThat(provider.forType("type-alt")).isEqualTo(alt);

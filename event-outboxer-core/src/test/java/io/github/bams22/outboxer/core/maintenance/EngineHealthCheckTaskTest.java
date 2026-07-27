@@ -54,8 +54,7 @@ class EngineHealthCheckTaskTest {
     Poller dead2 = makePoller("D2", true);
     AtomicInteger reports = new AtomicInteger();
 
-    new EngineHealthCheckTask(
-            List.of(dead1, dead2), (reason, cause) -> reports.incrementAndGet())
+    new EngineHealthCheckTask(List.of(dead1, dead2), (reason, cause) -> reports.incrementAndGet())
         .run();
 
     assertThat(reports).hasValue(1);

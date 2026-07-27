@@ -46,9 +46,7 @@ class ExceptionCodesTest {
   @Test
   void unknownEventTypeCarriesCodeAndEventType() {
     UnknownEventTypeException e = new UnknownEventTypeException("UNKNOWN_X");
-    assertThat(e)
-        .hasMessageStartingWith("OUTBOX-201:")
-        .hasMessageContaining("UNKNOWN_X");
+    assertThat(e).hasMessageStartingWith("OUTBOX-201:").hasMessageContaining("UNKNOWN_X");
     assertThat(e.eventType()).isEqualTo("UNKNOWN_X");
   }
 

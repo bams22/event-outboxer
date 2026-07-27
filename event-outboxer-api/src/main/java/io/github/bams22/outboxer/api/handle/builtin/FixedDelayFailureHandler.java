@@ -17,9 +17,9 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Leaf handler that always re-schedules at a fixed delay. Suitable for handlers that do not
- * benefit from exponential backoff — for example when failures are expected to be resolved
- * quickly or when the caller wants constant pressure on an external system.
+ * Leaf handler that always re-schedules at a fixed delay. Suitable for handlers that do not benefit
+ * from exponential backoff — for example when failures are expected to be resolved quickly or when
+ * the caller wants constant pressure on an external system.
  *
  * <p>A {@code delayOverride} supplied by the handler through {@code EventOutcome.Retry} takes
  * precedence over the configured fixed delay.

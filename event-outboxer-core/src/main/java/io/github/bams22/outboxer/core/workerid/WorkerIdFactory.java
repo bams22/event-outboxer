@@ -15,9 +15,9 @@ import java.util.function.Supplier;
 
 /**
  * Resolves the {@link WorkerId} used by a running engine. By default delegates to {@link
- * WorkerId#generateDefault()} which produces {@code {hostname}-{pid}-{uuid8}}. Callers that need
- * a stable identifier (for example, a Kubernetes StatefulSet pod name) can pass an explicit value
- * to {@link #explicit(WorkerId)}.
+ * WorkerId#generateDefault()} which produces {@code {hostname}-{pid}-{uuid8}}. Callers that need a
+ * stable identifier (for example, a Kubernetes StatefulSet pod name) can pass an explicit value to
+ * {@link #explicit(WorkerId)}.
  */
 public final class WorkerIdFactory {
 

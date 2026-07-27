@@ -36,14 +36,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Opt-in admin REST surface over {@link OutboxAdmin} (ADR-0019). Registered only when
- * {@code event-outboxer.admin.rest.enabled=true}. Every operation requires the authority named
- * by {@code event-outboxer.admin.rest.required-authority} — the {@code @PreAuthorize} SpEL reads
- * it from the {@code outboxAdminRestProperties} bean, so the permit is configuration, not code.
+ * Opt-in admin REST surface over {@link OutboxAdmin} (ADR-0019). Registered only when {@code
+ * event-outboxer.admin.rest.enabled=true}. Every operation requires the authority named by {@code
+ * event-outboxer.admin.rest.required-authority} — the {@code @PreAuthorize} SpEL reads it from the
+ * {@code outboxAdminRestProperties} bean, so the permit is configuration, not code.
  *
- * <p>The class-level guard is enforced by Spring method security; the auto-configuration
- * fail-fasts at startup when Spring Security is present without {@code @EnableMethodSecurity}
- * (see {@link OutboxAdminRestAutoConfiguration}).
+ * <p>The class-level guard is enforced by Spring method security; the auto-configuration fail-fasts
+ * at startup when Spring Security is present without {@code @EnableMethodSecurity} (see {@link
+ * OutboxAdminRestAutoConfiguration}).
  */
 @RestController
 @RequestMapping("${event-outboxer.admin.rest.base-path:/outbox-admin}")
@@ -84,8 +84,8 @@ public class OutboxAdminController {
   }
 
   /**
-   * Re-enable one DISABLED event: 200 on success, 404 for unknown ids, 409 when the event
-   * exists but is not DISABLED.
+   * Re-enable one DISABLED event: 200 on success, 404 for unknown ids, 409 when the event exists
+   * but is not DISABLED.
    */
   @PostMapping("/events/{id}/reenable")
   public ResponseEntity<Object> reenable(@PathVariable UUID id) {

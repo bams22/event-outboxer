@@ -41,20 +41,20 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Acquire</h2>
  *
- * One atomic {@code INSERT ... ON CONFLICT (lock_key) DO UPDATE ... WHERE expired ... RETURNING}:
- * a fresh key inserts, an expired lease is taken over, a live lease returns zero rows (= busy,
- * never an exception). Concurrent contenders resolve to exactly one winner via PostgreSQL's
- * speculative insertion and the EvalPlanQual re-check. All expiry arithmetic uses the database
- * clock ({@code now()}), mirroring the workers-heartbeat design — application-JVM clock skew can
- * neither extend nor shorten exclusion.
+ * One atomic {@code INSERT ... ON CONFLICT (lock_key) DO UPDATE ... WHERE expired ... RETURNING}: a
+ * fresh key inserts, an expired lease is taken over, a live lease returns zero rows (= busy, never
+ * an exception). Concurrent contenders resolve to exactly one winner via PostgreSQL's speculative
+ * insertion and the EvalPlanQual re-check. All expiry arithmetic uses the database clock ({@code
+ * now()}), mirroring the workers-heartbeat design — application-JVM clock skew can neither extend
+ * nor shorten exclusion.
  *
  * <h2>Release</h2>
  *
- * A token-guarded {@code DELETE}: the per-acquisition random UUID token in the predicate makes
- * the release an atomic compare-and-delete (same semantics as the Redis adapter's Lua script), so
- * a zombie's late {@code close()} can never release its successor's lease. The deleting
- * connection may be a different physical connection — or a different pgBouncer backend — than the
- * acquiring one; it does not matter.
+ * A token-guarded {@code DELETE}: the per-acquisition random UUID token in the predicate makes the
+ * release an atomic compare-and-delete (same semantics as the Redis adapter's Lua script), so a
+ * zombie's late {@code close()} can never release its successor's lease. The deleting connection
+ * may be a different physical connection — or a different pgBouncer backend — than the acquiring
+ * one; it does not matter.
  *
  * <h2>Connection discipline (load-bearing, see ADR-0022 §JDBC contract)</h2>
  *
@@ -63,40 +63,36 @@ import org.slf4j.LoggerFactory;
  *       BEFORE evaluating the {@code WHERE} and holds that lock until the transaction ends, even
  *       when zero rows are returned. Inside a longer transaction a mere busy probe would block
  *       other contenders and the holder's release.
- *   <li><b>READ COMMITTED is forced</b> and {@code SQLState 40001} maps to busy: under a
- *       {@code repeatable read} default a contended upsert can raise a serialization failure even
- *       as a single statement; it must degrade to the clean busy path.
- *   <li><b>{@code setQueryTimeout} is normative.</b> It bounds the contender's tuple-lock wait
- *       and thereby the lease shortening ({@code expires_at} is computed from transaction-start
- *       {@code now()}, so a contender that waited {@code W} gets an effective lease of
- *       {@code ttl - W}). Never replace it with {@code SET statement_timeout} — session-sticky
- *       under transaction pooling.
+ *   <li><b>READ COMMITTED is forced</b> and {@code SQLState 40001} maps to busy: under a {@code
+ *       repeatable read} default a contended upsert can raise a serialization failure even as a
+ *       single statement; it must degrade to the clean busy path.
+ *   <li><b>{@code setQueryTimeout} is normative.</b> It bounds the contender's tuple-lock wait and
+ *       thereby the lease shortening ({@code expires_at} is computed from transaction-start {@code
+ *       now()}, so a contender that waited {@code W} gets an effective lease of {@code ttl - W}).
+ *       Never replace it with {@code SET statement_timeout} — session-sticky under transaction
+ *       pooling.
  * </ul>
  *
  * <h2>TTL</h2>
  *
- * Honoured: exclusion holds until {@code min(close(), ttl)} and the lease self-releases at
- * {@code expires_at} via the next acquirer's takeover — the crash-release mechanism. The engine
- * enforces {@code lockTtl >= handlerMaxRuntime} (default 2x); the margin also absorbs JVM-clock
- * (watchdog) vs DB-clock (lease) divergence.
+ * Honoured: exclusion holds until {@code min(close(), ttl)} and the lease self-releases at {@code
+ * expires_at} via the next acquirer's takeover — the crash-release mechanism. The engine enforces
+ * {@code lockTtl >= handlerMaxRuntime} (default 2x); the margin also absorbs JVM-clock (watchdog)
+ * vs DB-clock (lease) divergence.
  */
 public final class PgLeaseEntityLocker implements EntityLocker {
 
   private static final Logger log = LoggerFactory.getLogger(PgLeaseEntityLocker.class);
 
-  /**
-   * Default schema name, aligned with the storage adapter and the classpath migrations.
-   */
+  /** Default schema name, aligned with the storage adapter and the classpath migrations. */
   public static final String DEFAULT_SCHEMA = "event_outboxer";
 
-  /**
-   * Maximum accepted lock-key length; matches the {@code VARCHAR(512)} column (V005).
-   */
+  /** Maximum accepted lock-key length; matches the {@code VARCHAR(512)} column (V005). */
   public static final int MAX_KEY_LENGTH = 512;
 
   /**
-   * Bounds the tuple-lock wait under contention and, transitively, the lease shortening
-   * {@code ttl - wait}. Must stay well below {@code lockTtl - handlerMaxRuntime}.
+   * Bounds the tuple-lock wait under contention and, transitively, the lease shortening {@code ttl
+   * - wait}. Must stay well below {@code lockTtl - handlerMaxRuntime}.
    */
   private static final int QUERY_TIMEOUT_SECONDS = 5;
 
@@ -124,17 +120,16 @@ public final class PgLeaseEntityLocker implements EntityLocker {
   /**
    * Full constructor.
    *
-   * @param dataSource the application pool. Must NOT be a transaction-aware proxy: lock
-   *     statements must run in their own autocommit transactions, never joined to the caller's
-   *     transaction (see the connection-discipline notes above)
+   * @param dataSource the application pool. Must NOT be a transaction-aware proxy: lock statements
+   *     must run in their own autocommit transactions, never joined to the caller's transaction
+   *     (see the connection-discipline notes above)
    * @param schema schema holding {@code entity_locks}; concatenated into SQL verbatim, same
    *     convention as the storage adapter
    * @param ownerWorker informational worker identity written to {@code entity_locks.owner_worker}
    *     for operator forensics; {@code null} derives {@code {hostname}-{pid}}. Never used in
    *     predicates
    */
-  public PgLeaseEntityLocker(
-      DataSource dataSource, String schema, @Nullable String ownerWorker) {
+  public PgLeaseEntityLocker(DataSource dataSource, String schema, @Nullable String ownerWorker) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
     Objects.requireNonNull(schema, "schema must not be null");
     this.ownerWorker = ownerWorker != null ? ownerWorker : defaultOwnerWorker();
@@ -247,9 +242,9 @@ public final class PgLeaseEntityLocker implements EntityLocker {
   }
 
   /**
-   * Forces the connection discipline the protocol depends on: autocommit (a busy probe's tuple
-   * lock is held until the transaction ends) and READ COMMITTED (avoids 40001 noise under
-   * stricter pool-level defaults). HikariCP tracks and resets both on pool return.
+   * Forces the connection discipline the protocol depends on: autocommit (a busy probe's tuple lock
+   * is held until the transaction ends) and READ COMMITTED (avoids 40001 noise under stricter
+   * pool-level defaults). HikariCP tracks and resets both on pool return.
    */
   private static void prepareConnection(Connection conn) throws SQLException {
     if (!conn.getAutoCommit()) {

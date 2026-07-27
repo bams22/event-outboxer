@@ -21,12 +21,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Periodic retention pass over the archive table and the accumulated {@code DISABLED} rows
- * (ADR-0019). Scheduled by {@link MaintenanceScheduler} only when at least one threshold of
- * {@link RetentionConfig} is set — retention is strictly opt-in.
+ * (ADR-0019). Scheduled by {@link MaintenanceScheduler} only when at least one threshold of {@link
+ * RetentionConfig} is set — retention is strictly opt-in.
  *
- * <p>Each pass loops in {@code batchSize}-bounded DELETE statements until a batch comes back
- * short, so a single pass fully catches up regardless of backlog while never holding a
- * long-running transaction.
+ * <p>Each pass loops in {@code batchSize}-bounded DELETE statements until a batch comes back short,
+ * so a single pass fully catches up regardless of backlog while never holding a long-running
+ * transaction.
  */
 public final class RetentionTask implements Runnable {
 

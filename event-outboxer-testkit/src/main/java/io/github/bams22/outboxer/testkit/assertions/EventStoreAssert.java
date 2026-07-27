@@ -52,8 +52,7 @@ public final class EventStoreAssert extends AbstractAssert<EventStoreAssert, Eve
   public EventStoreAssert hasNoEvent(UUID id) {
     isNotNull();
     if (actual.findById(id).isPresent()) {
-      failWithMessage(
-          "Expected EventStore NOT to contain event <%s> but it was present.", id);
+      failWithMessage("Expected EventStore NOT to contain event <%s> but it was present.", id);
     }
     return this;
   }
@@ -64,8 +63,7 @@ public final class EventStoreAssert extends AbstractAssert<EventStoreAssert, Eve
     OutboxMetricsSnapshot snapshot = actual.metricsSnapshot();
     if (snapshot.totalPending() != expected) {
       failWithMessage(
-          "Expected total PENDING events <%s> but was <%s>.",
-          expected, snapshot.totalPending());
+          "Expected total PENDING events <%s> but was <%s>.", expected, snapshot.totalPending());
     }
     return this;
   }
@@ -88,8 +86,7 @@ public final class EventStoreAssert extends AbstractAssert<EventStoreAssert, Eve
     OutboxMetricsSnapshot snapshot = actual.metricsSnapshot();
     if (snapshot.totalDisabled() != expected) {
       failWithMessage(
-          "Expected total DISABLED events <%s> but was <%s>.",
-          expected, snapshot.totalDisabled());
+          "Expected total DISABLED events <%s> but was <%s>.", expected, snapshot.totalDisabled());
     }
     return this;
   }

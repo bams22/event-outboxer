@@ -15,10 +15,10 @@ import java.time.Instant;
  * Time abstraction used throughout the engine instead of {@code java.time.Instant.now()} so that
  * tests (via {@code testkit.SettableClock}) can advance virtual time deterministically.
  *
- * <p>Functional interface — production code wires {@link #system()} or an equivalent {@code Clock
- * c = Instant::now} lambda. Adapters must never call {@link Instant#now()} directly if the
- * behaviour depends on wall-clock (claim eligibility, retry {@code runAt}, heartbeat staleness);
- * those sites must go through this port.
+ * <p>Functional interface — production code wires {@link #system()} or an equivalent {@code Clock c
+ * = Instant::now} lambda. Adapters must never call {@link Instant#now()} directly if the behaviour
+ * depends on wall-clock (claim eligibility, retry {@code runAt}, heartbeat staleness); those sites
+ * must go through this port.
  */
 @FunctionalInterface
 public interface Clock {

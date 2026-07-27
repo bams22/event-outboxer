@@ -14,8 +14,8 @@ import java.sql.SQLException;
 
 /**
  * SPI port that decouples the PostgreSQL storage adapter from Spring's transaction-management
- * machinery (see ADR-0002). The adapter calls {@link #get()} every time it needs a JDBC
- * {@code Connection} and calls {@link #release(Connection)} when it is done with it.
+ * machinery (see ADR-0002). The adapter calls {@link #get()} every time it needs a JDBC {@code
+ * Connection} and calls {@link #release(Connection)} when it is done with it.
  *
  * <p>The plain-Java wiring backs the port with {@code dataSource::getConnection} and {@link
  * Connection#close()}; the Spring Boot starter substitutes an implementation that resolves the

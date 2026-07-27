@@ -22,8 +22,7 @@ class PgAdvisoryLockerHashTest {
 
   @Test
   void hashDiffersForDifferentKeys() {
-    assertThat(PgAdvisoryLocker.hash("order:42"))
-        .isNotEqualTo(PgAdvisoryLocker.hash("order:43"));
+    assertThat(PgAdvisoryLocker.hash("order:42")).isNotEqualTo(PgAdvisoryLocker.hash("order:43"));
   }
 
   @Test

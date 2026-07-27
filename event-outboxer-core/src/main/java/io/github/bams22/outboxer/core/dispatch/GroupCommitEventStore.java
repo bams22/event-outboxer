@@ -32,37 +32,35 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 /**
- * {@link EventStore} decorator that batches {@link #markProcessed} and {@link #markForRetry}
- * calls into multi-row statements via <em>group commit</em> — the same idea databases use to
- * amortize WAL fsyncs.
+ * {@link EventStore} decorator that batches {@link #markProcessed} and {@link #markForRetry} calls
+ * into multi-row statements via <em>group commit</em> — the same idea databases use to amortize WAL
+ * fsyncs.
  *
- * <p>A finalizing handler thread enqueues its mark and acquires the flush lock. If the lock is
- * free (idle engine), the thread flushes its own single entry immediately — behaviour and
- * latency are identical to a direct call. Under load, while the current lock owner's batch
- * statement is in flight, other handler threads enqueue and block on the lock; whichever thread
- * ends up flushing next drains everything accumulated into one {@link
- * EventStore#markProcessedAll} / {@link EventStore#markForRetryAll} statement. The batch forms
- * naturally out of the SQL round-trip time — no timers, no dedicated flusher thread, no added
- * latency floor.
+ * <p>A finalizing handler thread enqueues its mark and acquires the flush lock. If the lock is free
+ * (idle engine), the thread flushes its own single entry immediately — behaviour and latency are
+ * identical to a direct call. Under load, while the current lock owner's batch statement is in
+ * flight, other handler threads enqueue and block on the lock; whichever thread ends up flushing
+ * next drains everything accumulated into one {@link EventStore#markProcessedAll} / {@link
+ * EventStore#markForRetryAll} statement. The batch forms naturally out of the SQL round-trip time —
+ * no timers, no dedicated flusher thread, no added latency floor.
  *
  * <p>The call stays <strong>synchronous</strong>, which is what preserves the dispatcher's
  * invariants untouched: finalize still completes before the entity lock is closed and before the
- * event leaves the in-flight registry, listeners still fire per event on the handler thread, and
- * a storage failure still surfaces to the caller (each drained entry's future is completed
- * exceptionally, and the dispatcher's finalize-failure release handles it per event). At
- * shutdown no extra draining is needed: once the handler executors have drained, every finalize
- * has already returned.
+ * event leaves the in-flight registry, listeners still fire per event on the handler thread, and a
+ * storage failure still surfaces to the caller (each drained entry's future is completed
+ * exceptionally, and the dispatcher's finalize-failure release handles it per event). At shutdown
+ * no extra draining is needed: once the handler executors have drained, every finalize has already
+ * returned.
  *
- * <p>Correctness sketch: an entry is enqueued <em>before</em> the lock is acquired, so it is
- * either flushed by a preceding lock owner (its future is done by the time the thread gets the
- * lock) or by the thread itself in {@link #drainAndFlushOnce()}. The lock is always released,
- * every drained entry's future is always completed, and the post-loop {@code join()} therefore
- * never blocks.
+ * <p>Correctness sketch: an entry is enqueued <em>before</em> the lock is acquired, so it is either
+ * flushed by a preceding lock owner (its future is done by the time the thread gets the lock) or by
+ * the thread itself in {@link #drainAndFlushOnce()}. The lock is always released, every drained
+ * entry's future is always completed, and the post-loop {@code join()} therefore never blocks.
  *
- * <p>Only {@code markProcessed} (Success, Skip and Delete outcomes all route through it) and
- * {@code markForRetry} are batched — the queues are engine-wide, so finalizations of different
- * event types coalesce into the same statement. Rare paths ({@code release}, {@code
- * markDisabled}) and everything else pass straight through to the delegate.
+ * <p>Only {@code markProcessed} (Success, Skip and Delete outcomes all route through it) and {@code
+ * markForRetry} are batched — the queues are engine-wide, so finalizations of different event types
+ * coalesce into the same statement. Rare paths ({@code release}, {@code markDisabled}) and
+ * everything else pass straight through to the delegate.
  */
 public final class GroupCommitEventStore implements EventStore {
 
@@ -79,10 +77,10 @@ public final class GroupCommitEventStore implements EventStore {
    *
    * @param delegate the real store; its batch methods are expected to keep per-row
    *     optimistic-locking guards (ADR-0014, batch form)
-   * @param workerId the engine's worker id — all batched finalizes belong to this worker, which
-   *     is what makes a single shared statement possible
-   * @param maxBatchSize cap on rows per flushed statement; a drain pass loops until the queues
-   *     are empty, so the cap bounds statement size, not throughput
+   * @param workerId the engine's worker id — all batched finalizes belong to this worker, which is
+   *     what makes a single shared statement possible
+   * @param maxBatchSize cap on rows per flushed statement; a drain pass loops until the queues are
+   *     empty, so the cap bounds statement size, not throughput
    */
   public GroupCommitEventStore(EventStore delegate, WorkerId workerId, int maxBatchSize) {
     this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
@@ -138,9 +136,9 @@ public final class GroupCommitEventStore implements EventStore {
 
   /**
    * Drains up to {@code maxBatchSize} entries from each queue and flushes them as one batch
-   * statement per operation kind. Never throws: a delegate failure completes the drained
-   * entries' futures exceptionally, and each waiting caller (including the flushing thread
-   * itself) rethrows from its own future.
+   * statement per operation kind. Never throws: a delegate failure completes the drained entries'
+   * futures exceptionally, and each waiting caller (including the flushing thread itself) rethrows
+   * from its own future.
    */
   private void drainAndFlushOnce() {
     List<Entry<ProcessedMark>> processed = drain(processedQueue);

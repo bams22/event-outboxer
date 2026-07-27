@@ -39,8 +39,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Reusable contract specification for every {@link EventStore} implementation. Subclasses provide
- * a fresh store via {@link #newStore()}; each test executes against its own isolated store so that
+ * Reusable contract specification for every {@link EventStore} implementation. Subclasses provide a
+ * fresh store via {@link #newStore()}; each test executes against its own isolated store so that
  * tests do not share state.
  *
  * <p>The contract covers the full happy-path lifecycle (publish → claim → finalize), every
@@ -62,8 +62,8 @@ public abstract class AbstractEventStoreContractTest {
 
   /**
    * Force the stored {@code claimed_at} of a PROCESSING row to the (past) instant {@code at}.
-   * Adapters stamp claims with their own time source, so the staleness scenarios of
-   * {@code sweepStale} have to inject age through a direct write.
+   * Adapters stamp claims with their own time source, so the staleness scenarios of {@code
+   * sweepStale} have to inject age through a direct write.
    */
   protected abstract void backdateClaim(UUID id, Instant at);
 
@@ -351,18 +351,15 @@ public abstract class AbstractEventStoreContractTest {
     ClaimedEvent b = publishAndClaim(EVENT_TYPE_A, "b", WORKER_1);
     ClaimedEvent stale = publishAndClaim(EVENT_TYPE_B, "s", WORKER_1);
     // Truncate to microseconds: TIMESTAMPTZ in PG is microsecond-precision.
-    Instant runA =
-        Instant.now().plusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    Instant runB =
-        Instant.now().plusSeconds(90).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    Instant runA = Instant.now().plusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    Instant runB = Instant.now().plusSeconds(90).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
     Set<UUID> applied =
         store.markForRetryAll(
             List.of(
                 new EventStore.RetryMark(a.id(), a.claimedVersion(), "boom-a", runA),
                 new EventStore.RetryMark(b.id(), b.claimedVersion(), "boom-b", runB),
-                new EventStore.RetryMark(
-                    stale.id(), stale.claimedVersion() - 1, "stale", runA)),
+                new EventStore.RetryMark(stale.id(), stale.claimedVersion() - 1, "stale", runA)),
             WORKER_1);
 
     assertThat(applied).containsExactlyInAnyOrder(a.id(), b.id());
@@ -396,7 +393,8 @@ public abstract class AbstractEventStoreContractTest {
   void markForRetry_revertsToPending() {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
     // Truncate to microseconds: TIMESTAMPTZ in PG is microsecond-precision.
-    Instant nextRun = Instant.now().plusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    Instant nextRun =
+        Instant.now().plusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
     boolean ok =
         store.markForRetry(claimed.id(), WORKER_1, claimed.claimedVersion(), "transient", nextRun);
@@ -437,8 +435,7 @@ public abstract class AbstractEventStoreContractTest {
   void markDisabled_status_becomesDisabled() {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
 
-    boolean ok =
-        store.markDisabled(claimed.id(), WORKER_1, claimed.claimedVersion(), "exhausted");
+    boolean ok = store.markDisabled(claimed.id(), WORKER_1, claimed.claimedVersion(), "exhausted");
 
     assertThat(ok).isTrue();
     Event after = store.findById(claimed.id()).orElseThrow();
@@ -454,8 +451,7 @@ public abstract class AbstractEventStoreContractTest {
   void markDisabled_false_onStaleVersion() {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
 
-    boolean ok =
-        store.markDisabled(claimed.id(), WORKER_1, claimed.claimedVersion() - 1, "stale");
+    boolean ok = store.markDisabled(claimed.id(), WORKER_1, claimed.claimedVersion() - 1, "stale");
 
     assertThat(ok).isFalse();
     assertThat(store.findById(claimed.id()).orElseThrow().status())
@@ -490,8 +486,7 @@ public abstract class AbstractEventStoreContractTest {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
 
     boolean ok =
-        store.forceReclaim(
-            claimed.id(), WORKER_1, claimed.claimedVersion() - 1, Instant.now());
+        store.forceReclaim(claimed.id(), WORKER_1, claimed.claimedVersion() - 1, Instant.now());
 
     assertThat(ok).isFalse();
   }
@@ -569,8 +564,7 @@ public abstract class AbstractEventStoreContractTest {
   @Test
   @DisplayName("saveAll rejects events carrying a dedup key")
   void saveAll_rejectsDedupKeys() {
-    assertThatThrownBy(
-            () -> store.saveAll(List.of(pendingWithKey(EVENT_TYPE_A, "x", "k"))))
+    assertThatThrownBy(() -> store.saveAll(List.of(pendingWithKey(EVENT_TYPE_A, "x", "k"))))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -623,14 +617,14 @@ public abstract class AbstractEventStoreContractTest {
     ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
 
     boolean ok =
-        store.release(
-            claimed.id(), WORKER_2, claimed.claimedVersion(), "no-op", Instant.now());
+        store.release(claimed.id(), WORKER_2, claimed.claimedVersion(), "no-op", Instant.now());
 
     assertThat(ok).isFalse();
   }
 
   @Test
-  @DisplayName("releaseClaimed() reverts every PROCESSING row of the worker without touching attempts")
+  @DisplayName(
+      "releaseClaimed() reverts every PROCESSING row of the worker without touching attempts")
   void releaseClaimed_revertsAllOwnRows() {
     ClaimedEvent c1 = publishAndClaim(EVENT_TYPE_A, "1", WORKER_1);
     ClaimedEvent c2 = publishAndClaim(EVENT_TYPE_B, "2", WORKER_1);
@@ -647,8 +641,7 @@ public abstract class AbstractEventStoreContractTest {
       assertThat(after.attempts()).isEqualTo(ce.attempts());
       assertThat(after.version()).isGreaterThan(ce.claimedVersion());
     }
-    assertThat(store.findById(other.id()).orElseThrow().status())
-        .isEqualTo(EventStatus.PROCESSING);
+    assertThat(store.findById(other.id()).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
   }
 
   @Test
@@ -660,8 +653,7 @@ public abstract class AbstractEventStoreContractTest {
 
     boolean lateFinalize = store.markProcessed(claimed.id(), WORKER_1, claimed.claimedVersion());
     assertThat(lateFinalize).isFalse();
-    assertThat(store.findById(claimed.id()).orElseThrow().status())
-        .isEqualTo(EventStatus.PENDING);
+    assertThat(store.findById(claimed.id()).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -683,8 +675,7 @@ public abstract class AbstractEventStoreContractTest {
     assertThat(after.claimedBy()).isNull();
     assertThat(after.attempts()).isEqualTo(stale.attempts() + 1);
     assertThat(after.version()).isGreaterThan(stale.claimedVersion());
-    assertThat(store.findById(fresh.id()).orElseThrow().status())
-        .isEqualTo(EventStatus.PROCESSING);
+    assertThat(store.findById(fresh.id()).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
   }
 
   @Test
@@ -708,8 +699,7 @@ public abstract class AbstractEventStoreContractTest {
     assertThat(store.sweepStale(Duration.ofMinutes(30), 100)).isEqualTo(1);
 
     assertThat(store.markProcessed(stale.id(), WORKER_1, stale.claimedVersion())).isFalse();
-    assertThat(store.findById(stale.id()).orElseThrow().status())
-        .isEqualTo(EventStatus.PENDING);
+    assertThat(store.findById(stale.id()).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -801,8 +791,8 @@ public abstract class AbstractEventStoreContractTest {
 
   /**
    * Encode {@code raw} as a JSON string literal so the payload is valid JSON for adapters that
-   * persist it as JSONB. In-memory adapters round-trip it verbatim; PG adapters store and return
-   * it as a canonical JSON scalar (no whitespace inserted).
+   * persist it as JSONB. In-memory adapters round-trip it verbatim; PG adapters store and return it
+   * as a canonical JSON scalar (no whitespace inserted).
    */
   protected static String jsonString(String raw) {
     return "\"" + raw.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";

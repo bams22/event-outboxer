@@ -10,8 +10,8 @@
 package io.github.bams22.outboxer.core.publish;
 
 /**
- * What the publisher does when {@link TransactionContext#isActive()} reports no active
- * transaction. See {@code OutboxEventPublisher}'s Javadoc for the full contract.
+ * What the publisher does when {@link TransactionContext#isActive()} reports no active transaction.
+ * See {@code OutboxEventPublisher}'s Javadoc for the full contract.
  */
 public enum NoTransactionPolicy {
 
@@ -19,8 +19,8 @@ public enum NoTransactionPolicy {
   FAIL,
 
   /**
-   * Proceed without a surrounding transaction. Loses atomicity with the caller's state. Useful
-   * for maintenance scripts.
+   * Proceed without a surrounding transaction. Loses atomicity with the caller's state. Useful for
+   * maintenance scripts.
    */
   IGNORE
 }

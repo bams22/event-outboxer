@@ -14,14 +14,14 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * {@link TransactionContext} backed by Spring's
- * {@link TransactionSynchronizationManager#isActualTransactionActive()}. Returns {@code true}
- * when the caller is inside a physical transaction (typically under
+ * {@link TransactionContext} backed by Spring's {@link
+ * TransactionSynchronizationManager#isActualTransactionActive()}. Returns {@code true} when the
+ * caller is inside a physical transaction (typically under
  * {@code @Transactional(PROPAGATION_REQUIRED)}), {@code false} otherwise.
  *
- * <p>{@link #afterCommit(Runnable)} defers the action to a Spring after-commit synchronization,
- * so the publisher's poller wake-up fires only once the inserted event row is actually visible —
- * and never fires at all when the transaction rolls back.
+ * <p>{@link #afterCommit(Runnable)} defers the action to a Spring after-commit synchronization, so
+ * the publisher's poller wake-up fires only once the inserted event row is actually visible — and
+ * never fires at all when the transaction rolls back.
  */
 public final class SpringTransactionContext implements TransactionContext {
 
