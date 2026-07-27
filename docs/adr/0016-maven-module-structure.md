@@ -27,7 +27,7 @@ event-outboxer (root parent pom)
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
 ├── event-outboxer-storage-inmemory         Test infrastructure (ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
-├── event-outboxer-lock-postgres            pg_advisory_lock EntityLocker
+├── event-outboxer-lock-postgres            PostgreSQL EntityLocker (lease + advisory, ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener

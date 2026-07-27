@@ -86,7 +86,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
 ├── event-outboxer-storage-inmemory         Test infrastructure (never a production storage, ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
-├── event-outboxer-lock-postgres            pg_advisory_lock EntityLocker
+├── event-outboxer-lock-postgres            PostgreSQL EntityLocker (lease table, ADR-0022; advisory opt-out)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
@@ -153,7 +153,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 |---|---|---|
 | `EventStore` | PostgreSQL, InMemory | CRUD + claim + finalize + reclaim |
 | `WorkerRegistry` | PostgreSQL, InMemory | register / heartbeat / findDead / deregister |
-| `EntityLocker` | PostgreSQL (pg_advisory), Redis, NoOp | Lock by lockKey |
+| `EntityLocker` | PostgreSQL (lease table; advisory opt-out), Redis, NoOp | Lock by lockKey |
 | `EventSerializer` | Jackson | Serialize/deserialize payload |
 | `Clock` | SystemClock, SettableClock | Time source (testability) |
 

@@ -32,8 +32,11 @@ spring:
       - classpath:db/migration/outbox/core
 ```
 
-Everything else comes from the defaults. To add the Redis/KeyDB entity
-lock, set `event-outboxer.lock.type: redis` and provide a Lettuce
+Everything else comes from the defaults. To add the
+PostgreSQL-backed entity lock, set `event-outboxer.lock.type:
+postgres` and include the `classpath:db/migration/outbox/lock` Flyway
+location; for the Redis/KeyDB lock, set `event-outboxer.lock.type:
+redis` and provide a Lettuce
 `StatefulRedisConnection<String, String>` bean (see
 [`event-outboxer.lock.*`](#event-outboxerlock)).
 
@@ -66,7 +69,7 @@ event-outboxer:
     metrics-cache-ttl: 30s           # TTL of the metricsSnapshot() cache
 
   lock:
-    type: noop                       # noop (default) | postgres | redis
+    type: noop                       # noop (default) | postgres | postgres-advisory | redis
     key-prefix: "outbox:lock:"
 
   cache:
@@ -202,14 +205,55 @@ Storage adapter settings.
 default is `noop` and other backends are opt-in:
 
 - `type: noop` (**default**) — no business-key locking.
-- `type: postgres` — `pg_advisory_lock`-based locker; requires
-  `event-outboxer-lock-postgres` on the classpath and a `DataSource`
-  bean.
+- `type: postgres` — **lease-table locker** (`PgLeaseEntityLocker`,
+  ADR-0022): a row in `event_outboxer.entity_locks` per held lock,
+  acquire/release as single autocommit statements. Requires
+  `event-outboxer-lock-postgres` on the classpath, a `DataSource`
+  bean, and migration V005 (Flyway location
+  `classpath:db/migration/outbox/lock` or the Liquibase changelog
+  `db/changelog/outbox/lock/changelog.xml`) — the starter fail-fast
+  probes the table at startup and names the migration in the error if
+  it is missing. Holds **no** connection while the handler runs and is
+  safe behind pgBouncer transaction pooling. TTL (`lock-ttl`) is
+  honoured: crash release ≤ ttl.
+- `type: postgres-advisory` — the pre-ADR-0022 session-scoped
+  `pg_advisory_lock` locker. Kept for users who want immediate lock
+  release on clean process death and accept the costs: one pinned
+  pooled connection per held lock (the starter warns when
+  `Σ handler-pool-size >= maximum-pool-size` — self-deadlock risk),
+  `lock-ttl` ignored, **incompatible with pgBouncer
+  transaction/statement pooling**, and after a hard crash (power loss,
+  network partition) the lock is held until TCP keepalive reaps the
+  backend — hours with Linux defaults.
 - `type: redis` — Redis/KeyDB locker; requires
   `event-outboxer-lock-redis` on the classpath and a user-provided
   Lettuce `StatefulRedisConnection<String, String>` bean (the starter
   does not manage Redis connections itself).
-- `key-prefix` — prefix for lock keys, default `outbox:lock:`.
+- `key-prefix` — prefix for lock keys, default `outbox:lock:`
+  (Redis locker only; the PG lockers store/hash the raw key).
+
+Upgrade note: before ADR-0022, `type: postgres` selected the advisory
+locker. The meaning changed in place — set `postgres-advisory`
+explicitly to keep the old behaviour. During a rolling deploy across
+the switch, old and new pods form disjoint exclusion domains for the
+rollout window (see ADR-0022 §Rollout).
+
+#### Running behind pgBouncer
+
+With pgBouncer in **transaction** (or statement) pooling mode:
+
+- Polling, claim, finalize, heartbeat and the `postgres` (lease) and
+  `redis` lockers are safe — no session state.
+- `postgres-advisory` is **not** usable: session-scoped advisory locks
+  silently lose mutual exclusion when statements multiplex across
+  server connections. Use the lease locker, the Redis locker, or a
+  direct/session-pooled connection.
+- pgJDBC's server-side prepared statements (`prepareThreshold`,
+  default 5) conflict with transaction pooling on pgBouncer < 1.21:
+  either set `prepareThreshold=0` on the JDBC URL or run pgBouncer ≥
+  1.21 with `max_prepared_statements` enabled. This applies to the
+  whole storage adapter, not just locking. (Reasoned guidance, not
+  empirically exercised by the library's test suite.)
 
 ### `event-outboxer.cache.*`
 
@@ -270,17 +314,20 @@ per-type overrides adjust individual fields (see
   is force-reclaimed (see ADR-0005).
 - `lock-ttl` — entity-lock TTL passed to `EntityLocker.tryLock()`.
   **Must be `>= handler-max-runtime`** (validated at startup): for
-  TTL-honouring lockers (Redis) a shorter TTL would let the lock
-  expire while a legitimate handler still runs, breaking per-key
-  serialization. Default 10m = 2 × the default handler budget —
-  keep the 2× margin (the TTL is the crash-release mechanism, and the
-  margin covers a zombie handler that outlives its force-reclaimed
-  claim). Raising `handler-max-runtime` above `lock-ttl` fails
-  startup until `lock-ttl` is raised too. See the ADR-0012 amendment
-  for the per-backend guarantee table; note that
-  `lock.type=postgres` holds one pooled connection per held lock —
-  the starter warns when `Σ handler-pool-size >=
-  spring.datasource.hikari.maximum-pool-size` (self-deadlock risk).
+  TTL-honouring lockers (Redis, the PG lease locker) a shorter TTL
+  would let the lock expire while a legitimate handler still runs,
+  breaking per-key serialization. Default 10m = 2 × the default
+  handler budget — keep the 2× margin (the TTL is the crash-release
+  mechanism, and the margin covers a zombie handler that outlives its
+  force-reclaimed claim; for the lease locker it additionally absorbs
+  JVM-vs-DB clock divergence, see ADR-0022 §Clock model). Raising
+  `handler-max-runtime` above `lock-ttl` fails startup until
+  `lock-ttl` is raised too. See the ADR-0012 amendment for the
+  per-backend guarantee table; note that `lock.type=postgres-advisory`
+  ignores the TTL and holds one pooled connection per held lock — the
+  starter warns when `Σ handler-pool-size >=
+  spring.datasource.hikari.maximum-pool-size` (self-deadlock risk;
+  does not apply to the default lease locker).
 
 ### `event-outboxer.dispatcher.*`
 
@@ -295,7 +342,14 @@ Cross-type dispatcher knobs.
 - `unknown-handler-retry-delay` — reschedule delay for `SKIP`.
 - `lock-busy-retry-delay` — reschedule delay when the entity lock is
   busy or errored. Lock contention does not consume the attempts
-  budget.
+  budget. With the lease locker (`lock.type=postgres`), expect a burst
+  of busy-retries after a JVM crash: orphan recovery returns the dead
+  worker's events after ~`dead-threshold` (30s), but the dead holder's
+  lease blocks the key until `lock-ttl` expires — at the default 1s
+  delay that is up to hundreds of claim → busy → release cycles and
+  `onLockAcquisitionFailed` emissions per blocked key. Expected
+  behaviour, not an incident; raise this delay to shrink the volume
+  (see ADR-0022 §Consequences).
 - `dispatch-rejected-retry-delay` — reschedule delay when the per-type
   handler executor rejects a dispatch (pool and queue saturated).
   Backpressure does not consume the attempts budget either.

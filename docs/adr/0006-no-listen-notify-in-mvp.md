@@ -4,7 +4,10 @@
 
 Accepted — amended 2026-07-26 (same-JVM after-commit wake-up implemented,
 replacing the never-built `afterDone` mitigation; see the Amendment
-section at the bottom)
+section at the bottom); amended 2026-07-27 (the blanket pgbouncer
+claims in Consequences are re-scoped per lock backend — they were
+already false for the session-advisory entity locker; see the second
+Amendment)
 
 ## Date
 
@@ -98,7 +101,10 @@ feature once a real use case emerges.
   (10 s default).
 - If stricter sub-second latency is required, configure
   `polling-interval: 1s` or smaller.
-- Transaction-mode pgbouncer requires no special workarounds.
+- Transaction-mode pgbouncer requires no special workarounds *for
+  polling itself* (see the 2026-07-27 Amendment: the entity-lock
+  backend has its own per-mode compatibility — `postgres-advisory` is
+  incompatible with transaction/statement pooling).
 
 ### For maintainers
 
@@ -111,7 +117,8 @@ feature once a real use case emerges.
 ### Positive consequences
 
 - Simpler. Less code, fewer bugs.
-- Works with any pgbouncer setup.
+- Polling works with any pgbouncer setup (lock backends differ — see
+  the 2026-07-27 Amendment).
 - No extra JDBC connection per JVM.
 - Adaptive polling covers latency adequately in most cases.
 
@@ -177,6 +184,31 @@ Resulting latency profile:
 
 The Post-MVP path below (LISTEN/NOTIFY as an opt-in push source for
 cross-pod latency) remains valid and unchanged.
+
+## Amendment (2026-07-27): pgbouncer claims re-scoped per lock backend
+
+The Consequences above originally stated flatly that "transaction-mode
+pgbouncer requires no special workarounds" and that the design "works
+with any pgbouncer setup". Both claims were about polling — and for
+polling they hold — but as blanket statements they were already
+contradicted by the shipping session-advisory entity locker, which is
+fundamentally broken under transaction/statement pooling (session
+state multiplexes across server connections; the failure mode is
+silent loss of mutual exclusion). The corrected, per-backend picture:
+
+- Polling, claim, finalize, heartbeat: safe under transaction-mode
+  pgbouncer.
+- `lock.type=noop`, `redis`, and `postgres` (the
+  [ADR-0022](0022-lease-table-postgres-entity-locker.md) lease table):
+  safe under transaction-mode (and statement-mode) pooling.
+- `lock.type=postgres-advisory`: **incompatible** with
+  transaction/statement pooling; requires a session-pooled or direct
+  connection.
+
+See ADR-0022 and the pgbouncer note in
+[CONFIGURATION.md](../CONFIGURATION.md) (including the pgJDBC
+`prepareThreshold` / pgbouncer `max_prepared_statements` guidance,
+which applies to the storage adapter as well).
 
 ## Related decisions
 

@@ -10,15 +10,16 @@ migration layout.
 2. [Table `event_outboxer.events`](#table-outboxevents)
 3. [Table `event_outboxer.workers`](#table-outboxworkers)
 4. [Optional table `event_outboxer.event_archive`](#optional-table-outboxevent_archive)
-5. [Migrations (Flyway)](#migrations-flyway)
-6. [Key queries](#key-queries)
-7. [Operational recommendations](#operational-recommendations)
+5. [Optional table `event_outboxer.entity_locks`](#optional-table-outboxentity_locks)
+6. [Migrations (Flyway)](#migrations-flyway)
+7. [Key queries](#key-queries)
+8. [Operational recommendations](#operational-recommendations)
 
 ---
 
 ## Overview
 
-Two primary tables plus one optional:
+Two primary tables plus two optional:
 
 - **`event_outboxer.events`** — active events. Mutated on publish / claim /
   finalize / reclaim.
@@ -26,6 +27,9 @@ Two primary tables plus one optional:
   start / heartbeat / graceful_stop / orphan reclaim.
 - **`event_outboxer.event_archive`** (opt-in) — archive of successfully processed
   events. Immutable after insert.
+- **`event_outboxer.entity_locks`** (opt-in, `lock.type=postgres`) — lease rows
+  of the entity locker (ADR-0022). One row per held (or recently
+  expired) business-key lock.
 
 The schema name `event_outboxer` is the default — chosen explicitly so
 the library does not conflict with other tables or libraries in a
@@ -175,17 +179,145 @@ archiving.
 
 ---
 
+## Optional table `event_outboxer.entity_locks`
+
+Backs the lease-based `PgLeaseEntityLocker`
+(`event-outboxer.lock.type=postgres`, ADR-0022). Applied only when the
+application configures Flyway/Liquibase to include the `lock/`
+location. Not needed for `lock.type=noop`, `redis`, or
+`postgres-advisory`.
+
+```sql
+CREATE TABLE event_outboxer.entity_locks (
+    lock_key     VARCHAR(512) PRIMARY KEY,
+    owner_token  VARCHAR(64)  NOT NULL,
+    owner_worker VARCHAR(64),
+    acquired_at  TIMESTAMPTZ  NOT NULL,
+    expires_at   TIMESTAMPTZ  NOT NULL,
+
+    CONSTRAINT entity_locks_expiry_after_acquire CHECK (expires_at > acquired_at)
+);
+```
+
+No secondary index: the PK serves both acquire and release, and the
+table stays tiny (bounded by concurrently held leases plus leases
+orphaned by crashes).
+
+Field rationale:
+
+- `lock_key` — the exact string from
+  `EventHandler.extractLockKey(payload)` (adapter-validated to ≤ 512
+  chars). No hashing — unlike the advisory locker's SHA-256 → bigint
+  truncation, keys are exact and human-readable.
+- `owner_token` — random UUID minted **per acquisition** (not per
+  worker); release is a token-guarded compare-and-delete, so a
+  zombie's late `close()` can never release its successor's lease.
+- `owner_worker` — informational WorkerId (`claimed_by` format) for
+  operator forensics; never used in predicates.
+- `expires_at` — the crash-release mechanism. Computed and compared
+  **exclusively with the database clock** (`now()`), like
+  `workers.last_heartbeat` — application-JVM clock skew cannot extend
+  or shorten exclusion.
+
+### Acquire (single autocommit statement)
+
+```sql
+INSERT INTO event_outboxer.entity_locks AS l
+       (lock_key, owner_token, owner_worker, acquired_at, expires_at)
+VALUES ($1, $2, $3, now(), now() + make_interval(secs => $4))
+ON CONFLICT (lock_key) DO UPDATE
+   SET owner_token  = EXCLUDED.owner_token,
+       owner_worker = EXCLUDED.owner_worker,
+       acquired_at  = EXCLUDED.acquired_at,
+       expires_at   = EXCLUDED.expires_at
+   WHERE l.expires_at <= now()
+RETURNING lock_key;
+```
+
+One row returned = acquired; zero rows = busy (`Optional.empty()` —
+never an exception). The `ON CONFLICT` arm takes over expired leases
+atomically; concurrent contenders resolve to exactly one winner via
+speculative insertion + the EvalPlanQual re-check (verified
+empirically on PG 15, including 32-thread stampedes). The connection
+is borrowed from the pool **only for this statement** — the returned
+`LockHandle` holds `(dataSource, key, token)`, never a `Connection`,
+so no connection is pinned during the handler and the statement is
+safe behind pgBouncer transaction/statement pooling.
+
+Adapter-side requirements (load-bearing, see ADR-0022 §JDBC contract):
+autocommit forced on the borrowed connection (a busy probe takes a
+tuple lock that is held until the *transaction* ends — inside a
+foreign transaction it would block other contenders and the holder's
+release), isolation forced to `READ COMMITTED` with `SQLState 40001`
+mapped to busy, `setQueryTimeout(~5s)` (bounds contention waits and
+lease shortening; never `SET statement_timeout` — session-sticky under
+transaction pooling).
+
+### Release (token-guarded compare-and-delete)
+
+```sql
+DELETE FROM event_outboxer.entity_locks
+WHERE lock_key = $1 AND owner_token = $2;
+```
+
+Runs on a fresh pool borrow (any physical connection — lock state is a
+row, not session state). `1` = released; `0` = the lease already
+expired and was taken over or swept — logged at debug, not an error
+(same semantics as the Redis adapter's compare-and-delete Lua script).
+
+### Sweep (cosmetic garbage collection)
+
+```sql
+DELETE FROM event_outboxer.entity_locks WHERE expires_at <= now();
+```
+
+Scheduled by the starter every 10 minutes. Correctness never depends
+on it: expired rows are overwritten in place by the next acquirer; the
+sweep only collects rows of keys that are never contended again. Safe
+at any cadence.
+
+### Admin query — live leases
+
+```sql
+SELECT lock_key, owner_worker, acquired_at, expires_at
+FROM event_outboxer.entity_locks
+WHERE expires_at > now()
+ORDER BY acquired_at;
+```
+
+See [ADR-0022](adr/0022-lease-table-postgres-entity-locker.md) for the
+full design: concurrency semantics, crash/zombie analysis, the
+per-backend guarantee table, and the rollout path from the advisory
+locker.
+
+---
+
 ## Migrations (Flyway)
 
-The library ships migrations as classpath resources:
+The library ships migrations as classpath resources
+(`event-outboxer-storage-postgres` for core/archive,
+`event-outboxer-lock-postgres` for lock):
 
 ```
 event-outboxer-storage-postgres/src/main/resources/db/migration/outbox/
 ├── core/
-│   └── V001__outbox_core.sql       ← required: events + workers + indexes
+│   ├── V001__outbox_core.sql          ← required: events + workers + indexes
+│   ├── V003__outbox_admin_index.sql   ← required: DISABLED-listing index (ADR-0019)
+│   └── V004__outbox_dedup_key.sql     ← required: coalescing dedup key (ADR-0021)
 └── archive/
-    └── V002__outbox_archive.sql    ← opt-in: event_archive
+    └── V002__outbox_archive.sql       ← opt-in: event_archive
+
+event-outboxer-lock-postgres/src/main/resources/db/migration/outbox/
+└── lock/
+    └── V005__outbox_entity_locks.sql  ← opt-in: entity_locks (ADR-0022)
 ```
+
+Version numbers form one shared sequence across all locations (core:
+V001/V003/V004, archive: V002, lock: V005) so aggregated Flyway
+locations never collide. **Adopt opt-in locations at upgrade time**:
+enabling `archive/` or `lock/` after a later core migration has
+already been applied is an out-of-order migration and fails Flyway
+validation unless `spring.flyway.out-of-order=true`.
 
 The user configures `application.yml`:
 
@@ -196,6 +328,7 @@ spring:
       - classpath:db/migration                  # application migrations
       - classpath:db/migration/outbox/core      # required
       - classpath:db/migration/outbox/archive   # only if archive is enabled
+      - classpath:db/migration/outbox/lock      # only if lock.type=postgres
 ```
 
 ### Configurable schema name
@@ -208,7 +341,7 @@ in one place and both the SQL migrations AND the adapter's runtime
 queries pick it up:
 
 ```yaml
-outbox:
+event-outboxer:
   storage:
     schema: my_custom_schema   # or leave unset for event_outboxer
 ```
@@ -228,11 +361,14 @@ Flyway.configure()
 ### Liquibase
 
 A Liquibase changelog that reuses the same SQL files is shipped on
-the classpath of `event-outboxer-storage-postgres`:
+the classpath of `event-outboxer-storage-postgres` (core/archive) and
+`event-outboxer-lock-postgres` (lock):
 
 - `classpath:db/changelog/outbox/core/changelog.xml` — core schema.
 - `classpath:db/changelog/outbox/archive/changelog.xml` — optional
   archive table (see ADR-0008).
+- `classpath:db/changelog/outbox/lock/changelog.xml` — optional
+  entity_locks table (see ADR-0022).
 
 Wire it through the Spring Boot starter:
 
@@ -243,8 +379,9 @@ spring:
 ```
 
 The starter auto-feeds `event-outboxer.storage.schema` into the
-`eventOutboxerSchema` Liquibase parameter via a `BeanPostProcessor`
-that catches the `SpringLiquibase` bean; user-supplied
+`eventOutboxerSchema` Liquibase parameter via an
+`EnvironmentPostProcessor`
+(`OutboxLiquibaseParameterEnvironmentPostProcessor`); user-supplied
 `spring.liquibase.parameters.*` entries win on conflict.
 
 Plain-Java Liquibase users pass the parameter themselves:
@@ -658,6 +795,10 @@ ALTER TABLE event_outboxer.events SET (
 );
 ```
 
+`event_outboxer.entity_locks` (when present) also churns dead tuples on
+hot lock keys (UPDATE on takeover, DELETE on release), but the table
+is tiny — default autovacuum settings suffice.
+
 ### Monitoring
 
 Metrics are emitted through the Micrometer adapter with the prefix
@@ -727,3 +868,4 @@ CREATE INDEX idx_events_disabled_created_at
 - [docs/adr/0005-workers-heartbeat-table.md](adr/0005-workers-heartbeat-table.md)
 - [docs/adr/0008-three-statuses-plus-optional-archive.md](adr/0008-three-statuses-plus-optional-archive.md)
 - [docs/adr/0014-optimistic-locking-via-version-field.md](adr/0014-optimistic-locking-via-version-field.md)
+- [docs/adr/0022-lease-table-postgres-entity-locker.md](adr/0022-lease-table-postgres-entity-locker.md)

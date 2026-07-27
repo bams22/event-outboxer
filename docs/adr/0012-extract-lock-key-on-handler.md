@@ -5,7 +5,10 @@
 Accepted — amended 2026-07-26 (per-backend guarantees made explicit,
 lockTtl >= handlerMaxRuntime now enforced; the PublishOptions.lockKey
 mention below was contradictory and is corrected; see the Amendment
-section at the bottom)
+section at the bottom); amended 2026-07-27 (the default PostgreSQL
+locker is now the lease table of
+[ADR-0022](0022-lease-table-postgres-entity-locker.md); the guarantee
+table below is updated accordingly)
 
 ## Date
 
@@ -213,7 +216,14 @@ documented and partially enforced:
 | Backend | Exclusion holds until | Crash release | Cost |
 |---|---|---|---|
 | Redis/KeyDB (`SET NX PX` + token-checked release) | `min(close(), ttl)` | TTL expiry (≤ ttl) | one Redis key |
-| PostgreSQL advisory (session-scoped) | `close()` or connection loss | connection drop, immediate | **one pooled connection per held lock** |
+| PostgreSQL lease table (`lock.type=postgres` since ADR-0022) | `min(close(), ttl)` | lease expiry (≤ ttl) | 2 short autocommit statements per locked event; zero held connections |
+| PostgreSQL advisory (session-scoped, `lock.type=postgres-advisory`) | `close()` or connection loss | clean process death: immediate (backend EOF); hard crash/partition: until TCP keepalive reaps the backend (hours with Linux defaults) | **one pooled connection per held lock** |
+
+*(2026-07-27: the lease row was added and the advisory row's crash
+column corrected — the original "connection drop, immediate" holds
+only for clean process death, not for power loss or a network
+partition. See
+[ADR-0022](0022-lease-table-postgres-entity-locker.md).)*
 
 Consequences and the measures added:
 
@@ -236,7 +246,11 @@ Consequences and the measures added:
    deadlock against its own handlers (locker holds the last
    connection, handler waits for one). The starter logs a startup
    WARNING when the sums line up that way; the fix is a larger pool
-   or smaller handler pools.
+   or smaller handler pools. *(2026-07-27: this item now applies to
+   `lock.type=postgres-advisory` only — the default `postgres` mode is
+   the ADR-0022 lease table, which holds no connection during the
+   handler and makes the scenario structurally impossible; the WARNING
+   is re-gated accordingly.)*
 
 ## Related decisions
 
