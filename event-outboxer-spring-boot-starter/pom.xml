@@ -127,14 +127,35 @@
             <artifactId>event-outboxer-metrics-micrometer</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-tracing-otel</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-tracing-micrometer</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!--
-            Optional compile classpath: Micrometer, Lettuce. Present so the starter's
-            autoconfigurations compile; consumers must still depend on them explicitly at runtime
-            to actually engage the feature (@ConditionalOnClass / @ConditionalOnBean guards).
+            Optional compile classpath: Micrometer, OpenTelemetry, Lettuce. Present so the
+            starter's autoconfigurations compile; consumers must still depend on them explicitly
+            at runtime to actually engage the feature (@ConditionalOnClass / @ConditionalOnBean
+            guards).
         -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
             <optional>true</optional>
         </dependency>
         <!--
@@ -172,6 +193,12 @@
             <groupId>io.github.bams22</groupId>
             <artifactId>event-outboxer-testkit</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Real OTel SDK for the tracing end-to-end test (InMemorySpanExporter). -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-testing</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
