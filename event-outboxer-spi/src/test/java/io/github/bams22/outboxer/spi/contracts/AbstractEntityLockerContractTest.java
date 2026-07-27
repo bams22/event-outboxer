@@ -76,7 +76,7 @@ public abstract class AbstractEntityLockerContractTest {
   @Test
   @DisplayName("tryLock() returns empty when another holder still owns the same key")
   void tryLock_busy_returnsEmpty() {
-    try (LockHandle ignored = locker.tryLock("busy", Duration.ofSeconds(30)).orElseThrow()) {
+    try (LockHandle _ = locker.tryLock("busy", Duration.ofSeconds(30)).orElseThrow()) {
       Optional<LockHandle> second = locker.tryLock("busy", Duration.ofSeconds(30));
       assertThat(second).isEmpty();
     }
@@ -85,7 +85,7 @@ public abstract class AbstractEntityLockerContractTest {
   @Test
   @DisplayName("tryLock() on a different key succeeds while another key is held")
   void tryLock_independentKeys() {
-    try (LockHandle ignored = locker.tryLock("a", Duration.ofSeconds(30)).orElseThrow()) {
+    try (LockHandle _ = locker.tryLock("a", Duration.ofSeconds(30)).orElseThrow()) {
       Optional<LockHandle> b = locker.tryLock("b", Duration.ofSeconds(30));
       assertThat(b).isPresent();
       b.orElseThrow().close();

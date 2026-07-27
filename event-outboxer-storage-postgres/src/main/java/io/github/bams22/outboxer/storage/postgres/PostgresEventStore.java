@@ -369,7 +369,7 @@ public final class PostgresEventStore implements EventStore {
     }
     if (marks.size() == 1) {
       // Trickle path: reuse the precomputed single-row statement instead of building SQL.
-      ProcessedMark mark = marks.get(0);
+      ProcessedMark mark = marks.getFirst();
       return markProcessed(mark.id(), workerId, mark.claimedVersion())
           ? Set.of(mark.id())
           : Set.of();
@@ -410,7 +410,7 @@ public final class PostgresEventStore implements EventStore {
       return Set.of();
     }
     if (marks.size() == 1) {
-      RetryMark mark = marks.get(0);
+      RetryMark mark = marks.getFirst();
       return markForRetry(mark.id(), workerId, mark.claimedVersion(), mark.reason(), mark.runAt())
           ? Set.of(mark.id())
           : Set.of();
@@ -503,11 +503,7 @@ public final class PostgresEventStore implements EventStore {
    * column types of the whole VALUES list from them), the remaining rows are bare placeholders.
    */
   private static String valuesRows(int size, String firstRow, String nextRow) {
-    StringBuilder sb = new StringBuilder(firstRow);
-    for (int i = 1; i < size; i++) {
-      sb.append(", ").append(nextRow);
-    }
-    return sb.toString();
+    return firstRow + (", " + nextRow).repeat(size - 1);
   }
 
   @Override
@@ -656,7 +652,7 @@ public final class PostgresEventStore implements EventStore {
       Map<String, long[]> perTypeCounts = new HashMap<>();
       Map<String, Instant> perTypeOldestPending = new HashMap<>();
       for (MetricsRow row : rows) {
-        long[] counts = perTypeCounts.computeIfAbsent(row.eventType, k -> new long[3]);
+        long[] counts = perTypeCounts.computeIfAbsent(row.eventType, _ -> new long[3]);
         switch (row.status) {
           case "PENDING" -> {
             totalPending += row.cnt;

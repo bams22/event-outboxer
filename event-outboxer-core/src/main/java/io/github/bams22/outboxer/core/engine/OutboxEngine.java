@@ -116,22 +116,22 @@ public final class OutboxEngine {
       // Best-effort rollback so half-started state does not leak into tests / retries.
       try {
         pollers.forEach(Poller::stop);
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       try {
         handlerExecutors.drain(Duration.ofSeconds(1));
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       try {
         maintenance.stop(Duration.ofSeconds(1));
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       try {
         registry.deregister(workerInfo.id());
-      } catch (RuntimeException ignored) {
+      } catch (RuntimeException _) {
         // swallow
       }
       throw new IllegalStateException("failed to start engine: " + ex.getMessage(), ex);

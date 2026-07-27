@@ -54,11 +54,7 @@ final class PgLeaseSweepScheduler implements InitializingBean, DisposableBean {
     }
     executor =
         Executors.newSingleThreadScheduledExecutor(
-            r -> {
-              Thread t = new Thread(r, "outbox-entity-locks-sweep");
-              t.setDaemon(true);
-              return t;
-            });
+            Thread.ofPlatform().name("outbox-entity-locks-sweep").daemon().factory());
     executor.scheduleWithFixedDelay(
         this::sweepQuietly, CADENCE.toMillis(), CADENCE.toMillis(), TimeUnit.MILLISECONDS);
   }

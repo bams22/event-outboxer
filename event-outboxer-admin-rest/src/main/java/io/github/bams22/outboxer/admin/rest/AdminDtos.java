@@ -83,7 +83,7 @@ public final class AdminDtos {
     static EventPageResponse of(List<Event> page, int requestedLimit) {
       List<EventResponse> items = page.stream().map(EventResponse::from).toList();
       String next =
-          page.size() < requestedLimit ? null : encodeCursor(page.get(page.size() - 1));
+          page.size() < requestedLimit ? null : encodeCursor(page.getLast());
       return new EventPageResponse(items, next);
     }
   }
