@@ -110,7 +110,7 @@ microseconds.
 | `status VARCHAR(16)` | `'PROCESSING'` is 10 characters, with margin |
 | `claimed_by VARCHAR(64)` | WorkerId format: `{hostname}-{pid}-{uuid8}` |
 | `last_fail_reason TEXT` | Stack traces; the application trims to ~10 KB so rows do not bloat |
-| `trace_context JSONB` | W3C traceparent + baggage: `{"traceparent": "00-...", "baggage": {...}}` |
+| `trace_context JSONB` | Flat string→string carrier written by the `OutboxTracer` producer span (ADR-0023): `{"traceparent": "00-...", "tracestate": "...", "baggage": "k1=v1,k2=v2"}`. Values are always plain strings (`FlatMapJson` rejects nested objects); the key set follows the configured propagator (`b3`, ...) |
 | `version BIGINT` | Optimistic locking (see ADR-0014); BIGINT for human-scale durability |
 
 ### CHECK `events_processing_has_claim`

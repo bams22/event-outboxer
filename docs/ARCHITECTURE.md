@@ -91,6 +91,8 @@ event-outboxer (parent pom)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
+├── event-outboxer-tracing-otel             OpenTelemetry OutboxTracer (ADR-0023)
+├── event-outboxer-tracing-micrometer       Micrometer Tracing OutboxTracer (ADR-0023)
 ├── event-outboxer-admin-actuator           Actuator endpoint over OutboxAdmin
 ├── event-outboxer-admin-rest               REST controller over OutboxAdmin
 ├── event-outboxer-testkit                  Test utilities (SettableClock, ManualEngine)
@@ -110,6 +112,8 @@ event-outboxer (parent pom)
 
       metrics-micrometer (depends only on api — implements OutboxListener)
 
+      tracing-otel, tracing-micrometer (depend on api + spi — implement OutboxTracer, ADR-0023)
+
       testkit (depends on api, spi, core, storage-inmemory)
 ```
 
@@ -128,6 +132,8 @@ Packages mirror the modules 1-to-1 under `io.github.bams22.outboxer.*`:
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
 | `-serializer-jackson` | `io.github.bams22.outboxer.serializer.jackson.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
+| `-tracing-otel` | `io.github.bams22.outboxer.tracing.otel.*` |
+| `-tracing-micrometer` | `io.github.bams22.outboxer.tracing.micrometer.*` |
 | `-testkit` | `io.github.bams22.outboxer.testkit.*` |
 | `-spring-boot-starter` | `io.github.bams22.outboxer.spring.*` |
 
@@ -158,6 +164,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | `EntityLocker` | PostgreSQL (lease table; advisory opt-out), Redis, NoOp | Lock by lockKey |
 | `EventSerializer` | Jackson | Serialize/deserialize payload |
 | `Clock` | SystemClock, SettableClock | Time source (testability) |
+| `OutboxTracer` | OpenTelemetry, Micrometer Tracing, NoOp | Trace continuity publish → handle (ADR-0023) |
 
 ### Core Engine (`event-outboxer-core`)
 
@@ -572,6 +579,7 @@ other) has been a real source of bugs.
 | Retry / disable / delete listener emission | `HandlerDispatcher` fires listener callbacks after storage commit | identical — starter adds no second emission path (see [ADR-0007](adr/0007-failure-handler-chain-of-responsibility.md) §Q25) |
 | `LoggingOutboxListener` | auto-added by `OutboxEngineBuilder` (plain-Java default) | explicitly opted out (`includeLoggingListener(false)`) to avoid double-logging with the engine's own SLF4J calls |
 | `MicrometerOutboxListener` | separate module; caller registers manually | auto-registered by `MicrometerAutoConfiguration` when Micrometer is on the classpath |
+| Trace continuity publish → handle (`OutboxTracer`, ADR-0023) | NOOP by default; caller wires an adapter via `builder.tracer(new OtelOutboxTracer(otel))` | auto-detected: `MicrometerTracingAutoConfiguration` (Boot `Tracer`+`Propagator` beans) wins over `OtelTracingAutoConfiguration` (`OpenTelemetry` bean or `GlobalOpenTelemetry`); switch: `event-outboxer.tracing.enabled` |
 | Backlog gauges (pending / processing / disabled / oldest-age) | none built-in; caller wires own `Gauge.builder(...)` off `EventStore.metricsSnapshot()` | `MicrometerAutoConfiguration.outboxBacklogGauges` registers per-type gauges for every `EventHandler` bean + a global `oldest_claimed_age_seconds`; reads go through the `MetricsSnapshotCache` SPI |
 | Health surface | `OutboxEngine.state()` + `OutboxEngine.isLifecycleActive()` + `OutboxListener.onEngineCrashed` | `OutboxHealthIndicator` + `event-outboxer.health.probe-groups` `EnvironmentPostProcessor` that folds `outbox` into Actuator liveness / readiness groups |
 | Crash detection | `EngineHealthCheckTask` in the maintenance scheduler; flips `state()` → `STOPPED`, fires `onEngineCrashed` | inherited — starter only surfaces the result via the health indicator |

@@ -233,8 +233,10 @@ that neutralizes `commit()`/`rollback()` for connections participating in
 an outer TX. Used to participate in the client's TX. See
 [ADR-0002](adr/0002-participate-in-client-transaction.md).
 
-**trace_context** — event field holding the W3C traceparent + baggage.
-Restored on the worker to continue the distributed trace.
+**trace_context** — event field holding the flat W3C carrier map
+(`traceparent` / `tracestate` / `baggage` as single string values),
+captured by the `OutboxTracer` producer span at publish (ADR-0023) and
+restored on the worker as the parent of the per-attempt consumer span.
 
 ## V
 

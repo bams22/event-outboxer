@@ -16,7 +16,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 16 modules
+### 18 modules
 
 ```
 event-outboxer (root parent pom)
@@ -32,6 +32,8 @@ event-outboxer (root parent pom)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
+├── event-outboxer-tracing-otel             OpenTelemetry OutboxTracer (ADR-0023)
+├── event-outboxer-tracing-micrometer       Micrometer Tracing OutboxTracer (ADR-0023)
 ├── event-outboxer-admin-actuator           Actuator endpoint over OutboxAdmin
 ├── event-outboxer-admin-rest               REST controller over OutboxAdmin
 ├── event-outboxer-testkit                  Test utilities
@@ -67,6 +69,8 @@ Why `groupId=io.github.bams22` (rather than
 | `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
+| `-tracing-otel` | `io.github.bams22.outboxer.tracing.otel.*` |
+| `-tracing-micrometer` | `io.github.bams22.outboxer.tracing.micrometer.*` |
 | `-testkit` | `io.github.bams22.outboxer.testkit.*` |
 | `-spring-boot-starter` | `io.github.bams22.outboxer.spring.*` |
 
@@ -82,6 +86,7 @@ Why `groupId=io.github.bams22` (rather than
                            └── testkit
 
      metrics-micrometer ──→ api (implements OutboxListener)
+     tracing-otel, tracing-micrometer ──→ api + spi (implement OutboxTracer, ADR-0023)
 ```
 
 **Invariants**:
@@ -207,7 +212,7 @@ The BOM POM manages:
 
 ### Negative consequences
 
-- 16 modules — more than a monorepo. That is the price of the pluggable
+- 18 modules — more than a monorepo. That is the price of the pluggable
   architecture. (`event-outboxer-cache-redis` was added after the
   original decision when `MetricsSnapshotCache` became an SPI port;
   `event-outboxer-lock-postgres-lease` was added by ADR-0022 so the
