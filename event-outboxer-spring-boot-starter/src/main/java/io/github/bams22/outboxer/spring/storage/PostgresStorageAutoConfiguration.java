@@ -14,6 +14,8 @@ import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
+import io.github.bams22.outboxer.spring.OutboxDataSource;
+import io.github.bams22.outboxer.spring.OutboxDataSourceResolver;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.github.bams22.outboxer.storage.postgres.PostgresEventStore;
 import io.github.bams22.outboxer.storage.postgres.PostgresOutboxAdmin;
@@ -24,6 +26,8 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -46,6 +50,12 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
  * this wiring, {@code OutboxEventPublisher.publish(...)} called inside a {@code @Transactional}
  * method shares the caller's connection and commits (or rolls back) atomically with the business
  * INSERT/UPDATE.
+ *
+ * <h2>ADR-0024 — DataSource selection</h2>
+ *
+ * With several {@code DataSource} beans, the one marked {@link OutboxDataSource @OutboxDataSource}
+ * wins; otherwise the unique/{@code @Primary} bean is used; otherwise startup fails fast naming the
+ * candidates (see {@link OutboxDataSourceResolver}).
  */
 @AutoConfiguration(
     after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
@@ -63,7 +73,12 @@ public class PostgresStorageAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(ConnectionSupplier.class)
-  public ConnectionSupplier outboxConnectionSupplier(DataSource dataSource) {
+  public ConnectionSupplier outboxConnectionSupplier(
+      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+      ObjectProvider<DataSource> dataSources,
+      ListableBeanFactory beanFactory) {
+    DataSource dataSource =
+        OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory);
     DataSource txAware =
         dataSource instanceof TransactionAwareDataSourceProxy proxy
             ? proxy

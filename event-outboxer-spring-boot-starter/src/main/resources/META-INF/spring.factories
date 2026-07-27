@@ -3,4 +3,5 @@ io.github.bams22.outboxer.spring.health.OutboxProbeGroupsEnvironmentPostProcesso
 io.github.bams22.outboxer.spring.storage.OutboxLiquibaseParameterEnvironmentPostProcessor
 
 org.springframework.boot.diagnostics.FailureAnalyzer=\
-io.github.bams22.outboxer.spring.storage.OutboxStorageFailureAnalyzer
+io.github.bams22.outboxer.spring.storage.OutboxStorageFailureAnalyzer,\
+io.github.bams22.outboxer.spring.OutboxDataSourceFailureAnalyzer

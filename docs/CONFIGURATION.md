@@ -184,7 +184,10 @@ Storage adapter settings.
 
 - `type` — **required, no default** (ADR-0020). The only value is
   `postgres` (requires a `DataSource` bean and the
-  `event-outboxer-storage-postgres` dependency). There is deliberately
+  `event-outboxer-storage-postgres` dependency; with several
+  `DataSource` beans, see
+  [Selecting the DataSource](#selecting-the-datasource-outboxdatasource)).
+  There is deliberately
   no in-memory option: a silently non-durable outbox would not
   participate in your transactions and would lose events on restart —
   the exact failure this library exists to prevent. An unconfigured
@@ -214,7 +217,9 @@ default is `noop` and other backends are opt-in:
   ADR-0022): a row in `event_outboxer.entity_locks` per held lock,
   acquire/release as single autocommit statements. Requires
   `event-outboxer-lock-postgres-lease` on the classpath, a `DataSource`
-  bean, and migration V005 (Flyway location
+  bean (with several, see
+  [Selecting the DataSource](#selecting-the-datasource-outboxdatasource)),
+  and migration V005 (Flyway location
   `classpath:db/migration/outbox/lock` or the Liquibase changelog
   `db/changelog/outbox/lock/changelog.xml`) — the starter fail-fast
   probes the table at startup and names the migration in the error if
@@ -622,6 +627,48 @@ refresh:
 
 Property binding is not enough for complex cases. Override via Spring
 beans:
+
+### Selecting the DataSource (`@OutboxDataSource`)
+
+With a single `DataSource` bean nothing is needed — the starter uses
+it. With several, mark the one whose database holds the outbox tables
+(ADR-0024), mirroring Spring Boot's own `@FlywayDataSource` /
+`@BatchDataSource` pattern:
+
+```java
+@Bean
+@OutboxDataSource
+public DataSource ordersDataSource() { ... }   // outbox lives here
+
+@Bean
+public DataSource reportingDataSource() { ... }
+```
+
+Resolution order — applied identically by the PostgreSQL storage
+adapter, both PostgreSQL lockers and the lease-table probe (they share
+one database by design):
+
+1. the single bean marked
+   `@io.github.bams22.outboxer.spring.OutboxDataSource` — wins even
+   when another bean is `@Primary`;
+2. otherwise the unique `DataSource` bean, or the `@Primary` one among
+   several;
+3. otherwise startup fails fast, naming the candidate beans and the
+   fix. Two beans carrying the qualifier fail the same way — exactly
+   one may.
+
+Notes:
+
+- The storage adapter wraps the resolved `DataSource` in
+  `TransactionAwareDataSourceProxy` as always (ADR-0002); the PG
+  lockers unwrap such a proxy back to its raw target — their
+  acquire/release statements must run autocommit, never inside the
+  caller's transaction (ADR-0022).
+- Only Java-config beans can carry the qualifier. A `DataSource`
+  existing purely through `spring.datasource.*` properties
+  participates via the primary/unique rule instead.
+- User-defined `ConnectionSupplier` / `EntityLocker` beans still
+  override the outbox JDBC wiring entirely.
 
 ### Custom ObjectMapper for serialization
 

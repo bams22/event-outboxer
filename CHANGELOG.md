@@ -8,6 +8,19 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Outbox DataSource selection in multi-DataSource applications
+  (ADR-0024) — new `@OutboxDataSource` qualifier in the starter.**
+  All outbox JDBC (the PostgreSQL storage adapter, both PostgreSQL
+  entity lockers and the lease-table probe) now resolves its
+  `DataSource` through one rule: the single `@OutboxDataSource`-marked
+  bean (wins even over an unrelated `@Primary`), else the
+  unique/`@Primary` bean, else startup fails fast with a
+  `FailureAnalyzer` diagnosis naming the candidate beans and the fix —
+  mirroring Spring Boot's `@FlywayDataSource` / `@BatchDataSource`
+  pattern. The lockers unwrap a `TransactionAwareDataSourceProxy`
+  handed in this way back to its raw target (their statements must run
+  autocommit, ADR-0022), and the HikariCP pool-size warning resolves
+  leniently — ambiguity skips the warning instead of failing startup.
 - **End-to-end distributed-trace continuity (ADR-0023) — new SPI port
   `OutboxTracer` and two adapter modules `event-outboxer-tracing-otel`
   and `event-outboxer-tracing-micrometer`.** The publisher now starts a

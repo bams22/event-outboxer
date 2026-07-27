@@ -109,3 +109,6 @@ architecture.
   about Spring; all Spring integration lives in the starter.
 - [ADR-0009](0009-spring-task-executor-in-starter.md) — same pattern:
   Spring-specific `ThreadPoolTaskExecutor` lives only in the starter.
+- [ADR-0024](0024-outbox-datasource-selection.md) — which `DataSource` the
+  starter wraps when the application defines several
+  (`@OutboxDataSource` qualifier → primary/unique → fail fast).

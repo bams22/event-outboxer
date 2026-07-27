@@ -147,6 +147,7 @@ public class OutboxEngineAutoConfiguration {
       OutboxProperties properties,
       io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
       ObjectProvider<io.github.bams22.outboxer.spi.OutboxAdmin> adminProvider,
+      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSourceProvider,
       ObjectProvider<DataSource> dataSourceProvider,
       ObjectProvider<EventHandler<?>> handlerProvider,
       @Qualifier("outboxDefaultFailureHandler")
@@ -197,7 +198,8 @@ public class OutboxEngineAutoConfiguration {
     java.util.List<EventHandler<?>> handlers = new java.util.ArrayList<>();
     handlerProvider.forEach(handlers::add);
     handlers.forEach(builder::handler);
-    warnIfPgLockCanExhaustPool(properties, resolvedDefaults, handlers, dataSourceProvider);
+    warnIfPgLockCanExhaustPool(
+        properties, resolvedDefaults, handlers, qualifiedDataSourceProvider, dataSourceProvider);
     defaultFailureHandlerProvider.ifAvailable(builder::defaultFailureHandler);
     perTypeFailureHandlersProvider.ifAvailable(map -> map.forEach(builder::failureHandlerFor));
     pollStrategyProvider.ifAvailable(builder::pollStrategy);
@@ -299,11 +301,16 @@ public class OutboxEngineAutoConfiguration {
       OutboxProperties properties,
       EventTypeConfig resolvedDefaults,
       java.util.List<EventHandler<?>> handlers,
+      ObjectProvider<DataSource> qualifiedDataSourceProvider,
       ObjectProvider<DataSource> dataSourceProvider) {
     if (properties.getLock().getType() != OutboxProperties.LockType.postgres_advisory) {
       return;
     }
-    DataSource dataSource = dataSourceProvider.getIfAvailable();
+    // Lenient resolution (ADR-0024): this is best-effort diagnostics — ambiguity must skip the
+    // warning, never fail startup (e.g. a user EntityLocker bean with several DataSources).
+    DataSource dataSource =
+        OutboxDataSourceResolver.resolveIfUnambiguous(
+            qualifiedDataSourceProvider, dataSourceProvider);
     Integer maxPoolSize = hikariMaxPoolSize(dataSource);
     if (maxPoolSize == null) {
       return; // not HikariCP (or no DataSource) — nothing reliable to compare against

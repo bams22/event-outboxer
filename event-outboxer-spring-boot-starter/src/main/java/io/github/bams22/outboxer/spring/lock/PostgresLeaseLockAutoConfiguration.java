@@ -11,11 +11,14 @@ package io.github.bams22.outboxer.spring.lock;
 
 import io.github.bams22.outboxer.lock.postgres.lease.PgLeaseEntityLocker;
 import io.github.bams22.outboxer.spi.EntityLocker;
+import io.github.bams22.outboxer.spring.OutboxDataSource;
+import io.github.bams22.outboxer.spring.OutboxDataSourceResolver;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -47,7 +50,9 @@ import org.springframework.context.annotation.Configuration;
  * For the lease protocol this is a correctness requirement, not a preference: acquire and release
  * must each run as their own autocommit statement — inside a caller's transaction a mere busy probe
  * would hold the row's tuple lock until that transaction ends, blocking other contenders and the
- * holder's release (ADR-0022 §JDBC contract).
+ * holder's release (ADR-0022 §JDBC contract). With several {@code DataSource} beans the {@link
+ * OutboxDataSource @OutboxDataSource}-qualified one wins (ADR-0024), and a transaction-aware proxy
+ * handed in that way is unwrapped back to its raw target.
  */
 @AutoConfiguration(
     after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
@@ -60,23 +65,36 @@ public class PostgresLeaseLockAutoConfiguration {
   @Bean
   @ConditionalOnMissingBean(EntityLocker.class)
   public PgLeaseEntityLocker outboxEntityLocker(
-      DataSource dataSource, OutboxProperties properties) {
+      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+      ObjectProvider<DataSource> dataSources,
+      ListableBeanFactory beanFactory,
+      OutboxProperties properties) {
+    DataSource dataSource =
+        OutboxDataSourceResolver.unwrapTransactionAware(
+            OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory));
     return new PgLeaseEntityLocker(
         dataSource, properties.getStorage().getSchema(), properties.getWorker().getId());
   }
 
   /**
    * Skipped silently when a user-defined {@code EntityLocker} displaced the lease locker — the
-   * probe (and the sweep below) belong to the lease table, not to the lock SPI.
+   * probe (and the sweep below) belong to the lease table, not to the lock SPI. The DataSource is
+   * resolved only in that case, so a displaced locker plus ambiguous DataSources never fails an
+   * inert probe.
    */
   @Bean
   @DependsOnDatabaseInitialization
   public PgLeaseTableProbe pgLeaseTableProbe(
       ObjectProvider<PgLeaseEntityLocker> lockerProvider,
-      DataSource dataSource,
+      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+      ObjectProvider<DataSource> dataSources,
+      ListableBeanFactory beanFactory,
       OutboxProperties properties) {
     return new PgLeaseTableProbe(
-        lockerProvider.getIfAvailable() != null ? dataSource : null,
+        lockerProvider.getIfAvailable() != null
+            ? OutboxDataSourceResolver.unwrapTransactionAware(
+                OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory))
+            : null,
         properties.getStorage().getSchema());
   }
 

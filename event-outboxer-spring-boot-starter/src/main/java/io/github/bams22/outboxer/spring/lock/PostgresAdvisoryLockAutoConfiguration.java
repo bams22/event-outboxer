@@ -11,7 +11,11 @@ package io.github.bams22.outboxer.spring.lock;
 
 import io.github.bams22.outboxer.lock.postgres.advisory.PgAdvisoryLocker;
 import io.github.bams22.outboxer.spi.EntityLocker;
+import io.github.bams22.outboxer.spring.OutboxDataSource;
+import io.github.bams22.outboxer.spring.OutboxDataSourceResolver;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -31,7 +35,9 @@ import org.springframework.context.annotation.Conditional;
  *
  * <p>The locker intentionally uses the raw {@code DataSource} (not the transaction-aware proxy):
  * advisory locks must run on a connection that is NOT bound to the caller's transaction, so that a
- * lock acquired before handler work survives the caller's commit/rollback boundary.
+ * lock acquired before handler work survives the caller's commit/rollback boundary. With several
+ * {@code DataSource} beans the {@link OutboxDataSource @OutboxDataSource}-qualified one wins
+ * (ADR-0024), and a transaction-aware proxy handed in that way is unwrapped back to its raw target.
  */
 @AutoConfiguration(
     after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
@@ -42,7 +48,12 @@ public class PostgresAdvisoryLockAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(EntityLocker.class)
-  public EntityLocker outboxEntityLocker(DataSource dataSource) {
-    return new PgAdvisoryLocker(dataSource);
+  public EntityLocker outboxEntityLocker(
+      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+      ObjectProvider<DataSource> dataSources,
+      ListableBeanFactory beanFactory) {
+    return new PgAdvisoryLocker(
+        OutboxDataSourceResolver.unwrapTransactionAware(
+            OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory)));
   }
 }
