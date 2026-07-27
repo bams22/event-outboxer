@@ -26,13 +26,12 @@ import org.jspecify.annotations.Nullable;
  * {@code DataSource} in a {@code TransactionAwareDataSourceProxy} (see ADR-0002).
  *
  * <p>When the publisher is invoked outside a transaction, behavior depends on the configured
- * policy {@code outbox.publisher.no-transaction-policy}:
+ * policy {@code event-outboxer.publisher.no-transaction-policy}:
  *
  * <ul>
  *   <li>{@code FAIL} (default) — throws {@code NoTransactionException}.
- *   <li>{@code AUTO} — opens a short-lived autonomous transaction (loses atomicity with the
- *       caller's state; intended for simple scripts).
- *   <li>{@code IGNORE} — writes without a transaction (unsafe; for tests only).
+ *   <li>{@code IGNORE} — writes without a surrounding transaction, losing atomicity with the
+ *       caller's state; intended for maintenance scripts and tests.
  * </ul>
  *
  * <h2>Error semantics</h2>

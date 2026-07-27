@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-07-27: corrected where the logging listener is
+registered by default)
 
 ## Date
 
@@ -53,7 +54,8 @@ Groups:
 7. **Dispatch**: `onDispatchRejected`.
 8. **Engine lifecycle**: `onEngineCrashed`.
 
-The complete list lives in the `OutboxListener` javadoc.
+The complete list lives in `OutboxListener` itself — the methods are
+grouped under the same section headings as above.
 
 ### Contract
 
@@ -77,7 +79,7 @@ implementation. Mapping (sample):
   `event_outboxer.events.handle.duration{event_type}` Timer.
 - `onEventRetryScheduled` → `event_outboxer.events.retried{event_type}` Counter.
 - `onEventDisabled` → `event_outboxer.events.disabled{event_type}` Counter.
-- `onOrphansReclaimed` → `event-outboxer.orphans.reclaimed` Counter.
+- `onOrphansReclaimed` → `event_outboxer.orphans.reclaimed` Counter.
 - etc.
 
 The starter registers it automatically when Micrometer is on the classpath
@@ -110,11 +112,14 @@ core on SLF4J only.
   methods they care about.
 - **db-scheduler uses the same pattern** (`SchedulerListener`) — proven.
 
-### The default is not no-op but LoggingListener
+### The plain-Java default is not no-op but LoggingListener
 
-In the Spring starter, `LoggingOutboxListener` is registered by default —
-it logs key events at INFO/WARN. Users can disable it via
-`event-outboxer.listener.logging.enabled=false`.
+`OutboxEngineBuilder` adds a `LoggingOutboxListener` (key events at
+INFO/WARN) unless opted out via `includeLoggingListener(false)`. The
+Spring starter opts out explicitly and registers only the
+`OutboxListener` beans found in the application context — Spring users
+who want the logging behavior declare the listener as a bean. There is
+no dedicated enable/disable property.
 
 ## Consequences
 

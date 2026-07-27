@@ -242,7 +242,10 @@ per-type overrides adjust individual fields (see
 - `poll-min-interval` / `poll-max-interval` / `poll-multiplier` — the
   adaptive poller starts at the min interval, multiplies the wait by
   `poll-multiplier` after every empty poll, and caps it at the max
-  interval; any non-empty poll resets the wait to the minimum.
+  interval; any non-empty poll resets the wait to the minimum. Every
+  emitted wait additionally carries a uniform ±10% jitter (not
+  configurable) so that a fleet of JVMs deployed together does not
+  poll the store in lockstep.
   Note: these intervals bound the pickup latency only for events
   published by *other* JVMs and for delayed events (`runAt` in the
   future). Events published in this JVM wake their poller right after

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-07-27: port inventory and signature block
+synchronized with the shipped SPI)
 
 ## Date
 
@@ -35,38 +36,54 @@ ports.
 
 ### SPI ports in `event-outboxer-spi`
 
+The signature block below is kept in sync with the shipped SPI (last
+synchronized 2026-07-27; the `.java` files remain the authority):
+
 ```java
 public interface EventStore {
-    void save(PendingEvent event);
-    void saveAll(Collection<PendingEvent> events);
+    boolean save(PendingEvent event);                       // false = coalesced away (ADR-0021)
+    void saveAll(List<PendingEvent> events);                // rejects dedup-keyed events
+    Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey); // ADR-0021 pin
     List<ClaimedEvent> claim(ClaimRequest request);
-    boolean markProcessed(UUID eventId, long claimedVersion, WorkerId workerId);
-    boolean markForRetry(...);
-    boolean markDisabled(...);
-    boolean forceReclaim(...);
-    int reclaimOrphans(Collection<WorkerId> deadWorkerIds);
-    Optional<Event> findById(UUID eventId);
+    boolean markProcessed(UUID id, WorkerId workerId, long claimedVersion);
+    boolean markForRetry(UUID id, WorkerId workerId, long claimedVersion,
+                         String reason, Instant runAt);
+    default Set<UUID> markProcessedAll(List<ProcessedMark> marks, WorkerId workerId);
+    default Set<UUID> markForRetryAll(List<RetryMark> marks, WorkerId workerId);
+                                                            // batch finalize (ADR-0014)
+    boolean markDisabled(UUID id, WorkerId workerId, long claimedVersion, String reason);
+    boolean release(UUID id, WorkerId workerId, long claimedVersion,
+                    String reason, Instant runAt);          // no attempts bump
+    int releaseClaimed(WorkerId workerId, Instant now);     // shutdown sweep
+    boolean forceReclaim(UUID id, WorkerId workerId, long claimedVersion, Instant runAt);
+    int sweepStale(Duration olderThan, int limit);          // stale-claim sweeper
+    int reclaimOrphans(List<WorkerId> deadWorkers, Instant now);
+    Optional<Event> findById(UUID id);
     OutboxMetricsSnapshot metricsSnapshot();
+
+    record ProcessedMark(UUID id, long claimedVersion) {}
+    record RetryMark(UUID id, long claimedVersion, String reason, Instant runAt) {}
 }
 
 public interface WorkerRegistry {
     void register(WorkerInfo info);
-    void heartbeat(WorkerId workerId);
-    void markGracefulStop(WorkerId workerId);
-    void deregister(WorkerId workerId);
-    List<WorkerId> findDead(Duration deadThreshold, int limit);
-    void removeDead(Collection<WorkerId> workerIds);
-    // ...
+    boolean heartbeat(WorkerId id, Instant at);             // false = row vanished
+    void markGracefulStop(WorkerId id);
+    void deregister(WorkerId id);
+    List<WorkerInfo> findDead(Duration deadThreshold, int limit);
+    void removeDead(List<WorkerId> ids);
+    Optional<WorkerInfo> findById(WorkerId id);
+    List<WorkerInfo> findAll();
 }
 
 public interface EntityLocker {
     Optional<LockHandle> tryLock(String key, Duration ttl);
-    // ... EntityLocker.NOOP singleton
+    EntityLocker NOOP = new NoopEntityLocker();
 }
 
 public interface EventSerializer {
     String serialize(Object payload);
-    <T> T deserialize(String data, Class<T> type);
+    <T> T deserialize(String payload, Class<T> type);
 }
 
 public interface Clock {
@@ -75,15 +92,34 @@ public interface Clock {
 }
 ```
 
+Ports added after this ADR was first written, defined in the same
+module and following the same rules:
+
+- `OutboxAdmin` — administrative surface (list/reenable/purge, keyset
+  pagination via `AdminCursor`), see ADR-0019.
+- `ConnectionSupplier` — how the PG adapter joins the caller's
+  transaction, see ADR-0002.
+- `MetricsSnapshotCache` — TTL cache for `metricsSnapshot()` (in-memory
+  and Redis implementations).
+- Supporting types: `ClaimRequest`, `OutboxMetricsSnapshot`,
+  `ArchivedEvent`, `LockHandle`.
+
 ### Implementations in separate modules
 
-- `event-outboxer-storage-postgres` — `EventStore` + `WorkerRegistry` for
-  PG.
-- `event-outboxer-storage-inmemory` — for tests.
-- `event-outboxer-lock-postgres` — `EntityLocker` via
-  `pg_advisory_xact_lock`.
-- `event-outboxer-lock-redis` — via Redis/KeyDB.
+- `event-outboxer-storage-postgres` — `EventStore` + `WorkerRegistry` +
+  `OutboxAdmin` for PG.
+- `event-outboxer-storage-inmemory` — test infrastructure only
+  (ADR-0020): contract tests, `@Import` test configuration.
+- `event-outboxer-lock-postgres` — `EntityLocker` via session-scoped
+  `pg_advisory_lock` (ADR-0012).
+- `event-outboxer-lock-redis` — `EntityLocker` via Redis/KeyDB
+  (Lettuce).
+- `event-outboxer-cache-redis` — `MetricsSnapshotCache` via Redis/KeyDB.
 - `event-outboxer-serializer-jackson` — Jackson JSON (see ADR-0011).
+- `event-outboxer-admin-actuator` / `event-outboxer-admin-rest` —
+  surfaces over `OutboxAdmin` (ADR-0019).
+
+The full 15-module layout lives in ADR-0016.
 
 ### Abstraction test
 
