@@ -98,6 +98,8 @@ event-outboxer:
     unknown-handler-retry-delay: 1m  # reschedule delay when policy=SKIP
     lock-busy-retry-delay: 1s        # reschedule delay when the entity lock is busy
     dispatch-rejected-retry-delay: 1s # reschedule delay when the handler executor is saturated
+    finalize-batching: true          # group-commit batching of finalize statements
+    finalize-batch-max-size: 128     # cap on rows per flushed finalize statement
 
   maintenance:
     heartbeat-interval: 5s           # how often the worker refreshes event_outboxer.workers
@@ -294,6 +296,15 @@ Cross-type dispatcher knobs.
 - `dispatch-rejected-retry-delay` — reschedule delay when the per-type
   handler executor rejects a dispatch (pool and queue saturated).
   Backpressure does not consume the attempts budget either.
+- `finalize-batching` — group-commit batching of `markProcessed` /
+  `markForRetry` statements (ADR-0014, batch form): concurrent
+  finalizations coalesce into one multi-row statement, cutting finalize
+  round-trips on hot types up to ~batch-size×. The batch forms while
+  the previous statement is in flight — no timers, no added latency; an
+  idle engine degrades to plain single-row calls. `true` by default;
+  disable only as a kill-switch.
+- `finalize-batch-max-size` — cap on rows per flushed finalize
+  statement (default 128).
 
 ### `event-outboxer.maintenance.*`
 

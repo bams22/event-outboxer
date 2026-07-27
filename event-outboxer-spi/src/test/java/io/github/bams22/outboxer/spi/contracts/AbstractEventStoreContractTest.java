@@ -296,6 +296,98 @@ public abstract class AbstractEventStoreContractTest {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // markProcessedAll / markForRetryAll (batch finalize, ADR-0014 batch form)
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("markProcessedAll() keeps per-row guards: winners removed, stale row untouched")
+  void markProcessedAll_perRowGuards() {
+    ClaimedEvent a = publishAndClaim(EVENT_TYPE_A, "a", WORKER_1);
+    ClaimedEvent b = publishAndClaim(EVENT_TYPE_A, "b", WORKER_1);
+    ClaimedEvent c = publishAndClaim(EVENT_TYPE_B, "c", WORKER_1);
+
+    Set<UUID> applied =
+        store.markProcessedAll(
+            List.of(
+                new EventStore.ProcessedMark(a.id(), a.claimedVersion()),
+                new EventStore.ProcessedMark(b.id(), b.claimedVersion() - 1), // stale
+                new EventStore.ProcessedMark(c.id(), c.claimedVersion())),
+            WORKER_1);
+
+    assertThat(applied).containsExactlyInAnyOrder(a.id(), c.id());
+    assertThat(store.findById(a.id())).isEmpty();
+    assertThat(store.findById(b.id())).isPresent();
+    assertThat(store.findById(c.id())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("markProcessedAll() applies nothing for a different worker")
+  void markProcessedAll_empty_onDifferentWorker() {
+    ClaimedEvent a = publishAndClaim(EVENT_TYPE_A, "a", WORKER_1);
+    ClaimedEvent b = publishAndClaim(EVENT_TYPE_A, "b", WORKER_1);
+
+    Set<UUID> applied =
+        store.markProcessedAll(
+            List.of(
+                new EventStore.ProcessedMark(a.id(), a.claimedVersion()),
+                new EventStore.ProcessedMark(b.id(), b.claimedVersion())),
+            WORKER_2);
+
+    assertThat(applied).isEmpty();
+    assertThat(store.findById(a.id())).isPresent();
+    assertThat(store.findById(b.id())).isPresent();
+  }
+
+  @Test
+  @DisplayName("markProcessedAll() of an empty list returns an empty set")
+  void markProcessedAll_emptyInput() {
+    assertThat(store.markProcessedAll(List.of(), WORKER_1)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("markForRetryAll() applies per-row reason and runAt, bumps attempts and version")
+  void markForRetryAll_perRowFields() {
+    ClaimedEvent a = publishAndClaim(EVENT_TYPE_A, "a", WORKER_1);
+    ClaimedEvent b = publishAndClaim(EVENT_TYPE_A, "b", WORKER_1);
+    ClaimedEvent stale = publishAndClaim(EVENT_TYPE_B, "s", WORKER_1);
+    // Truncate to microseconds: TIMESTAMPTZ in PG is microsecond-precision.
+    Instant runA =
+        Instant.now().plusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    Instant runB =
+        Instant.now().plusSeconds(90).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+
+    Set<UUID> applied =
+        store.markForRetryAll(
+            List.of(
+                new EventStore.RetryMark(a.id(), a.claimedVersion(), "boom-a", runA),
+                new EventStore.RetryMark(b.id(), b.claimedVersion(), "boom-b", runB),
+                new EventStore.RetryMark(
+                    stale.id(), stale.claimedVersion() - 1, "stale", runA)),
+            WORKER_1);
+
+    assertThat(applied).containsExactlyInAnyOrder(a.id(), b.id());
+    Event afterA = store.findById(a.id()).orElseThrow();
+    assertThat(afterA.status()).isEqualTo(EventStatus.PENDING);
+    assertThat(afterA.claimedBy()).isNull();
+    assertThat(afterA.attempts()).isEqualTo(a.attempts() + 1);
+    assertThat(afterA.version()).isGreaterThan(a.claimedVersion());
+    assertThat(afterA.lastFailReason()).isEqualTo("boom-a");
+    assertThat(afterA.runAt()).isEqualTo(runA);
+    Event afterB = store.findById(b.id()).orElseThrow();
+    assertThat(afterB.lastFailReason()).isEqualTo("boom-b");
+    assertThat(afterB.runAt()).isEqualTo(runB);
+    Event afterStale = store.findById(stale.id()).orElseThrow();
+    assertThat(afterStale.status()).isEqualTo(EventStatus.PROCESSING);
+    assertThat(afterStale.attempts()).isEqualTo(stale.attempts());
+  }
+
+  @Test
+  @DisplayName("markForRetryAll() of an empty list returns an empty set")
+  void markForRetryAll_emptyInput() {
+    assertThat(store.markForRetryAll(List.of(), WORKER_1)).isEmpty();
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // markForRetry
   // ---------------------------------------------------------------------------------------------
 

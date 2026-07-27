@@ -36,10 +36,12 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import io.github.bams22.outboxer.spi.Clock;
 import org.jspecify.annotations.Nullable;
@@ -356,6 +358,156 @@ public final class PostgresEventStore implements EventStore {
           ps.setLong(4, claimedVersion);
           ps.setString(5, workerId.value());
         });
+  }
+
+  @Override
+  public Set<UUID> markProcessedAll(List<ProcessedMark> marks, WorkerId workerId) {
+    Objects.requireNonNull(marks, "marks must not be null");
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    if (marks.isEmpty()) {
+      return Set.of();
+    }
+    if (marks.size() == 1) {
+      // Trickle path: reuse the precomputed single-row statement instead of building SQL.
+      ProcessedMark mark = marks.get(0);
+      return markProcessed(mark.id(), workerId, mark.claimedVersion())
+          ? Set.of(mark.id())
+          : Set.of();
+    }
+    boolean archive = properties.archiveEnabled();
+    String sql =
+        archive
+            ? buildMarkProcessedAllWithArchive(marks.size())
+            : buildMarkProcessedAllNoArchive(marks.size());
+    try {
+      List<UUID> applied =
+          jdbc.updateReturning(
+              sql,
+              ps -> {
+                int i = 1;
+                for (ProcessedMark mark : marks) {
+                  ps.setObject(i++, mark.id());
+                  ps.setLong(i++, mark.claimedVersion());
+                }
+                ps.setString(i++, workerId.value());
+                if (archive) {
+                  ps.setString(i, workerId.value());
+                }
+              },
+              rs -> (UUID) rs.getObject(1));
+      return new HashSet<>(applied);
+    } catch (SQLException ex) {
+      throw new EventStoreException(
+          "markProcessedAll(" + marks.size() + " events) failed", ex);
+    }
+  }
+
+  @Override
+  public Set<UUID> markForRetryAll(List<RetryMark> marks, WorkerId workerId) {
+    Objects.requireNonNull(marks, "marks must not be null");
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    if (marks.isEmpty()) {
+      return Set.of();
+    }
+    if (marks.size() == 1) {
+      RetryMark mark = marks.get(0);
+      return markForRetry(mark.id(), workerId, mark.claimedVersion(), mark.reason(), mark.runAt())
+          ? Set.of(mark.id())
+          : Set.of();
+    }
+    String sql = buildMarkForRetryAll(marks.size());
+    try {
+      List<UUID> applied =
+          jdbc.updateReturning(
+              sql,
+              ps -> {
+                int i = 1;
+                for (RetryMark mark : marks) {
+                  ps.setObject(i++, mark.id());
+                  ps.setLong(i++, mark.claimedVersion());
+                  ps.setString(i++, trim(mark.reason()));
+                  ps.setTimestamp(i++, Timestamp.from(mark.runAt()));
+                }
+                ps.setString(i, workerId.value());
+              },
+              rs -> (UUID) rs.getObject(1));
+      return new HashSet<>(applied);
+    } catch (SQLException ex) {
+      throw new EventStoreException("markForRetryAll(" + marks.size() + " events) failed", ex);
+    }
+  }
+
+  /**
+   * Builds the multi-row form of {@code sqlMarkProcessedNoArchive}: one guarded DELETE joined
+   * against a VALUES list, {@code RETURNING id} as the per-row optimistic-locking verdicts
+   * (ADR-0014, batch form). The SQL depends on the batch size, so it is built per call.
+   */
+  private String buildMarkProcessedAllNoArchive(int size) {
+    return "DELETE FROM "
+        + tables.events()
+        + " e USING (VALUES "
+        + valuesRows(size, "(?::uuid, ?::bigint)", "(?, ?)")
+        + ") AS k(id, ver) "
+        + "WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = ? "
+        + "AND e.status = 'PROCESSING' "
+        + "RETURNING e.id";
+  }
+
+  /**
+   * Multi-row form of {@code sqlMarkProcessedWithArchive}: the same single-statement CTE as the
+   * single-row variant (guarded DELETE and archive INSERT are atomic — see the race note on
+   * {@code sqlMarkProcessedWithArchive}), joined against a VALUES list. {@code RETURNING id} of
+   * the INSERT reports exactly the rows that were deleted and archived.
+   */
+  private String buildMarkProcessedAllWithArchive(int size) {
+    return "WITH del AS ("
+        + "  DELETE FROM "
+        + tables.events()
+        + " e USING (VALUES "
+        + valuesRows(size, "(?::uuid, ?::bigint)", "(?, ?)")
+        + ") AS k(id, ver) "
+        + "  WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = ? "
+        + "AND e.status = 'PROCESSING'"
+        + "  RETURNING e.id, e.event_type, e.payload, e.payload_class, e.priority, e.attempts, "
+        + "e.created_at, e.run_at, e.last_fail_reason, e.trace_context"
+        + ") "
+        + "INSERT INTO "
+        + tables.archive()
+        + " (id, event_type, payload, payload_class, priority, attempts, created_at, run_at, "
+        + "last_fail_reason, trace_context, archived_at, archived_by) "
+        + "SELECT id, event_type, payload, payload_class, priority, attempts, created_at, "
+        + "run_at, last_fail_reason, trace_context, now(), ? FROM del "
+        + "RETURNING id";
+  }
+
+  /**
+   * Multi-row form of {@code sqlMarkForRetry}: one guarded UPDATE joined against a VALUES list
+   * carrying the per-event {@code reason} and {@code runAt}.
+   */
+  private String buildMarkForRetryAll(int size) {
+    return "UPDATE "
+        + tables.events()
+        + " e SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, "
+        + "attempts = attempts + 1, version = version + 1, "
+        + "last_fail_reason = k.reason, run_at = k.run_at "
+        + "FROM (VALUES "
+        + valuesRows(size, "(?::uuid, ?::bigint, ?::text, ?::timestamptz)", "(?, ?, ?, ?)")
+        + ") AS k(id, ver, reason, run_at) "
+        + "WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = ? "
+        + "AND e.status = 'PROCESSING' "
+        + "RETURNING e.id";
+  }
+
+  /**
+   * Renders a VALUES row list: the first row carries explicit type casts (PostgreSQL infers the
+   * column types of the whole VALUES list from them), the remaining rows are bare placeholders.
+   */
+  private static String valuesRows(int size, String firstRow, String nextRow) {
+    StringBuilder sb = new StringBuilder(firstRow);
+    for (int i = 1; i < size; i++) {
+      sb.append(", ").append(nextRow);
+    }
+    return sb.toString();
   }
 
   @Override

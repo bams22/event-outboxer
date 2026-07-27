@@ -254,6 +254,8 @@ public class OutboxEngineAutoConfiguration {
         .unknownHandlerRetryDelay(d.getUnknownHandlerRetryDelay())
         .lockBusyRetryDelay(d.getLockBusyRetryDelay())
         .dispatchRejectedRetryDelay(d.getDispatchRejectedRetryDelay())
+        .finalizeBatching(d.isFinalizeBatching())
+        .finalizeBatchMaxSize(d.getFinalizeBatchMaxSize())
         .build();
   }
 

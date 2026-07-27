@@ -508,6 +508,51 @@ SELECT id, event_type, payload, payload_class, priority,
 FROM del;
 ```
 
+### Batch finalize (group commit, ADR-0014 batch form)
+
+The engine batches concurrent `markProcessed` / `markForRetry` calls
+into one multi-row statement per flush (group commit — the batch forms
+while the previous statement is in flight; on by default via
+`event-outboxer.dispatcher.finalize-batching`). Every row keeps its own
+optimistic-locking guard; `RETURNING id` reports the per-row verdicts —
+an id missing from the result lost the at-least-once race exactly like
+a single-row call returning `false`. Batches of size 1 fall back to the
+single-row statements above.
+
+```sql
+-- markProcessedAll (no archive)
+DELETE FROM event_outboxer.events e
+USING (VALUES (:id1::uuid, :ver1::bigint), (:id2, :ver2) /* , ... */)
+      AS k(id, ver)
+WHERE e.id = k.id
+  AND e.version = k.ver
+  AND e.claimed_by = :worker_id
+  AND e.status = 'PROCESSING'
+RETURNING e.id;
+
+-- markForRetryAll (per-row reason and run_at)
+UPDATE event_outboxer.events e
+SET status           = 'PENDING',
+    claimed_by       = NULL,
+    claimed_at       = NULL,
+    attempts         = attempts + 1,
+    version          = version + 1,
+    last_fail_reason = k.reason,
+    run_at           = k.run_at
+FROM (VALUES (:id1::uuid, :ver1::bigint, :reason1::text, :run_at1::timestamptz)
+      /* , ... */) AS k(id, ver, reason, run_at)
+WHERE e.id = k.id
+  AND e.version = k.ver
+  AND e.claimed_by = :worker_id
+  AND e.status = 'PROCESSING'
+RETURNING e.id;
+```
+
+The archive-mode `markProcessedAll` uses the same atomic CTE shape as
+the single-row variant (guarded multi-row `DELETE ... RETURNING`
+feeding the archive `INSERT ... RETURNING id`), preserving the
+no-orphan-archive-row guarantee.
+
 ### Metrics snapshot (cached in the adapter)
 
 ```sql

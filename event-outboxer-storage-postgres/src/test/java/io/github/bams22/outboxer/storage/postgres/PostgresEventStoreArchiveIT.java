@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.Clock;
+import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -91,6 +93,30 @@ class PostgresEventStoreArchiveIT {
     boolean ok = store.markProcessed(claimed.id(), WORKER, claimed.claimedVersion());
     assertThat(ok).isTrue();
     assertThat(countArchiveRows(claimed.id())).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("markProcessedAll() archives winners in one statement; race loser leaves no row")
+  void markProcessedAll_archivesWinnersOnly() {
+    ClaimedEvent a = publishAndClaim("batch-a");
+    ClaimedEvent b = publishAndClaim("batch-b");
+    ClaimedEvent stale = publishAndClaim("batch-stale");
+
+    Set<UUID> applied =
+        store.markProcessedAll(
+            List.of(
+                new EventStore.ProcessedMark(a.id(), a.claimedVersion()),
+                new EventStore.ProcessedMark(b.id(), b.claimedVersion()),
+                new EventStore.ProcessedMark(stale.id(), stale.claimedVersion() - 1)),
+            WORKER);
+
+    assertThat(applied).containsExactlyInAnyOrder(a.id(), b.id());
+    assertThat(countArchiveRows(a.id())).isEqualTo(1);
+    assertThat(countArchiveRows(b.id())).isEqualTo(1);
+    // No orphan archive row for the loser — same atomicity guarantee as the single-row CTE.
+    assertThat(countArchiveRows(stale.id())).isZero();
+    assertThat(store.findById(stale.id()).orElseThrow().status())
+        .isEqualTo(EventStatus.PROCESSING);
   }
 
   @Test

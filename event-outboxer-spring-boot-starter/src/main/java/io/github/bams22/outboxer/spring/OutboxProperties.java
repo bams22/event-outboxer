@@ -195,6 +195,16 @@ public class OutboxProperties {
     private Duration unknownHandlerRetryDelay = Duration.ofMinutes(1);
     private Duration lockBusyRetryDelay = Duration.ofSeconds(1);
     private Duration dispatchRejectedRetryDelay = Duration.ofSeconds(1);
+
+    /**
+     * Group-commit batching of finalize statements ({@code markProcessed} / {@code
+     * markForRetry}): concurrent finalizations coalesce into one multi-row statement. Degrades
+     * to plain single-row calls on an idle engine; disable only as a kill-switch.
+     */
+    private boolean finalizeBatching = true;
+
+    /** Cap on rows per flushed finalize statement when {@code finalizeBatching} is on. */
+    private int finalizeBatchMaxSize = 128;
   }
 
   public enum UnknownPolicy {

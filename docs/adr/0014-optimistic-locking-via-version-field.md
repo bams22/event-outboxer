@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-07-27: batch form of the finalize invariant —
+group-commit finalize batching)
 
 ## Date
 
@@ -70,6 +71,42 @@ exception-worthy. The core engine catches it, increments the metric
 
 `StorageException` is thrown only when the storage itself has a real
 problem (network, deadlock, constraint violation).
+
+### Batch form of the invariant (amendment, 2026-07-27)
+
+Finalize round-trips dominate storage traffic ~10:1 over claims (claims
+are batched via `claimBatchSize`; finalizes were one statement per
+event). The engine therefore batches `markProcessed` / `markForRetry`
+via **group commit**: a finalizing handler thread enqueues its mark and
+takes a flush lock; while one thread's batch statement is in flight,
+other threads accumulate, and the next lock owner flushes them all in
+one multi-row statement (`EventStore.markProcessedAll` /
+`markForRetryAll`). The batch forms out of the SQL round-trip time —
+no timers, no dedicated thread; an idle engine degrades to the plain
+single-row call. On by default
+(`event-outboxer.dispatcher.finalize-batching`, kill-switch).
+
+The master invariant carries over unchanged to the batch form:
+
+- every row of the batch keeps its **own** guard — the PostgreSQL
+  statements join a `VALUES (id, version), ...` list against
+  `WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = :me AND
+  e.status = 'PROCESSING'`;
+- `RETURNING id` is the batch replacement for `rowCount`: the returned
+  id set is the per-row verdict list, and an id missing from it is the
+  same expected at-least-once race as a single-row `false`;
+- the archive-mode batch uses the same single-statement CTE as the
+  single-row variant, so a lost race still cannot leave an orphan
+  archive row.
+
+Because the group-commit call is **synchronous**, nothing else in the
+model shifts: finalize still completes before the entity lock is
+released and before the event leaves the in-flight registry, listeners
+still fire per event with per-row verdicts, and a failed batch
+statement surfaces to every affected caller, whose finalize-failure
+release path runs per event as before. A batch statement does finalize
+its rows atomically (all-or-nothing on storage failure), which is
+strictly within at-least-once semantics.
 
 ### Heartbeat does NOT change `version`
 

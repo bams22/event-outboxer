@@ -26,13 +26,21 @@ import lombok.Builder;
  * @param dispatchRejectedRetryDelay delay applied when the per-type handler executor rejects a
  *     dispatch (pool and queue saturated); the claimed event is released back to {@code PENDING}
  *     without burning an attempt and becomes eligible again after this delay
+ * @param finalizeBatching whether {@code markProcessed} / {@code markForRetry} calls are batched
+ *     into multi-row statements via group commit (see {@link GroupCommitEventStore}); the
+ *     mechanism degrades to direct single-row calls on an idle engine, so this is safe to keep
+ *     on and acts as a kill-switch when off
+ * @param finalizeBatchMaxSize cap on rows per flushed finalize statement when {@code
+ *     finalizeBatching} is on
  */
 @Builder
 public record DispatcherConfig(
     UnknownHandlerPolicy unknownHandlerPolicy,
     Duration unknownHandlerRetryDelay,
     Duration lockBusyRetryDelay,
-    Duration dispatchRejectedRetryDelay) {
+    Duration dispatchRejectedRetryDelay,
+    boolean finalizeBatching,
+    int finalizeBatchMaxSize) {
 
   public DispatcherConfig {
     Objects.requireNonNull(unknownHandlerPolicy, "unknownHandlerPolicy must not be null");
@@ -52,6 +60,10 @@ public record DispatcherConfig(
       throw new IllegalArgumentException(
           "dispatchRejectedRetryDelay must not be negative, got " + dispatchRejectedRetryDelay);
     }
+    if (finalizeBatchMaxSize <= 0) {
+      throw new IllegalArgumentException(
+          "finalizeBatchMaxSize must be > 0, got " + finalizeBatchMaxSize);
+    }
   }
 
   public static DispatcherConfig defaults() {
@@ -60,6 +72,8 @@ public record DispatcherConfig(
         .unknownHandlerRetryDelay(Duration.ofMinutes(1))
         .lockBusyRetryDelay(Duration.ofSeconds(1))
         .dispatchRejectedRetryDelay(Duration.ofSeconds(1))
+        .finalizeBatching(true)
+        .finalizeBatchMaxSize(128)
         .build();
   }
 }

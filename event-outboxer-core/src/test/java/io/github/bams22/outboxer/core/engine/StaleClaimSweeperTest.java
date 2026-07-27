@@ -85,6 +85,8 @@ class StaleClaimSweeperTest {
                     .unknownHandlerRetryDelay(Duration.ofMinutes(1))
                     .lockBusyRetryDelay(Duration.ofSeconds(1))
                     .dispatchRejectedRetryDelay(Duration.ofSeconds(1))
+                    .finalizeBatching(true)
+                    .finalizeBatchMaxSize(128)
                     .build())
             .handler(handler("KNOWN", (ctx, p) -> EventOutcome.Success.INSTANCE))
             .build();
