@@ -21,9 +21,11 @@ import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.domain.exception.PublishValidationException;
 import io.github.bams22.outboxer.domain.exception.StorageException;
 import io.github.bams22.outboxer.core.polling.PollerWaker;
+import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -45,6 +47,9 @@ import org.slf4j.LoggerFactory;
  *   <li>Consult the {@link TransactionContext}; if no active transaction, apply the configured
  *       {@link NoTransactionPolicy}.
  *   <li>Serialize the payload via {@link EventSerializer}.
+ *   <li>Start a PRODUCER span via the {@link OutboxTracer} port and capture its trace context
+ *       into the event, unless the caller supplied an explicit {@code
+ *       PublishOptions.traceContext} override (ADR-0023).
  *   <li>Build a {@link PendingEvent} and hand it to {@link EventStore#save(PendingEvent)}.
  *   <li>Fire {@code OutboxListener.onEventPublished(...)}.
  *   <li>Register an after-commit hook that wakes the local poller of the published type, so
@@ -62,6 +67,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   private final NoTransactionPolicy noTxPolicy;
   private final OutboxListener listener;
   private final PollerWaker waker;
+  private final OutboxTracer tracer;
 
   public DefaultOutboxEventPublisher(
       EventStore store,
@@ -71,6 +77,18 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
       NoTransactionPolicy noTxPolicy,
       OutboxListener listener,
       PollerWaker waker) {
+    this(store, serializer, clock, txContext, noTxPolicy, listener, waker, OutboxTracer.NOOP);
+  }
+
+  public DefaultOutboxEventPublisher(
+      EventStore store,
+      EventSerializer serializer,
+      Clock clock,
+      TransactionContext txContext,
+      NoTransactionPolicy noTxPolicy,
+      OutboxListener listener,
+      PollerWaker waker,
+      OutboxTracer tracer) {
     this.store = Objects.requireNonNull(store, "store must not be null");
     this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -78,6 +96,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     this.noTxPolicy = Objects.requireNonNull(noTxPolicy, "noTxPolicy must not be null");
     this.listener = Objects.requireNonNull(listener, "listener must not be null");
     this.waker = Objects.requireNonNull(waker, "waker must not be null");
+    this.tracer = SafeOutboxTracer.wrap(Objects.requireNonNull(tracer, "tracer must not be null"));
   }
 
   @Override
@@ -103,26 +122,38 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     PublishOptions resolved = options == null ? PublishOptions.defaults() : options;
     enforceTransactionPolicy();
 
-    PendingEvent pending = buildPending(eventType, payload, resolved);
-    try {
-      if (pending.dedupKey() != null) {
-        CoalescingResult result = saveCoalescing(pending);
-        if (!result.inserted()) {
-          // Coalesced into an existing PENDING event. No listener, no wake — nothing new was
-          // inserted, and the existing row is pinned (FOR UPDATE) inside this transaction, so
-          // claims skip it until we commit and its handler is guaranteed to see our changes.
-          return result.existingId();
+    // Serialization stays outside the span: a serialization failure is a caller bug, not a
+    // messaging operation, and no event exists yet to trace.
+    String serialized = serialize(payload);
+    UUID id = UUID.randomUUID();
+    try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
+      PendingEvent pending =
+          buildPending(id, eventType, payload, serialized, resolved, traceContext(resolved, span));
+      try {
+        if (pending.dedupKey() != null) {
+          CoalescingResult result = saveCoalescing(pending);
+          if (!result.inserted()) {
+            // Coalesced into an existing PENDING event. No listener, no wake — nothing new was
+            // inserted, and the existing row is pinned (FOR UPDATE) inside this transaction, so
+            // claims skip it until we commit and its handler is guaranteed to see our changes.
+            span.coalesced(result.existingId());
+            return result.existingId();
+          }
+        } else {
+          store.save(pending);
         }
-      } else {
-        store.save(pending);
+      } catch (StorageException ex) {
+        span.error(ex);
+        throw new PublishFailedException(
+            "storage rejected event " + pending.id() + " of type " + eventType, ex);
+      } catch (PublishFailedException ex) {
+        span.error(ex);
+        throw ex;
       }
-    } catch (StorageException ex) {
-      throw new PublishFailedException(
-          "storage rejected event " + pending.id() + " of type " + eventType, ex);
+      emitPublished(pending);
+      scheduleWake(Set.of(eventType));
+      return pending.id();
     }
-    emitPublished(pending);
-    scheduleWake(Set.of(eventType));
-    return pending.id();
   }
 
   private record CoalescingResult(boolean inserted, @Nullable UUID existingId) {}
@@ -196,21 +227,41 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     List<PendingEvent> batch = new ArrayList<>(requests.size());
     List<UUID> ids = new ArrayList<>(requests.size());
     List<PendingEvent> inserted = new ArrayList<>(requests.size());
+    // PRODUCER spans of batch-path events stay open until saveAll below actually inserts them;
+    // dedup-path spans close per row inside the loop.
+    List<OutboxTracer.PublishSpan> batchSpans = new ArrayList<>(requests.size());
     try {
       for (PublishRequest r : requests) {
         Objects.requireNonNull(r, "request element must not be null");
         validate(r.eventType(), r.payload());
         PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
-        PendingEvent pe = buildPending(r.eventType(), r.payload(), opts);
-        if (pe.dedupKey() != null) {
-          CoalescingResult result = saveCoalescing(pe);
-          if (result.inserted()) {
-            inserted.add(pe);
-            ids.add(pe.id());
-          } else {
-            ids.add(result.existingId());
+        String serialized = serialize(r.payload());
+        UUID id = UUID.randomUUID();
+        if (opts.dedupKey() != null) {
+          try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType())) {
+            PendingEvent pe =
+                buildPending(id, r.eventType(), r.payload(), serialized, opts,
+                    traceContext(opts, span));
+            try {
+              CoalescingResult result = saveCoalescing(pe);
+              if (result.inserted()) {
+                inserted.add(pe);
+                ids.add(pe.id());
+              } else {
+                span.coalesced(result.existingId());
+                ids.add(result.existingId());
+              }
+            } catch (StorageException | PublishFailedException ex) {
+              span.error(ex);
+              throw ex;
+            }
           }
         } else {
+          OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType());
+          batchSpans.add(span);
+          PendingEvent pe =
+              buildPending(id, r.eventType(), r.payload(), serialized, opts,
+                  traceContext(opts, span));
           batch.add(pe);
           ids.add(pe.id());
         }
@@ -218,7 +269,14 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
       store.saveAll(batch);
       inserted.addAll(batch);
     } catch (StorageException ex) {
+      for (OutboxTracer.PublishSpan span : batchSpans) {
+        span.error(ex);
+      }
       throw new PublishFailedException("publishAll(" + requests.size() + ") failed", ex);
+    } finally {
+      for (OutboxTracer.PublishSpan span : batchSpans) {
+        span.close();
+      }
     }
     for (PendingEvent pe : inserted) {
       emitPublished(pe);
@@ -258,22 +316,38 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
   }
 
-  private PendingEvent buildPending(String eventType, Object payload, PublishOptions options) {
-    String serialized;
+  private String serialize(Object payload) {
     try {
-      serialized = serializer.serialize(payload);
+      return serializer.serialize(payload);
     } catch (PublishSerializationException ex) {
       throw ex;
     } catch (RuntimeException ex) {
       throw new PublishSerializationException(
           "failed to serialize payload of type " + payload.getClass().getName(), ex);
     }
+  }
+
+  /**
+   * An explicit {@code PublishOptions.traceContext} override always wins over the ambient
+   * context captured by the producer span (ADR-0023).
+   */
+  private static Map<String, String> traceContext(
+      PublishOptions options, OutboxTracer.PublishSpan span) {
+    Map<String, String> explicit = options.traceContext();
+    return explicit != null ? explicit : span.contextToStore();
+  }
+
+  private PendingEvent buildPending(
+      UUID id,
+      String eventType,
+      Object payload,
+      String serialized,
+      PublishOptions options,
+      Map<String, String> traceContext) {
     Instant runAt = options.runAt() != null ? options.runAt() : clock.now();
     short priority = options.priority() != null ? options.priority() : (short) 0;
-    Map<String, String> traceContext =
-        options.traceContext() != null ? options.traceContext() : Map.of();
     return PendingEvent.builder()
-        .id(UUID.randomUUID())
+        .id(id)
         .eventType(eventType)
         .payload(serialized)
         .payloadClass(payload.getClass().getName())

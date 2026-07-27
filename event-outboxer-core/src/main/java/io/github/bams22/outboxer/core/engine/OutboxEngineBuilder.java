@@ -41,6 +41,7 @@ import io.github.bams22.outboxer.core.polling.PollerWakeHub;
 import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
+import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.core.workerid.WorkerIdFactory;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
@@ -49,6 +50,7 @@ import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -96,6 +98,7 @@ public final class OutboxEngineBuilder {
   private DispatcherConfig dispatcherConfig = DispatcherConfig.defaults();
   private final List<OutboxListener> listeners = new ArrayList<>();
   private boolean includeLoggingListener = true;
+  private OutboxTracer tracer = OutboxTracer.NOOP;
   private Supplier<WorkerId> workerIdSupplier = WorkerIdFactory.defaultGenerator();
   private @Nullable String host;
   private final Map<String, String> workerMetadata = new LinkedHashMap<>();
@@ -201,6 +204,16 @@ public final class OutboxEngineBuilder {
     return this;
   }
 
+  /**
+   * Tracing port (ADR-0023): PRODUCER span around every event insert, CONSUMER span around every
+   * handler invocation. Default: {@link OutboxTracer#NOOP}. The builder wraps the tracer
+   * defensively, so implementation failures degrade to no-op instead of breaking dispatch.
+   */
+  public OutboxEngineBuilder tracer(OutboxTracer tracer) {
+    this.tracer = Objects.requireNonNull(tracer);
+    return this;
+  }
+
   public OutboxEngineBuilder workerIdSupplier(Supplier<WorkerId> supplier) {
     this.workerIdSupplier = Objects.requireNonNull(supplier);
     return this;
@@ -300,6 +313,9 @@ public final class OutboxEngineBuilder {
                 eventStore, workerId, dispatcherConfig.finalizeBatchMaxSize())
             : eventStore;
 
+    // Wrap once here so both the dispatcher and the publisher share the same shielded instance.
+    OutboxTracer safeTracer = SafeOutboxTracer.wrap(tracer);
+
     HandlerDispatcher dispatcher =
         new HandlerDispatcher(
             dispatcherStore,
@@ -312,7 +328,8 @@ public final class OutboxEngineBuilder {
             clock,
             workerId,
             typeConfig,
-            dispatcherConfig);
+            dispatcherConfig,
+            safeTracer);
 
     PollStrategy strategy =
         pollStrategy != null ? pollStrategy : new LockAndFetchStrategy(eventStore);
@@ -342,7 +359,7 @@ public final class OutboxEngineBuilder {
 
     OutboxEventPublisher publisher =
         new DefaultOutboxEventPublisher(
-            eventStore, eventSerializer, clock, txContext, noTxPolicy, listener, hub);
+            eventStore, eventSerializer, clock, txContext, noTxPolicy, listener, hub, safeTracer);
 
     HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
     OrphanRecoveryTask orphanTask =
