@@ -42,6 +42,8 @@
         <module>event-outboxer-lock-redis</module>
         <module>event-outboxer-cache-redis</module>
         <module>event-outboxer-metrics-micrometer</module>
+        <module>event-outboxer-tracing-otel</module>
+        <module>event-outboxer-tracing-micrometer</module>
         <module>event-outboxer-admin-actuator</module>
         <module>event-outboxer-admin-rest</module>
         <module>event-outboxer-testkit</module>
@@ -224,6 +226,16 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-metrics-micrometer</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-tracing-otel</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-tracing-micrometer</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
