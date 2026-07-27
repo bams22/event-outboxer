@@ -8,6 +8,19 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Poll-interval jitter.** Every wait emitted by the adaptive poller
+  backoff now carries a uniform ±10% jitter, desynchronizing claim
+  bursts across a fleet of JVMs deployed together (same
+  thundering-herd rationale as the retry jitter in
+  `ExponentialBackoffFailureHandler`). Not configurable; the backoff
+  state itself stays deterministic — jitter applies on emission only.
+- **API-compatibility report (japicmp).** `verify` now compares every
+  module's public API against the latest published release (0.2.0) and
+  writes an HTML/XML report to `target/japicmp/`. Report-only until
+  1.0 — pre-1.0 SPI breaks are intentional and tracked here; the
+  break-build flags flip on when preparing 1.0. Modules new since the
+  baseline are skipped automatically.
+
 - **Group-commit finalize batching (amends ADR-0014).** Concurrent
   `markProcessed` / `markForRetry` calls now coalesce into one multi-row
   statement per flush: a finalizing handler thread flushes immediately
@@ -63,6 +76,14 @@ All notable changes to this project are documented here. Format follows
   batch-purges the archive and old `DISABLED` rows. 15 modules total.
 
 ### Fixed
+- **Documentation drift.** ADR-0002 and the `OutboxEventPublisher`
+  javadoc advertised a `no-transaction-policy` value `AUTO` that never
+  existed (the enum is `FAIL | IGNORE`; the javadoc also used a stale
+  `outbox.*` property prefix). ADR-0010's SPI signature block and port
+  inventory were resynchronized with the shipped interfaces. ADR-0013
+  wrongly claimed the Spring starter registers `LoggingOutboxListener`
+  by default behind a non-existent property — the plain-Java builder
+  adds it, the starter opts out. ARTIFACTS.md now lists all 15 modules.
 - **Payload deserialization failures are recoverable.** They now route
   through the `FailureHandler` chain (retry with backoff, `DISABLED` only
   after the attempt budget) instead of finalizing to `DISABLED` on the
@@ -333,8 +354,9 @@ or Micrometer registry, the library's defaults use a specific prefix:
   detection: `OutboxEngine.markCrashed(...)` flips `state()` to
   `STOPPED`, the health indicator flips DOWN (propagating into
   configured probe groups), the `engine.state` gauge flips to
-  `stopped=1`, and the new 22nd listener callback
-  `OutboxListener.onEngineCrashed(EngineCrashedInfo)` fires. New
+  `stopped=1`, and the listener callback
+  `OutboxListener.onEngineCrashed(EngineCrashedInfo)` (one of the 21)
+  fires. New
   `event_outboxer.engine.crashed` counter increments on each crash.
   Spring's `isRunning()` stays `true` so normal cleanup (worker
   deregister, handler drain) still runs on context close. Out of
@@ -415,4 +437,6 @@ or Micrometer registry, the library's defaults use a specific prefix:
   `spring-boot-dependencies` BOM; patch releases will follow
   upstream advisories.
 
+[Unreleased]: https://github.com/bams22/event-outboxer/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bams22/event-outboxer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bams22/event-outboxer/releases/tag/v0.1.0

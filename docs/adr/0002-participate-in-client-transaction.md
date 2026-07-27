@@ -81,7 +81,7 @@ architecture.
   whether the event ends up in the event-outboxer.
 - Hard contract documented: **publish() MUST participate in the current TX**.
 - Behavior when there is no TX is configurable:
-  `event-outboxer.publisher.no-transaction-policy: FAIL | AUTO | IGNORE`.
+  `event-outboxer.publisher.no-transaction-policy: FAIL | IGNORE`.
 
 ### For maintainers
 

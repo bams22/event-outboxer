@@ -113,6 +113,12 @@
         <flatten-maven-plugin.version>1.7.0</flatten-maven-plugin.version>
         <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
         <central-publishing-maven-plugin.version>0.6.0</central-publishing-maven-plugin.version>
+        <japicmp-maven-plugin.version>0.23.1</japicmp-maven-plugin.version>
+        <!--
+            Baseline for japicmp API-compatibility reports: the latest release
+            published to Maven Central. Bump on every release.
+        -->
+        <japicmp.baseline.version>0.2.0</japicmp.baseline.version>
 
         <!-- Non-Boot-managed test libs -->
         <testcontainers.version>1.20.4</testcontainers.version>
@@ -382,6 +388,48 @@
                         <waitUntil>validated</waitUntil>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>com.github.siom79.japicmp</groupId>
+                    <artifactId>japicmp-maven-plugin</artifactId>
+                    <version>${japicmp-maven-plugin.version}</version>
+                    <configuration>
+                        <oldVersion>
+                            <dependency>
+                                <groupId>io.github.bams22</groupId>
+                                <artifactId>${project.artifactId}</artifactId>
+                                <version>${japicmp.baseline.version}</version>
+                                <type>jar</type>
+                            </dependency>
+                        </oldVersion>
+                        <parameter>
+                            <onlyModified>true</onlyModified>
+                            <!--
+                                Report-only until 1.0: pre-1.0 SPI breaks are intentional and
+                                tracked in CHANGELOG [Unreleased]. When preparing 1.0, flip both
+                                breakBuild* flags to true so verify fails on undeclared API
+                                breaks, and keep japicmp.baseline.version at the latest release.
+                            -->
+                            <breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
+                            <breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
+                            <!--
+                                Modules that did not exist in the baseline release
+                                (cache-redis, admin-actuator, admin-rest) have no old artifact
+                                to compare against — skip them instead of failing resolution.
+                            -->
+                            <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
+                            <skipPomModules>true</skipPomModules>
+                        </parameter>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>api-compatibility-report</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>cmp</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -420,6 +468,15 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <!--
+                japicmp compares every module's public API against the latest published
+                release (japicmp.baseline.version) on verify and writes an HTML/XML report
+                to target/japicmp/. Report-only until 1.0 — see the pluginManagement note.
+            -->
+            <plugin>
+                <groupId>com.github.siom79.japicmp</groupId>
+                <artifactId>japicmp-maven-plugin</artifactId>
             </plugin>
             <!--
                 Spotless intentionally NOT activated in the default build: Spotless 2.44.5

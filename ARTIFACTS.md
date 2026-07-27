@@ -42,7 +42,10 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-serializer-jackson` | `JacksonEventSerializer` + `JacksonObjectMapperFactory.defaults()`. | Jackson databind + JavaTime + Jdk8 + ParameterNames. | Transitive via the starter; add directly in plain-Java setups. |
 | `event-outboxer-lock-postgres` | `pg_advisory_lock`-backed `EntityLocker`. | PostgreSQL JDBC. | Single-region deployments sharing the outbox DB. |
 | `event-outboxer-lock-redis` | Redis/KeyDB `EntityLocker` with fencing-token unlock. | Lettuce 6. | Multi-region or cross-DB deployments. |
+| `event-outboxer-cache-redis` | Redis/KeyDB `MetricsSnapshotCache` — shares the metrics snapshot across replicas. | Lettuce 6. | Fleets where per-JVM snapshot queries would hammer the DB. |
 | `event-outboxer-metrics-micrometer` | `OutboxListener` publishing to a Micrometer `MeterRegistry`. | `micrometer-core`. | Any Boot app with Micrometer/Observation; the starter auto-wires it if present. |
+| `event-outboxer-admin-actuator` | Actuator endpoint (`outboxadmin`) over the `OutboxAdmin` SPI. | Spring Boot Actuator. | Ops surface via the management port (ADR-0019). |
+| `event-outboxer-admin-rest` | Opt-in REST controller over `OutboxAdmin` with configurable `@PreAuthorize` authority. | Spring Web (+ optional Spring Security). | Ops surface on the app port when Actuator is not exposed (ADR-0019). |
 | `event-outboxer-testkit` | `SettableClock`, `ManualEngine`, `OutboxTestContext`, `RecordingOutboxListener`, fluent assertions, JUnit 5 extension. | `event-outboxer-core`, in-memory adapter, Jackson serializer. | Test-scope dependency for handler tests. |
 | `event-outboxer-spring-boot-starter` | Auto-configuration, property binding, `SmartLifecycle`, `TransactionAwareDataSourceProxy` wiring, actuator health. | Spring Boot auto-configure, jdbc, validation, Actuator (optional), every adapter (optional). | Any Spring Boot 3.5+ app. |
 
@@ -84,17 +87,20 @@ so adapter modules can extend the abstract contract tests.
 ## Coordinates cheat-sheet
 
 ```
-io.github.bams22:event-outboxer-bom:0.1.0                  (pom)
-io.github.bams22:event-outboxer-api:0.1.0
-io.github.bams22:event-outboxer-spi:0.1.0
-io.github.bams22:event-outboxer-spi:0.1.0:tests            (classifier)
-io.github.bams22:event-outboxer-core:0.1.0
-io.github.bams22:event-outboxer-storage-inmemory:0.1.0
-io.github.bams22:event-outboxer-storage-postgres:0.1.0
-io.github.bams22:event-outboxer-serializer-jackson:0.1.0
-io.github.bams22:event-outboxer-lock-postgres:0.1.0
-io.github.bams22:event-outboxer-lock-redis:0.1.0
-io.github.bams22:event-outboxer-metrics-micrometer:0.1.0
-io.github.bams22:event-outboxer-testkit:0.1.0
-io.github.bams22:event-outboxer-spring-boot-starter:0.1.0
+io.github.bams22:event-outboxer-bom:0.2.0                  (pom)
+io.github.bams22:event-outboxer-api:0.2.0
+io.github.bams22:event-outboxer-spi:0.2.0
+io.github.bams22:event-outboxer-spi:0.2.0:tests            (classifier)
+io.github.bams22:event-outboxer-core:0.2.0
+io.github.bams22:event-outboxer-storage-inmemory:0.2.0
+io.github.bams22:event-outboxer-storage-postgres:0.2.0
+io.github.bams22:event-outboxer-serializer-jackson:0.2.0
+io.github.bams22:event-outboxer-lock-postgres:0.2.0
+io.github.bams22:event-outboxer-lock-redis:0.2.0
+io.github.bams22:event-outboxer-cache-redis:0.3.0          (ships in 0.3.0)
+io.github.bams22:event-outboxer-metrics-micrometer:0.2.0
+io.github.bams22:event-outboxer-admin-actuator:0.3.0       (ships in 0.3.0)
+io.github.bams22:event-outboxer-admin-rest:0.3.0           (ships in 0.3.0)
+io.github.bams22:event-outboxer-testkit:0.2.0
+io.github.bams22:event-outboxer-spring-boot-starter:0.2.0
 ```
