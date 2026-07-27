@@ -197,7 +197,7 @@ class PgLeaseEntityLockerIT extends AbstractEntityLockerContractTest {
   @Test
   @DisplayName("owner_worker forensics column is populated on acquire")
   void ownerWorkerRecorded() throws SQLException {
-    try (LockHandle ignored = locker.tryLock("forensics", Duration.ofSeconds(30)).orElseThrow()) {
+    try (LockHandle _ = locker.tryLock("forensics", Duration.ofSeconds(30)).orElseThrow()) {
       try (Connection conn = dataSource.getConnection();
           PreparedStatement ps =
               conn.prepareStatement(

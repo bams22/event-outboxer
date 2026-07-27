@@ -99,7 +99,7 @@ public abstract class AbstractOutboxAdminContractTest {
       for (Event e : page) {
         assertThat(seen.add(e.id())).as("duplicate row across pages: %s", e.id()).isTrue();
       }
-      Event last = page.get(page.size() - 1);
+      Event last = page.getLast();
       cursor = new AdminCursor(last.createdAt(), last.id());
       if (page.size() < 3) {
         break;

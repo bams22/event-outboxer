@@ -197,14 +197,11 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
   }
 
   private static void bindOne(PreparedStatement ps, int index, Object value) throws SQLException {
-    if (value instanceof String s) {
-      ps.setString(index, s);
-    } else if (value instanceof Timestamp t) {
-      ps.setTimestamp(index, t);
-    } else if (value instanceof Integer n) {
-      ps.setInt(index, n);
-    } else {
-      ps.setObject(index, value);
+    switch (value) {
+      case String s -> ps.setString(index, s);
+      case Timestamp t -> ps.setTimestamp(index, t);
+      case Integer n -> ps.setInt(index, n);
+      case null, default -> ps.setObject(index, value);
     }
   }
 

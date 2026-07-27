@@ -393,7 +393,7 @@ public final class InMemoryEventStore implements EventStore {
 
     for (EventRow row : rows.values()) {
       synchronized (row) {
-        int[] counts = perTypeCounts.computeIfAbsent(row.eventType, k -> new int[3]);
+        int[] counts = perTypeCounts.computeIfAbsent(row.eventType, _ -> new int[3]);
         switch (row.status) {
           case PENDING -> {
             pending++;

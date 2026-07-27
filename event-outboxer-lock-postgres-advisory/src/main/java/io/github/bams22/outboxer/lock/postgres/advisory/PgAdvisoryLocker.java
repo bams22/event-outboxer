@@ -96,7 +96,7 @@ public final class PgAdvisoryLocker implements EntityLocker {
       if (conn != null) {
         try {
           conn.close();
-        } catch (SQLException ignored) {
+        } catch (SQLException _) {
           // best-effort
         }
       }

@@ -63,7 +63,7 @@ public record WorkerId(String value) {
     try {
       String h = InetAddress.getLocalHost().getHostName();
       return h == null || h.isBlank() ? fallbackHostname() : h;
-    } catch (UnknownHostException ignored) {
+    } catch (UnknownHostException _) {
       return fallbackHostname();
     }
   }

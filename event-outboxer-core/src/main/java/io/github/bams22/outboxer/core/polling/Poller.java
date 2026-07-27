@@ -79,8 +79,8 @@ public final class Poller {
       throw new IllegalStateException("poller for '" + eventType + "' already started");
     }
     running = true;
-    thread = new Thread(this::loop, "outbox-poller-" + eventType);
-    thread.setDaemon(true);
+    thread =
+        Thread.ofPlatform().name("outbox-poller-" + eventType).daemon().unstarted(this::loop);
     thread.start();
   }
 

@@ -74,7 +74,7 @@ public class OutboxAdminEndpoint {
     body.put("events", page.stream().map(OutboxAdminEndpoint::toMap).toList());
     body.put(
         "nextCursor",
-        page.size() < resolvedLimit ? null : CursorCodec.encode(page.get(page.size() - 1)));
+        page.size() < resolvedLimit ? null : CursorCodec.encode(page.getLast()));
     return body;
   }
 

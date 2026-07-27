@@ -168,7 +168,7 @@ public final class OutboxJdbcRunner {
         if (restoreAutoCommit) {
           try {
             conn.setAutoCommit(true);
-          } catch (SQLException ignored) {
+          } catch (SQLException _) {
             // best-effort restore; the connection is about to be released anyway
           }
         }

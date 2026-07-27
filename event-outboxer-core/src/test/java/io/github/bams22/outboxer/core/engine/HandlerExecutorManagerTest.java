@@ -212,7 +212,7 @@ class HandlerExecutorManagerTest {
     while (System.currentTimeMillis() < deadline) {
       try {
         Thread.sleep(deadline - System.currentTimeMillis());
-      } catch (InterruptedException ignored) {
+      } catch (InterruptedException _) {
         // keep sleeping: simulates a handler that outlives the drain timeout
       }
     }

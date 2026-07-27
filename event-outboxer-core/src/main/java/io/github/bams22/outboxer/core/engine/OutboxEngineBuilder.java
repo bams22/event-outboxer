@@ -476,7 +476,7 @@ public final class OutboxEngineBuilder {
       if (h != null && !h.isBlank()) {
         return h;
       }
-    } catch (UnknownHostException ignored) {
+    } catch (UnknownHostException _) {
       // fall through
     }
     String name = ManagementFactory.getRuntimeMXBean().getName();

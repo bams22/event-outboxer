@@ -203,10 +203,11 @@ public class OutboxEngineAutoConfiguration {
     org.springframework.core.task.TaskDecorator decorator =
         taskDecoratorProvider.getIfAvailable(
             org.springframework.core.task.support.ContextPropagatingTaskDecorator::new);
-    switch (properties.getHandlerExecutor().getType()) {
-      case virtual -> builder.handlerExecutorFactory(HandlerExecutorFactory.virtual(decorator));
-      case platform -> builder.handlerExecutorFactory(HandlerExecutorFactory.platform(decorator));
-    }
+    builder.handlerExecutorFactory(
+        switch (properties.getHandlerExecutor().getType()) {
+          case virtual -> HandlerExecutorFactory.virtual(decorator);
+          case platform -> HandlerExecutorFactory.platform(decorator);
+        });
 
     return builder.build();
   }
@@ -387,7 +388,7 @@ public class OutboxEngineAutoConfiguration {
       for (OutboxListener l : delegates) {
         try {
           l.onEventPublished(info);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException _) {
           // isolation: one broken listener must not poison a publish
         }
       }

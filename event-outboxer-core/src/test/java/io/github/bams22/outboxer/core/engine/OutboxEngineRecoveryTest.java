@@ -322,7 +322,7 @@ class OutboxEngineRecoveryTest {
     while (System.currentTimeMillis() < deadline) {
       try {
         Thread.sleep(deadline - System.currentTimeMillis());
-      } catch (InterruptedException ignored) {
+      } catch (InterruptedException _) {
         // deliberately keep sleeping: simulates a handler that outlives the drain timeout
       }
     }
