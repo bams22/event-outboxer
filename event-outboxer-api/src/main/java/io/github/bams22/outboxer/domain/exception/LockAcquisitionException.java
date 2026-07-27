@@ -11,8 +11,8 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * The locker failed to acquire or even attempt a lock for a technical reason (Redis unreachable,
- * advisory-lock SQL error, connection problem). This is distinct from the ordinary "lock is
- * busy" outcome, which is represented by {@code Optional.empty()} from {@code tryLock}.
+ * advisory-lock SQL error, connection problem). This is distinct from the ordinary "lock is busy"
+ * outcome, which is represented by {@code Optional.empty()} from {@code tryLock}.
  */
 public final class LockAcquisitionException extends LockException {
 

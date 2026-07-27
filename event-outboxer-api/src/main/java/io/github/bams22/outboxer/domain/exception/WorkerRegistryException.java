@@ -10,8 +10,8 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * A {@code WorkerRegistry} operation (register, heartbeat, findDead, deregister, ...) failed for
- * a technical reason. Wraps the adapter-specific cause.
+ * A {@code WorkerRegistry} operation (register, heartbeat, findDead, deregister, ...) failed for a
+ * technical reason. Wraps the adapter-specific cause.
  */
 public final class WorkerRegistryException extends StorageException {
 

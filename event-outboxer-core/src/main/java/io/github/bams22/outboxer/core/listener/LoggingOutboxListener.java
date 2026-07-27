@@ -35,9 +35,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Default {@link OutboxListener} that routes engine callbacks to SLF4J. Hot-path callbacks
- * ({@code onEventPublished}, {@code onEventClaimed}, {@code onEventProcessed}) log at DEBUG;
- * lifecycle transitions at INFO; storage / handler / lock failures at WARN.
+ * Default {@link OutboxListener} that routes engine callbacks to SLF4J. Hot-path callbacks ({@code
+ * onEventPublished}, {@code onEventClaimed}, {@code onEventProcessed}) log at DEBUG; lifecycle
+ * transitions at INFO; storage / handler / lock failures at WARN.
  */
 public final class LoggingOutboxListener implements OutboxListener {
 

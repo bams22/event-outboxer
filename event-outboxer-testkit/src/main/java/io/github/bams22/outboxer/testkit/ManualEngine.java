@@ -22,10 +22,10 @@ import java.util.Objects;
 
 /**
  * Synchronous, step-through driver for the outbox engine. Unlike {@code OutboxEngine}, no poller
- * thread or maintenance scheduler runs in the background — the test explicitly advances time
- * via {@link SettableClock} and invokes {@link #tick()} to claim + dispatch a single round of
- * events, or the individual maintenance methods to exercise heartbeat / orphan recovery /
- * watchdog in isolation.
+ * thread or maintenance scheduler runs in the background — the test explicitly advances time via
+ * {@link SettableClock} and invokes {@link #tick()} to claim + dispatch a single round of events,
+ * or the individual maintenance methods to exercise heartbeat / orphan recovery / watchdog in
+ * isolation.
  *
  * <p>Construct via {@link OutboxTestContext}.
  */
@@ -81,8 +81,7 @@ public final class ManualEngine {
     if (batchSize <= 0) {
       throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
     }
-    List<ClaimedEvent> claimed =
-        store.claim(new ClaimRequest(eventType, workerId, batchSize));
+    List<ClaimedEvent> claimed = store.claim(new ClaimRequest(eventType, workerId, batchSize));
     for (ClaimedEvent c : claimed) {
       dispatcher.dispatch(c);
     }

@@ -18,8 +18,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Metadata supplied when a worker registers itself through {@code WorkerRegistry.register(...)}.
- * Persisted as-is by the adapter (the PostgreSQL implementation stores {@code metadata} as a
- * JSONB column).
+ * Persisted as-is by the adapter (the PostgreSQL implementation stores {@code metadata} as a JSONB
+ * column).
  *
  * @param id worker identifier (mandatory)
  * @param host hostname running the worker (mandatory)

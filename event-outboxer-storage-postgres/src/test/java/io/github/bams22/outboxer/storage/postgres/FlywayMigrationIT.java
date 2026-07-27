@@ -51,7 +51,8 @@ class FlywayMigrationIT {
     flyway.migrate();
   }
 
-  private static void assertTableExists(Statement st, String schema, String table) throws Exception {
+  private static void assertTableExists(Statement st, String schema, String table)
+      throws Exception {
     try (ResultSet rs =
         st.executeQuery(
             "SELECT 1 FROM information_schema.tables WHERE table_schema = '"

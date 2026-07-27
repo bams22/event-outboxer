@@ -15,14 +15,13 @@ import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
-import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
@@ -106,8 +105,7 @@ class OtelOutboxTracerTest {
     Span caller = callerTracer.spanBuilder("business-op").startSpan();
     Map<String, String> stored;
     try (Scope callerScope = caller.makeCurrent();
-        Scope baggageScope =
-            Baggage.builder().put("tenant", "acme").build().makeCurrent()) {
+        Scope baggageScope = Baggage.builder().put("tenant", "acme").build().makeCurrent()) {
       OutboxTracer.PublishSpan span = tracer.startPublishSpan(UUID.randomUUID(), "T");
       stored = span.contextToStore();
       span.close();
@@ -116,7 +114,9 @@ class OtelOutboxTracerTest {
 
     List<SpanData> finished = exporter.getFinishedSpanItems();
     SpanData producer =
-        finished.stream().filter(s -> s.getName().equals("outbox publish T")).findFirst()
+        finished.stream()
+            .filter(s -> s.getName().equals("outbox publish T"))
+            .findFirst()
             .orElseThrow();
     SpanData business =
         finished.stream().filter(s -> s.getName().equals("business-op")).findFirst().orElseThrow();
@@ -163,7 +163,8 @@ class OtelOutboxTracerTest {
     }
 
     Span before = Span.current();
-    OutboxTracer.ProcessSpan process = tracer.startProcessSpan(processInfo(UUID.randomUUID(), stored));
+    OutboxTracer.ProcessSpan process =
+        tracer.startProcessSpan(processInfo(UUID.randomUUID(), stored));
     Span during = Span.current();
     String tenantDuring = Baggage.current().getEntryValue("tenant");
     process.close();
@@ -208,8 +209,7 @@ class OtelOutboxTracerTest {
     span.close();
 
     SpanData data = exporter.getFinishedSpanItems().get(0);
-    assertThat(
-            data.getAttributes().get(AttributeKey.stringKey("event_outboxer.coalesced_into")))
+    assertThat(data.getAttributes().get(AttributeKey.stringKey("event_outboxer.coalesced_into")))
         .isEqualTo(existing.toString());
   }
 

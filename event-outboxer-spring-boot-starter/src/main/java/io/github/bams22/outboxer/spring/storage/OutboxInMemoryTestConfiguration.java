@@ -25,11 +25,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * NON-DURABLE in-memory outbox wiring for TESTS. Deliberately a plain {@code @Configuration},
- * never an auto-configuration (ADR-0020): events stored here do not participate in the caller's
- * transaction and do not survive a restart, so in-memory storage must be an unmistakably
- * explicit choice, unreachable through {@code event-outboxer.*} properties. Use it in Spring
- * tests only:
+ * NON-DURABLE in-memory outbox wiring for TESTS. Deliberately a plain {@code @Configuration}, never
+ * an auto-configuration (ADR-0020): events stored here do not participate in the caller's
+ * transaction and do not survive a restart, so in-memory storage must be an unmistakably explicit
+ * choice, unreachable through {@code event-outboxer.*} properties. Use it in Spring tests only:
  *
  * <pre>
  * &#64;SpringBootTest

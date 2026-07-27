@@ -17,16 +17,16 @@ import org.springframework.context.annotation.ConditionContext;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 
 /**
- * Matches when {@code event-outboxer.lock.type} binds to the expected
- * {@link OutboxProperties.LockType}.
+ * Matches when {@code event-outboxer.lock.type} binds to the expected {@link
+ * OutboxProperties.LockType}.
  *
  * <p>Deliberately NOT a raw {@code @ConditionalOnProperty(havingValue = ...)}: that annotation
- * compares the raw property string, while the enum binds through relaxed binding — for a
- * hyphenated value like {@code postgres-lease} a user writing {@code postgres_lease} (or
- * {@code POSTGRES-LEASE}) would bind to the enum just fine yet silently match no lock
- * autoconfiguration, failing the context with a cryptic missing-{@code EntityLocker} error
- * (ADR-0022 §Starter integration). Binding here keeps the condition and the bound property in
- * lockstep for every accepted spelling.
+ * compares the raw property string, while the enum binds through relaxed binding — for a hyphenated
+ * value like {@code postgres-lease} a user writing {@code postgres_lease} (or {@code
+ * POSTGRES-LEASE}) would bind to the enum just fine yet silently match no lock autoconfiguration,
+ * failing the context with a cryptic missing-{@code EntityLocker} error (ADR-0022 §Starter
+ * integration). Binding here keeps the condition and the bound property in lockstep for every
+ * accepted spelling.
  */
 abstract class LockTypeCondition extends SpringBootCondition {
 
@@ -46,7 +46,6 @@ abstract class LockTypeCondition extends SpringBootCondition {
     if (type == expected) {
       return ConditionOutcome.match("event-outboxer.lock.type=" + type);
     }
-    return ConditionOutcome.noMatch(
-        "event-outboxer.lock.type is " + type + ", not " + expected);
+    return ConditionOutcome.noMatch("event-outboxer.lock.type is " + type + ", not " + expected);
   }
 }

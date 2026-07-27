@@ -27,8 +27,8 @@ public final class PollerWakeHub implements PollerWaker {
   private final ConcurrentMap<String, Poller> targets = new ConcurrentHashMap<>();
 
   /**
-   * Register the poller serving its event type. Called by the engine builder; the same hub may
-   * be reused across engine restarts because {@link Poller} instances survive stop/start.
+   * Register the poller serving its event type. Called by the engine builder; the same hub may be
+   * reused across engine restarts because {@link Poller} instances survive stop/start.
    */
   public void register(Poller poller) {
     targets.put(poller.eventType(), poller);

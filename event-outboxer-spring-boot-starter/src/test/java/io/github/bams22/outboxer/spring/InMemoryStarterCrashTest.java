@@ -19,6 +19,7 @@ import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
 import io.github.bams22.outboxer.spring.health.OutboxHealthIndicator;
+import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import io.github.bams22.outboxer.testkit.RecordingOutboxListener;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -32,16 +33,15 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
-import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 
 /**
- * Verifies end-to-end that a poller thread dying from an uncaught {@code Error} is detected by
- * the maintenance scheduler's health-check task, flips {@code OutboxEngine.state()} to STOPPED,
- * flips the engine-state metric to {@code state="stopped"=1}, and makes the Actuator health
- * indicator DOWN — so both k8s probes (via {@code outbox.health.probe-groups}) and Prometheus
- * alerts pick it up.
+ * Verifies end-to-end that a poller thread dying from an uncaught {@code Error} is detected by the
+ * maintenance scheduler's health-check task, flips {@code OutboxEngine.state()} to STOPPED, flips
+ * the engine-state metric to {@code state="stopped"=1}, and makes the Actuator health indicator
+ * DOWN — so both k8s probes (via {@code outbox.health.probe-groups}) and Prometheus alerts pick it
+ * up.
  *
  * <p>In its own test class because a crashed engine cannot be reused across further tests.
  */
@@ -76,10 +76,18 @@ class InMemoryStarterCrashTest {
 
     // Metric flipped to stopped=1:
     assertThat(
-            meterRegistry.get("event_outboxer.engine.state").tag("state", "stopped").gauge().value())
+            meterRegistry
+                .get("event_outboxer.engine.state")
+                .tag("state", "stopped")
+                .gauge()
+                .value())
         .isEqualTo(1.0);
     assertThat(
-            meterRegistry.get("event_outboxer.engine.state").tag("state", "running").gauge().value())
+            meterRegistry
+                .get("event_outboxer.engine.state")
+                .tag("state", "running")
+                .gauge()
+                .value())
         .isEqualTo(0.0);
 
     // Counter for the crash event fired once:
@@ -136,11 +144,11 @@ class InMemoryStarterCrashTest {
     /**
      * Strategy that dies on first claim attempt — triggers poller thread death.
      *
-     * <p>Plain {@link Error} on purpose: {@code VirtualMachineError} subclasses like
-     * {@code OutOfMemoryError} are interpreted by some JVM tooling (surefire fork, ByteBuddy
-     * agent, certain JDK 25 builds) as fatal for the whole JVM, even when thrown synthetically.
-     * Plain {@code Error} keeps the crash-detection semantics (non-{@code RuntimeException},
-     * kills the thread) without triggering JVM-critical handling.
+     * <p>Plain {@link Error} on purpose: {@code VirtualMachineError} subclasses like {@code
+     * OutOfMemoryError} are interpreted by some JVM tooling (surefire fork, ByteBuddy agent,
+     * certain JDK 25 builds) as fatal for the whole JVM, even when thrown synthetically. Plain
+     * {@code Error} keeps the crash-detection semantics (non-{@code RuntimeException}, kills the
+     * thread) without triggering JVM-critical handling.
      */
     @Bean
     PollStrategy crashingPollStrategy() {

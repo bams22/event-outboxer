@@ -16,9 +16,9 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Mutable {@link Clock} for deterministic tests. Wrap it around the outbox and then advance time
- * by fixed increments between dispatcher ticks to exercise retry scheduling, watchdog timeouts
- * and orphan recovery without wall-clock waits.
+ * Mutable {@link Clock} for deterministic tests. Wrap it around the outbox and then advance time by
+ * fixed increments between dispatcher ticks to exercise retry scheduling, watchdog timeouts and
+ * orphan recovery without wall-clock waits.
  *
  * <p>Thread-safe — reads and updates go through an {@link AtomicReference}.
  */
@@ -27,7 +27,8 @@ public final class SettableClock implements Clock {
   private final AtomicReference<Instant> current;
 
   public SettableClock(Instant initial) {
-    this.current = new AtomicReference<>(Objects.requireNonNull(initial, "initial must not be null"));
+    this.current =
+        new AtomicReference<>(Objects.requireNonNull(initial, "initial must not be null"));
   }
 
   /** Fixed at the current system time. Equivalent to {@code new SettableClock(Instant.now())}. */

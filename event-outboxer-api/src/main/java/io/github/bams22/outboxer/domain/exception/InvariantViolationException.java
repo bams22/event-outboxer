@@ -10,8 +10,8 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * A cross-field configuration invariant was violated at startup. Examples: {@code deadThreshold
- * < 3 * heartbeatInterval}, {@code handlerMaxRuntime <= 0}, {@code polling-interval >
+ * A cross-field configuration invariant was violated at startup. Examples: {@code deadThreshold < 3
+ * * heartbeatInterval}, {@code handlerMaxRuntime <= 0}, {@code polling-interval >
  * max-idle-polling-interval}.
  */
 public final class InvariantViolationException extends ConfigurationException {

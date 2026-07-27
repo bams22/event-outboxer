@@ -34,7 +34,6 @@ import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.serializer.jackson.JacksonEventSerializer;
 import io.github.bams22.outboxer.serializer.jackson.JacksonObjectMapperFactory;
-import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
@@ -246,8 +245,7 @@ public final class OutboxTestContext {
     }
 
     public Builder eventTypeConfig(String eventType, EventTypeConfig config) {
-      perTypeOverrides.put(
-          Objects.requireNonNull(eventType), Objects.requireNonNull(config));
+      perTypeOverrides.put(Objects.requireNonNull(eventType), Objects.requireNonNull(config));
       return this;
     }
 
@@ -285,9 +283,9 @@ public final class OutboxTestContext {
     }
 
     /**
-     * Tracing port (ADR-0023) wired into both the publisher and the dispatcher. Default:
-     * {@link OutboxTracer#NOOP}. Pass a recording fake to assert producer/consumer span
-     * lifecycles driven through {@link ManualEngine}.
+     * Tracing port (ADR-0023) wired into both the publisher and the dispatcher. Default: {@link
+     * OutboxTracer#NOOP}. Pass a recording fake to assert producer/consumer span lifecycles driven
+     * through {@link ManualEngine}.
      */
     public Builder tracer(OutboxTracer tracer) {
       this.tracer = Objects.requireNonNull(tracer);
@@ -295,8 +293,7 @@ public final class OutboxTestContext {
     }
 
     public OutboxTestContext build() {
-      SettableClock resolvedClock =
-          clock != null ? clock : new SettableClock(Instant.now());
+      SettableClock resolvedClock = clock != null ? clock : new SettableClock(Instant.now());
       EventStore resolvedStore =
           eventStore != null ? eventStore : new InMemoryEventStore(resolvedClock);
       WorkerRegistry resolvedRegistry =

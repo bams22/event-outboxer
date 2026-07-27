@@ -18,8 +18,8 @@ import java.util.UUID;
 
 /**
  * Immutable context passed into {@code EventHandler.handle(ctx, payload)}. Carries metadata about
- * the event being processed — useful for logging, idempotency, and distributed tracing — but
- * never the payload itself (the payload arrives as the second argument to {@code handle}).
+ * the event being processed — useful for logging, idempotency, and distributed tracing — but never
+ * the payload itself (the payload arrives as the second argument to {@code handle}).
  *
  * @param eventId unique identifier of the event
  * @param eventType event type string that selected this handler

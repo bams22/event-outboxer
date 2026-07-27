@@ -18,8 +18,8 @@ import org.springframework.beans.factory.InitializingBean;
 
 /**
  * Fail-fast startup probe for the lease locker: verifies {@code <schema>.entity_locks} exists and
- * converts a missed V005 migration into an actionable startup error instead of a first-lock
- * runtime failure (ADR-0022 §Starter integration). Creation is ordered after Flyway/Liquibase via
+ * converts a missed V005 migration into an actionable startup error instead of a first-lock runtime
+ * failure (ADR-0022 §Starter integration). Creation is ordered after Flyway/Liquibase via
  * {@code @DependsOnDatabaseInitialization} on the {@code @Bean} method, so the first deploy that
  * adds V005 does not race its own migration.
  */

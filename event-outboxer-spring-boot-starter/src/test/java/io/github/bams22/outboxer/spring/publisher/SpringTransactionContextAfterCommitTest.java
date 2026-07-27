@@ -20,9 +20,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 /**
- * The after-commit contract of {@link SpringTransactionContext}: inside a synchronized
- * transaction the action is deferred to the commit callback and dropped on rollback; without a
- * transaction it runs immediately.
+ * The after-commit contract of {@link SpringTransactionContext}: inside a synchronized transaction
+ * the action is deferred to the commit callback and dropped on rollback; without a transaction it
+ * runs immediately.
  */
 class SpringTransactionContextAfterCommitTest {
 

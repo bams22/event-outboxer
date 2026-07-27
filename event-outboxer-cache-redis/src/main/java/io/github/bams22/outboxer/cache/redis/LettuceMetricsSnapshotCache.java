@@ -39,10 +39,10 @@ import org.slf4j.LoggerFactory;
  * <h2>Error semantics (fail-safe)</h2>
  *
  * Any Redis failure or JSON-deserialisation error on {@link #get()} is logged and swallowed,
- * returning {@link Optional#empty()}. Callers (typically {@code PostgresEventStore}) interpret
- * this as a cache miss and fall back to recomputing the snapshot from the database. This keeps
- * the health endpoint functional during a Redis outage — operators lose the shared-view
- * guarantee but do not lose the health probe itself.
+ * returning {@link Optional#empty()}. Callers (typically {@code PostgresEventStore}) interpret this
+ * as a cache miss and fall back to recomputing the snapshot from the database. This keeps the
+ * health endpoint functional during a Redis outage — operators lose the shared-view guarantee but
+ * do not lose the health probe itself.
  *
  * <h2>Threading</h2>
  *
@@ -52,8 +52,8 @@ import org.slf4j.LoggerFactory;
  * <h2>Lifecycle</h2>
  *
  * The cache does NOT own its {@link StatefulRedisConnection}. The connection (and its backing
- * {@code RedisClient}) are created, configured and closed by the caller — usually the Spring
- * Boot starter.
+ * {@code RedisClient}) are created, configured and closed by the caller — usually the Spring Boot
+ * starter.
  */
 public final class LettuceMetricsSnapshotCache implements MetricsSnapshotCache {
 
@@ -70,9 +70,9 @@ public final class LettuceMetricsSnapshotCache implements MetricsSnapshotCache {
   private final ObjectMapper mapper;
 
   /**
-   * Convenience constructor using the default key prefix and a Jackson mapper tuned for
-   * {@code java.time} records (the {@code takenAt} / {@code oldestPendingRunAt} fields of
-   * {@link OutboxMetricsSnapshot}).
+   * Convenience constructor using the default key prefix and a Jackson mapper tuned for {@code
+   * java.time} records (the {@code takenAt} / {@code oldestPendingRunAt} fields of {@link
+   * OutboxMetricsSnapshot}).
    */
   public LettuceMetricsSnapshotCache(
       StatefulRedisConnection<String, String> connection, Duration ttl) {

@@ -37,10 +37,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * A payload deserialization failure must be recoverable: it routes through the FailureHandler
- * chain (retry with backoff, attempts consumed) instead of insta-disabling the event. The
- * transient case models mixed-version replicas during a rolling deploy; the permanent case
- * (poison payload) still ends in DISABLED once the attempt budget is exhausted.
+ * A payload deserialization failure must be recoverable: it routes through the FailureHandler chain
+ * (retry with backoff, attempts consumed) instead of insta-disabling the event. The transient case
+ * models mixed-version replicas during a rolling deploy; the permanent case (poison payload) still
+ * ends in DISABLED once the attempt budget is exhausted.
  */
 class DeserializationFailureRecoveryTest {
 
@@ -62,7 +62,8 @@ class DeserializationFailureRecoveryTest {
   }
 
   @Test
-  @DisplayName("transient deserialization failure → retried through the chain and eventually handled")
+  @DisplayName(
+      "transient deserialization failure → retried through the chain and eventually handled")
   void transientFailureRecovers() {
     AtomicInteger deserializeCalls = new AtomicInteger();
     AtomicInteger handled = new AtomicInteger();
@@ -149,12 +150,7 @@ class DeserializationFailureRecoveryTest {
 
     await()
         .atMost(Duration.ofSeconds(10))
-        .until(
-            () ->
-                store
-                    .findById(id)
-                    .map(e -> e.status() == EventStatus.DISABLED)
-                    .orElse(false));
+        .until(() -> store.findById(id).map(e -> e.status() == EventStatus.DISABLED).orElse(false));
     Event disabled = store.findById(id).orElseThrow();
     assertThat(disabled.attempts()).isEqualTo(2);
     assertThat(deserializeCalls.get()).isEqualTo(3);
@@ -162,7 +158,8 @@ class DeserializationFailureRecoveryTest {
   }
 
   @Test
-  @DisplayName("transient store failure while finalizing the deserialization branch → row not stranded")
+  @DisplayName(
+      "transient store failure while finalizing the deserialization branch → row not stranded")
   void finalizeFailureInDeserializationBranchReleasesEvent() {
     AtomicInteger deserializeCalls = new AtomicInteger();
     // Deserialization fails once (routing enters the chain), then succeeds.

@@ -27,10 +27,10 @@ import io.github.bams22.outboxer.core.dispatch.HandlerDispatcher;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
 import io.github.bams22.outboxer.core.listener.LoggingOutboxListener;
 import io.github.bams22.outboxer.core.listener.OutboxListenerRegistry;
+import io.github.bams22.outboxer.core.maintenance.EngineHealthCheckTask;
 import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
-import io.github.bams22.outboxer.core.maintenance.EngineHealthCheckTask;
 import io.github.bams22.outboxer.core.maintenance.RetentionTask;
 import io.github.bams22.outboxer.core.maintenance.StaleClaimSweeperTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
@@ -243,10 +243,10 @@ public final class OutboxEngineBuilder {
   }
 
   /**
-   * Externally owned {@link PollerWakeHub} to register this engine's pollers in. Used by the
-   * Spring Boot starter, where the {@code OutboxEventPublisher} bean is built independently of
-   * the engine and both must share one hub. When unset, the builder creates a private hub for
-   * the engine-internal publisher.
+   * Externally owned {@link PollerWakeHub} to register this engine's pollers in. Used by the Spring
+   * Boot starter, where the {@code OutboxEventPublisher} bean is built independently of the engine
+   * and both must share one hub. When unset, the builder creates a private hub for the
+   * engine-internal publisher.
    */
   public OutboxEngineBuilder wakeHub(PollerWakeHub hub) {
     this.wakeHub = Objects.requireNonNull(hub);
@@ -254,9 +254,9 @@ public final class OutboxEngineBuilder {
   }
 
   /**
-   * Admin port used by the optional retention task. The engine itself never calls admin
-   * operations; the port is only consumed when {@link #retention(RetentionConfig)} enables at
-   * least one threshold.
+   * Admin port used by the optional retention task. The engine itself never calls admin operations;
+   * the port is only consumed when {@link #retention(RetentionConfig)} enables at least one
+   * threshold.
    */
   public OutboxEngineBuilder admin(OutboxAdmin admin) {
     this.admin = Objects.requireNonNull(admin);
@@ -347,8 +347,7 @@ public final class OutboxEngineBuilder {
     for (EventHandler<?> h : handlers) {
       String type = h.eventType();
       EventTypeConfig cfg = executorConfigs.get(type);
-      io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate =
-          executors.executorFor(type);
+      io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate = executors.executorFor(type);
       Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
       // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the
       // poller immediately instead of costing the remainder of the poll interval.
@@ -364,8 +363,7 @@ public final class OutboxEngineBuilder {
     HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
     OrphanRecoveryTask orphanTask =
         new OrphanRecoveryTask(workerRegistry, eventStore, clock, maintenanceConfig, listener);
-    WatchdogTask watchdog =
-        new WatchdogTask(inFlight, eventStore, clock, typeConfig, listener);
+    WatchdogTask watchdog = new WatchdogTask(inFlight, eventStore, clock, typeConfig, listener);
 
     // The engine-health-check needs to report crashes to the engine, but the engine isn't
     // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.
@@ -420,8 +418,8 @@ public final class OutboxEngineBuilder {
    * The sweep threshold must exceed every per-type {@code handlerMaxRuntime}: the sweeper cannot
    * see any JVM's in-flight registry, so a smaller threshold would reclaim a legitimately
    * long-running handler's row on another pod. When unset, derive {@code 2 × max}; an explicit
-   * value that violates the invariant fails the build. Heterogeneous fleets (a rolling deploy
-   * that raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
+   * value that violates the invariant fails the build. Heterogeneous fleets (a rolling deploy that
+   * raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
    */
   static Duration resolveStaleClaimThreshold(
       MaintenanceConfig maintenance, java.util.Collection<EventTypeConfig> typeConfigs) {

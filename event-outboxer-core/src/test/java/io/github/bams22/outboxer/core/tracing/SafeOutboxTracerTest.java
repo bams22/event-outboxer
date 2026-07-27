@@ -21,8 +21,7 @@ import org.junit.jupiter.api.Test;
 class SafeOutboxTracerTest {
 
   private static final OutboxTracer.ProcessSpanInfo INFO =
-      new OutboxTracer.ProcessSpanInfo(
-          UUID.randomUUID(), "T", 1, new WorkerId("w-1"), Map.of());
+      new OutboxTracer.ProcessSpanInfo(UUID.randomUUID(), "T", 1, new WorkerId("w-1"), Map.of());
 
   /** Tracer whose every method throws. */
   private static final OutboxTracer EXPLODING =

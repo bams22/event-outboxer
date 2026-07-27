@@ -29,7 +29,6 @@ import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
 import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
-import io.github.bams22.outboxer.core.config.UnknownHandlerPolicy;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -48,21 +47,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Processes a single {@link ClaimedEvent}: looks up the handler, deserialises the payload,
- * acquires an optional business-key lock, invokes {@code handler.handle(...)}, and routes the
- * outcome through the storage finalize methods and the {@link OutboxListener}.
+ * Processes a single {@link ClaimedEvent}: looks up the handler, deserialises the payload, acquires
+ * an optional business-key lock, invokes {@code handler.handle(...)}, and routes the outcome
+ * through the storage finalize methods and the {@link OutboxListener}.
  *
- * <p>One dispatcher instance is shared across per-type handler executors; it holds no mutable
- * state and is safe for concurrent use.
+ * <p>One dispatcher instance is shared across per-type handler executors; it holds no mutable state
+ * and is safe for concurrent use.
  */
 public final class HandlerDispatcher {
 
   private static final Logger log = LoggerFactory.getLogger(HandlerDispatcher.class);
 
   /**
-   * Backoff before an event whose finalize call failed becomes claimable again. Deliberately
-   * not configurable: the condition is a transient storage error, and the value only needs to
-   * be long enough to avoid a hot retry loop against a struggling database.
+   * Backoff before an event whose finalize call failed becomes claimable again. Deliberately not
+   * configurable: the condition is a transient storage error, and the value only needs to be long
+   * enough to avoid a hot retry loop against a struggling database.
    */
   private static final Duration FINALIZE_FAILURE_RETRY_DELAY = Duration.ofSeconds(5);
 
@@ -138,7 +137,11 @@ public final class HandlerDispatcher {
     Objects.requireNonNull(claimed, "claimed must not be null");
     listener.onEventClaimed(
         new EventClaimedInfo(
-            claimed.id(), claimed.eventType(), claimed.attempts() + 1, claimed.claimedAt(), workerId));
+            claimed.id(),
+            claimed.eventType(),
+            claimed.attempts() + 1,
+            claimed.claimedAt(),
+            workerId));
     // Register for the WHOLE dispatch — deserialization, lock acquisition, handler, finalize —
     // so the watchdog can force-reclaim a hang anywhere in the pipeline (a stuck lock backend
     // used to leave the row PROCESSING outside any registry). handlerMaxRuntime therefore
@@ -167,7 +170,8 @@ public final class HandlerDispatcher {
       payload = deserialise(handler, claimed);
     } catch (RuntimeException ex) {
       listener.onEventSerializationError(
-          new SerializationErrorInfo(claimed.id(), claimed.eventType(), claimed.payloadClass(), ex));
+          new SerializationErrorInfo(
+              claimed.id(), claimed.eventType(), claimed.payloadClass(), ex));
       // Route through the FailureHandler chain instead of insta-disabling: a deserialization
       // failure is often transient (mixed-version replicas during a rolling deploy reading each
       // other's payload format) and heals on a retry picked up by an updated instance. A truly
@@ -222,11 +226,10 @@ public final class HandlerDispatcher {
   }
 
   /**
-   * Called by the poller when the per-type handler executor rejected the dispatch (pool and
-   * queue saturated). The event was already claimed, so it must be returned to {@code PENDING}
-   * — nothing else will: it never reached the in-flight registry, and this worker keeps
-   * heartbeating. Does not increment {@code attempts}: rejection is backpressure, not a handler
-   * failure.
+   * Called by the poller when the per-type handler executor rejected the dispatch (pool and queue
+   * saturated). The event was already claimed, so it must be returned to {@code PENDING} — nothing
+   * else will: it never reached the in-flight registry, and this worker keeps heartbeating. Does
+   * not increment {@code attempts}: rejection is backpressure, not a handler failure.
    */
   public void releaseRejected(ClaimedEvent claimed) {
     Objects.requireNonNull(claimed, "claimed must not be null");
@@ -363,11 +366,7 @@ public final class HandlerDispatcher {
       Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
       boolean ok =
           store.release(
-              claimed.id(),
-              workerId,
-              claimed.claimedVersion(),
-              "lock busy: " + lockKey,
-              when);
+              claimed.id(), workerId, claimed.claimedVersion(), "lock busy: " + lockKey, when);
       if (ok) {
         listener.onEventRetryScheduled(
             new EventRetryScheduledInfo(
@@ -383,7 +382,8 @@ public final class HandlerDispatcher {
     return held.get();
   }
 
-  private void closeLock(ClaimedEvent claimed, @Nullable String lockKey, @Nullable LockHandle lock) {
+  private void closeLock(
+      ClaimedEvent claimed, @Nullable String lockKey, @Nullable LockHandle lock) {
     if (lock == null) {
       return;
     }
@@ -396,7 +396,8 @@ public final class HandlerDispatcher {
     }
   }
 
-  private EventOutcome invokeHandler(ClaimedEvent claimed, EventHandler<?> handler, Object payload) {
+  private EventOutcome invokeHandler(
+      ClaimedEvent claimed, EventHandler<?> handler, Object payload) {
     // In-flight registration happens in dispatch() and brackets the whole pipeline.
     // The CONSUMER span (ADR-0023) wraps only the handler invocation: it restores the trace
     // stored at publish time as the current context, and it must close on this worker thread
@@ -523,17 +524,11 @@ public final class HandlerDispatcher {
 
   private void applyRetry(
       ClaimedEvent claimed, Instant when, String reason, @Nullable Throwable cause) {
-    boolean ok =
-        store.markForRetry(claimed.id(), workerId, claimed.claimedVersion(), reason, when);
+    boolean ok = store.markForRetry(claimed.id(), workerId, claimed.claimedVersion(), reason, when);
     if (ok) {
       listener.onEventRetryScheduled(
           new EventRetryScheduledInfo(
-              claimed.id(),
-              claimed.eventType(),
-              claimed.attempts() + 1,
-              when,
-              reason,
-              cause));
+              claimed.id(), claimed.eventType(), claimed.attempts() + 1, when, reason, cause));
     }
   }
 

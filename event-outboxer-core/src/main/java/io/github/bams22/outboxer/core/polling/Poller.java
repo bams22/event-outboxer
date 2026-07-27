@@ -28,13 +28,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Per-event-type polling loop. One {@code Poller} is created for each registered {@code
- * EventHandler}; it runs on a dedicated platform thread and claims events for the configured
- * type, dispatching each one to the handler executor.
+ * EventHandler}; it runs on a dedicated platform thread and claims events for the configured type,
+ * dispatching each one to the handler executor.
  *
  * <p>Lifecycle: {@link #start()} spawns the thread; {@link #stop()} flips the running flag and
  * interrupts the thread so an in-progress {@code Thread.sleep} returns immediately. Waiting for
- * in-flight handlers to drain is done separately by the caller (see the engine's
- * {@code shutdownTimeout}).
+ * in-flight handlers to drain is done separately by the caller (see the engine's {@code
+ * shutdownTimeout}).
  */
 public final class Poller {
 
@@ -65,7 +65,8 @@ public final class Poller {
     this.workerId = Objects.requireNonNull(workerId, "workerId must not be null");
     this.strategy = Objects.requireNonNull(strategy, "strategy must not be null");
     this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher must not be null");
-    this.handlerExecutor = Objects.requireNonNull(handlerExecutor, "handlerExecutor must not be null");
+    this.handlerExecutor =
+        Objects.requireNonNull(handlerExecutor, "handlerExecutor must not be null");
     this.listener = Objects.requireNonNull(listener, "listener must not be null");
     this.config = Objects.requireNonNull(config, "config must not be null");
     this.waiter =
@@ -79,8 +80,7 @@ public final class Poller {
       throw new IllegalStateException("poller for '" + eventType + "' already started");
     }
     running = true;
-    thread =
-        Thread.ofPlatform().name("outbox-poller-" + eventType).daemon().unstarted(this::loop);
+    thread = Thread.ofPlatform().name("outbox-poller-" + eventType).daemon().unstarted(this::loop);
     thread.start();
   }
 
@@ -110,14 +110,14 @@ public final class Poller {
   }
 
   /**
-   * Ask the poller to claim as soon as possible instead of sleeping out its current adaptive
-   * wait. Called (via {@link PollerWakeHub}) after a local transaction that published an event
-   * of this type commits. Safe from any thread; a wake on a stopped poller is a no-op.
+   * Ask the poller to claim as soon as possible instead of sleeping out its current adaptive wait.
+   * Called (via {@link PollerWakeHub}) after a local transaction that published an event of this
+   * type commits. Safe from any thread; a wake on a stopped poller is a no-op.
    *
    * <p>Race-free by construction: a wake arriving before the park makes the loop skip the park
    * (flag check); a wake arriving during the park unparks it; a wake arriving while a tick is
-   * running leaves either the flag or the {@code LockSupport} permit set, so the next park
-   * returns immediately.
+   * running leaves either the flag or the {@code LockSupport} permit set, so the next park returns
+   * immediately.
    */
   public void wake() {
     wakeRequested.set(true);
@@ -128,11 +128,11 @@ public final class Poller {
   }
 
   /**
-   * Returns {@code true} if this poller is supposed to be running but its backing thread has
-   * died. Checked periodically by the engine health-check task to detect unrecoverable poller
-   * crashes (uncaught {@code Error} from the strategy, JVM thread kill, etc.). Returns
-   * {@code false} before {@link #start()} and after {@link #stop()} — only a live-should-be-alive
-   * thread that isn't counts as crashed.
+   * Returns {@code true} if this poller is supposed to be running but its backing thread has died.
+   * Checked periodically by the engine health-check task to detect unrecoverable poller crashes
+   * (uncaught {@code Error} from the strategy, JVM thread kill, etc.). Returns {@code false} before
+   * {@link #start()} and after {@link #stop()} — only a live-should-be-alive thread that isn't
+   * counts as crashed.
    */
   public boolean isCrashed() {
     if (!running) {
@@ -189,8 +189,8 @@ public final class Poller {
 
   /**
    * Park for at most {@code wait} unless a wake arrived. A wake that arrived before the park
-   * cancels it entirely (flag check); one that arrives mid-park unparks it; the leftover
-   * {@code LockSupport} permit covers the in-between race.
+   * cancels it entirely (flag check); one that arrives mid-park unparks it; the leftover {@code
+   * LockSupport} permit covers the in-between race.
    */
   private void parkUnlessWoken(Duration wait) {
     long waitNanos = wait.toNanos();
@@ -231,8 +231,7 @@ public final class Poller {
       handlerExecutor.execute(() -> dispatcher.dispatch(claimed));
       return true;
     } catch (RejectedExecutionException ex) {
-      listener.onDispatchRejected(
-          new DispatchRejectedInfo(claimed.id(), claimed.eventType(), ex));
+      listener.onDispatchRejected(new DispatchRejectedInfo(claimed.id(), claimed.eventType(), ex));
       log.debug(
           "handler executor rejected dispatch for eventId={} type={}: {}",
           claimed.id(),

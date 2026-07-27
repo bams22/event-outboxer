@@ -22,9 +22,9 @@ import java.util.UUID;
  * <p>{@link #claimedVersion} is the {@code version} value recorded on the row <em>at the moment of
  * claim</em>. It must be echoed back to finalize methods ({@code markProcessed}, {@code
  * markForRetry}, {@code markDisabled}, {@code forceReclaim}) so that the storage can apply
- * optimistic concurrency control (see ADR-0014). If another actor — orphan recovery, a watchdog,
- * or a force reclaim — bumped the row's version in the meantime, the finalize operation returns
- * {@code false} and the engine treats it as an expected at-least-once race (see ADR-0015).
+ * optimistic concurrency control (see ADR-0014). If another actor — orphan recovery, a watchdog, or
+ * a force reclaim — bumped the row's version in the meantime, the finalize operation returns {@code
+ * false} and the engine treats it as an expected at-least-once race (see ADR-0015).
  *
  * @param id event identifier
  * @param eventType event type string

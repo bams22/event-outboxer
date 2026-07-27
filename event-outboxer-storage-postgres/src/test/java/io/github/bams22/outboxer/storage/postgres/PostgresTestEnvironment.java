@@ -22,9 +22,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
  * Shared Testcontainers + HikariCP + Flyway bootstrap for PostgreSQL integration tests. One
- * container per JVM — the singleton pattern amortises the ~2 s container startup across every
- * IT class in this module (JUnit 5's static {@code @Container} gives per-class lifecycle; a
- * shared singleton is noticeably faster).
+ * container per JVM — the singleton pattern amortises the ~2 s container startup across every IT
+ * class in this module (JUnit 5's static {@code @Container} gives per-class lifecycle; a shared
+ * singleton is noticeably faster).
  */
 public final class PostgresTestEnvironment {
 
@@ -41,8 +41,7 @@ public final class PostgresTestEnvironment {
             .withUsername("outboxer")
             .withPassword("outboxer");
     CONTAINER.start();
-    Runtime.getRuntime()
-        .addShutdownHook(new Thread(CONTAINER::stop, "pg-testcontainer-shutdown"));
+    Runtime.getRuntime().addShutdownHook(new Thread(CONTAINER::stop, "pg-testcontainer-shutdown"));
 
     HikariConfig cfg = new HikariConfig();
     cfg.setJdbcUrl(CONTAINER.getJdbcUrl());
@@ -53,8 +52,7 @@ public final class PostgresTestEnvironment {
 
     Flyway.configure()
         .dataSource(DATA_SOURCE)
-        .locations(
-            "classpath:db/migration/outbox/core", "classpath:db/migration/outbox/archive")
+        .locations("classpath:db/migration/outbox/core", "classpath:db/migration/outbox/archive")
         .placeholders(Map.of("eventOutboxerSchema", SCHEMA))
         .load()
         .migrate();

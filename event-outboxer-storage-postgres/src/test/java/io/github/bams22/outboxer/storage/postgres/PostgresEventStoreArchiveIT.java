@@ -34,10 +34,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Archive-mode {@code markProcessed} behaviour. The finalize is a single atomic CTE
- * (DELETE ... RETURNING feeding the archive INSERT), so a lost optimistic-lock race must leave
- * zero archive rows — an orphan archive row would permanently block every future
- * {@code markProcessed} of the same event on the archive PK.
+ * Archive-mode {@code markProcessed} behaviour. The finalize is a single atomic CTE (DELETE ...
+ * RETURNING feeding the archive INSERT), so a lost optimistic-lock race must leave zero archive
+ * rows — an orphan archive row would permanently block every future {@code markProcessed} of the
+ * same event on the archive PK.
  */
 class PostgresEventStoreArchiveIT {
 
@@ -81,8 +81,7 @@ class PostgresEventStoreArchiveIT {
     // Simulate the watchdog / orphan recovery having taken the row back: the caller's version
     // is stale. The guarded DELETE inside the CTE matches nothing, so the archive INSERT must
     // insert nothing — false return, zero archive rows.
-    boolean stale =
-        store.markProcessed(claimed.id(), WORKER, claimed.claimedVersion() - 1);
+    boolean stale = store.markProcessed(claimed.id(), WORKER, claimed.claimedVersion() - 1);
 
     assertThat(stale).isFalse();
     assertThat(countArchiveRows(claimed.id())).isZero();
@@ -115,8 +114,7 @@ class PostgresEventStoreArchiveIT {
     assertThat(countArchiveRows(b.id())).isEqualTo(1);
     // No orphan archive row for the loser — same atomicity guarantee as the single-row CTE.
     assertThat(countArchiveRows(stale.id())).isZero();
-    assertThat(store.findById(stale.id()).orElseThrow().status())
-        .isEqualTo(EventStatus.PROCESSING);
+    assertThat(store.findById(stale.id()).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
   }
 
   @Test
@@ -130,8 +128,7 @@ class PostgresEventStoreArchiveIT {
 
     assertThat(released).isTrue();
     assertThat(countArchiveRows(claimed.id())).isZero();
-    assertThat(store.findById(claimed.id()).orElseThrow().status())
-        .isEqualTo(EventStatus.PENDING);
+    assertThat(store.findById(claimed.id()).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
   }
 
   // ---------------------------------------------------------------------------------------------

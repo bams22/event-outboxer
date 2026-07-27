@@ -13,9 +13,9 @@ import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import java.sql.Connection;
 
 /**
- * Stub {@link ConnectionSupplier} for the in-memory adapter. Always throws — the in-memory
- * {@code EventStore} and {@code WorkerRegistry} never open JDBC connections, so this supplier
- * exists only to satisfy DI wiring in setups that expect the port to be present.
+ * Stub {@link ConnectionSupplier} for the in-memory adapter. Always throws — the in-memory {@code
+ * EventStore} and {@code WorkerRegistry} never open JDBC connections, so this supplier exists only
+ * to satisfy DI wiring in setups that expect the port to be present.
  */
 public final class InMemoryConnectionSupplier implements ConnectionSupplier {
 

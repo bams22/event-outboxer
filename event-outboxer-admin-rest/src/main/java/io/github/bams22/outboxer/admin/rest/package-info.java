@@ -9,8 +9,8 @@
  */
 
 /**
- * Opt-in admin REST surface over the OutboxAdmin SPI port, guarded by a configurable authority
- * via method security (ADR-0019).
+ * Opt-in admin REST surface over the OutboxAdmin SPI port, guarded by a configurable authority via
+ * method security (ADR-0019).
  */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.admin.rest;

@@ -13,9 +13,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Payload of {@link OutboxListener#onHandlerError(HandlerErrorInfo)} — fired when the handler
- * threw an exception. The engine still decides whether to retry or disable based on the failure
- * handler chain; this listener event is purely informational.
+ * Payload of {@link OutboxListener#onHandlerError(HandlerErrorInfo)} — fired when the handler threw
+ * an exception. The engine still decides whether to retry or disable based on the failure handler
+ * chain; this listener event is purely informational.
  *
  * @param eventId identifier of the event being processed
  * @param eventType event type string

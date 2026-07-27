@@ -73,8 +73,9 @@ class ContextPropagatingExecutorServiceTest {
 
     MDC.put("k", "v");
     try {
-      Integer result = exec.submit(() -> Integer.parseInt(MDC.get("k") == null ? "0" : "42"))
-          .get(5, TimeUnit.SECONDS);
+      Integer result =
+          exec.submit(() -> Integer.parseInt(MDC.get("k") == null ? "0" : "42"))
+              .get(5, TimeUnit.SECONDS);
       assertThat(result).isEqualTo(42);
     } finally {
       MDC.clear();
@@ -97,11 +98,12 @@ class ContextPropagatingExecutorServiceTest {
   }
 
   /**
-   * Minimal stand-in for {@code ContextPropagatingTaskDecorator}: captures MDC at decoration
-   * time and restores it inside the decorated Runnable. Doesn't pull in the micrometer
+   * Minimal stand-in for {@code ContextPropagatingTaskDecorator}: captures MDC at decoration time
+   * and restores it inside the decorated Runnable. Doesn't pull in the micrometer
    * context-propagation lib, so the test suite stays self-contained.
    */
-  private static final class CapturingMdcTaskDecorator implements org.springframework.core.task.TaskDecorator {
+  private static final class CapturingMdcTaskDecorator
+      implements org.springframework.core.task.TaskDecorator {
     @Override
     public Runnable decorate(Runnable task) {
       var snapshot = MDC.getCopyOfContextMap();

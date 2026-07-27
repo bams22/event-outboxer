@@ -15,9 +15,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * ADR-0012: the PG advisory locker consumes one pooled connection per held lock, so a handler
- * fleet at least as large as the pool can deadlock against itself — the startup warning must
- * fire exactly on that boundary.
+ * ADR-0012: the PG advisory locker consumes one pooled connection per held lock, so a handler fleet
+ * at least as large as the pool can deadlock against itself — the startup warning must fire exactly
+ * on that boundary.
  */
 class PgLockPoolWarningTest {
 

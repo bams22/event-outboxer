@@ -27,16 +27,16 @@ public enum EventStatus {
   PENDING,
 
   /**
-   * Event has been claimed by a worker and is currently being processed. Every PROCESSING row has
-   * a non-null {@code claimedBy} and {@code claimedAt} (enforced by a CHECK constraint in the
+   * Event has been claimed by a worker and is currently being processed. Every PROCESSING row has a
+   * non-null {@code claimedBy} and {@code claimedAt} (enforced by a CHECK constraint in the
    * PostgreSQL adapter).
    */
   PROCESSING,
 
   /**
-   * Event will not be processed automatically. Either the retry policy exhausted its attempts or
-   * an {@code EventHandler} explicitly returned {@code EventOutcome.Fail}. The row stays in place
-   * for investigation and manual re-activation.
+   * Event will not be processed automatically. Either the retry policy exhausted its attempts or an
+   * {@code EventHandler} explicitly returned {@code EventOutcome.Fail}. The row stays in place for
+   * investigation and manual re-activation.
    */
   DISABLED
 }

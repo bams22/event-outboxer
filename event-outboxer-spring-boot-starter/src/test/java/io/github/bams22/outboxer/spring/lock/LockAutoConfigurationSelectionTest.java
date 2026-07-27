@@ -27,11 +27,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Lock-backend selection per ADR-0022: {@code postgres-lease} means the lease locker,
- * {@code postgres-advisory} keeps the session-advisory locker — both in every relaxed-binding
- * spelling, which is the reason both gates are Binder-based conditions, not raw string matches —
- * and a user-defined {@code EntityLocker} displaces the lease locker with its probe and sweep
- * backing off silently.
+ * Lock-backend selection per ADR-0022: {@code postgres-lease} means the lease locker, {@code
+ * postgres-advisory} keeps the session-advisory locker — both in every relaxed-binding spelling,
+ * which is the reason both gates are Binder-based conditions, not raw string matches — and a
+ * user-defined {@code EntityLocker} displaces the lease locker with its probe and sweep backing off
+ * silently.
  */
 class LockAutoConfigurationSelectionTest {
 
@@ -151,10 +151,10 @@ class LockAutoConfigurationSelectionTest {
   }
 
   /**
-   * Recursive dynamic proxy standing in for a JDBC stack: every interface-returning method
-   * returns a further stub, primitives return defaults. With {@code failOnPrepare} the stub
-   * raises {@code SQLException} from {@code prepareStatement} — the "table does not exist" shape
-   * the probe must convert into an actionable startup error.
+   * Recursive dynamic proxy standing in for a JDBC stack: every interface-returning method returns
+   * a further stub, primitives return defaults. With {@code failOnPrepare} the stub raises {@code
+   * SQLException} from {@code prepareStatement} — the "table does not exist" shape the probe must
+   * convert into an actionable startup error.
    */
   private static DataSource stubDataSource(boolean failOnPrepare) {
     return (DataSource) stub(DataSource.class, failOnPrepare);

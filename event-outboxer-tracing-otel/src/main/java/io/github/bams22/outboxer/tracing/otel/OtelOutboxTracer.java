@@ -31,28 +31,25 @@ import org.jspecify.annotations.Nullable;
 /**
  * {@link OutboxTracer} implementation on the OpenTelemetry API (ADR-0023).
  *
- * <p>Publish side: starts a {@link SpanKind#PRODUCER} span {@code "outbox publish <eventType>"}
- * as a child of the calling thread's current context, and injects {@code
- * Context.current().with(span)} — the producer span's {@code traceparent} plus the caller's
- * baggage — into a flat string map for persistence in the event row. Nothing is made current;
- * the caller's own span stays active.
+ * <p>Publish side: starts a {@link SpanKind#PRODUCER} span {@code "outbox publish <eventType>"} as
+ * a child of the calling thread's current context, and injects {@code Context.current().with(span)}
+ * — the producer span's {@code traceparent} plus the caller's baggage — into a flat string map for
+ * persistence in the event row. Nothing is made current; the caller's own span stays active.
  *
- * <p>Handle side: extracts the stored map, starts a {@link SpanKind#CONSUMER} span {@code
- * "outbox process <eventType>"} as its child and makes it (baggage included) current on the
- * worker thread until the handle closes.
+ * <p>Handle side: extracts the stored map, starts a {@link SpanKind#CONSUMER} span {@code "outbox
+ * process <eventType>"} as its child and makes it (baggage included) current on the worker thread
+ * until the handle closes.
  *
  * <p>Propagation format follows the {@link OpenTelemetry} instance's configured propagators
  * (default: W3C tracecontext + baggage), so the stored keys match every other carrier the
- * application emits. With an unconfigured/no-op {@code OpenTelemetry} the captured map is empty
- * and the adapter degrades gracefully.
+ * application emits. With an unconfigured/no-op {@code OpenTelemetry} the captured map is empty and
+ * the adapter degrades gracefully.
  *
  * <p>Thread-safe; a single instance serves the publisher and every worker thread.
  */
 public final class OtelOutboxTracer implements OutboxTracer {
 
-  /**
-   * Instrumentation scope name reported on every span emitted by this adapter.
-   */
+  /** Instrumentation scope name reported on every span emitted by this adapter. */
   public static final String INSTRUMENTATION_SCOPE = "io.github.bams22.event-outboxer";
 
   private final Tracer tracer;
@@ -73,9 +70,11 @@ public final class OtelOutboxTracer implements OutboxTracer {
             .spanBuilder("outbox publish " + eventType)
             .setSpanKind(SpanKind.PRODUCER)
             .setAttribute(
-                OutboxTraceAttributes.MESSAGING_SYSTEM, OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
+                OutboxTraceAttributes.MESSAGING_SYSTEM,
+                OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
             .setAttribute(
-                OutboxTraceAttributes.MESSAGING_OPERATION_TYPE, OutboxTraceAttributes.OPERATION_SEND)
+                OutboxTraceAttributes.MESSAGING_OPERATION_TYPE,
+                OutboxTraceAttributes.OPERATION_SEND)
             .setAttribute(OutboxTraceAttributes.MESSAGING_DESTINATION_NAME, eventType)
             .setAttribute(OutboxTraceAttributes.MESSAGING_MESSAGE_ID, eventId.toString())
             .startSpan();
@@ -96,7 +95,8 @@ public final class OtelOutboxTracer implements OutboxTracer {
             .setParent(parent)
             .setSpanKind(SpanKind.CONSUMER)
             .setAttribute(
-                OutboxTraceAttributes.MESSAGING_SYSTEM, OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
+                OutboxTraceAttributes.MESSAGING_SYSTEM,
+                OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
             .setAttribute(
                 OutboxTraceAttributes.MESSAGING_OPERATION_TYPE,
                 OutboxTraceAttributes.OPERATION_PROCESS)

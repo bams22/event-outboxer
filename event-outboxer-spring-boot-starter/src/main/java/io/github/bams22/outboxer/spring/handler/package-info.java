@@ -8,8 +8,6 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * EventHandler discovery support for the auto-configuration.
- */
+/** EventHandler discovery support for the auto-configuration. */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.handler;

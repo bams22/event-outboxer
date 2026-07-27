@@ -13,8 +13,8 @@ import io.github.bams22.outboxer.domain.WorkerId;
 import java.util.Objects;
 
 /**
- * Payload of {@link OutboxListener#onWorkerDeregistered(WorkerDeregisteredInfo)} — fired at the
- * end of graceful shutdown, after the worker row has been removed from {@code outbox.workers}.
+ * Payload of {@link OutboxListener#onWorkerDeregistered(WorkerDeregisteredInfo)} — fired at the end
+ * of graceful shutdown, after the worker row has been removed from {@code outbox.workers}.
  *
  * @param workerId id of the worker that just deregistered
  */

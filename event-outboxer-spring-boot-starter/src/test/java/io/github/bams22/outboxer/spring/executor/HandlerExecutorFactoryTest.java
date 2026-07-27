@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers the {@code virtual} flavour of {@link HandlerExecutorFactory}: tasks must run on
- * named virtual threads and pass through the configured {@code TaskDecorator}.
+ * Covers the {@code virtual} flavour of {@link HandlerExecutorFactory}: tasks must run on named
+ * virtual threads and pass through the configured {@code TaskDecorator}.
  */
 class HandlerExecutorFactoryTest {
 

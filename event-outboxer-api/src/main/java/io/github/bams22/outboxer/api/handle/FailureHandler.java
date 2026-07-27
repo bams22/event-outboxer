@@ -13,8 +13,8 @@ package io.github.bams22.outboxer.api.handle;
  * Strategy for deciding what to do when an event handler fails — returns a non-success outcome or
  * lets an exception escape. Designed as a chain-of-responsibility (see ADR-0007): each
  * implementation in the {@code builtin} package decorates another {@code FailureHandler},
- * optionally reacting to the failure (logging, metrics, listener callbacks) and delegating down
- * to the next handler in the chain. A <em>leaf</em> handler such as {@code
+ * optionally reacting to the failure (logging, metrics, listener callbacks) and delegating down to
+ * the next handler in the chain. A <em>leaf</em> handler such as {@code
  * ExponentialBackoffFailureHandler} or {@code NoRetryFailureHandler} makes the final decision.
  *
  * <p>Priority order for resolving which failure handler applies to a given event:
@@ -23,8 +23,8 @@ package io.github.bams22.outboxer.api.handle;
  *   <li>{@code EventHandler.failureHandler()} if non-null.
  *   <li>The per-type failure handler configured in {@code EventTypeConfig} (Spring starter binds
  *       this from {@code outbox.handlers.types.<type>.failure.*} properties).
- *   <li>{@code FailureHandlers.defaults()} — the library-wide default chain
- *       ({@code Log → MaxRetries(10, DISABLE) → ExponentialBackoff(5s, 2x, cap 1h, jitter 20%)}).
+ *   <li>{@code FailureHandlers.defaults()} — the library-wide default chain ({@code Log →
+ *       MaxRetries(10, DISABLE) → ExponentialBackoff(5s, 2x, cap 1h, jitter 20%)}).
  * </ol>
  *
  * <p>Listener callbacks for retry / disable / delete decisions ({@code onEventRetryScheduled},

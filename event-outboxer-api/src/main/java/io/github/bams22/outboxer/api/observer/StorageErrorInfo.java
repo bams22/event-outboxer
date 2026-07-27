@@ -13,9 +13,9 @@ import java.util.Objects;
 
 /**
  * Payload of {@link OutboxListener#onStorageError(StorageErrorInfo)} — fired when a storage
- * operation failed (SQL error, connection timeout, deadlock, constraint violation, ...). The
- * engine catches the exception, emits this event, and continues; transient errors resolve on
- * the next cycle.
+ * operation failed (SQL error, connection timeout, deadlock, constraint violation, ...). The engine
+ * catches the exception, emits this event, and continues; transient errors resolve on the next
+ * cycle.
  *
  * @param operation a short label naming the operation that failed (for example {@code "claim"},
  *     {@code "markProcessed"}, {@code "heartbeat"})

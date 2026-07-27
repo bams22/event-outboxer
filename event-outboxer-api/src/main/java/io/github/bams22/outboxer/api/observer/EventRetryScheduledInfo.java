@@ -15,9 +15,8 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Payload of {@link OutboxListener#onEventRetryScheduled(EventRetryScheduledInfo)} — fired when
- * the failure-handler chain decided to retry the event, and the store acknowledged the
- * re-schedule.
+ * Payload of {@link OutboxListener#onEventRetryScheduled(EventRetryScheduledInfo)} — fired when the
+ * failure-handler chain decided to retry the event, and the store acknowledged the re-schedule.
  *
  * @param eventId identifier of the event
  * @param eventType event type string

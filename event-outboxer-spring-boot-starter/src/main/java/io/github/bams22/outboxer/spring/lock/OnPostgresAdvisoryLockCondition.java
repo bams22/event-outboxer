@@ -12,9 +12,9 @@ package io.github.bams22.outboxer.spring.lock;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 
 /**
- * Matches when {@code event-outboxer.lock.type} binds to
- * {@link OutboxProperties.LockType#postgres_advisory}. See {@link LockTypeCondition} for why this
- * is a Binder-based condition rather than a raw string match.
+ * Matches when {@code event-outboxer.lock.type} binds to {@link
+ * OutboxProperties.LockType#postgres_advisory}. See {@link LockTypeCondition} for why this is a
+ * Binder-based condition rather than a raw string match.
  */
 final class OnPostgresAdvisoryLockCondition extends LockTypeCondition {
 

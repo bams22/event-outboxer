@@ -20,10 +20,10 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * Leaf handler that re-schedules using exponential backoff with jitter and an upper bound.
  *
- * <p>Formula: {@code delay = min(base * multiplier^(attempt-1), cap)}. The final value is
- * adjusted by random jitter in {@code [-jitter, +jitter]} of the computed delay ({@code
- * jitter=0.2} means ±20%). Jitter is critical for "thundering herd" protection when many events
- * fail simultaneously because of a shared downstream outage.
+ * <p>Formula: {@code delay = min(base * multiplier^(attempt-1), cap)}. The final value is adjusted
+ * by random jitter in {@code [-jitter, +jitter]} of the computed delay ({@code jitter=0.2} means
+ * ±20%). Jitter is critical for "thundering herd" protection when many events fail simultaneously
+ * because of a shared downstream outage.
  *
  * <p>A {@code delayOverride} supplied by the handler through {@code EventOutcome.Retry} takes
  * precedence over the computed backoff.

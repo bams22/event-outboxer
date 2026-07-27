@@ -35,10 +35,10 @@ public abstract class AbstractWorkerRegistryContractTest {
   protected abstract WorkerRegistry newRegistry();
 
   /**
-   * Force the stored heartbeat of {@code id} to the (past) instant {@code at}. Adapters that
-   * stamp heartbeats with their own time source — the PostgreSQL adapter uses the database
-   * clock, ignoring the {@code at} argument of {@code heartbeat()} — must override this with a
-   * direct write so the staleness scenarios below can be simulated.
+   * Force the stored heartbeat of {@code id} to the (past) instant {@code at}. Adapters that stamp
+   * heartbeats with their own time source — the PostgreSQL adapter uses the database clock,
+   * ignoring the {@code at} argument of {@code heartbeat()} — must override this with a direct
+   * write so the staleness scenarios below can be simulated.
    */
   protected void backdateHeartbeat(WorkerId id, Instant at) {
     registry.heartbeat(id, at);
@@ -120,7 +120,8 @@ public abstract class AbstractWorkerRegistryContractTest {
   }
 
   @Test
-  @DisplayName("findDead() includes graceful-stop workers immediately, without waiting for the threshold")
+  @DisplayName(
+      "findDead() includes graceful-stop workers immediately, without waiting for the threshold")
   void findDead_includesGracefulStopWorkers() {
     WorkerId fresh = new WorkerId("fresh");
     WorkerId stopping = new WorkerId("stopping");

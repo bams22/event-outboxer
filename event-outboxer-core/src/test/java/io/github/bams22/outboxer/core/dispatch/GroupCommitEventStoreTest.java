@@ -12,9 +12,9 @@ package io.github.bams22.outboxer.core.dispatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
-import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import java.time.Instant;
@@ -35,8 +35,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Behaviour of the group-commit finalize decorator: batches form under concurrency, per-row
- * verdicts route back to the right caller, and a delegate failure surfaces to every caller of
- * the failed batch — synchronously, exactly like a direct call would.
+ * verdicts route back to the right caller, and a delegate failure surfaces to every caller of the
+ * failed batch — synchronously, exactly like a direct call would.
  */
 class GroupCommitEventStoreTest {
 
@@ -55,7 +55,8 @@ class GroupCommitEventStoreTest {
     }
     delegate.acceptAll(ids);
 
-    List<Boolean> results = runConcurrently(threads, i -> store.markProcessed(ids.get(i), WORKER, 1L));
+    List<Boolean> results =
+        runConcurrently(threads, i -> store.markProcessed(ids.get(i), WORKER, 1L));
 
     assertThat(results).hasSize(threads).allMatch(Boolean::booleanValue);
     assertThat(delegate.processedBatchCalls.get())
@@ -149,7 +150,8 @@ class GroupCommitEventStoreTest {
     }
     delegate.acceptAll(ids);
 
-    List<Boolean> results = runConcurrently(threads, i -> store.markProcessed(ids.get(i), WORKER, 1L));
+    List<Boolean> results =
+        runConcurrently(threads, i -> store.markProcessed(ids.get(i), WORKER, 1L));
 
     assertThat(results).allMatch(Boolean::booleanValue);
     assertThat(delegate.processedBatchSizes).allMatch(size -> size <= 4);
@@ -166,8 +168,7 @@ class GroupCommitEventStoreTest {
   @Test
   @DisplayName("a foreign worker id is rejected — the decorator is bound to the engine's worker")
   void rejectsForeignWorker() {
-    GroupCommitEventStore store =
-        new GroupCommitEventStore(new InMemoryEventStore(), WORKER, 128);
+    GroupCommitEventStore store = new GroupCommitEventStore(new InMemoryEventStore(), WORKER, 128);
 
     assertThatThrownBy(() -> store.markProcessed(UUID.randomUUID(), new WorkerId("other"), 1L))
         .isInstanceOf(IllegalArgumentException.class);

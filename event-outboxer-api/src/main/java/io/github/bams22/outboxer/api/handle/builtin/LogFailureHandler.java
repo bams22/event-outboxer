@@ -18,8 +18,8 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
 
 /**
- * Decorator that logs each failure at a configurable {@link Level} and then delegates to the
- * inner handler. Does not affect the decision; purely diagnostic.
+ * Decorator that logs each failure at a configurable {@link Level} and then delegates to the inner
+ * handler. Does not affect the decision; purely diagnostic.
  *
  * @param <T> payload type
  */

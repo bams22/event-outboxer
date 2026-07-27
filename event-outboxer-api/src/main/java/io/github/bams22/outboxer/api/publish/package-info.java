@@ -9,9 +9,9 @@
  */
 
 /**
- * Publish-side contracts: {@link io.github.bams22.outboxer.api.publish.OutboxEventPublisher}
- * and its companion records {@link io.github.bams22.outboxer.api.publish.PublishOptions} and
- * {@link io.github.bams22.outboxer.api.publish.PublishRequest}.
+ * Publish-side contracts: {@link io.github.bams22.outboxer.api.publish.OutboxEventPublisher} and
+ * its companion records {@link io.github.bams22.outboxer.api.publish.PublishOptions} and {@link
+ * io.github.bams22.outboxer.api.publish.PublishRequest}.
  *
  * <p>{@link org.jspecify.annotations.NullMarked}: everything is non-null by default.
  */

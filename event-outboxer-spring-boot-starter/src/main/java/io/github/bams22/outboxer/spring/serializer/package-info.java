@@ -8,8 +8,6 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * Jackson EventSerializer auto-configuration and outboxObjectMapper resolution.
- */
+/** Jackson EventSerializer auto-configuration and outboxObjectMapper resolution. */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.serializer;

@@ -16,8 +16,8 @@ import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 
 /**
- * JUnit 5 extension that provides a fresh {@link OutboxTestContext} per test method. Register
- * via {@code @ExtendWith(OutboxExtension.class)} and declare the context as a parameter:
+ * JUnit 5 extension that provides a fresh {@link OutboxTestContext} per test method. Register via
+ * {@code @ExtendWith(OutboxExtension.class)} and declare the context as a parameter:
  *
  * <pre>{@code
  * @ExtendWith(OutboxExtension.class)

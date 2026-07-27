@@ -21,15 +21,15 @@ import lombok.Builder;
  * @param unknownHandlerPolicy how to handle a claimed event whose type has no registered handler
  *     (ADR-0013)
  * @param unknownHandlerRetryDelay delay applied when {@code unknownHandlerPolicy=SKIP}
- * @param lockBusyRetryDelay delay applied when {@code EntityLocker.tryLock} returns empty —
- *     short, so the event is tried again soon after the competing worker releases the lock
+ * @param lockBusyRetryDelay delay applied when {@code EntityLocker.tryLock} returns empty — short,
+ *     so the event is tried again soon after the competing worker releases the lock
  * @param dispatchRejectedRetryDelay delay applied when the per-type handler executor rejects a
  *     dispatch (pool and queue saturated); the claimed event is released back to {@code PENDING}
  *     without burning an attempt and becomes eligible again after this delay
  * @param finalizeBatching whether {@code markProcessed} / {@code markForRetry} calls are batched
- *     into multi-row statements via group commit (see {@link GroupCommitEventStore}); the
- *     mechanism degrades to direct single-row calls on an idle engine, so this is safe to keep
- *     on and acts as a kill-switch when off
+ *     into multi-row statements via group commit (see {@link GroupCommitEventStore}); the mechanism
+ *     degrades to direct single-row calls on an idle engine, so this is safe to keep on and acts as
+ *     a kill-switch when off
  * @param finalizeBatchMaxSize cap on rows per flushed finalize statement when {@code
  *     finalizeBatching} is on
  */

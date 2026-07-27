@@ -78,9 +78,7 @@ public final class WatchdogTask implements Runnable {
         }
       } catch (RuntimeException ex) {
         log.warn(
-            "watchdog force-reclaim failed for eventId={}: {}",
-            entry.eventId(),
-            ex.toString());
+            "watchdog force-reclaim failed for eventId={}: {}", entry.eventId(), ex.toString());
       }
     }
   }

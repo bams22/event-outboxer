@@ -14,8 +14,8 @@ import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.spi.EventSerializer;
 
 /**
- * Test-only {@link EventSerializer} that only accepts {@code String} payloads and round-trips
- * them verbatim. Used by core unit / integration tests to avoid pulling in the Jackson adapter.
+ * Test-only {@link EventSerializer} that only accepts {@code String} payloads and round-trips them
+ * verbatim. Used by core unit / integration tests to avoid pulling in the Jackson adapter.
  */
 public final class StringEventSerializer implements EventSerializer {
 
@@ -25,8 +25,7 @@ public final class StringEventSerializer implements EventSerializer {
       return s;
     }
     throw new PublishSerializationException(
-        "StringEventSerializer only supports String payloads, got "
-            + payload.getClass().getName(),
+        "StringEventSerializer only supports String payloads, got " + payload.getClass().getName(),
         new IllegalArgumentException());
   }
 

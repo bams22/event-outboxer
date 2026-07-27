@@ -8,8 +8,6 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * Actuator integration: the outbox HealthIndicator and probe-group environment post-processing.
- */
+/** Actuator integration: the outbox HealthIndicator and probe-group environment post-processing. */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.health;

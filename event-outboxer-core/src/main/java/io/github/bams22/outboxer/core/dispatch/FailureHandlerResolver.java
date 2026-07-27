@@ -16,8 +16,8 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Resolves the effective {@link FailureHandler} for a failed attempt, using the priority order
- * from {@code FailureHandler}'s Javadoc:
+ * Resolves the effective {@link FailureHandler} for a failed attempt, using the priority order from
+ * {@code FailureHandler}'s Javadoc:
  *
  * <ol>
  *   <li>{@code EventHandler.failureHandler()} if non-null;

@@ -11,8 +11,8 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * Two or more {@code EventHandler} beans claim the same {@code eventType} at startup. The engine
- * refuses to start because the ambiguity cannot be resolved safely — an event of that type might
- * be dispatched to either handler.
+ * refuses to start because the ambiguity cannot be resolved safely — an event of that type might be
+ * dispatched to either handler.
  */
 public final class DuplicateHandlerException extends ConfigurationException {
 

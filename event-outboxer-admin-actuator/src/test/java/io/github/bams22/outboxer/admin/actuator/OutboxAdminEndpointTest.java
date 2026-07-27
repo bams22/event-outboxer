@@ -53,8 +53,7 @@ class OutboxAdminEndpointTest {
     assertThat(firstPage).hasSize(3);
     assertThat(first.get("nextCursor")).isNotNull();
 
-    Map<String, Object> second =
-        endpoint.events(null, null, 3, (String) first.get("nextCursor"));
+    Map<String, Object> second = endpoint.events(null, null, 3, (String) first.get("nextCursor"));
     @SuppressWarnings("unchecked")
     List<Map<String, Object>> secondPage = (List<Map<String, Object>>) second.get("events");
     assertThat(secondPage).hasSize(2);

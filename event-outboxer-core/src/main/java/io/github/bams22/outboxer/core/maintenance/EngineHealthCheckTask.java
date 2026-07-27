@@ -19,12 +19,12 @@ import org.slf4j.LoggerFactory;
 /**
  * Periodic task that detects unrecoverable engine-level failures — specifically, poller threads
  * that died from an uncaught {@code Error} after {@code Poller.start()} was called. Reports the
- * first detected crash to the supplied {@link CrashReporter} and returns; on subsequent ticks
- * the engine is already flagged as crashed so {@code report} becomes idempotent.
+ * first detected crash to the supplied {@link CrashReporter} and returns; on subsequent ticks the
+ * engine is already flagged as crashed so {@code report} becomes idempotent.
  *
- * <p>Scope limit in MVP: we check thread aliveness only. "Stuck-but-alive" pollers are covered
- * by the handler-level watchdog; maintenance-scheduler death is not detected here because this
- * task runs inside it (if the scheduler dies, the task dies with it — acceptable for 0.1.0).
+ * <p>Scope limit in MVP: we check thread aliveness only. "Stuck-but-alive" pollers are covered by
+ * the handler-level watchdog; maintenance-scheduler death is not detected here because this task
+ * runs inside it (if the scheduler dies, the task dies with it — acceptable for 0.1.0).
  */
 public final class EngineHealthCheckTask implements Runnable {
 
@@ -43,8 +43,7 @@ public final class EngineHealthCheckTask implements Runnable {
     try {
       for (Poller poller : pollers) {
         if (poller.isCrashed()) {
-          reporter.report(
-              "poller thread died for eventType=" + poller.eventType(), null);
+          reporter.report("poller thread died for eventType=" + poller.eventType(), null);
           return;
         }
       }
@@ -54,9 +53,9 @@ public final class EngineHealthCheckTask implements Runnable {
   }
 
   /**
-   * Bridge between the task and the engine — lets the maintenance scheduler drive crash
-   * reporting without a direct reference to {@code OutboxEngine}, which eliminates the
-   * construction-order circular dependency.
+   * Bridge between the task and the engine — lets the maintenance scheduler drive crash reporting
+   * without a direct reference to {@code OutboxEngine}, which eliminates the construction-order
+   * circular dependency.
    */
   @FunctionalInterface
   public interface CrashReporter {

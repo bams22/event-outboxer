@@ -19,9 +19,9 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Immutable registry of {@link EventHandler} instances keyed by {@code eventType}. Built once
- * from the set of handlers discovered at engine startup; duplicate event-type registrations fail
- * fast with {@link DuplicateHandlerException}.
+ * Immutable registry of {@link EventHandler} instances keyed by {@code eventType}. Built once from
+ * the set of handlers discovered at engine startup; duplicate event-type registrations fail fast
+ * with {@link DuplicateHandlerException}.
  */
 public final class EventHandlerResolver {
 

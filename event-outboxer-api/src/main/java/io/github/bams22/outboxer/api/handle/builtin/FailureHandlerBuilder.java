@@ -16,9 +16,9 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.event.Level;
 
 /**
- * Fluent builder for a {@link FailureHandler} chain. Decorators are applied in the order added
- * and wrap around the leaf created by one of the {@code withExponentialBackoff(...)},
- * {@code withFixedDelay(...)} or {@code withNoRetry()} terminators.
+ * Fluent builder for a {@link FailureHandler} chain. Decorators are applied in the order added and
+ * wrap around the leaf created by one of the {@code withExponentialBackoff(...)}, {@code
+ * withFixedDelay(...)} or {@code withNoRetry()} terminators.
  *
  * <p>Typical use:
  *
@@ -29,9 +29,9 @@ import org.slf4j.event.Level;
  *     .withExponentialBackoff(Duration.ofSeconds(5), 2.0, Duration.ofHours(1), 0.2);
  * </pre>
  *
- * <p>Listener events for retry / disable / delete decisions are emitted by the engine
- * dispatcher after the decision is persisted to storage — the chain does not need a
- * listener-forwarding decorator. See ADR-0007.
+ * <p>Listener events for retry / disable / delete decisions are emitted by the engine dispatcher
+ * after the decision is persisted to storage — the chain does not need a listener-forwarding
+ * decorator. See ADR-0007.
  *
  * @param <T> payload type
  */

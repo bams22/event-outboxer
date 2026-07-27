@@ -18,14 +18,14 @@ import org.slf4j.LoggerFactory;
 /**
  * Last-line safety net over the whole fleet: periodically returns {@code PROCESSING} rows whose
  * {@code claimed_at} is older than the threshold to {@code PENDING} — rows invisible to both the
- * watchdog (never entered the in-flight registry) and orphan recovery (the owning worker is
- * alive and heartbeating). Uses the partial index over {@code PROCESSING} rows created for
- * exactly this scan in migration V001.
+ * watchdog (never entered the in-flight registry) and orphan recovery (the owning worker is alive
+ * and heartbeating). Uses the partial index over {@code PROCESSING} rows created for exactly this
+ * scan in migration V001.
  *
- * <p>The threshold is guaranteed by {@code OutboxEngineBuilder} to exceed every per-type
- * {@code handlerMaxRuntime}: registered in-flight rows are force-reclaimed by the watchdog long
- * before this task could see them, so anything swept here was genuinely abandoned. Swept rows
- * are logged at WARN — they indicate a bug or an incident, not normal operation.
+ * <p>The threshold is guaranteed by {@code OutboxEngineBuilder} to exceed every per-type {@code
+ * handlerMaxRuntime}: registered in-flight rows are force-reclaimed by the watchdog long before
+ * this task could see them, so anything swept here was genuinely abandoned. Swept rows are logged
+ * at WARN — they indicate a bug or an incident, not normal operation.
  */
 public final class StaleClaimSweeperTask implements Runnable {
 

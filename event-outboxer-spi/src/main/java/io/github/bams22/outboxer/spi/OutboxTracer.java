@@ -17,10 +17,10 @@ import java.util.UUID;
 
 /**
  * Distributed-tracing port (ADR-0023). The engine calls this around every event insert (the
- * PRODUCER side of the outbox hop) and around every handler invocation (the CONSUMER side);
- * adapter modules bridge it to OpenTelemetry ({@code event-outboxer-tracing-otel}) or Micrometer
- * Tracing ({@code event-outboxer-tracing-micrometer}). {@link #NOOP} keeps the core engine
- * dependency-free when no tracing backend is wired.
+ * PRODUCER side of the outbox hop) and around every handler invocation (the CONSUMER side); adapter
+ * modules bridge it to OpenTelemetry ({@code event-outboxer-tracing-otel}) or Micrometer Tracing
+ * ({@code event-outboxer-tracing-micrometer}). {@link #NOOP} keeps the core engine dependency-free
+ * when no tracing backend is wired.
  *
  * <p>The carrier between the two sides is the event's {@code traceContext} map — a FLAT
  * string-to-string map (W3C {@code traceparent} / {@code tracestate} / {@code baggage} header
@@ -68,20 +68,16 @@ public interface OutboxTracer {
 
     /**
      * The insert coalesced into an existing PENDING event (ADR-0021) — the new event and its
-     * captured context were discarded in favour of {@code existingEventId}. Implementations
-     * should tag the span so operators can see why the surviving event's consumer span is not
-     * this span's child. Not an error outcome.
+     * captured context were discarded in favour of {@code existingEventId}. Implementations should
+     * tag the span so operators can see why the surviving event's consumer span is not this span's
+     * child. Not an error outcome.
      */
     void coalesced(UUID existingEventId);
 
-    /**
-     * Records a publish failure on the span (exception plus ERROR status).
-     */
+    /** Records a publish failure on the span (exception plus ERROR status). */
     void error(Throwable error);
 
-    /**
-     * Ends the span. Idempotent; never makes or leaves anything current.
-     */
+    /** Ends the span. Idempotent; never makes or leaves anything current. */
     @Override
     void close();
   }
@@ -92,14 +88,12 @@ public interface OutboxTracer {
    */
   interface ProcessSpan extends AutoCloseable {
 
-    /**
-     * Records the handler exception on the span (exception plus ERROR status).
-     */
+    /** Records the handler exception on the span (exception plus ERROR status). */
     void error(Throwable error);
 
     /**
-     * Closes the current-scope, then ends the span. Idempotent; must run on the thread that
-     * started the span.
+     * Closes the current-scope, then ends the span. Idempotent; must run on the thread that started
+     * the span.
      */
     @Override
     void close();
@@ -116,7 +110,10 @@ public interface OutboxTracer {
    *     allowed)
    */
   record ProcessSpanInfo(
-      UUID eventId, String eventType, int attempt, WorkerId workerId,
+      UUID eventId,
+      String eventType,
+      int attempt,
+      WorkerId workerId,
       Map<String, String> storedContext) {
 
     public ProcessSpanInfo {

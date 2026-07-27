@@ -15,9 +15,9 @@ package io.github.bams22.outboxer.domain.exception;
  * WorkerRegistry}. Adapters are required to wrap native exceptions (for example {@link
  * java.sql.SQLException}) into this hierarchy so the core engine stays storage-agnostic.
  *
- * <p>Concurrent-completion conflicts (the finalize operation seeing a mutated {@code version})
- * are <strong>not</strong> surfaced through this exception — they are represented by a {@code
- * false} return value from finalize methods (see ADR-0014).
+ * <p>Concurrent-completion conflicts (the finalize operation seeing a mutated {@code version}) are
+ * <strong>not</strong> surfaced through this exception — they are represented by a {@code false}
+ * return value from finalize methods (see ADR-0014).
  */
 public abstract class StorageException extends OutboxException {
 

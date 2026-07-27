@@ -17,14 +17,14 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Full, storage-agnostic view of a single outbox event as returned by administrative lookup
- * methods such as {@code EventStore.findById(id)}.
+ * Full, storage-agnostic view of a single outbox event as returned by administrative lookup methods
+ * such as {@code EventStore.findById(id)}.
  *
  * <p>This is the "read" projection of an event. In contrast, {@link PendingEvent} is what the
  * publisher writes, and {@link ClaimedEvent} is what the engine receives from a claim. Fields not
  * set in a given lifecycle phase are null — for example, {@code claimedBy} and {@code claimedAt}
- * are null while the event is {@link EventStatus#PENDING}; {@code lastFailReason} is null until
- * the first failure.
+ * are null while the event is {@link EventStatus#PENDING}; {@code lastFailReason} is null until the
+ * first failure.
  *
  * @param id event identifier
  * @param eventType event type string

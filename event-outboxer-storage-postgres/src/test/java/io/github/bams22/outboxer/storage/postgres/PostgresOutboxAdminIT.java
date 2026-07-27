@@ -60,8 +60,7 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
   @DisplayName("findInArchive() returns the archived row after an archive-mode markProcessed")
   void findInArchive_afterArchiveModeFinalize() {
     ClaimedEvent claimed = publishAndClaimArchiveMode("archived-payload");
-    assertThat(archiveStore.markProcessed(claimed.id(), WORKER, claimed.claimedVersion()))
-        .isTrue();
+    assertThat(archiveStore.markProcessed(claimed.id(), WORKER, claimed.claimedVersion())).isTrue();
 
     Optional<ArchivedEvent> archived = admin.findInArchive(claimed.id());
 
