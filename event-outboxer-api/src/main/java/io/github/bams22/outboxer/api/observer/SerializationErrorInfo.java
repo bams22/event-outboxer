@@ -13,8 +13,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Payload of {@link OutboxListener#onEventSerializationError(SerializationErrorInfo)} — fired
- * when the engine cannot deserialize a claimed event into the handler's payload type.
+ * Payload of {@link OutboxListener#onEventSerializationError(SerializationErrorInfo)} — fired when
+ * the engine cannot deserialize a claimed event into the handler's payload type.
  *
  * @param eventId identifier of the event
  * @param eventType event type string

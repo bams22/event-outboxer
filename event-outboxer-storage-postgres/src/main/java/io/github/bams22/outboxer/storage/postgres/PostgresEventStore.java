@@ -16,6 +16,7 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.spi.ClaimRequest;
+import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
@@ -25,7 +26,6 @@ import io.github.bams22.outboxer.storage.postgres.internal.FlatMapJson;
 import io.github.bams22.outboxer.storage.postgres.internal.JsonbHandler;
 import io.github.bams22.outboxer.storage.postgres.internal.OutboxJdbcRunner;
 import io.github.bams22.outboxer.storage.postgres.internal.OutboxJdbcRunner.ParameterBinder;
-import io.github.bams22.outboxer.storage.postgres.internal.OutboxJdbcRunner.ResultSetMapper;
 import java.sql.Array;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -43,7 +43,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import io.github.bams22.outboxer.spi.Clock;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -80,7 +79,8 @@ public final class PostgresEventStore implements EventStore {
       PostgresStorageProperties properties,
       Clock clock,
       MetricsSnapshotCache metricsCache) {
-    this.jdbc = new OutboxJdbcRunner(Objects.requireNonNull(connections, "connections must not be null"));
+    this.jdbc =
+        new OutboxJdbcRunner(Objects.requireNonNull(connections, "connections must not be null"));
     this.properties = Objects.requireNonNull(properties, "properties must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
     this.metricsCache = Objects.requireNonNull(metricsCache, "metricsCache must not be null");
@@ -93,11 +93,10 @@ public final class PostgresEventStore implements EventStore {
     this.sqlInsert =
         "INSERT INTO "
             + tables.events()
-            + " (id, event_type, payload, payload_class, priority, status, created_at, run_at, "
-            + "trace_context, dedup_key) "
-            + "VALUES (?, ?, ?::jsonb, ?, ?, 'PENDING', now(), ?, ?::jsonb, ?) "
-            + "ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND dedup_key IS NOT NULL "
-            + "DO NOTHING";
+            + " (id, event_type, payload, payload_class, priority, status, created_at, run_at,"
+            + " trace_context, dedup_key) VALUES (?, ?, ?::jsonb, ?, ?, 'PENDING', now(), ?,"
+            + " ?::jsonb, ?) ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND"
+            + " dedup_key IS NOT NULL DO NOTHING";
 
     this.sqlLockPendingByDedupKey =
         "SELECT id FROM "
@@ -116,12 +115,10 @@ public final class PostgresEventStore implements EventStore {
             + ") "
             + "UPDATE "
             + tables.events()
-            + " e "
-            + "SET status = 'PROCESSING', claimed_by = ?, claimed_at = now(), version = version + 1 "
-            + "FROM picked "
-            + "WHERE e.id = picked.id "
-            + "RETURNING e.id, e.event_type, e.payload, e.payload_class, e.priority, e.attempts, "
-            + "e.created_at, e.claimed_at, e.trace_context, e.version";
+            + " e SET status = 'PROCESSING', claimed_by = ?, claimed_at = now(), version = version"
+            + " + 1 FROM picked WHERE e.id = picked.id RETURNING e.id, e.event_type, e.payload,"
+            + " e.payload_class, e.priority, e.attempts, e.created_at, e.claimed_at,"
+            + " e.trace_context, e.version";
 
     this.sqlMarkProcessedNoArchive =
         "DELETE FROM "
@@ -205,10 +202,9 @@ public final class PostgresEventStore implements EventStore {
             + "WHERE e.claimed_by = ANY(?) AND e.status = 'PROCESSING'";
 
     this.sqlFindById =
-        "SELECT id, event_type, payload, payload_class, priority, attempts, status, "
-            + "created_at, run_at, claimed_by, claimed_at, last_fail_reason, trace_context, version, "
-            + "dedup_key "
-            + "FROM "
+        "SELECT id, event_type, payload, payload_class, priority, attempts, status, created_at,"
+            + " run_at, claimed_by, claimed_at, last_fail_reason, trace_context, version, dedup_key"
+            + " FROM "
             + tables.events()
             + " WHERE id = ?";
 
@@ -397,8 +393,7 @@ public final class PostgresEventStore implements EventStore {
               rs -> (UUID) rs.getObject(1));
       return new HashSet<>(applied);
     } catch (SQLException ex) {
-      throw new EventStoreException(
-          "markProcessedAll(" + marks.size() + " events) failed", ex);
+      throw new EventStoreException("markProcessedAll(" + marks.size() + " events) failed", ex);
     }
   }
 
@@ -455,9 +450,9 @@ public final class PostgresEventStore implements EventStore {
 
   /**
    * Multi-row form of {@code sqlMarkProcessedWithArchive}: the same single-statement CTE as the
-   * single-row variant (guarded DELETE and archive INSERT are atomic — see the race note on
-   * {@code sqlMarkProcessedWithArchive}), joined against a VALUES list. {@code RETURNING id} of
-   * the INSERT reports exactly the rows that were deleted and archived.
+   * single-row variant (guarded DELETE and archive INSERT are atomic — see the race note on {@code
+   * sqlMarkProcessedWithArchive}), joined against a VALUES list. {@code RETURNING id} of the INSERT
+   * reports exactly the rows that were deleted and archived.
    */
   private String buildMarkProcessedAllWithArchive(int size) {
     return "WITH del AS ("
@@ -799,7 +794,8 @@ public final class PostgresEventStore implements EventStore {
       @Nullable Instant oldestPending,
       @Nullable Instant oldestClaimed) {}
 
-  // suppress unused import warning (Types is referenced by the adapter's future work on JSONB nulls)
+  // suppress unused import warning (Types is referenced by the adapter's future work on JSONB
+  // nulls)
   @SuppressWarnings("unused")
   private static int sqlTypeOther() {
     return Types.OTHER;

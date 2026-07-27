@@ -9,11 +9,11 @@
  */
 
 /**
- * Handler-side contracts: {@link io.github.bams22.outboxer.api.handle.EventHandler} plus the
- * sealed {@link io.github.bams22.outboxer.api.handle.EventOutcome} and {@link
- * io.github.bams22.outboxer.api.handle.FailureDecision}, together with their supporting
- * contexts and the {@link io.github.bams22.outboxer.api.handle.FailureHandler} chain-of-
- * responsibility interface.
+ * Handler-side contracts: {@link io.github.bams22.outboxer.api.handle.EventHandler} plus the sealed
+ * {@link io.github.bams22.outboxer.api.handle.EventOutcome} and {@link
+ * io.github.bams22.outboxer.api.handle.FailureDecision}, together with their supporting contexts
+ * and the {@link io.github.bams22.outboxer.api.handle.FailureHandler} chain-of- responsibility
+ * interface.
  *
  * <p>{@link org.jspecify.annotations.NullMarked}: everything is non-null by default.
  */

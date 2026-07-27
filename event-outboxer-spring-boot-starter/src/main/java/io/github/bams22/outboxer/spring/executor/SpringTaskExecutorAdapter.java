@@ -21,19 +21,19 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * Exposes a Spring {@link ThreadPoolTaskExecutor} as a {@link ExecutorService} so the core
- * engine — which accepts only {@code java.util.concurrent} types — can drive it.
+ * Exposes a Spring {@link ThreadPoolTaskExecutor} as a {@link ExecutorService} so the core engine —
+ * which accepts only {@code java.util.concurrent} types — can drive it.
  *
- * <p>The point of routing through {@code ThreadPoolTaskExecutor} rather than submitting
- * directly to its underlying {@link ThreadPoolExecutor} is the {@code TaskDecorator}: the
- * decorator hooks in on {@code TPTE.execute()} / {@code TPTE.submit()} and captures MDC /
- * Micrometer Observation / security context from the submitting thread so the handler runs
- * with the same context. Submitting to the underlying pool directly would bypass it.
+ * <p>The point of routing through {@code ThreadPoolTaskExecutor} rather than submitting directly to
+ * its underlying {@link ThreadPoolExecutor} is the {@code TaskDecorator}: the decorator hooks in on
+ * {@code TPTE.execute()} / {@code TPTE.submit()} and captures MDC / Micrometer Observation /
+ * security context from the submitting thread so the handler runs with the same context. Submitting
+ * to the underlying pool directly would bypass it.
  *
- * <p>Lifecycle methods ({@code shutdown}, {@code awaitTermination}, {@code shutdownNow}) and
- * the {@code invokeAll} / {@code invokeAny} family delegate to the underlying
- * {@code ThreadPoolExecutor} — these don't need decoration (they are used for pool teardown,
- * not for task dispatch) and {@code ThreadPoolTaskExecutor} doesn't expose them directly.
+ * <p>Lifecycle methods ({@code shutdown}, {@code awaitTermination}, {@code shutdownNow}) and the
+ * {@code invokeAll} / {@code invokeAny} family delegate to the underlying {@code
+ * ThreadPoolExecutor} — these don't need decoration (they are used for pool teardown, not for task
+ * dispatch) and {@code ThreadPoolTaskExecutor} doesn't expose them directly.
  */
 final class SpringTaskExecutorAdapter implements ExecutorService {
 

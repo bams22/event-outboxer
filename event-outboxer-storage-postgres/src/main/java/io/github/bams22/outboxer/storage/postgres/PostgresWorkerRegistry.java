@@ -34,8 +34,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * PostgreSQL implementation of {@link WorkerRegistry}. Heartbeat lives in {@code outbox.workers}
- * (ADR-0005); a {@code PRIMARY KEY} on {@code worker_id} makes both heartbeat UPDATEs and
- * {@code ON CONFLICT} upserts O(1).
+ * (ADR-0005); a {@code PRIMARY KEY} on {@code worker_id} makes both heartbeat UPDATEs and {@code ON
+ * CONFLICT} upserts O(1).
  */
 public final class PostgresWorkerRegistry implements WorkerRegistry {
 
@@ -205,9 +205,7 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
     Objects.requireNonNull(id, "id must not be null");
     try {
       return jdbc.queryOne(
-          sqlFindById,
-          ps -> ps.setString(1, id.value()),
-          PostgresWorkerRegistry::readWorkerInfo);
+          sqlFindById, ps -> ps.setString(1, id.value()), PostgresWorkerRegistry::readWorkerInfo);
     } catch (SQLException ex) {
       throw new WorkerRegistryException("findById(" + id + ") failed", ex);
     }
@@ -216,7 +214,8 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
   @Override
   public List<WorkerInfo> findAll() {
     try {
-      return jdbc.queryList(sqlFindAll, ParameterBinder.EMPTY, PostgresWorkerRegistry::readWorkerInfo);
+      return jdbc.queryList(
+          sqlFindAll, ParameterBinder.EMPTY, PostgresWorkerRegistry::readWorkerInfo);
     } catch (SQLException ex) {
       throw new WorkerRegistryException("findAll failed", ex);
     }
@@ -226,7 +225,8 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
     WorkerId id = new WorkerId(rs.getString("worker_id"));
     @Nullable Integer pid = (Integer) rs.getObject("pid");
     @Nullable String metadataJson = rs.getString("metadata");
-    Map<String, String> metadata = metadataJson == null ? Map.of() : FlatMapJson.parse(metadataJson);
+    Map<String, String> metadata =
+        metadataJson == null ? Map.of() : FlatMapJson.parse(metadataJson);
     return WorkerInfo.builder()
         .id(id)
         .host(rs.getString("host"))

@@ -76,9 +76,7 @@ class OutboxEngineIntegrationTest {
 
     UUID id = engine.publisher().publish("ORDER", "order-1");
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> store.findById(id).isEmpty());
+    await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(id).isEmpty());
     assertThat(invoked).hasValueGreaterThanOrEqualTo(1);
     assertThat(seen).contains("order-1");
   }
@@ -138,9 +136,7 @@ class OutboxEngineIntegrationTest {
 
     UUID id = engine.publisher().publish("FLAKY", "payload");
 
-    await()
-        .atMost(Duration.ofSeconds(10))
-        .until(() -> store.findById(id).isEmpty());
+    await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
     assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
   }
 
@@ -158,8 +154,7 @@ class OutboxEngineIntegrationTest {
 
     engine =
         fastEngine()
-            .handler(
-                recordingHandler("BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+            .handler(recordingHandler("BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
             .pollStrategy(
                 (eventType, workerId, batchSize) -> {
                   // Uncaught Error — bypasses Poller.tick()'s RuntimeException catch, kills
@@ -181,7 +176,7 @@ class OutboxEngineIntegrationTest {
         .pollInterval(Duration.ofMillis(50))
         .until(() -> engine.state() == OutboxEngine.State.STOPPED);
 
-    assertThat(engine.isLifecycleActive()).isTrue();  // stop() not yet called; cleanup pending
+    assertThat(engine.isLifecycleActive()).isTrue(); // stop() not yet called; cleanup pending
     assertThat(captured.get()).isNotNull();
     assertThat(captured.get().reason()).contains("BOOM");
     assertThat(captured.get().workerId()).isEqualTo(engine.workerId());
@@ -230,9 +225,7 @@ class OutboxEngineIntegrationTest {
   void unknownHandlerReschedules() {
     engine =
         fastEngine()
-            .handler(
-                recordingHandler(
-                    "KNOWN", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+            .handler(recordingHandler("KNOWN", (ctx, payload) -> EventOutcome.Success.INSTANCE))
             .build();
     engine.start();
 
@@ -255,8 +248,9 @@ class OutboxEngineIntegrationTest {
   }
 
   @Test
-  @DisplayName("group-commit finalize: a burst yields fewer finalize statements than events, "
-      + "with per-event listener callbacks intact")
+  @DisplayName(
+      "group-commit finalize: a burst yields fewer finalize statements than events, "
+          + "with per-event listener callbacks intact")
   void finalizeBatchingCoalescesStatements() {
     CountingBatchStore counting = new CountingBatchStore(store);
     AtomicInteger processedCallbacks = new AtomicInteger();
@@ -288,9 +282,7 @@ class OutboxEngineIntegrationTest {
       engine.publisher().publish("BATCHY", "e-" + i);
     }
 
-    await()
-        .atMost(Duration.ofSeconds(10))
-        .until(() -> processedCallbacks.get() == events);
+    await().atMost(Duration.ofSeconds(10)).until(() -> processedCallbacks.get() == events);
     assertThat(counting.totalMarksFlushed.get()).isEqualTo(events);
     assertThat(counting.batchCalls.get())
         .as("group commit must coalesce finalizes into fewer statements than events")
@@ -302,8 +294,8 @@ class OutboxEngineIntegrationTest {
   // ---------------------------------------------------------------------------------------------
 
   /**
-   * Counts finalize batch statements. The artificial flush latency widens the group-commit
-   * window so the coalescing assertion is deterministic rather than a scheduling coincidence.
+   * Counts finalize batch statements. The artificial flush latency widens the group-commit window
+   * so the coalescing assertion is deterministic rather than a scheduling coincidence.
    */
   private static final class CountingBatchStore
       extends io.github.bams22.outboxer.core.support.ForwardingEventStore {

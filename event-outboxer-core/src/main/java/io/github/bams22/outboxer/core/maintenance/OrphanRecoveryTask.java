@@ -24,10 +24,10 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Periodic task that finds stale-heartbeat workers, reclaims their claimed events back to {@code
- * PENDING}, and removes the dead worker rows. {@code reclaimOrphans} and {@code removeDead} are
- * two independent calls (each atomic on its own, not jointly): if {@code removeDead} fails after
- * a successful reclaim, the dead worker rows survive until the next pass, where reclaiming their
- * (now zero) events again is a no-op — the flow is idempotent, not transactional.
+ * PENDING}, and removes the dead worker rows. {@code reclaimOrphans} and {@code removeDead} are two
+ * independent calls (each atomic on its own, not jointly): if {@code removeDead} fails after a
+ * successful reclaim, the dead worker rows survive until the next pass, where reclaiming their (now
+ * zero) events again is a no-op — the flow is idempotent, not transactional.
  */
 public final class OrphanRecoveryTask implements Runnable {
 

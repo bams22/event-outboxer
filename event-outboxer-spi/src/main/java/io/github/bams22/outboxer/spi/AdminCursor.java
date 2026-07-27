@@ -14,9 +14,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Keyset-pagination cursor for {@link OutboxAdmin#findByStatus}: the {@code (createdAt, id)} of
- * the last row of the previous page. Keyset instead of offset on purpose — admin queries target
- * exactly the tables where offsets degrade (large DISABLED backlogs, the archive).
+ * Keyset-pagination cursor for {@link OutboxAdmin#findByStatus}: the {@code (createdAt, id)} of the
+ * last row of the previous page. Keyset instead of offset on purpose — admin queries target exactly
+ * the tables where offsets degrade (large DISABLED backlogs, the archive).
  */
 public record AdminCursor(Instant createdAt, UUID id) {
 

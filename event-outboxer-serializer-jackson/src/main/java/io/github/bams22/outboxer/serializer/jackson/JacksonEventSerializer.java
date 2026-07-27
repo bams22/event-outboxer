@@ -17,12 +17,12 @@ import io.github.bams22.outboxer.spi.EventSerializer;
 import java.util.Objects;
 
 /**
- * Jackson-backed {@link EventSerializer}. The adapter holds an {@link ObjectMapper} supplied by
- * the caller — it never builds one internally so that callers in Spring setups can share Boot's
- * primary {@code ObjectMapper} and customizations applied there.
+ * Jackson-backed {@link EventSerializer}. The adapter holds an {@link ObjectMapper} supplied by the
+ * caller — it never builds one internally so that callers in Spring setups can share Boot's primary
+ * {@code ObjectMapper} and customizations applied there.
  *
- * <p>See {@link JacksonObjectMapperFactory} for the factory the starter falls back to when
- * neither a qualified nor a primary {@code ObjectMapper} bean is available.
+ * <p>See {@link JacksonObjectMapperFactory} for the factory the starter falls back to when neither
+ * a qualified nor a primary {@code ObjectMapper} bean is available.
  */
 public final class JacksonEventSerializer implements EventSerializer {
 

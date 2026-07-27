@@ -15,13 +15,13 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Single request in a batch {@link OutboxEventPublisher#publishAll(java.util.Collection)}
- * invocation. Carries the same data as a scalar {@code publish(...)} call: event type, payload,
- * and optional overrides.
+ * invocation. Carries the same data as a scalar {@code publish(...)} call: event type, payload, and
+ * optional overrides.
  *
  * @param eventType non-blank event-type identifier
  * @param payload DTO payload (not null)
- * @param options optional per-request overrides; {@code null} is treated as
- *     {@link PublishOptions#defaults()}
+ * @param options optional per-request overrides; {@code null} is treated as {@link
+ *     PublishOptions#defaults()}
  */
 @Builder
 public record PublishRequest(String eventType, Object payload, @Nullable PublishOptions options) {

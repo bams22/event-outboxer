@@ -10,14 +10,14 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * Base class for technical failures in the {@code EntityLocker} port. The normal "lock is
- * currently held by someone else" scenario is <strong>not</strong> an exception — it is
- * represented by an {@code Optional.empty()} result from {@code tryLock(...)} (see ADR-0030
- * summary in decisions_exceptions.md).
+ * Base class for technical failures in the {@code EntityLocker} port. The normal "lock is currently
+ * held by someone else" scenario is <strong>not</strong> an exception — it is represented by an
+ * {@code Optional.empty()} result from {@code tryLock(...)} (see ADR-0030 summary in
+ * decisions_exceptions.md).
  *
- * <p>{@code LockException} signals that the locker could not carry out the operation at all —
- * for example the Redis server is unreachable, the advisory-lock SQL failed, or the unlock
- * script encountered an unexpected error.
+ * <p>{@code LockException} signals that the locker could not carry out the operation at all — for
+ * example the Redis server is unreachable, the advisory-lock SQL failed, or the unlock script
+ * encountered an unexpected error.
  */
 public abstract class LockException extends OutboxException {
 

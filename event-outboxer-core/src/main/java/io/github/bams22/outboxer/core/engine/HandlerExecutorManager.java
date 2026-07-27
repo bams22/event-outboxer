@@ -28,15 +28,15 @@ import org.slf4j.LoggerFactory;
 /**
  * Owns the per-event-type handler executors on behalf of {@link OutboxEngine}. Executors are
  * created on {@link #start()} and drained on {@link #drain(Duration)} so that the engine can be
- * stopped and started again — a fresh {@code start()} installs fresh pools instead of reusing
- * the shut-down ones.
+ * stopped and started again — a fresh {@code start()} installs fresh pools instead of reusing the
+ * shut-down ones.
  *
  * <p>Each per-type slot doubles as the poller-facing {@link HandlerExecutorGate}: it tracks the
  * number of in-flight tasks against a capacity budget of {@code handlerPoolSize +
- * handlerQueueCapacity} and reports the saturated→free transition, so the poller claims only
- * what the executor can actually absorb and wakes up the moment a slot frees. For the
- * virtual-thread executor flavour the same budget acts as a soft in-flight cap (the underlying
- * executor itself is unbounded).
+ * handlerQueueCapacity} and reports the saturated→free transition, so the poller claims only what
+ * the executor can actually absorb and wakes up the moment a slot frees. For the virtual-thread
+ * executor flavour the same budget acts as a soft in-flight cap (the underlying executor itself is
+ * unbounded).
  *
  * <p>In-flight accounting is generation-scoped: every {@code start()} creates a fresh counter
  * captured by the tasks submitted to that generation's pool, so a handler that outlives a
@@ -81,8 +81,8 @@ public final class HandlerExecutorManager {
   }
 
   /**
-   * Create and install a fresh {@code ExecutorService} (and a fresh in-flight generation) per
-   * event type.
+   * Create and install a fresh {@code ExecutorService} (and a fresh in-flight generation) per event
+   * type.
    */
   public synchronized void start() {
     for (Map.Entry<String, Slot> e : slots.entrySet()) {
@@ -91,9 +91,9 @@ public final class HandlerExecutorManager {
   }
 
   /**
-   * Drain all executors: reject new work, wait up to {@code timeout} for in-flight handlers,
-   * then force-shutdown whatever is left. After this call the gates reject submissions and
-   * report zero capacity until the next {@link #start()}.
+   * Drain all executors: reject new work, wait up to {@code timeout} for in-flight handlers, then
+   * force-shutdown whatever is left. After this call the gates reject submissions and report zero
+   * capacity until the next {@link #start()}.
    */
   public synchronized void drain(Duration timeout) {
     for (Slot slot : slots.values()) {
@@ -139,9 +139,9 @@ public final class HandlerExecutorManager {
 
   /**
    * Mutable holder pollers submit through and observe capacity on. {@code current} is the live
-   * generation (or {@code null} while the engine is stopped); {@code drained} keeps the
-   * shut-down generation referenced between the reject-new-work and await-termination phases of
-   * {@link #drain(Duration)}.
+   * generation (or {@code null} while the engine is stopped); {@code drained} keeps the shut-down
+   * generation referenced between the reject-new-work and await-termination phases of {@link
+   * #drain(Duration)}.
    */
   private final class Slot implements HandlerExecutorGate {
 
@@ -206,14 +206,14 @@ public final class HandlerExecutorManager {
     }
 
     /**
-     * The in-flight counter is the capacity source of truth, but with a synchronous handoff
-     * (queue capacity 0) there is an inherent lag between a task's finally-block decrement and
-     * its worker thread returning to {@code queue.take()} — a submit inside that window is
-     * rejected even though capacity logically exists. Since callers only submit within the
-     * counter's budget, briefly waiting out the lag and retrying is correct, not optimistic:
-     * the worker arrives within microseconds. A submission still rejected after the budget
-     * (shutdown race, a user-supplied executor with different semantics) propagates to the
-     * caller's rejection safety net.
+     * The in-flight counter is the capacity source of truth, but with a synchronous handoff (queue
+     * capacity 0) there is an inherent lag between a task's finally-block decrement and its worker
+     * thread returning to {@code queue.take()} — a submit inside that window is rejected even
+     * though capacity logically exists. Since callers only submit within the counter's budget,
+     * briefly waiting out the lag and retrying is correct, not optimistic: the worker arrives
+     * within microseconds. A submission still rejected after the budget (shutdown race, a
+     * user-supplied executor with different semantics) propagates to the caller's rejection safety
+     * net.
      */
     private void submitWithHandoffRetry(Generation gen, Runnable wrapped) {
       long deadline = System.nanoTime() + HANDOFF_RETRY_BUDGET_NANOS;
@@ -240,7 +240,8 @@ public final class HandlerExecutorManager {
           try {
             callback.run();
           } catch (RuntimeException ex) {
-            log.debug("capacity-available callback failed for type {}: {}", eventType, ex.toString());
+            log.debug(
+                "capacity-available callback failed for type {}: {}", eventType, ex.toString());
           }
         }
       }

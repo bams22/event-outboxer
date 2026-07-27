@@ -36,8 +36,7 @@ import org.springframework.context.annotation.Bean;
 /**
  * Registers a {@link MicrometerOutboxListener} when both the metrics adapter and a Micrometer
  * {@link MeterRegistry} are on the classpath, plus per-state gauges for the engine lifecycle. The
- * metric-name prefix is bound from {@code outbox.metrics.prefix} (default:
- * {@code event_outboxer}).
+ * metric-name prefix is bound from {@code outbox.metrics.prefix} (default: {@code event_outboxer}).
  */
 @AutoConfiguration
 @ConditionalOnClass({MeterRegistry.class, MicrometerOutboxListener.class})
@@ -53,14 +52,13 @@ public class MicrometerAutoConfiguration {
   }
 
   /**
-   * Publishes three gauges for {@link OutboxEngine#state()}: one per enum value, each either 0
-   * or 1. Lets Prometheus users write alerts without remembering a numeric mapping, e.g.
-   * {@code event_outboxer_engine_state{state="running"} == 0 for 1m}.
+   * Publishes three gauges for {@link OutboxEngine#state()}: one per enum value, each either 0 or
+   * 1. Lets Prometheus users write alerts without remembering a numeric mapping, e.g. {@code
+   * event_outboxer_engine_state{state="running"} == 0 for 1m}.
    *
-   * <p>The meter is registered eagerly at context refresh — it shows
-   * {@code state="stopped"=1} until {@code SmartLifecycle.start()} runs, then flips to
-   * {@code state="running"=1}, then (on shutdown) to {@code state="stopping"=1} and back to
-   * {@code state="stopped"=1}.
+   * <p>The meter is registered eagerly at context refresh — it shows {@code state="stopped"=1}
+   * until {@code SmartLifecycle.start()} runs, then flips to {@code state="running"=1}, then (on
+   * shutdown) to {@code state="stopping"=1} and back to {@code state="stopped"=1}.
    */
   @Bean
   @ConditionalOnBean(OutboxEngine.class)
@@ -83,10 +81,9 @@ public class MicrometerAutoConfiguration {
 
   /**
    * Publishes backlog gauges driven by {@link EventStore#metricsSnapshot()}. Every Prometheus
-   * scrape reads the snapshot through the {@code MetricsSnapshotCache} SPI, so the cost per
-   * scrape is amortised across the cache TTL (default 30 s) and — when
-   * {@code outbox.cache.type=redis} — shared across pods so dashboards see the same aggregate
-   * on every replica.
+   * scrape reads the snapshot through the {@code MetricsSnapshotCache} SPI, so the cost per scrape
+   * is amortised across the cache TTL (default 30 s) and — when {@code outbox.cache.type=redis} —
+   * shared across pods so dashboards see the same aggregate on every replica.
    *
    * <p>Per-event-type (one row per registered {@link EventHandler}):
    *
@@ -94,19 +91,20 @@ public class MicrometerAutoConfiguration {
    *   <li>{@code event_outboxer.events.pending{event_type="…"}}
    *   <li>{@code event_outboxer.events.processing{event_type="…"}}
    *   <li>{@code event_outboxer.events.disabled{event_type="…"}}
-   *   <li>{@code event_outboxer.events.oldest_pending_age_seconds{event_type="…"}} — how long
-   *       the oldest PENDING row of this type has been waiting; {@code 0} when no rows pending.
+   *   <li>{@code event_outboxer.events.oldest_pending_age_seconds{event_type="…"}} — how long the
+   *       oldest PENDING row of this type has been waiting; {@code 0} when no rows pending.
    * </ul>
    *
    * <p>Global (snapshot-wide, no tag):
    *
    * <ul>
-   *   <li>{@code event_outboxer.events.oldest_claimed_age_seconds} — how long the oldest
-   *       in-flight PROCESSING row has been running; useful as a backlog / stuck-handler signal
-   *       even before the watchdog trips.
+   *   <li>{@code event_outboxer.events.oldest_claimed_age_seconds} — how long the oldest in-flight
+   *       PROCESSING row has been running; useful as a backlog / stuck-handler signal even before
+   *       the watchdog trips.
    * </ul>
    *
-   * <p>To aggregate totals in PromQL: {@code sum without(event_type)(event_outboxer_events_pending)}.
+   * <p>To aggregate totals in PromQL: {@code sum
+   * without(event_type)(event_outboxer_events_pending)}.
    */
   @Bean
   @ConditionalOnBean({EventStore.class, OutboxEngine.class})
@@ -124,23 +122,37 @@ public class MicrometerAutoConfiguration {
       String eventType = handler.eventType();
 
       registerPerType(
-          registry, prefix + "pending", eventType, store,
+          registry,
+          prefix + "pending",
+          eventType,
+          store,
           s -> perType(s, eventType).map(OutboxMetricsSnapshot.EventTypeStats::pending).orElse(0L));
       registerPerType(
-          registry, prefix + "processing", eventType, store,
-          s -> perType(s, eventType).map(OutboxMetricsSnapshot.EventTypeStats::processing).orElse(0L));
+          registry,
+          prefix + "processing",
+          eventType,
+          store,
+          s ->
+              perType(s, eventType)
+                  .map(OutboxMetricsSnapshot.EventTypeStats::processing)
+                  .orElse(0L));
       registerPerType(
-          registry, prefix + "disabled", eventType, store,
-          s -> perType(s, eventType).map(OutboxMetricsSnapshot.EventTypeStats::disabled).orElse(0L));
+          registry,
+          prefix + "disabled",
+          eventType,
+          store,
+          s ->
+              perType(s, eventType).map(OutboxMetricsSnapshot.EventTypeStats::disabled).orElse(0L));
 
       Gauge.builder(
               prefix + "oldest_pending_age_seconds",
               store,
-              s -> ageSeconds(
-                  perType(s.metricsSnapshot(), eventType)
-                      .map(OutboxMetricsSnapshot.EventTypeStats::oldestPendingRunAt)
-                      .orElse(null),
-                  clock.now()))
+              s ->
+                  ageSeconds(
+                      perType(s.metricsSnapshot(), eventType)
+                          .map(OutboxMetricsSnapshot.EventTypeStats::oldestPendingRunAt)
+                          .orElse(null),
+                      clock.now()))
           .tag("event_type", eventType)
           .description(
               "Seconds since the oldest PENDING event of this type became eligible; 0 when empty")

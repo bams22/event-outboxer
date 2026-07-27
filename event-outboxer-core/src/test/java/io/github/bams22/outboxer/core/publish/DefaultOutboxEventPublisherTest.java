@@ -199,7 +199,8 @@ class DefaultOutboxEventPublisherTest {
 
     UUID first = publisher.publish("SYNC", "v1", keyed);
     UUID second = publisher.publish("SYNC", "v2", keyed);
-    UUID third = publisher.publish("SYNC", "v3", PublishOptions.builder().dedupKey("order-2").build());
+    UUID third =
+        publisher.publish("SYNC", "v3", PublishOptions.builder().dedupKey("order-2").build());
 
     assertThat(second).isEqualTo(first); // coalesced into the existing pending event
     assertThat(third).isNotEqualTo(first);

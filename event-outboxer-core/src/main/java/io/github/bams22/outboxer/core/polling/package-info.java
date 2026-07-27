@@ -9,8 +9,8 @@
  */
 
 /**
- * Per-event-type poller. One poller thread loops {@code PollStrategy.pollOnce()} for a given
- * event type, handing claimed events to the {@code HandlerDispatcher}.
+ * Per-event-type poller. One poller thread loops {@code PollStrategy.pollOnce()} for a given event
+ * type, handing claimed events to the {@code HandlerDispatcher}.
  */
 @NullMarked
 package io.github.bams22.outboxer.core.polling;

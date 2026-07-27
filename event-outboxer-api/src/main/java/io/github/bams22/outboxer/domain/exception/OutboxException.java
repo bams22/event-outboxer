@@ -10,13 +10,13 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * Root of every exception thrown by the event-outboxer library. Always unchecked
- * ({@link RuntimeException}) — we avoid checked exceptions in public contracts because they tend
- * to leak into lambdas and records that make up much of the library's API surface.
+ * Root of every exception thrown by the event-outboxer library. Always unchecked ({@link
+ * RuntimeException}) — we avoid checked exceptions in public contracts because they tend to leak
+ * into lambdas and records that make up much of the library's API surface.
  *
- * <p>Operational exceptions carry an {@code OUTBOX-XXX} message-code prefix to make log greps
- * and troubleshooting docs straightforward. Validation and configuration exceptions do not
- * require a code — their class name is specific enough.
+ * <p>Operational exceptions carry an {@code OUTBOX-XXX} message-code prefix to make log greps and
+ * troubleshooting docs straightforward. Validation and configuration exceptions do not require a
+ * code — their class name is specific enough.
  */
 public abstract class OutboxException extends RuntimeException {
 

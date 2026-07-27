@@ -13,13 +13,13 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Business handler for a specific event type. Implementations are typically registered as Spring
- * beans and discovered automatically at application startup; in plain-Java setups they are
- * passed to the engine builder.
+ * beans and discovered automatically at application startup; in plain-Java setups they are passed
+ * to the engine builder.
  *
  * <h2>Idempotency contract</h2>
  *
- * event-outboxer guarantees <strong>at-least-once</strong> delivery (see ADR-0015). An event may
- * be processed more than once if:
+ * event-outboxer guarantees <strong>at-least-once</strong> delivery (see ADR-0015). An event may be
+ * processed more than once if:
  *
  * <ul>
  *   <li>a worker completed the handler but crashed before finalizing;
@@ -35,19 +35,19 @@ import org.jspecify.annotations.Nullable;
  *
  * <h2>Exception handling</h2>
  *
- * Any uncaught exception thrown by {@link #handle(EventContext, Object)} is treated by the
- * engine as {@code EventOutcome.Retry(e.getMessage(), null, e)} and routed through the configured
- * {@code FailureHandler} chain. Handlers therefore do not need to wrap everything in try/catch —
- * return {@code Success}/{@code Skip} on the happy path, and let the engine handle the rest.
+ * Any uncaught exception thrown by {@link #handle(EventContext, Object)} is treated by the engine
+ * as {@code EventOutcome.Retry(e.getMessage(), null, e)} and routed through the configured {@code
+ * FailureHandler} chain. Handlers therefore do not need to wrap everything in try/catch — return
+ * {@code Success}/{@code Skip} on the happy path, and let the engine handle the rest.
  *
  * @param <T> payload type for this event type
  */
 public interface EventHandler<T> {
 
   /**
-   * Stable string identifier of the event type. Used to bind the handler to events stored with
-   * the same {@code event_type} value. Must not change between releases — it is a natural key in
-   * the database.
+   * Stable string identifier of the event type. Used to bind the handler to events stored with the
+   * same {@code event_type} value. Must not change between releases — it is a natural key in the
+   * database.
    */
   String eventType();
 
@@ -66,11 +66,11 @@ public interface EventHandler<T> {
   /**
    * Optional business-key lock guarding concurrent processing of events that touch the same
    * aggregate. If non-null, the engine acquires the lock through {@code EntityLocker.tryLock}
-   * before {@link #handle}; if the lock is busy, the event is re-scheduled with a short delay
-   * and {@code handle} is not invoked (see ADR-0012).
+   * before {@link #handle}; if the lock is busy, the event is re-scheduled with a short delay and
+   * {@code handle} is not invoked (see ADR-0012).
    *
-   * <p>Default: {@code null} — no locking. Override when two events of potentially different
-   * types can target the same aggregate and must not run in parallel.
+   * <p>Default: {@code null} — no locking. Override when two events of potentially different types
+   * can target the same aggregate and must not run in parallel.
    */
   default @Nullable String extractLockKey(T payload) {
     return null;

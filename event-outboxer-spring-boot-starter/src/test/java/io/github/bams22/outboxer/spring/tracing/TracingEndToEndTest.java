@@ -41,7 +41,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -131,13 +130,19 @@ class TracingEndToEndTest {
     SpanData firstAttempt =
         consumers.stream()
             .filter(
-                s -> Long.valueOf(1L).equals(s.getAttributes().get(AttributeKey.longKey("event_outboxer.attempt"))))
+                s ->
+                    Long.valueOf(1L)
+                        .equals(
+                            s.getAttributes().get(AttributeKey.longKey("event_outboxer.attempt"))))
             .findFirst()
             .orElseThrow();
     SpanData secondAttempt =
         consumers.stream()
             .filter(
-                s -> Long.valueOf(2L).equals(s.getAttributes().get(AttributeKey.longKey("event_outboxer.attempt"))))
+                s ->
+                    Long.valueOf(2L)
+                        .equals(
+                            s.getAttributes().get(AttributeKey.longKey("event_outboxer.attempt"))))
             .findFirst()
             .orElseThrow();
 
@@ -200,14 +205,13 @@ class TracingEndToEndTest {
           .setPropagators(
               ContextPropagators.create(
                   TextMapPropagator.composite(
-                      W3CTraceContextPropagator.getInstance(),
-                      W3CBaggagePropagator.getInstance())))
+                      W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
           .build();
     }
 
     /**
-     * Zero-delay retry instead of the default 5-second exponential backoff, so the second
-     * attempt lands within the test's await window.
+     * Zero-delay retry instead of the default 5-second exponential backoff, so the second attempt
+     * lands within the test's await window.
      */
     @Bean("outboxDefaultFailureHandler")
     FailureHandler<Object> outboxDefaultFailureHandler(Clock clock) {

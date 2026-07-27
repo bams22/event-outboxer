@@ -28,9 +28,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.env.MockEnvironment;
 
 /**
- * ADR-0020: there is no default storage and no in-memory fallback. An unconfigured outbox must
- * fail at startup, and the failure analyzer must turn the raw NoSuchBeanDefinitionException
- * into an actionable message.
+ * ADR-0020: there is no default storage and no in-memory fallback. An unconfigured outbox must fail
+ * at startup, and the failure analyzer must turn the raw NoSuchBeanDefinitionException into an
+ * actionable message.
  */
 class UnconfiguredStorageTest {
 
@@ -49,8 +49,7 @@ class UnconfiguredStorageTest {
     runner.run(
         ctx -> {
           assertThat(ctx).hasFailed();
-          assertThat(ctx.getStartupFailure())
-              .hasStackTraceContaining("EventStore");
+          assertThat(ctx.getStartupFailure()).hasStackTraceContaining("EventStore");
         });
   }
 

@@ -19,16 +19,16 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * In-process map of events currently being processed by the dispatcher. The watchdog task walks
- * this registry every {@code watchdogInterval} and force-reclaims any entry whose {@code
- * startedAt} is older than {@code handlerMaxRuntime} — see ADR-0014.
+ * this registry every {@code watchdogInterval} and force-reclaims any entry whose {@code startedAt}
+ * is older than {@code handlerMaxRuntime} — see ADR-0014.
  */
 public final class InFlightRegistry {
 
   private final ConcurrentMap<UUID, Entry> entries = new ConcurrentHashMap<>();
 
   /**
-   * Register a newly-dispatched event. Idempotent — a second register with the same id replaces
-   * the previous entry.
+   * Register a newly-dispatched event. Idempotent — a second register with the same id replaces the
+   * previous entry.
    */
   public void register(UUID id, Entry entry) {
     Objects.requireNonNull(id, "id must not be null");

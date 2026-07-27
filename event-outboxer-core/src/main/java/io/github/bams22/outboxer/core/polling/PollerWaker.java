@@ -13,8 +13,8 @@ package io.github.bams22.outboxer.core.polling;
  * Wake-up signal from the publish side to the polling side of the SAME JVM. After a transaction
  * that inserted an event of type {@code T} commits, the publisher calls {@code wake(T)} so the
  * poller for {@code T} claims immediately instead of sleeping out the remainder of its adaptive
- * poll interval — dropping same-JVM publish→handle latency from seconds to milliseconds
- * (ADR-0006 amendment).
+ * poll interval — dropping same-JVM publish→handle latency from seconds to milliseconds (ADR-0006
+ * amendment).
  *
  * <p>Purely an optimization: a missed or spurious wake is always safe, polling remains the
  * correctness mechanism. Events published by other JVMs are still picked up poll-bound.

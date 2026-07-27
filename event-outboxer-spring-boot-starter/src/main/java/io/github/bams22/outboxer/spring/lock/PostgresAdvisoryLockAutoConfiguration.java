@@ -20,8 +20,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 
 /**
- * Registers {@link PgAdvisoryLocker} when {@code event-outboxer.lock.type=postgres-advisory},
- * the adapter class is on the classpath, and a {@link DataSource} bean is available.
+ * Registers {@link PgAdvisoryLocker} when {@code event-outboxer.lock.type=postgres-advisory}, the
+ * adapter class is on the classpath, and a {@link DataSource} bean is available.
  *
  * <p>Since ADR-0022 the {@code postgres-lease} value selects the lease-table locker (see {@link
  * PostgresLeaseLockAutoConfiguration}); the session-scoped advisory locker stays available as the
@@ -30,10 +30,11 @@ import org.springframework.context.annotation.Conditional;
  * transaction-pooling incompatibility.
  *
  * <p>The locker intentionally uses the raw {@code DataSource} (not the transaction-aware proxy):
- * advisory locks must run on a connection that is NOT bound to the caller's transaction, so
- * that a lock acquired before handler work survives the caller's commit/rollback boundary.
+ * advisory locks must run on a connection that is NOT bound to the caller's transaction, so that a
+ * lock acquired before handler work survives the caller's commit/rollback boundary.
  */
-@AutoConfiguration(after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+@AutoConfiguration(
+    after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgAdvisoryLocker.class)
 @ConditionalOnBean(DataSource.class)
 @Conditional(OnPostgresAdvisoryLockCondition.class)

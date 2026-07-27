@@ -16,20 +16,19 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Payload of {@link OutboxListener#onEngineCrashed(EngineCrashedInfo)} — fired when the engine's
- * background health check determines that a critical component is no longer alive (for example,
- * a per-type poller thread died from an uncaught {@code Error}). After this callback the engine
- * reports {@code state() == STOPPED}; {@code /actuator/health/outbox} and every metric /
- * listener signal flip to the DOWN / stopped branch.
+ * background health check determines that a critical component is no longer alive (for example, a
+ * per-type poller thread died from an uncaught {@code Error}). After this callback the engine
+ * reports {@code state() == STOPPED}; {@code /actuator/health/outbox} and every metric / listener
+ * signal flip to the DOWN / stopped branch.
  *
- * <p>Listeners must treat this event as a fatal condition for the current worker: the engine
- * does not attempt to self-recover. In a Spring Boot deployment with {@code
- * outbox.health.probe-groups: [readiness, liveness]} Kubernetes will drain and restart the pod
- * automatically.
+ * <p>Listeners must treat this event as a fatal condition for the current worker: the engine does
+ * not attempt to self-recover. In a Spring Boot deployment with {@code outbox.health.probe-groups:
+ * [readiness, liveness]} Kubernetes will drain and restart the pod automatically.
  *
  * @param reason human-readable description of what the health check detected
- * @param cause the underlying throwable that killed the component, if known. Usually {@code null}
- *     — the poller loop swallows {@code RuntimeException}; only unrecoverable {@code Error}s
- *     exit the loop, and those are typically uncaught by our code.
+ * @param cause the underlying throwable that killed the component, if known. Usually {@code null} —
+ *     the poller loop swallows {@code RuntimeException}; only unrecoverable {@code Error}s exit the
+ *     loop, and those are typically uncaught by our code.
  * @param at wall-clock time the crash was detected
  * @param workerId identifier of the worker JVM
  */

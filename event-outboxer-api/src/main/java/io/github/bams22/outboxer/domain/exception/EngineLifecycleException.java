@@ -10,9 +10,9 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * Base class for engine lifecycle misuse — methods called before {@code start()}, after
- * {@code stop()}, or in other states that do not support them. Typically indicates a programming
- * error in the integrating code.
+ * Base class for engine lifecycle misuse — methods called before {@code start()}, after {@code
+ * stop()}, or in other states that do not support them. Typically indicates a programming error in
+ * the integrating code.
  */
 public abstract class EngineLifecycleException extends OutboxException {
 

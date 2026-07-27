@@ -29,12 +29,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The crux of ADR-0021 on real PostgreSQL: a publisher transaction that coalesces into an
- * existing PENDING event pins that row with {@code SELECT ... FOR UPDATE}, so the claim query
- * ({@code FOR UPDATE SKIP LOCKED}) must skip it until the publisher commits — guaranteeing the
- * handler sees the coalesced transaction's data. Without the pin this scenario is a lost
- * update: the old event would be processed against a pre-commit snapshot, and the coalesced
- * publish would never produce another event.
+ * The crux of ADR-0021 on real PostgreSQL: a publisher transaction that coalesces into an existing
+ * PENDING event pins that row with {@code SELECT ... FOR UPDATE}, so the claim query ({@code FOR
+ * UPDATE SKIP LOCKED}) must skip it until the publisher commits — guaranteeing the handler sees the
+ * coalesced transaction's data. Without the pin this scenario is a lost update: the old event would
+ * be processed against a pre-commit snapshot, and the coalesced publish would never produce another
+ * event.
  */
 class PostgresDedupCoalescingIT {
 

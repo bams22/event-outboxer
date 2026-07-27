@@ -36,9 +36,9 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
- * {@link OutboxListener} implementation that publishes engine callbacks to a Micrometer
- * {@link MeterRegistry}. Metric names follow the convention documented in STORAGE.md §Monitoring;
- * every event-keyed metric carries an {@code event_type} tag so dashboards can drill down.
+ * {@link OutboxListener} implementation that publishes engine callbacks to a Micrometer {@link
+ * MeterRegistry}. Metric names follow the convention documented in STORAGE.md §Monitoring; every
+ * event-keyed metric carries an {@code event_type} tag so dashboards can drill down.
  *
  * <p>All callbacks are O(1) — Micrometer's internal meter lookup is a concurrent map keyed on
  * {@code (name, tags)}, fast enough for the hot dispatcher path.
@@ -46,11 +46,10 @@ import java.util.concurrent.TimeUnit;
 public final class MicrometerOutboxListener implements OutboxListener {
 
   /**
-   * Prefix applied to every metric name. Default: {@code event_outboxer} —
-   * a specific name chosen to avoid clashing with other libraries that
-   * publish {@code outbox.*} metrics. Configurable via the two-argument
-   * constructor; the Spring Boot starter binds {@code outbox.metrics.prefix}
-   * into the same slot.
+   * Prefix applied to every metric name. Default: {@code event_outboxer} — a specific name chosen
+   * to avoid clashing with other libraries that publish {@code outbox.*} metrics. Configurable via
+   * the two-argument constructor; the Spring Boot starter binds {@code outbox.metrics.prefix} into
+   * the same slot.
    */
   public static final String DEFAULT_PREFIX = "event_outboxer";
 
@@ -98,7 +97,9 @@ public final class MicrometerOutboxListener implements OutboxListener {
     registry
         .timer(metric("events.processing_time"), "event_type", info.eventType())
         .record(info.duration().toNanos(), TimeUnit.NANOSECONDS);
-    registry.summary(metric("events.attempts"), "event_type", info.eventType()).record(info.attempts());
+    registry
+        .summary(metric("events.attempts"), "event_type", info.eventType())
+        .record(info.attempts());
   }
 
   @Override

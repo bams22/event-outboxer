@@ -17,9 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 
-/**
- * Registers {@link OutboxHealthIndicator} when Spring Boot Actuator is on the classpath.
- */
+/** Registers {@link OutboxHealthIndicator} when Spring Boot Actuator is on the classpath. */
 @AutoConfiguration
 @ConditionalOnClass(HealthIndicator.class)
 public class OutboxHealthAutoConfiguration {

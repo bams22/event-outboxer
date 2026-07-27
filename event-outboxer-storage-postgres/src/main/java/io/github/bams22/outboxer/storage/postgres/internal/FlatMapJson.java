@@ -16,11 +16,11 @@ import java.util.Objects;
 /**
  * Tiny JSON serialiser / parser for flat {@code Map<String, String>} values used by the outbox's
  * {@code trace_context} column. Keeps the PostgreSQL adapter free of a runtime JSON library
- * dependency: the {@code payload} column is handled by the user-configured
- * {@code EventSerializer}, but {@code trace_context} is always a flat string→string map.
+ * dependency: the {@code payload} column is handled by the user-configured {@code EventSerializer},
+ * but {@code trace_context} is always a flat string→string map.
  *
- * <p>Not intended for general-purpose JSON — only handles string values, rejects nested objects
- * and arrays on parse.
+ * <p>Not intended for general-purpose JSON — only handles string values, rejects nested objects and
+ * arrays on parse.
  */
 public final class FlatMapJson {
 
@@ -35,7 +35,11 @@ public final class FlatMapJson {
       if (!first) {
         sb.append(',');
       }
-      sb.append('"').append(escape(e.getKey())).append("\":\"").append(escape(e.getValue())).append('"');
+      sb.append('"')
+          .append(escape(e.getKey()))
+          .append("\":\"")
+          .append(escape(e.getValue()))
+          .append('"');
       first = false;
     }
     sb.append('}');
@@ -124,8 +128,8 @@ public final class FlatMapJson {
             out.append((char) code);
             i += 4;
           }
-          default -> throw new IllegalArgumentException(
-              "unsupported escape \\" + next + " at index " + i);
+          default ->
+              throw new IllegalArgumentException("unsupported escape \\" + next + " at index " + i);
         }
         i += 2;
       } else {

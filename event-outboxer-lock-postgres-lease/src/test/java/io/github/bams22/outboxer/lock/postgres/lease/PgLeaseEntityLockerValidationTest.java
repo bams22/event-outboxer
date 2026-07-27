@@ -30,8 +30,7 @@ class PgLeaseEntityLockerValidationTest {
   @Test
   @DisplayName("null key / null ttl are rejected before touching the pool")
   void nullArguments() {
-    assertThatNullPointerException()
-        .isThrownBy(() -> locker.tryLock(null, Duration.ofMinutes(1)));
+    assertThatNullPointerException().isThrownBy(() -> locker.tryLock(null, Duration.ofMinutes(1)));
     assertThatNullPointerException().isThrownBy(() -> locker.tryLock("k", null));
   }
 
@@ -39,9 +38,7 @@ class PgLeaseEntityLockerValidationTest {
   @DisplayName("sub-millisecond, zero and negative TTLs are rejected with a clear message")
   void ttlFloor() {
     for (Duration bad :
-        new Duration[] {
-          Duration.ofNanos(999_999), Duration.ZERO, Duration.ofSeconds(-1)
-        }) {
+        new Duration[] {Duration.ofNanos(999_999), Duration.ZERO, Duration.ofSeconds(-1)}) {
       assertThatThrownBy(() -> locker.tryLock("k", bad))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("1ms");

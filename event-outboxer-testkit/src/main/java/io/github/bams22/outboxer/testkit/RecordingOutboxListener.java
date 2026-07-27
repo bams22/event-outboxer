@@ -49,7 +49,8 @@ public final class RecordingOutboxListener implements OutboxListener {
   private final CopyOnWriteArrayList<EventDeletedInfo> deleted = new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<EventSkippedInfo> skipped = new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<HandlerErrorInfo> handlerErrors = new CopyOnWriteArrayList<>();
-  private final CopyOnWriteArrayList<UnknownEventTypeInfo> unknownType = new CopyOnWriteArrayList<>();
+  private final CopyOnWriteArrayList<UnknownEventTypeInfo> unknownType =
+      new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<SerializationErrorInfo> serializationErrors =
       new CopyOnWriteArrayList<>();
   private final CopyOnWriteArrayList<LockAcquisitionInfo> lockAcquisitionFailed =

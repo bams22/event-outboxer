@@ -23,7 +23,8 @@ class EventHandlerResolverTest {
 
   @Test
   void lookupByType() {
-    EventHandlerResolver r = new EventHandlerResolver(List.of(stringHandler("A"), stringHandler("B")));
+    EventHandlerResolver r =
+        new EventHandlerResolver(List.of(stringHandler("A"), stringHandler("B")));
     assertThat(r.find("A")).isPresent();
     assertThat(r.find("B")).isPresent();
     assertThat(r.find("C")).isEmpty();
@@ -33,9 +34,7 @@ class EventHandlerResolverTest {
   @Test
   void rejectsDuplicates() {
     assertThatThrownBy(
-            () ->
-                new EventHandlerResolver(
-                    List.of(stringHandler("DUP"), stringHandler("DUP"))))
+            () -> new EventHandlerResolver(List.of(stringHandler("DUP"), stringHandler("DUP"))))
         .isInstanceOf(DuplicateHandlerException.class)
         .hasMessageContaining("DUP");
   }

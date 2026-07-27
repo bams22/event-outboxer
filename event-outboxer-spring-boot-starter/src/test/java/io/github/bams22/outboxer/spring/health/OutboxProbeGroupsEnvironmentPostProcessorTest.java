@@ -99,8 +99,7 @@ class OutboxProbeGroupsEnvironmentPostProcessorTest {
 
   private static StandardEnvironment envWith(Map<String, String> properties) {
     StandardEnvironment env = new StandardEnvironment();
-    env.getPropertySources()
-        .addFirst(new MapPropertySource("test", new HashMap<>(properties)));
+    env.getPropertySources().addFirst(new MapPropertySource("test", new HashMap<>(properties)));
     return env;
   }
 }

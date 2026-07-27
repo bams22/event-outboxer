@@ -19,8 +19,8 @@ import java.util.Objects;
  * finalized according to {@link ExhaustedAction}; earlier failures are delegated to the inner
  * handler.
  *
- * <p>The {@code EventOutcome.Fail} case is also finalized immediately regardless of attempt
- * count — an explicit {@code Fail} from the handler bypasses any remaining retries.
+ * <p>The {@code EventOutcome.Fail} case is also finalized immediately regardless of attempt count —
+ * an explicit {@code Fail} from the handler bypasses any remaining retries.
  *
  * @param <T> payload type
  */
@@ -44,7 +44,8 @@ public final class MaxRetriesFailureHandler<T> implements FailureHandler<T> {
       throw new IllegalArgumentException("maxAttempts must be >= 1, got " + maxAttempts);
     }
     this.maxAttempts = maxAttempts;
-    this.exhaustedAction = Objects.requireNonNull(exhaustedAction, "exhaustedAction must not be null");
+    this.exhaustedAction =
+        Objects.requireNonNull(exhaustedAction, "exhaustedAction must not be null");
     this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
   }
 

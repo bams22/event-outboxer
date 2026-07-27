@@ -46,9 +46,7 @@ class PostgresEventStoreIT extends AbstractEventStoreContractTest {
   @Override
   protected void backdateClaim(UUID id, Instant at) {
     String sql =
-        "UPDATE "
-            + PostgresTestEnvironment.SCHEMA
-            + ".events SET claimed_at = ? WHERE id = ?";
+        "UPDATE " + PostgresTestEnvironment.SCHEMA + ".events SET claimed_at = ? WHERE id = ?";
     try (Connection conn = PostgresTestEnvironment.dataSource().getConnection();
         PreparedStatement ps = conn.prepareStatement(sql)) {
       ps.setTimestamp(1, Timestamp.from(at));

@@ -16,8 +16,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 
 /**
- * Default lock configuration — {@link EntityLocker#NOOP}. Kicks in when no handler declares
- * {@code extractLockKey} and the user has not configured a specific backend.
+ * Default lock configuration — {@link EntityLocker#NOOP}. Kicks in when no handler declares {@code
+ * extractLockKey} and the user has not configured a specific backend.
  */
 @AutoConfiguration
 @ConditionalOnProperty(

@@ -13,10 +13,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Payload of {@link OutboxListener#onLockReleaseFailed(LockReleaseInfo)} — fired when
- * {@code LockHandle.close()} swallowed a release error. The lock is effectively orphaned and
- * will release when its TTL expires (Redis locks) or when the owning session ends (PostgreSQL
- * advisory locks).
+ * Payload of {@link OutboxListener#onLockReleaseFailed(LockReleaseInfo)} — fired when {@code
+ * LockHandle.close()} swallowed a release error. The lock is effectively orphaned and will release
+ * when its TTL expires (Redis locks) or when the owning session ends (PostgreSQL advisory locks).
  *
  * @param eventId identifier of the event whose lock release failed
  * @param eventType event type string

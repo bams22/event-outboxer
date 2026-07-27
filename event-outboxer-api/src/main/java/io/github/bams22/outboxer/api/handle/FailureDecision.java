@@ -18,15 +18,14 @@ import java.util.Objects;
  *
  * <p>Unlike {@link EventOutcome}, this type is internal to the failure-handling chain: handlers
  * never return a {@code FailureDecision} directly; they return an {@code EventOutcome} which the
- * engine then runs through the configured {@code FailureHandler} to obtain one of these
- * decisions.
+ * engine then runs through the configured {@code FailureHandler} to obtain one of these decisions.
  */
-public sealed interface FailureDecision permits
-    FailureDecision.RetryAt, FailureDecision.Disable, FailureDecision.Delete {
+public sealed interface FailureDecision
+    permits FailureDecision.RetryAt, FailureDecision.Disable, FailureDecision.Delete {
 
   /**
-   * Re-schedule the event to a specific wall-clock time. The engine writes {@code run_at =
-   * when}, increments {@code attempts}, and sets the status back to {@code PENDING}.
+   * Re-schedule the event to a specific wall-clock time. The engine writes {@code run_at = when},
+   * increments {@code attempts}, and sets the status back to {@code PENDING}.
    *
    * @param when next attempt time
    * @param reason human-readable reason written to {@code last_fail_reason}
@@ -53,8 +52,8 @@ public sealed interface FailureDecision permits
   }
 
   /**
-   * Permanently remove the event. Rarely used — mostly for workloads where post-mortem
-   * inspection of failed events is not valuable.
+   * Permanently remove the event. Rarely used — mostly for workloads where post-mortem inspection
+   * of failed events is not valuable.
    *
    * @param reason human-readable reason written to logs and metrics
    */

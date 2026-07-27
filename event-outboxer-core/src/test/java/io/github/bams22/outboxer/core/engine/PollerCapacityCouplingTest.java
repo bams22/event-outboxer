@@ -91,7 +91,8 @@ class PollerCapacityCouplingTest {
   }
 
   @Test
-  @DisplayName("saturated executor: poller stops claiming — no rejected dispatches, no release churn")
+  @DisplayName(
+      "saturated executor: poller stops claiming — no rejected dispatches, no release churn")
   void saturationStopsClaimingInsteadOfChurning() throws Exception {
     CountDownLatch gate = new CountDownLatch(1);
     AtomicInteger done = new AtomicInteger();
@@ -159,7 +160,9 @@ class PollerCapacityCouplingTest {
   }
 
   @Test
-  @DisplayName("capacity-available wake: next event starts right after a slot frees, not after the poll interval")
+  @DisplayName(
+      "capacity-available wake: next event starts right after a slot frees, not after the poll"
+          + " interval")
   void capacityWakeCutsThePollInterval() {
     AtomicInteger done = new AtomicInteger();
     engine =
@@ -203,9 +206,7 @@ class PollerCapacityCouplingTest {
   private OutboxEngineBuilder engineWith(TypeCfg customize) {
     EventTypeConfig cfg =
         customize
-            .apply(
-                EventTypeConfig.defaults().toBuilder()
-                    .handlerMaxRuntime(Duration.ofSeconds(30)))
+            .apply(EventTypeConfig.defaults().toBuilder().handlerMaxRuntime(Duration.ofSeconds(30)))
             .build();
     MaintenanceConfig maintenance =
         MaintenanceConfig.builder()

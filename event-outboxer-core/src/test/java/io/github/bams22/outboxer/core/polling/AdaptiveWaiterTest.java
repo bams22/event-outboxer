@@ -83,8 +83,7 @@ class AdaptiveWaiterTest {
 
   @Test
   void productionConstructorStaysWithinTenPercentOfBase() {
-    AdaptiveWaiter w =
-        new AdaptiveWaiter(Duration.ofMillis(1000), Duration.ofSeconds(10), 2.0);
+    AdaptiveWaiter w = new AdaptiveWaiter(Duration.ofMillis(1000), Duration.ofSeconds(10), 2.0);
     for (int i = 0; i < 1000; i++) {
       Duration wait = w.nextWait();
       assertThat(wait)
@@ -95,14 +94,11 @@ class AdaptiveWaiterTest {
 
   @Test
   void rejectsInvalidConfig() {
-    assertThatThrownBy(
-            () -> new AdaptiveWaiter(Duration.ZERO, Duration.ofMillis(100), 2.0))
+    assertThatThrownBy(() -> new AdaptiveWaiter(Duration.ZERO, Duration.ofMillis(100), 2.0))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () -> new AdaptiveWaiter(Duration.ofMillis(100), Duration.ofMillis(50), 2.0))
+    assertThatThrownBy(() -> new AdaptiveWaiter(Duration.ofMillis(100), Duration.ofMillis(50), 2.0))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () -> new AdaptiveWaiter(Duration.ofMillis(10), Duration.ofMillis(100), 1.0))
+    assertThatThrownBy(() -> new AdaptiveWaiter(Duration.ofMillis(10), Duration.ofMillis(100), 1.0))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

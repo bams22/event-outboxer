@@ -20,9 +20,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Periodic task that writes a fresh heartbeat for the current worker in the {@code
- * outbox.workers} table. One instance per running engine; scheduled by {@link
- * MaintenanceScheduler} at the cadence defined in {@code MaintenanceConfig.heartbeatInterval()}.
+ * Periodic task that writes a fresh heartbeat for the current worker in the {@code outbox.workers}
+ * table. One instance per running engine; scheduled by {@link MaintenanceScheduler} at the cadence
+ * defined in {@code MaintenanceConfig.heartbeatInterval()}.
  *
  * <p>If the heartbeat reports that the worker row no longer exists — a peer's orphan recovery
  * reaped it during a long GC pause or database outage exceeding the dead threshold — the task

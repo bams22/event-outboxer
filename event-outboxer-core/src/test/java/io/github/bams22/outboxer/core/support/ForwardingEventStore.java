@@ -24,9 +24,9 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Test double base: forwards every {@link EventStore} call to a delegate. Subclasses override
- * only what the test needs. Exists because {@code InMemoryEventStore} is final and cannot be
- * subclassed directly.
+ * Test double base: forwards every {@link EventStore} call to a delegate. Subclasses override only
+ * what the test needs. Exists because {@code InMemoryEventStore} is final and cannot be subclassed
+ * directly.
  */
 public class ForwardingEventStore implements EventStore {
 

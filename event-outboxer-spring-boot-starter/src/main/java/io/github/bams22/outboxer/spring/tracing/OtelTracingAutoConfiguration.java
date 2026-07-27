@@ -24,16 +24,16 @@ import org.springframework.context.annotation.Bean;
  * Registers an {@link OtelOutboxTracer} when the {@code event-outboxer-tracing-otel} adapter and
  * the OpenTelemetry API are on the classpath (ADR-0023). Prefers an {@link OpenTelemetry} bean
  * (present with Boot's OTLP/micrometer-tracing-bridge-otel setup); falls back to {@link
- * GlobalOpenTelemetry#get()} for applications instrumented by the OpenTelemetry Java agent,
- * where no bean exists. Without any SDK or agent the global is a functional no-op and the
- * adapter degrades to storing an empty trace context.
+ * GlobalOpenTelemetry#get()} for applications instrumented by the OpenTelemetry Java agent, where
+ * no bean exists. Without any SDK or agent the global is a functional no-op and the adapter
+ * degrades to storing an empty trace context.
  *
  * <p>Runs after {@link MicrometerTracingAutoConfiguration} and backs off when that (or the user)
  * already registered an {@link OutboxTracer} bean.
  *
  * <p>Caveat on the global fallback: {@code GlobalOpenTelemetry.get()} pins the global instance.
- * Applications that call {@code GlobalOpenTelemetry.set(...)} <em>after</em> context refresh
- * must instead expose an {@link OpenTelemetry} bean or a custom {@link OutboxTracer} bean.
+ * Applications that call {@code GlobalOpenTelemetry.set(...)} <em>after</em> context refresh must
+ * instead expose an {@link OpenTelemetry} bean or a custom {@link OutboxTracer} bean.
  */
 @AutoConfiguration(
     after = MicrometerTracingAutoConfiguration.class,

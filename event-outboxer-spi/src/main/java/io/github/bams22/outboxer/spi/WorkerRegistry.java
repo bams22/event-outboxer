@@ -32,9 +32,9 @@ import java.util.Optional;
 public interface WorkerRegistry {
 
   /**
-   * Register a new worker. Called once at engine startup. If a row with the same {@code
-   * WorkerId} already exists (for example because the previous JVM crashed without deregistering),
-   * the adapter must overwrite it and reset the heartbeat to the current clock.
+   * Register a new worker. Called once at engine startup. If a row with the same {@code WorkerId}
+   * already exists (for example because the previous JVM crashed without deregistering), the
+   * adapter must overwrite it and reset the heartbeat to the current clock.
    *
    * @throws WorkerRegistryException if the registry cannot persist the worker
    */
@@ -42,8 +42,8 @@ public interface WorkerRegistry {
 
   /**
    * Update the heartbeat timestamp for the given worker to the supplied {@code at}. Called
-   * periodically by the engine's {@code HeartbeatTask}. The adapter returns {@code false} if no
-   * row exists for the given id (for example, the worker was already reaped by another instance's
+   * periodically by the engine's {@code HeartbeatTask}. The adapter returns {@code false} if no row
+   * exists for the given id (for example, the worker was already reaped by another instance's
    * orphan-recovery pass).
    *
    * @return {@code true} if the heartbeat row was updated
@@ -53,8 +53,8 @@ public interface WorkerRegistry {
 
   /**
    * Mark a worker as gracefully shutting down. Used as a hint for other JVMs to prioritize orphan
-   * reclaim of this worker's events without waiting for the dead threshold. Implementations that
-   * do not support this hint may treat it as a no-op.
+   * reclaim of this worker's events without waiting for the dead threshold. Implementations that do
+   * not support this hint may treat it as a no-op.
    *
    * @throws WorkerRegistryException if the registry cannot perform the update
    */
@@ -69,9 +69,9 @@ public interface WorkerRegistry {
   void deregister(WorkerId id);
 
   /**
-   * Return workers whose most recent heartbeat is older than {@code now - deadThreshold}. Capped
-   * by {@code limit} so that a single orphan-recovery pass over a catastrophically stale cluster
-   * does not take unbounded time.
+   * Return workers whose most recent heartbeat is older than {@code now - deadThreshold}. Capped by
+   * {@code limit} so that a single orphan-recovery pass over a catastrophically stale cluster does
+   * not take unbounded time.
    *
    * @param deadThreshold minimum age of the last heartbeat before a worker is considered dead
    * @param limit maximum number of workers to return in one call; must be positive

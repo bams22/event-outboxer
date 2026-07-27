@@ -15,15 +15,15 @@ import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Configuration of the optional retention task (ADR-0019). Both age thresholds default to
- * {@code null} = retention disabled: deleting data is never a surprise default. Enabling either
- * threshold activates the task on the maintenance scheduler.
+ * Configuration of the optional retention task (ADR-0019). Both age thresholds default to {@code
+ * null} = retention disabled: deleting data is never a surprise default. Enabling either threshold
+ * activates the task on the maintenance scheduler.
  *
  * @param archiveOlderThan delete archive rows older than this; {@code null} disables archive
  *     retention
- * @param disabledOlderThan delete {@code DISABLED} events created earlier than this ago;
- *     {@code null} disables. Age is approximated by {@code created_at} — the schema does not
- *     record the moment of disabling
+ * @param disabledOlderThan delete {@code DISABLED} events created earlier than this ago; {@code
+ *     null} disables. Age is approximated by {@code created_at} — the schema does not record the
+ *     moment of disabling
  * @param batchSize rows deleted per statement; a pass loops until a batch comes back short
  * @param interval delay between retention passes
  */

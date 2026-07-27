@@ -24,8 +24,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link EntityLocker} backed by Redis / KeyDB. Recommended production default for clustered
- * outbox deployments (see ADR-0012 / risk #7).
+ * {@link EntityLocker} backed by Redis / KeyDB. Recommended production default for clustered outbox
+ * deployments (see ADR-0012 / risk #7).
  *
  * <h2>Acquisition</h2>
  *
@@ -35,24 +35,24 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Release</h2>
  *
- * A Lua script atomically compares the stored value to the caller's token and deletes the key
- * only on match. Without this, holder A whose TTL elapsed would otherwise erase holder B's lock
- * on {@code close()}.
+ * A Lua script atomically compares the stored value to the caller's token and deletes the key only
+ * on match. Without this, holder A whose TTL elapsed would otherwise erase holder B's lock on
+ * {@code close()}.
  *
  * <h2>TTL — best effort, no fencing (ADR-0012 amendment)</h2>
  *
  * Always honoured; if the handler stalls past the TTL, the lock frees itself and the Lua
- * compare-and-delete becomes a no-op (distinct from the PG advisory adapter, whose TTL is
- * merely documentational). Consequences to understand:
+ * compare-and-delete becomes a no-op (distinct from the PG advisory adapter, whose TTL is merely
+ * documentational). Consequences to understand:
  *
  * <ul>
- *   <li>The TTL is the crash-release mechanism: a dead JVM's lock frees itself after at most
- *       {@code ttl}.
- *   <li>There is no renewal and no fencing token at the protected resource: a zombie handler
- *       that outlives the TTL (and its force-reclaimed claim) can overlap with the next holder.
- *       The engine enforces {@code lockTtl >= handlerMaxRuntime} (default 2x) so this can only
- *       happen to handlers already past their runtime budget — full exclusion under arbitrary
- *       stalls requires fencing at the resource itself and is out of scope.
+ *   <li>The TTL is the crash-release mechanism: a dead JVM's lock frees itself after at most {@code
+ *       ttl}.
+ *   <li>There is no renewal and no fencing token at the protected resource: a zombie handler that
+ *       outlives the TTL (and its force-reclaimed claim) can overlap with the next holder. The
+ *       engine enforces {@code lockTtl >= handlerMaxRuntime} (default 2x) so this can only happen
+ *       to handlers already past their runtime budget — full exclusion under arbitrary stalls
+ *       requires fencing at the resource itself and is out of scope.
  * </ul>
  */
 public final class RedisEntityLocker implements EntityLocker {
@@ -76,8 +76,7 @@ public final class RedisEntityLocker implements EntityLocker {
     this(connection, DEFAULT_KEY_PREFIX);
   }
 
-  public RedisEntityLocker(
-      StatefulRedisConnection<String, String> connection, String keyPrefix) {
+  public RedisEntityLocker(StatefulRedisConnection<String, String> connection, String keyPrefix) {
     Objects.requireNonNull(connection, "connection must not be null");
     this.keyPrefix = Objects.requireNonNull(keyPrefix, "keyPrefix must not be null");
     this.commands = connection.sync();
@@ -94,14 +93,9 @@ public final class RedisEntityLocker implements EntityLocker {
     String token = UUID.randomUUID().toString();
     String result;
     try {
-      result =
-          commands.set(
-              namespacedKey,
-              token,
-              SetArgs.Builder.nx().px(ttl.toMillis()));
+      result = commands.set(namespacedKey, token, SetArgs.Builder.nx().px(ttl.toMillis()));
     } catch (RuntimeException ex) {
-      throw new LockAcquisitionException(
-          "redis SET NX PX failed for key '" + key + "'", ex);
+      throw new LockAcquisitionException("redis SET NX PX failed for key '" + key + "'", ex);
     }
     if (result == null) {
       return Optional.empty();
@@ -130,10 +124,7 @@ public final class RedisEntityLocker implements EntityLocker {
       try {
         result =
             commands.eval(
-                UNLOCK_SCRIPT,
-                ScriptOutputType.INTEGER,
-                new String[] {namespacedKey},
-                token);
+                UNLOCK_SCRIPT, ScriptOutputType.INTEGER, new String[] {namespacedKey}, token);
       } catch (RuntimeException ex) {
         throw new LockReleaseException(
             "redis unlock script failed for key '" + namespacedKey + "'", ex);

@@ -41,8 +41,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Fan-out implementation of {@link OutboxListener}. The engine interacts with a single listener
  * instance; the registry delegates each callback to every registered implementation. Exceptions
- * thrown by one listener are caught and logged — they do not prevent other listeners from
- * receiving the same event, and they never propagate back into the engine's processing flow.
+ * thrown by one listener are caught and logged — they do not prevent other listeners from receiving
+ * the same event, and they never propagate back into the engine's processing flow.
  */
 public final class OutboxListenerRegistry implements OutboxListener {
 

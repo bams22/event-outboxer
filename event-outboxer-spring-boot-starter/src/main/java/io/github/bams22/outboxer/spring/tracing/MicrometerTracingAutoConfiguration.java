@@ -22,9 +22,9 @@ import org.springframework.context.annotation.Bean;
 
 /**
  * Registers a {@link MicrometerOutboxTracer} when the {@code event-outboxer-tracing-micrometer}
- * adapter is on the classpath and Spring Boot's tracing auto-configuration provides {@link
- * Tracer} and {@link Propagator} beans (ADR-0023). The stored carrier then follows the
- * application's {@code management.tracing.propagation.*} and baggage settings.
+ * adapter is on the classpath and Spring Boot's tracing auto-configuration provides {@link Tracer}
+ * and {@link Propagator} beans (ADR-0023). The stored carrier then follows the application's {@code
+ * management.tracing.propagation.*} and baggage settings.
  *
  * <p>Takes precedence over {@code OtelTracingAutoConfiguration} when both tracing adapters are
  * present: Micrometer Tracing is Boot's first-class tracing abstraction, so the outbox carrier

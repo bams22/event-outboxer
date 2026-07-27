@@ -9,7 +9,8 @@
  */
 
 /**
- * Handler executor wiring: Spring ThreadPoolTaskExecutor and virtual-thread factories with TaskDecorator-based context propagation.
+ * Handler executor wiring: Spring ThreadPoolTaskExecutor and virtual-thread factories with
+ * TaskDecorator-based context propagation.
  */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.executor;

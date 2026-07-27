@@ -9,8 +9,8 @@
  */
 
 /**
- * Default {@code OutboxEventPublisher} implementation plus the {@code TransactionContext} port
- * used to enforce the no-transaction policy.
+ * Default {@code OutboxEventPublisher} implementation plus the {@code TransactionContext} port used
+ * to enforce the no-transaction policy.
  */
 @NullMarked
 package io.github.bams22.outboxer.core.publish;

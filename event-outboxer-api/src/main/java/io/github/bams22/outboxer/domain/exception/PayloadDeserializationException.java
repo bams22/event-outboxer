@@ -11,12 +11,12 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * The engine could not reconstruct the payload of a claimed event — typically the stored shape is
- * incompatible with the current {@code EventHandler.payloadType()}. This surfaces most often
- * during a rolling deploy that changes a DTO without a compatible evolution (for example,
- * removing a field without a default).
+ * incompatible with the current {@code EventHandler.payloadType()}. This surfaces most often during
+ * a rolling deploy that changes a DTO without a compatible evolution (for example, removing a field
+ * without a default).
  *
- * <p>Events that fail deserialization are routed through the failure handler chain and normally
- * end up in {@code DISABLED} for manual investigation.
+ * <p>Events that fail deserialization are routed through the failure handler chain and normally end
+ * up in {@code DISABLED} for manual investigation.
  */
 public final class PayloadDeserializationException extends HandleException {
 

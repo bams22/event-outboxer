@@ -26,16 +26,14 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * In-memory {@link OutboxAdmin} over the rows of an {@link InMemoryEventStore}. The in-memory
- * adapter has no archive (ADR-0008), so {@link #findInArchive} is always empty and
- * {@link #purgeArchive} is a no-op.
+ * adapter has no archive (ADR-0008), so {@link #findInArchive} is always empty and {@link
+ * #purgeArchive} is a no-op.
  */
 public final class InMemoryOutboxAdmin implements OutboxAdmin {
 
   /** Newest first; ties broken by id so keyset pagination is total and stable. */
   private static final Comparator<Event> PAGE_ORDER =
-      Comparator.comparing(Event::createdAt)
-          .thenComparing(Event::id)
-          .reversed();
+      Comparator.comparing(Event::createdAt).thenComparing(Event::id).reversed();
 
   private final InMemoryEventStore store;
 

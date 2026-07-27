@@ -11,9 +11,9 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * Base class for startup-time configuration errors. Raised by the Spring Boot starter's property
- * validator and by core engine initialization when invariants (for example {@code deadThreshold
- * >= 3 * heartbeatInterval}) are violated or when two {@code EventHandler} beans claim the same
- * {@code eventType}.
+ * validator and by core engine initialization when invariants (for example {@code deadThreshold >=
+ * 3 * heartbeatInterval}) are violated or when two {@code EventHandler} beans claim the same {@code
+ * eventType}.
  *
  * <p>All subclasses are fail-fast: they are thrown during application startup and should prevent
  * the process from becoming "ready" for traffic.

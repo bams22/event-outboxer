@@ -41,18 +41,18 @@ public abstract class AbstractEntityLockerContractTest {
   /**
    * Opt-in hook for TTL-honouring lockers (ADR-0022). Return {@code true} and implement {@link
    * #forceExpire(String)} to activate the TTL-expiry contract tests; the default keeps them
-   * skipped, which preserves the historic contract for lockers whose TTL is best-effort or
-   * ignored (PG advisory) and for backends where expiry cannot be forced deterministically.
+   * skipped, which preserves the historic contract for lockers whose TTL is best-effort or ignored
+   * (PG advisory) and for backends where expiry cannot be forced deterministically.
    */
   protected boolean supportsTtlExpiry() {
     return false;
   }
 
   /**
-   * Force the lease/lock of {@code key} into the expired state, as if its TTL had elapsed —
-   * without waiting wall-clock time. Only called when {@link #supportsTtlExpiry()} is {@code
-   * true}. Implementations that track both an acquisition and an expiry timestamp must backdate
-   * both (the lease table's CHECK requires {@code expires_at > acquired_at}).
+   * Force the lease/lock of {@code key} into the expired state, as if its TTL had elapsed — without
+   * waiting wall-clock time. Only called when {@link #supportsTtlExpiry()} is {@code true}.
+   * Implementations that track both an acquisition and an expiry timestamp must backdate both (the
+   * lease table's CHECK requires {@code expires_at > acquired_at}).
    */
   protected void forceExpire(String key) {
     throw new UnsupportedOperationException(
@@ -67,8 +67,7 @@ public abstract class AbstractEntityLockerContractTest {
   @Test
   @DisplayName("tryLock() returns a handle when the key is free")
   void tryLock_free_returnsHandle() {
-    try (LockHandle handle =
-        locker.tryLock("key-1", Duration.ofSeconds(30)).orElseThrow()) {
+    try (LockHandle handle = locker.tryLock("key-1", Duration.ofSeconds(30)).orElseThrow()) {
       assertThat(handle).isNotNull();
     }
   }
@@ -136,9 +135,7 @@ public abstract class AbstractEntityLockerContractTest {
     zombie.close();
 
     Optional<LockHandle> third = locker.tryLock("contested", Duration.ofSeconds(30));
-    assertThat(third)
-        .as("successor's lock must survive the zombie's stale close()")
-        .isEmpty();
+    assertThat(third).as("successor's lock must survive the zombie's stale close()").isEmpty();
     successor.close();
   }
 

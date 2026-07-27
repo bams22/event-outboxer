@@ -26,8 +26,8 @@ import java.util.concurrent.ConcurrentMap;
  * <p>Each acquired lock carries a random fencing token so that {@link LockHandle#close()} only
  * releases the slot if the same token is still in place. This matches the semantics of the Redis
  * adapter and protects against the following sequence: holder A acquires, A's handler stalls past
- * TTL, locker reaps, holder B acquires, then A's late close runs. Without the token A would
- * release B's lock; with the token A's close is a no-op.
+ * TTL, locker reaps, holder B acquires, then A's late close runs. Without the token A would release
+ * B's lock; with the token A's close is a no-op.
  */
 public final class InMemoryEntityLocker implements EntityLocker {
 

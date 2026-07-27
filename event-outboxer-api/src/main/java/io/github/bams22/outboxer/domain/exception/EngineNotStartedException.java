@@ -11,8 +11,7 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * A method that requires the engine to be running was called before {@code OutboxEngine.start()}
- * (or after {@code stop()}). Almost always indicates a programming error in the integrating
- * code.
+ * (or after {@code stop()}). Almost always indicates a programming error in the integrating code.
  */
 public final class EngineNotStartedException extends EngineLifecycleException {
 

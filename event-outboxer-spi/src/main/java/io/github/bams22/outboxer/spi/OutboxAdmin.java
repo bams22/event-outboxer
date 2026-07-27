@@ -22,15 +22,15 @@ import org.jspecify.annotations.Nullable;
 /**
  * Operational surface over the outbox store, deliberately separate from {@link EventStore}: the
  * engine's hot path never calls these methods, and adapters that only serve the engine are not
- * forced to implement them. Consumed by the {@code event-outboxer-admin-actuator} and
- * {@code event-outboxer-admin-rest} modules and by the optional retention task (ADR-0019).
+ * forced to implement them. Consumed by the {@code event-outboxer-admin-actuator} and {@code
+ * event-outboxer-admin-rest} modules and by the optional retention task (ADR-0019).
  *
  * <h2>Semantics</h2>
  *
  * <ul>
  *   <li>{@link #reenable(UUID)} applies only to {@code DISABLED} rows: back to {@code PENDING},
- *       {@code attempts} reset to zero (an operator re-enabling after a fix expects a fresh
- *       retry budget), {@code version} bumped, {@code run_at = now}.
+ *       {@code attempts} reset to zero (an operator re-enabling after a fix expects a fresh retry
+ *       budget), {@code version} bumped, {@code run_at = now}.
  *   <li>{@link #purgeDisabled} filters by {@code created_at} — the schema does not record the
  *       moment of disabling, so retention age is approximated by event age.
  *   <li>Every bulk operation takes a {@code limit} and is expected to run as a single bounded
@@ -43,8 +43,8 @@ public interface OutboxAdmin {
 
   /**
    * Page of events in the given status, newest-first by {@code (created_at, id)} descending,
-   * optionally filtered by event type. Pass the last row of the previous page as {@code after}
-   * to fetch the next page.
+   * optionally filtered by event type. Pass the last row of the previous page as {@code after} to
+   * fetch the next page.
    *
    * @param limit maximum rows to return; must be positive
    * @throws EventStoreException if the query fails
@@ -53,8 +53,8 @@ public interface OutboxAdmin {
       EventStatus status, @Nullable String eventType, int limit, @Nullable AdminCursor after);
 
   /**
-   * Look up a successfully processed event in the archive table (ADR-0008). Empty when the
-   * archive feature is disabled, the adapter has no archive (in-memory), or no such row exists.
+   * Look up a successfully processed event in the archive table (ADR-0008). Empty when the archive
+   * feature is disabled, the adapter has no archive (in-memory), or no such row exists.
    *
    * @throws EventStoreException if the query fails
    */
@@ -78,8 +78,8 @@ public interface OutboxAdmin {
   int reenableAll(String eventType, @Nullable Instant createdBefore, int limit);
 
   /**
-   * Delete {@code DISABLED} events created before {@code olderThan}, optionally filtered by
-   * type, capped by {@code limit}.
+   * Delete {@code DISABLED} events created before {@code olderThan}, optionally filtered by type,
+   * capped by {@code limit}.
    *
    * @return the number of rows deleted
    * @throws EventStoreException if the delete fails

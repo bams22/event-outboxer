@@ -16,8 +16,7 @@ import java.util.Objects;
 
 /**
  * Payload of {@link OutboxListener#onOrphansReclaimed(OrphansReclaimedInfo)} — fired by the
- * orphan-recovery task when it found dead workers and returned their in-flight events to
- * PENDING.
+ * orphan-recovery task when it found dead workers and returned their in-flight events to PENDING.
  *
  * @param deadWorkers worker ids identified as dead in this run (defensively copied)
  * @param eventCount total number of events returned to PENDING across those workers

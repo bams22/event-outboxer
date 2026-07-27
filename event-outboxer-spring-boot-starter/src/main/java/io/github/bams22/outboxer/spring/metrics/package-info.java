@@ -8,8 +8,6 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * Micrometer integration: MicrometerOutboxListener registration and engine-state gauges.
- */
+/** Micrometer integration: MicrometerOutboxListener registration and engine-state gauges. */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.metrics;

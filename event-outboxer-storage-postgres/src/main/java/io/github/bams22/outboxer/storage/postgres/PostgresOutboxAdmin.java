@@ -129,8 +129,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
     }
     sub.append(" LIMIT ?");
     params.add(limit);
-    String sql =
-        "UPDATE " + tables.events() + REENABLE_SET + "WHERE id IN (" + sub + ")";
+    String sql = "UPDATE " + tables.events() + REENABLE_SET + "WHERE id IN (" + sub + ")";
     try {
       return jdbc.update(sql, bind(params));
     } catch (SQLException ex) {

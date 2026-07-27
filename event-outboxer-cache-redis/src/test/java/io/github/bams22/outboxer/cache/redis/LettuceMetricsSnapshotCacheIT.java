@@ -130,15 +130,13 @@ class LettuceMetricsSnapshotCacheIT {
             connection,
             Duration.ofSeconds(30),
             "tenant-a:outbox:metrics:",
-            new com.fasterxml.jackson.databind.json.JsonMapper()
-                .findAndRegisterModules());
+            new com.fasterxml.jackson.databind.json.JsonMapper().findAndRegisterModules());
     MetricsSnapshotCache b =
         new LettuceMetricsSnapshotCache(
             connection,
             Duration.ofSeconds(30),
             "tenant-b:outbox:metrics:",
-            new com.fasterxml.jackson.databind.json.JsonMapper()
-                .findAndRegisterModules());
+            new com.fasterxml.jackson.databind.json.JsonMapper().findAndRegisterModules());
 
     a.put(SNAPSHOT);
 

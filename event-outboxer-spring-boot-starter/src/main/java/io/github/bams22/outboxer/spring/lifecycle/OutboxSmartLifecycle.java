@@ -14,11 +14,11 @@ import org.springframework.context.SmartLifecycle;
 
 /**
  * Spring {@link SmartLifecycle} wrapper around {@link OutboxEngine}. Runs at phase 20000 — late
- * enough that DataSource, connection pools, and Flyway migrations are already up, early enough
- * that the engine has time to publish metrics before the actuator reports readiness.
+ * enough that DataSource, connection pools, and Flyway migrations are already up, early enough that
+ * the engine has time to publish metrics before the actuator reports readiness.
  *
- * <p>Per {@code SmartLifecycle} contract: {@code start()} fires on context refresh ordered by
- * phase ascending; {@code stop(Runnable)} fires on context close ordered by phase descending. The
+ * <p>Per {@code SmartLifecycle} contract: {@code start()} fires on context refresh ordered by phase
+ * ascending; {@code stop(Runnable)} fires on context close ordered by phase descending. The
  * engine's own {@code stop(Duration)} waits for in-flight handlers to drain.
  */
 public final class OutboxSmartLifecycle implements SmartLifecycle {

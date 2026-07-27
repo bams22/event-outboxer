@@ -10,10 +10,10 @@
 package io.github.bams22.outboxer.domain.exception;
 
 /**
- * Base class for every failure that happens while publishing an event from the client side.
- * Thrown synchronously from {@code OutboxEventPublisher.publish(...)} or {@code publishAll(...)}.
- * Catching this category is enough to roll back the caller's transaction on any publish-time
- * problem without having to enumerate the concrete subclasses.
+ * Base class for every failure that happens while publishing an event from the client side. Thrown
+ * synchronously from {@code OutboxEventPublisher.publish(...)} or {@code publishAll(...)}. Catching
+ * this category is enough to roll back the caller's transaction on any publish-time problem without
+ * having to enumerate the concrete subclasses.
  */
 public abstract class PublishException extends OutboxException {
 

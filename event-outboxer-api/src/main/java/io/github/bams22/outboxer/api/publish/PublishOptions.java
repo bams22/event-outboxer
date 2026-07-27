@@ -19,23 +19,22 @@ import org.jspecify.annotations.Nullable;
  * Optional per-call tuning for {@link OutboxEventPublisher#publish(String, Object,
  * PublishOptions)}. All fields are nullable; {@code null} means "use the engine default".
  *
- * <p>There is no {@code lockKey} field here on purpose: lock keys are derived from the payload
- * at handle time by {@code EventHandler.extractLockKey(payload)} and are not stored alongside
- * the event (see ADR-0012).
+ * <p>There is no {@code lockKey} field here on purpose: lock keys are derived from the payload at
+ * handle time by {@code EventHandler.extractLockKey(payload)} and are not stored alongside the
+ * event (see ADR-0012).
  *
  * @param runAt earliest time the event may be claimed; defaults to {@code now}
  * @param priority explicit priority; defaults to 0
- * @param traceContext W3C traceparent/baggage to attach; normally the publisher captures this
- *     from the current MDC/Observation context, but callers may override it
- * @param dedupKey coalescing key (ADR-0021): at most one PENDING event per
- *     {@code (eventType, dedupKey)} exists at a time. A publish that finds a PENDING event with
- *     the same key returns that event's id instead of inserting — with the guarantee that the
- *     coalesced-into event will only be handled AFTER the current transaction commits, so the
- *     handler always sees this transaction's changes. Events already PROCESSING do not coalesce
- *     (a new event is inserted and runs afterwards with fresh data); DISABLED events do not
- *     block the key. This is work coalescing ("single in-flight per key"), NOT exactly-once:
- *     once the event is processed the key is free again, and handler idempotency remains
- *     required (ADR-0015). Max 256 characters
+ * @param traceContext W3C traceparent/baggage to attach; normally the publisher captures this from
+ *     the current MDC/Observation context, but callers may override it
+ * @param dedupKey coalescing key (ADR-0021): at most one PENDING event per {@code (eventType,
+ *     dedupKey)} exists at a time. A publish that finds a PENDING event with the same key returns
+ *     that event's id instead of inserting — with the guarantee that the coalesced-into event will
+ *     only be handled AFTER the current transaction commits, so the handler always sees this
+ *     transaction's changes. Events already PROCESSING do not coalesce (a new event is inserted and
+ *     runs afterwards with fresh data); DISABLED events do not block the key. This is work
+ *     coalescing ("single in-flight per key"), NOT exactly-once: once the event is processed the
+ *     key is free again, and handler idempotency remains required (ADR-0015). Max 256 characters
  */
 @Builder
 public record PublishOptions(

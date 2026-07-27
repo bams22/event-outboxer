@@ -19,11 +19,11 @@ import org.jspecify.annotations.Nullable;
 /**
  * Aggregate view of outbox state used by Actuator {@code /actuator/health/outbox} and by the
  * starter-registered backlog gauges (per-event-type pending / processing / disabled and the
- * oldest-age gauges in {@code MicrometerAutoConfiguration}). Returned by
- * {@link EventStore#metricsSnapshot()}; adapters delegate caching to the
- * {@link MetricsSnapshotCache} SPI — the default in-memory factory covers single-JVM cases and
- * {@code event-outboxer-cache-redis} provides a shared-across-pods variant so that dashboards
- * scraping the registry every few seconds do not hammer the database.
+ * oldest-age gauges in {@code MicrometerAutoConfiguration}). Returned by {@link
+ * EventStore#metricsSnapshot()}; adapters delegate caching to the {@link MetricsSnapshotCache} SPI
+ * — the default in-memory factory covers single-JVM cases and {@code event-outboxer-cache-redis}
+ * provides a shared-across-pods variant so that dashboards scraping the registry every few seconds
+ * do not hammer the database.
  *
  * <p>All counts are non-negative. {@code oldestPendingRunAt} and {@code oldestClaimedAt} are {@code
  * null} when there are no rows in the corresponding state.
@@ -32,8 +32,8 @@ import org.jspecify.annotations.Nullable;
  * @param totalProcessing total number of events currently being processed
  * @param totalDisabled total number of events that were disabled (terminal failure or explicit
  *     {@code Fail})
- * @param oldestPendingRunAt earliest {@code run_at} among pending events, or {@code null} if none
- *     — exposed as a gauge for "how far behind is the outbox"
+ * @param oldestPendingRunAt earliest {@code run_at} among pending events, or {@code null} if none —
+ *     exposed as a gauge for "how far behind is the outbox"
  * @param oldestClaimedAt earliest {@code claimed_at} among processing events, or {@code null} if
  *     none — exposed as a gauge for "oldest in-flight handler"
  * @param takenAt wall-clock time the snapshot was captured (used to detect stale cache entries)

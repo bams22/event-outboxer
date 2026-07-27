@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /**
  * Payload of {@link OutboxListener#onDispatchRejected(DispatchRejectedInfo)} — fired when the
- * per-type handler executor rejected the task (queue saturation or shutdown). The engine
- * responds by returning the already-claimed event to PENDING so another worker may pick it up.
+ * per-type handler executor rejected the task (queue saturation or shutdown). The engine responds
+ * by returning the already-claimed event to PENDING so another worker may pick it up.
  *
  * @param eventId id of the event whose dispatch was rejected
  * @param eventType event type string

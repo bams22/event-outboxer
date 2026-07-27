@@ -36,8 +36,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The stale-claim safety net (ADR-0019 companion of ADR-0005): rows stranded in PROCESSING on a
- * LIVE worker — invisible to orphan recovery — are returned to PENDING by the DB-side sweeper,
- * and the widened in-flight bracket lets the watchdog catch hangs before the handler runs.
+ * LIVE worker — invisible to orphan recovery — are returned to PENDING by the DB-side sweeper, and
+ * the widened in-flight bracket lets the watchdog catch hangs before the handler runs.
  */
 class StaleClaimSweeperTest {
 

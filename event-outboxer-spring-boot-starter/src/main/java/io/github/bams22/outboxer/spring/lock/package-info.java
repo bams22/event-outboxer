@@ -8,8 +8,6 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * EntityLocker auto-configuration variants: noop, PostgreSQL advisory locks, Redis/KeyDB.
- */
+/** EntityLocker auto-configuration variants: noop, PostgreSQL advisory locks, Redis/KeyDB. */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.lock;

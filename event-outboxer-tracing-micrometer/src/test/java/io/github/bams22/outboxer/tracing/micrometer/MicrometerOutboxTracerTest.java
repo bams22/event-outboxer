@@ -55,7 +55,8 @@ class MicrometerOutboxTracerTest {
     @Override
     public <C> void inject(TraceContext context, C carrier, Setter<C> setter) {
       injectedContexts.add(context);
-      setter.set(carrier, "traceparent", "00-" + context.traceId() + "-" + context.spanId() + "-01");
+      setter.set(
+          carrier, "traceparent", "00-" + context.traceId() + "-" + context.spanId() + "-01");
     }
 
     @Override

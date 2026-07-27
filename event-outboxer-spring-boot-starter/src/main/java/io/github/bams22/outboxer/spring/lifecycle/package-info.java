@@ -8,8 +8,6 @@
  *     https://www.apache.org/licenses/LICENSE-2.0
  */
 
-/**
- * SmartLifecycle wrapper that starts and stops the OutboxEngine with the application context.
- */
+/** SmartLifecycle wrapper that starts and stops the OutboxEngine with the application context. */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.lifecycle;

@@ -18,26 +18,30 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 
 /**
- * Auto-configuration for the {@link MetricsSnapshotCache} SPI that backs
- * {@code EventStore.metricsSnapshot()} caching.
+ * Auto-configuration for the {@link MetricsSnapshotCache} SPI that backs {@code
+ * EventStore.metricsSnapshot()} caching.
  *
  * <p>Selected via {@code outbox.cache.type}:
  *
  * <ul>
- *   <li>{@code memory} (default) — per-JVM TTL cache, driven by
- *       {@code outbox.storage.metrics-cache-ttl}.
+ *   <li>{@code memory} (default) — per-JVM TTL cache, driven by {@code
+ *       outbox.storage.metrics-cache-ttl}.
  *   <li>{@code noop} — caching disabled; every call recomputes from the database.
- *   <li>{@code redis} — shared Redis-backed cache; wired by
- *       {@code RedisCacheAutoConfiguration} when {@code event-outboxer-cache-redis} is on the
- *       classpath and a {@code StatefulRedisConnection} bean is available.
+ *   <li>{@code redis} — shared Redis-backed cache; wired by {@code RedisCacheAutoConfiguration}
+ *       when {@code event-outboxer-cache-redis} is on the classpath and a {@code
+ *       StatefulRedisConnection} bean is available.
  * </ul>
  *
  * <p>All three options respect {@code @ConditionalOnMissingBean(MetricsSnapshotCache.class)} so a
- * user-defined {@code @Bean MetricsSnapshotCache} overrides the starter default regardless of
- * the selected type.
+ * user-defined {@code @Bean MetricsSnapshotCache} overrides the starter default regardless of the
+ * selected type.
  */
 @AutoConfiguration
-@ConditionalOnProperty(prefix = "event-outboxer", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(
+    prefix = "event-outboxer",
+    name = "enabled",
+    havingValue = "true",
+    matchIfMissing = true)
 public class CacheAutoConfiguration {
 
   @Bean

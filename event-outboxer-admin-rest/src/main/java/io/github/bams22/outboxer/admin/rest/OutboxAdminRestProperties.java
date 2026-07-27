@@ -14,10 +14,10 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Configuration of the opt-in admin REST surface (ADR-0019). Registered under the well-known
- * bean name {@code outboxAdminRestProperties} — the controller's {@code @PreAuthorize} SpEL
- * references it to read the required authority, which keeps the permit name fully
- * user-configurable instead of hard-coded.
+ * Configuration of the opt-in admin REST surface (ADR-0019). Registered under the well-known bean
+ * name {@code outboxAdminRestProperties} — the controller's {@code @PreAuthorize} SpEL references
+ * it to read the required authority, which keeps the permit name fully user-configurable instead of
+ * hard-coded.
  */
 @Getter
 @Setter

@@ -23,25 +23,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * {@link OutboxTracer} implementation on Micrometer Tracing (ADR-0023).
  *
- * <p>Publish side: starts a {@link Span.Kind#PRODUCER} span {@code "outbox publish <eventType>"}
- * as a child of the current context and injects the span's context into a flat string map for
- * persistence in the event row. Handle side: extracts the stored map via the configured
- * {@link Propagator}, starts a {@link Span.Kind#CONSUMER} span {@code
- * "outbox process <eventType>"} and makes it current on the worker thread until the handle
- * closes.
+ * <p>Publish side: starts a {@link Span.Kind#PRODUCER} span {@code "outbox publish <eventType>"} as
+ * a child of the current context and injects the span's context into a flat string map for
+ * persistence in the event row. Handle side: extracts the stored map via the configured {@link
+ * Propagator}, starts a {@link Span.Kind#CONSUMER} span {@code "outbox process <eventType>"} and
+ * makes it current on the worker thread until the handle closes.
  *
  * <p>Behavioral notes vs the OpenTelemetry adapter ({@code event-outboxer-tracing-otel}):
  *
  * <ul>
- *   <li>Propagation format follows Spring Boot's {@code management.tracing.propagation.*}
- *       settings — the stored keys may be {@code b3} instead of {@code traceparent}. Values stay
- *       flat strings either way.
+ *   <li>Propagation format follows Spring Boot's {@code management.tracing.propagation.*} settings
+ *       — the stored keys may be {@code b3} instead of {@code traceparent}. Values stay flat
+ *       strings either way.
  *   <li>Baggage propagation follows the bridge's configuration ({@code
  *       management.tracing.baggage.remote-fields} on Boot).
  *   <li>{@link Span#error(Throwable)} semantics are bridge-dependent: the OTel bridge records an
  *       exception event plus ERROR status, the Brave bridge sets an error tag.
- *   <li>All span attributes are string tags (Micrometer's {@code tag(String, String)}), so
- *       {@code event_outboxer.attempt} appears as a string.
+ *   <li>All span attributes are string tags (Micrometer's {@code tag(String, String)}), so {@code
+ *       event_outboxer.attempt} appears as a string.
  * </ul>
  *
  * <p>Thread-safe; a single instance serves the publisher and every worker thread.
@@ -66,8 +65,11 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
             .name("outbox publish " + eventType)
             .kind(Span.Kind.PRODUCER)
             .tag(
-                OutboxTraceAttributes.MESSAGING_SYSTEM, OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
-            .tag(OutboxTraceAttributes.MESSAGING_OPERATION_TYPE, OutboxTraceAttributes.OPERATION_SEND)
+                OutboxTraceAttributes.MESSAGING_SYSTEM,
+                OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
+            .tag(
+                OutboxTraceAttributes.MESSAGING_OPERATION_TYPE,
+                OutboxTraceAttributes.OPERATION_SEND)
             .tag(OutboxTraceAttributes.MESSAGING_DESTINATION_NAME, eventType)
             .tag(OutboxTraceAttributes.MESSAGING_MESSAGE_ID, eventId.toString())
             .start();
@@ -85,7 +87,8 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
             .name("outbox process " + info.eventType())
             .kind(Span.Kind.CONSUMER)
             .tag(
-                OutboxTraceAttributes.MESSAGING_SYSTEM, OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
+                OutboxTraceAttributes.MESSAGING_SYSTEM,
+                OutboxTraceAttributes.MESSAGING_SYSTEM_VALUE)
             .tag(
                 OutboxTraceAttributes.MESSAGING_OPERATION_TYPE,
                 OutboxTraceAttributes.OPERATION_PROCESS)

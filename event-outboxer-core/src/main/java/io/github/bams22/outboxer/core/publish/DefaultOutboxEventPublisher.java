@@ -14,14 +14,14 @@ import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.api.publish.PublishRequest;
+import io.github.bams22.outboxer.core.polling.PollerWaker;
+import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
 import io.github.bams22.outboxer.domain.exception.PublishFailedException;
 import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.domain.exception.PublishValidationException;
 import io.github.bams22.outboxer.domain.exception.StorageException;
-import io.github.bams22.outboxer.core.polling.PollerWaker;
-import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
@@ -40,16 +40,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Default {@link OutboxEventPublisher} implementation. Holds no per-call state — a single
- * instance serves every thread. Steps:
+ * Default {@link OutboxEventPublisher} implementation. Holds no per-call state — a single instance
+ * serves every thread. Steps:
  *
  * <ol>
  *   <li>Consult the {@link TransactionContext}; if no active transaction, apply the configured
  *       {@link NoTransactionPolicy}.
  *   <li>Serialize the payload via {@link EventSerializer}.
- *   <li>Start a PRODUCER span via the {@link OutboxTracer} port and capture its trace context
- *       into the event, unless the caller supplied an explicit {@code
- *       PublishOptions.traceContext} override (ADR-0023).
+ *   <li>Start a PRODUCER span via the {@link OutboxTracer} port and capture its trace context into
+ *       the event, unless the caller supplied an explicit {@code PublishOptions.traceContext}
+ *       override (ADR-0023).
  *   <li>Build a {@link PendingEvent} and hand it to {@link EventStore#save(PendingEvent)}.
  *   <li>Fire {@code OutboxListener.onEventPublished(...)}.
  *   <li>Register an after-commit hook that wakes the local poller of the published type, so
@@ -111,8 +111,8 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   }
 
   /**
-   * Bounded retry for the coalescing race: the conditional insert conflicted, but the
-   * conflicting PENDING row got claimed or finalized before we could lock it — re-insert.
+   * Bounded retry for the coalescing race: the conditional insert conflicted, but the conflicting
+   * PENDING row got claimed or finalized before we could lock it — re-insert.
    */
   private static final int DEDUP_RACE_RETRIES = 3;
 
@@ -167,25 +167,24 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
    *       FIRST: the common case (first publish of a key) resolves in a single statement, and a
    *       lock-first ordering would have the mirrored insert-after-check race anyway.
    *   <li><b>Coalesced</b> — the conflicting PENDING row was found and locked ({@code SELECT ...
-   *       FOR UPDATE}) inside the caller's transaction. From this moment the claim query
-   *       ({@code FOR UPDATE SKIP LOCKED}) skips the row until our commit, so its handler is
-   *       guaranteed to observe this transaction's changes. If the lock lands on a DIFFERENT
-   *       row than the one that caused the conflict (old one finalized, another publisher
-   *       inserted anew), that is equally correct: any pinned PENDING event of this key carries
-   *       the work and runs after our commit.
+   *       FOR UPDATE}) inside the caller's transaction. From this moment the claim query ({@code
+   *       FOR UPDATE SKIP LOCKED}) skips the row until our commit, so its handler is guaranteed to
+   *       observe this transaction's changes. If the lock lands on a DIFFERENT row than the one
+   *       that caused the conflict (old one finalized, another publisher inserted anew), that is
+   *       equally correct: any pinned PENDING event of this key carries the work and runs after our
+   *       commit.
    *   <li><b>Vanished</b> — the row that conflicted with our insert is no longer PENDING by the
-   *       time we try to lock it (claimed, possibly already finalized). This is not a missed
-   *       race but the semantically REQUIRED branch: an event claimed before our commit may run
-   *       against a snapshot without our changes, so coalescing into it would lose our update —
-   *       we must loop and insert our own event (the old row no longer occupies the
-   *       PENDING-scoped unique index, so the retry succeeds unless yet another publisher got
-   *       there first).
+   *       time we try to lock it (claimed, possibly already finalized). This is not a missed race
+   *       but the semantically REQUIRED branch: an event claimed before our commit may run against
+   *       a snapshot without our changes, so coalescing into it would lose our update — we must
+   *       loop and insert our own event (the old row no longer occupies the PENDING-scoped unique
+   *       index, so the retry succeeds unless yet another publisher got there first).
    * </ol>
    *
-   * <p>The lock probe cannot read stale state: if the row is being claimed concurrently, our
-   * {@code SELECT ... FOR UPDATE} blocks on the claim's row lock and PostgreSQL re-evaluates
-   * the {@code status = 'PENDING'} predicate against the committed row version afterwards
-   * (EvalPlanQual) — we either hold the lock on a genuinely PENDING row or see empty.
+   * <p>The lock probe cannot read stale state: if the row is being claimed concurrently, our {@code
+   * SELECT ... FOR UPDATE} blocks on the claim's row lock and PostgreSQL re-evaluates the {@code
+   * status = 'PENDING'} predicate against the committed row version afterwards (EvalPlanQual) — we
+   * either hold the lock on a genuinely PENDING row or see empty.
    *
    * <p>Reaching the retry bound requires a fresh PENDING row of the same key to appear AND
    * disappear in the microsecond window between our conflict and our lock, {@code
@@ -240,8 +239,8 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         if (opts.dedupKey() != null) {
           try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType())) {
             PendingEvent pe =
-                buildPending(id, r.eventType(), r.payload(), serialized, opts,
-                    traceContext(opts, span));
+                buildPending(
+                    id, r.eventType(), r.payload(), serialized, opts, traceContext(opts, span));
             try {
               CoalescingResult result = saveCoalescing(pe);
               if (result.inserted()) {
@@ -260,8 +259,8 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
           OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType());
           batchSpans.add(span);
           PendingEvent pe =
-              buildPending(id, r.eventType(), r.payload(), serialized, opts,
-                  traceContext(opts, span));
+              buildPending(
+                  id, r.eventType(), r.payload(), serialized, opts, traceContext(opts, span));
           batch.add(pe);
           ids.add(pe.id());
         }
@@ -328,8 +327,8 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   }
 
   /**
-   * An explicit {@code PublishOptions.traceContext} override always wins over the ambient
-   * context captured by the producer span (ADR-0023).
+   * An explicit {@code PublishOptions.traceContext} override always wins over the ambient context
+   * captured by the producer span (ADR-0023).
    */
   private static Map<String, String> traceContext(
       PublishOptions options, OutboxTracer.PublishSpan span) {
@@ -364,9 +363,9 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   }
 
   /**
-   * Wake the local pollers of the published types once the surrounding transaction commits.
-   * Purely an optimization — every path is swallowed on failure so a wake can never break the
-   * caller's commit.
+   * Wake the local pollers of the published types once the surrounding transaction commits. Purely
+   * an optimization — every path is swallowed on failure so a wake can never break the caller's
+   * commit.
    */
   private void scheduleWake(Set<String> eventTypes) {
     try {

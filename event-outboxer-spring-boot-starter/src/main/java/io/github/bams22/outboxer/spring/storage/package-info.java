@@ -9,7 +9,8 @@
  */
 
 /**
- * EventStore auto-configuration variants: in-memory and PostgreSQL (ConnectionSupplier on a TransactionAwareDataSourceProxy) plus migration-tool parameter wiring.
+ * EventStore auto-configuration variants: in-memory and PostgreSQL (ConnectionSupplier on a
+ * TransactionAwareDataSourceProxy) plus migration-tool parameter wiring.
  */
 @org.jspecify.annotations.NullMarked
 package io.github.bams22.outboxer.spring.storage;

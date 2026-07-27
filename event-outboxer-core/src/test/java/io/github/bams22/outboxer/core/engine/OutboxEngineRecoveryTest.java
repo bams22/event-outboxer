@@ -38,9 +38,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Recovery-path coverage: every way a claimed event could historically get stranded in
- * PROCESSING while the worker stays alive, plus engine restartability. Companion to the happy
- * paths in {@link OutboxEngineIntegrationTest}.
+ * Recovery-path coverage: every way a claimed event could historically get stranded in PROCESSING
+ * while the worker stays alive, plus engine restartability. Companion to the happy paths in {@link
+ * OutboxEngineIntegrationTest}.
  */
 class OutboxEngineRecoveryTest {
 
@@ -62,7 +62,9 @@ class OutboxEngineRecoveryTest {
   }
 
   @Test
-  @DisplayName("rejected dispatch (saturated executor) → event released back to PENDING and eventually processed")
+  @DisplayName(
+      "rejected dispatch (saturated executor) → event released back to PENDING and eventually"
+          + " processed")
   void rejectedDispatchReleasesEvent() throws Exception {
     CountDownLatch gate = new CountDownLatch(1);
     AtomicInteger done = new AtomicInteger();
@@ -97,7 +99,9 @@ class OutboxEngineRecoveryTest {
   }
 
   @Test
-  @DisplayName("graceful shutdown with unfinished handlers → leftover claims released, nothing stays PROCESSING")
+  @DisplayName(
+      "graceful shutdown with unfinished handlers → leftover claims released, nothing stays"
+          + " PROCESSING")
   void shutdownReleasesUnfinishedClaims() {
     AtomicBoolean started = new AtomicBoolean();
     engine =
@@ -182,10 +186,7 @@ class OutboxEngineRecoveryTest {
   void lockBusyDoesNotBurnAttempts() {
     AtomicInteger locks = new AtomicInteger();
     EntityLocker busyThenFree =
-        (key, ttl) ->
-            locks.incrementAndGet() <= 3
-                ? Optional.empty()
-                : Optional.of(() -> {});
+        (key, ttl) -> locks.incrementAndGet() <= 3 ? Optional.empty() : Optional.of(() -> {});
     AtomicInteger observedAttempts = new AtomicInteger(-1);
     engine =
         fastEngine(cfg -> cfg)
@@ -227,9 +228,10 @@ class OutboxEngineRecoveryTest {
   @Test
   @DisplayName("heartbeat re-registers the worker after a peer reaped its registry row")
   void heartbeatReRegistersReapedWorker() {
-    engine = fastEngine(cfg -> cfg)
-        .handler(handler("NOOP", (ctx, payload) -> EventOutcome.Success.INSTANCE))
-        .build();
+    engine =
+        fastEngine(cfg -> cfg)
+            .handler(handler("NOOP", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+            .build();
     engine.start();
     WorkerId id = engine.workerId();
     assertThat(registry.findById(id)).isPresent();

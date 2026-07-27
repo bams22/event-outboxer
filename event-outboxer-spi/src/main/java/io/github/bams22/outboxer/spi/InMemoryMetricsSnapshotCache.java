@@ -17,9 +17,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Per-JVM TTL {@link MetricsSnapshotCache} backed by a single {@link AtomicReference}. Replaces
- * the ad-hoc cache that used to live inside {@code PostgresEventStore}. Exposed through the
- * {@link MetricsSnapshotCache#inMemory(Clock, Duration)} factory.
+ * Per-JVM TTL {@link MetricsSnapshotCache} backed by a single {@link AtomicReference}. Replaces the
+ * ad-hoc cache that used to live inside {@code PostgresEventStore}. Exposed through the {@link
+ * MetricsSnapshotCache#inMemory(Clock, Duration)} factory.
  */
 final class InMemoryMetricsSnapshotCache implements MetricsSnapshotCache {
 

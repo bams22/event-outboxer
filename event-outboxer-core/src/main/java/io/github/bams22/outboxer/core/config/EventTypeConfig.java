@@ -23,17 +23,17 @@ import lombok.Builder;
  * @param pollMinInterval minimum wait between claim attempts when the store is busy; also the
  *     baseline {@link io.github.bams22.outboxer.core.polling.AdaptiveWaiter}
  * @param pollMaxInterval cap on the adaptive wait when the store is idle
- * @param pollMultiplier per-empty-batch multiplier applied to the current wait; must be
- *     {@code > 1.0}
+ * @param pollMultiplier per-empty-batch multiplier applied to the current wait; must be {@code >
+ *     1.0}
  * @param claimBatchSize maximum number of events claimed per poll
  * @param handlerPoolSize size of the per-type handler executor thread pool
- * @param handlerQueueCapacity bounded queue size for the handler executor; zero means a
- *     synchronous handoff that fails fast (triggers {@code onDispatchRejected})
+ * @param handlerQueueCapacity bounded queue size for the handler executor; zero means a synchronous
+ *     handoff that fails fast (triggers {@code onDispatchRejected})
  * @param handlerMaxRuntime maximum handler wall-clock time before the watchdog force-reclaims the
  *     row
  * @param lockTtl safety timeout passed to {@code EntityLocker.tryLock(...)}. Must be {@code >=
- *     handlerMaxRuntime} (validated): for TTL-honouring lockers (Redis) a shorter TTL would let
- *     the entity lock expire while a legitimate handler is still running, breaking per-key
+ *     handlerMaxRuntime} (validated): for TTL-honouring lockers (Redis) a shorter TTL would let the
+ *     entity lock expire while a legitimate handler is still running, breaking per-key
  *     serialization. Recommended {@code >= 2 x handlerMaxRuntime} — the TTL is the crash-release
  *     mechanism, and the margin covers a zombie handler that outlives its force-reclaimed claim
  */
@@ -65,12 +65,10 @@ public record EventTypeConfig(
               + pollMaxInterval);
     }
     if (pollMultiplier <= 1.0) {
-      throw new IllegalArgumentException(
-          "pollMultiplier must be > 1.0, got " + pollMultiplier);
+      throw new IllegalArgumentException("pollMultiplier must be > 1.0, got " + pollMultiplier);
     }
     if (claimBatchSize <= 0) {
-      throw new IllegalArgumentException(
-          "claimBatchSize must be positive, got " + claimBatchSize);
+      throw new IllegalArgumentException("claimBatchSize must be positive, got " + claimBatchSize);
     }
     if (handlerPoolSize <= 0) {
       throw new IllegalArgumentException(
@@ -100,8 +98,8 @@ public record EventTypeConfig(
   }
 
   /**
-   * Default configuration aligned with CONFIGURATION.md §per-type. Conservative values suitable
-   * for most workloads; tune per-type in production.
+   * Default configuration aligned with CONFIGURATION.md §per-type. Conservative values suitable for
+   * most workloads; tune per-type in production.
    */
   public static EventTypeConfig defaults() {
     return EventTypeConfig.builder()

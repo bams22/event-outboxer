@@ -21,11 +21,10 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 
 /**
- * Schedules {@link PgLeaseEntityLocker#sweepExpired()} on a dedicated single-thread daemon
- * executor at a fixed 10-minute cadence (ADR-0022 §Starter integration — deliberately not
- * configurable in MVP). The sweep is cosmetic garbage collection: expired rows are overwritten in
- * place by the next acquirer, so any cadence — and any missed run — is safe; failures are logged
- * and never rethrown.
+ * Schedules {@link PgLeaseEntityLocker#sweepExpired()} on a dedicated single-thread daemon executor
+ * at a fixed 10-minute cadence (ADR-0022 §Starter integration — deliberately not configurable in
+ * MVP). The sweep is cosmetic garbage collection: expired rows are overwritten in place by the next
+ * acquirer, so any cadence — and any missed run — is safe; failures are logged and never rethrown.
  *
  * <p>Core's {@code MaintenanceScheduler} has no task-registration hook, and adding one for a
  * cosmetic cleanup is not justified — hence the starter-owned thread.

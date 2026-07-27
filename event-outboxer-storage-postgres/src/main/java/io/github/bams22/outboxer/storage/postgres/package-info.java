@@ -9,10 +9,9 @@
  */
 
 /**
- * PostgreSQL implementation of the storage SPI ports. Spring-free — the adapter only needs a
- * {@code javax.sql.DataSource}-backed {@link
- * io.github.bams22.outboxer.spi.ConnectionSupplier} to participate in the caller's transaction
- * (see ADR-0002).
+ * PostgreSQL implementation of the storage SPI ports. Spring-free — the adapter only needs a {@code
+ * javax.sql.DataSource}-backed {@link io.github.bams22.outboxer.spi.ConnectionSupplier} to
+ * participate in the caller's transaction (see ADR-0002).
  */
 @NullMarked
 package io.github.bams22.outboxer.storage.postgres;

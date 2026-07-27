@@ -51,17 +51,19 @@ class MicrometerOutboxListenerTest {
     listener.onEventPublished(published("ORDER"));
     listener.onEventPublished(published("EMAIL"));
 
-    assertThat(registry.counter("event_outboxer.events.published", "event_type", "ORDER").count()).isEqualTo(2.0);
-    assertThat(registry.counter("event_outboxer.events.published", "event_type", "EMAIL").count()).isEqualTo(1.0);
+    assertThat(registry.counter("event_outboxer.events.published", "event_type", "ORDER").count())
+        .isEqualTo(2.0);
+    assertThat(registry.counter("event_outboxer.events.published", "event_type", "EMAIL").count())
+        .isEqualTo(1.0);
   }
 
   @Test
   void claimedIncrementsPerTypeCounter() {
     listener.onEventClaimed(
-        new EventClaimedInfo(
-            UUID.randomUUID(), "ORDER", 1, Instant.now(), new WorkerId("w-1")));
+        new EventClaimedInfo(UUID.randomUUID(), "ORDER", 1, Instant.now(), new WorkerId("w-1")));
 
-    assertThat(registry.counter("event_outboxer.events.claimed", "event_type", "ORDER").count()).isEqualTo(1.0);
+    assertThat(registry.counter("event_outboxer.events.claimed", "event_type", "ORDER").count())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -69,10 +71,15 @@ class MicrometerOutboxListenerTest {
     listener.onEventProcessed(
         new EventProcessedInfo(UUID.randomUUID(), "ORDER", 1, Duration.ofMillis(150)));
 
-    assertThat(registry.counter("event_outboxer.events.processed", "event_type", "ORDER").count()).isEqualTo(1.0);
-    assertThat(registry.timer("event_outboxer.events.processing_time", "event_type", "ORDER").totalTime(java.util.concurrent.TimeUnit.MILLISECONDS))
+    assertThat(registry.counter("event_outboxer.events.processed", "event_type", "ORDER").count())
+        .isEqualTo(1.0);
+    assertThat(
+            registry
+                .timer("event_outboxer.events.processing_time", "event_type", "ORDER")
+                .totalTime(java.util.concurrent.TimeUnit.MILLISECONDS))
         .isEqualTo(150.0);
-    assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean()).isEqualTo(1.0);
+    assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -86,7 +93,11 @@ class MicrometerOutboxListenerTest {
             "transient",
             new RuntimeException("boom")));
 
-    assertThat(registry.counter("event_outboxer.events.retry_scheduled", "event_type", "ORDER").count()).isEqualTo(1.0);
+    assertThat(
+            registry
+                .counter("event_outboxer.events.retry_scheduled", "event_type", "ORDER")
+                .count())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -94,7 +105,8 @@ class MicrometerOutboxListenerTest {
     listener.onEventDisabled(
         new EventDisabledInfo(UUID.randomUUID(), "ORDER", 10, "max-attempts", null));
 
-    assertThat(registry.counter("event_outboxer.events.disabled", "event_type", "ORDER").count()).isEqualTo(1.0);
+    assertThat(registry.counter("event_outboxer.events.disabled", "event_type", "ORDER").count())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -102,7 +114,8 @@ class MicrometerOutboxListenerTest {
     listener.onHandlerError(
         new HandlerErrorInfo(UUID.randomUUID(), "ORDER", 1, new RuntimeException("x")));
 
-    assertThat(registry.counter("event_outboxer.handler.errors", "event_type", "ORDER").count()).isEqualTo(1.0);
+    assertThat(registry.counter("event_outboxer.handler.errors", "event_type", "ORDER").count())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -121,7 +134,8 @@ class MicrometerOutboxListenerTest {
 
   @Test
   void heartbeatFailedIncrementsCounter() {
-    listener.onHeartbeatFailed(new HeartbeatFailedInfo(new WorkerId("w-1"), new RuntimeException("x")));
+    listener.onHeartbeatFailed(
+        new HeartbeatFailedInfo(new WorkerId("w-1"), new RuntimeException("x")));
 
     assertThat(registry.counter("event_outboxer.heartbeat.failed").count()).isEqualTo(1.0);
   }
@@ -129,8 +143,7 @@ class MicrometerOutboxListenerTest {
   @Test
   void orphansReclaimedTracksBothCounters() {
     listener.onOrphansReclaimed(
-        new OrphansReclaimedInfo(
-            List.of(new WorkerId("dead-1"), new WorkerId("dead-2")), 7));
+        new OrphansReclaimedInfo(List.of(new WorkerId("dead-1"), new WorkerId("dead-2")), 7));
 
     assertThat(registry.counter("event_outboxer.orphans.reclaimed").count()).isEqualTo(7.0);
     assertThat(registry.counter("event_outboxer.orphans.dead_workers").count()).isEqualTo(2.0);
@@ -140,7 +153,8 @@ class MicrometerOutboxListenerTest {
   void storageErrorTagsByOperation() {
     listener.onStorageError(new StorageErrorInfo("claim[ORDER]", new RuntimeException("x")));
 
-    assertThat(registry.counter("event_outboxer.storage.errors", "operation", "claim[ORDER]").count())
+    assertThat(
+            registry.counter("event_outboxer.storage.errors", "operation", "claim[ORDER]").count())
         .isEqualTo(1.0);
   }
 
