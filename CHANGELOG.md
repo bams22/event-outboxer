@@ -8,6 +8,20 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Group-commit finalize batching (amends ADR-0014).** Concurrent
+  `markProcessed` / `markForRetry` calls now coalesce into one multi-row
+  statement per flush: a finalizing handler thread flushes immediately
+  when the engine is idle, and while its statement is in flight other
+  threads accumulate for the next flush — no timers, no dedicated
+  thread, no added latency floor, up to ~batch-size× fewer finalize
+  round-trips on hot types. Every row keeps its own optimistic-locking
+  guard (`RETURNING id` as per-row verdicts); the call stays
+  synchronous, so lock ordering, watchdog visibility, per-event listener
+  callbacks and finalize-failure release are unchanged. On by default —
+  `event-outboxer.dispatcher.finalize-batching: false` is the
+  kill-switch; `finalize-batch-max-size` caps statement size (128). SPI:
+  new `EventStore.markProcessedAll` / `markForRetryAll` with
+  default-method fallbacks looping the single-row calls.
 - **Coalescing dedup key — single in-flight event per key (ADR-0021).**
   `PublishOptions.dedupKey`: at most one PENDING event per
   `(event-type, dedup-key)`; a coalesced publish returns the existing

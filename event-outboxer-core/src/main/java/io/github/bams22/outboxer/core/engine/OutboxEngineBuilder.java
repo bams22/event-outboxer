@@ -22,6 +22,7 @@ import io.github.bams22.outboxer.core.config.RetentionConfig;
 import io.github.bams22.outboxer.core.dispatch.DispatcherConfig;
 import io.github.bams22.outboxer.core.dispatch.EventHandlerResolver;
 import io.github.bams22.outboxer.core.dispatch.FailureHandlerResolver;
+import io.github.bams22.outboxer.core.dispatch.GroupCommitEventStore;
 import io.github.bams22.outboxer.core.dispatch.HandlerDispatcher;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
 import io.github.bams22.outboxer.core.listener.LoggingOutboxListener;
@@ -291,9 +292,17 @@ public final class OutboxEngineBuilder {
             .metadata(Map.copyOf(workerMetadata))
             .build();
 
+    // Group-commit batching applies only to the dispatcher's finalize path: pollers, publisher
+    // and maintenance keep the raw store (their operations are either already batched or rare).
+    EventStore dispatcherStore =
+        dispatcherConfig.finalizeBatching()
+            ? new GroupCommitEventStore(
+                eventStore, workerId, dispatcherConfig.finalizeBatchMaxSize())
+            : eventStore;
+
     HandlerDispatcher dispatcher =
         new HandlerDispatcher(
-            eventStore,
+            dispatcherStore,
             locker,
             eventSerializer,
             handlerResolver,

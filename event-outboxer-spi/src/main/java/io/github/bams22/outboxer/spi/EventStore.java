@@ -15,8 +15,11 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -129,6 +132,83 @@ public interface EventStore {
    */
   boolean markForRetry(
       UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt);
+
+  /**
+   * Batch form of {@link #markProcessed(UUID, WorkerId, long)}: finalize several successful runs
+   * of the same worker in one operation. Adapters should implement this as a single multi-row
+   * statement so that N finalizes do not imply N round-trips (the engine's group-commit path
+   * relies on it — see ADR-0014).
+   *
+   * <p>Each mark keeps its own optimistic-locking guard ({@code version = claimedVersion AND
+   * claimed_by = workerId AND status = 'PROCESSING'}); the returned set contains the ids whose
+   * guard matched. Ids absent from the set lost the at-least-once race exactly like a
+   * single-row {@code markProcessed} returning {@code false}. Result order is unspecified; an
+   * empty input returns an empty set without touching the store.
+   *
+   * <p>The default implementation loops {@link #markProcessed(UUID, WorkerId, long)} — correct
+   * for any adapter, just without the round-trip savings.
+   *
+   * @throws EventStoreException if the SQL fails (no per-row verdicts are reported then; the
+   *     engine releases the whole batch back to {@code PENDING})
+   */
+  default Set<UUID> markProcessedAll(List<ProcessedMark> marks, WorkerId workerId) {
+    Objects.requireNonNull(marks, "marks must not be null");
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    Set<UUID> applied = new HashSet<>();
+    for (ProcessedMark mark : marks) {
+      if (markProcessed(mark.id(), workerId, mark.claimedVersion())) {
+        applied.add(mark.id());
+      }
+    }
+    return applied;
+  }
+
+  /**
+   * Batch form of {@link #markForRetry(UUID, WorkerId, long, String, Instant)}: schedule several
+   * failed runs of the same worker for retry in one operation, each with its own {@code reason}
+   * and {@code runAt}. Same per-row guard and return semantics as
+   * {@link #markProcessedAll(List, WorkerId)}.
+   *
+   * <p>The default implementation loops {@link #markForRetry(UUID, WorkerId, long, String,
+   * Instant)}.
+   *
+   * @throws EventStoreException if the SQL fails
+   */
+  default Set<UUID> markForRetryAll(List<RetryMark> marks, WorkerId workerId) {
+    Objects.requireNonNull(marks, "marks must not be null");
+    Objects.requireNonNull(workerId, "workerId must not be null");
+    Set<UUID> applied = new HashSet<>();
+    for (RetryMark mark : marks) {
+      if (markForRetry(mark.id(), workerId, mark.claimedVersion(), mark.reason(), mark.runAt())) {
+        applied.add(mark.id());
+      }
+    }
+    return applied;
+  }
+
+  /**
+   * One row of a {@link #markProcessedAll(List, WorkerId)} batch: the event id plus the version
+   * observed at claim time, which forms the per-row optimistic-locking guard (ADR-0014).
+   */
+  record ProcessedMark(UUID id, long claimedVersion) {
+
+    public ProcessedMark {
+      Objects.requireNonNull(id, "id must not be null");
+    }
+  }
+
+  /**
+   * One row of a {@link #markForRetryAll(List, WorkerId)} batch: the event id, the version
+   * observed at claim time, and the per-event failure {@code reason} and retry {@code runAt}.
+   */
+  record RetryMark(UUID id, long claimedVersion, String reason, Instant runAt) {
+
+    public RetryMark {
+      Objects.requireNonNull(id, "id must not be null");
+      Objects.requireNonNull(reason, "reason must not be null");
+      Objects.requireNonNull(runAt, "runAt must not be null");
+    }
+  }
 
   /**
    * Finalize a run that exhausted its retry budget or returned explicit {@code Fail}: update the

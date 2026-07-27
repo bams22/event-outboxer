@@ -254,9 +254,77 @@ class OutboxEngineIntegrationTest {
     assertThat(store.findById(unknownId)).isPresent();
   }
 
+  @Test
+  @DisplayName("group-commit finalize: a burst yields fewer finalize statements than events, "
+      + "with per-event listener callbacks intact")
+  void finalizeBatchingCoalescesStatements() {
+    CountingBatchStore counting = new CountingBatchStore(store);
+    AtomicInteger processedCallbacks = new AtomicInteger();
+    int events = 30;
+    engine =
+        fastEngine()
+            .eventStore(counting)
+            .defaultEventTypeConfig(
+                EventTypeConfig.defaults().toBuilder()
+                    .pollMinInterval(Duration.ofMillis(10))
+                    .pollMaxInterval(Duration.ofMillis(50))
+                    .pollMultiplier(1.1)
+                    .handlerPoolSize(8)
+                    .handlerMaxRuntime(Duration.ofSeconds(30))
+                    .build())
+            .listener(
+                new OutboxListener() {
+                  @Override
+                  public void onEventProcessed(
+                      io.github.bams22.outboxer.api.observer.EventProcessedInfo info) {
+                    processedCallbacks.incrementAndGet();
+                  }
+                })
+            .handler(recordingHandler("BATCHY", (ctx, p) -> EventOutcome.Success.INSTANCE))
+            .build();
+    engine.start();
+
+    for (int i = 0; i < events; i++) {
+      engine.publisher().publish("BATCHY", "e-" + i);
+    }
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .until(() -> processedCallbacks.get() == events);
+    assertThat(counting.totalMarksFlushed.get()).isEqualTo(events);
+    assertThat(counting.batchCalls.get())
+        .as("group commit must coalesce finalizes into fewer statements than events")
+        .isLessThan(events);
+  }
+
   // ---------------------------------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Counts finalize batch statements. The artificial flush latency widens the group-commit
+   * window so the coalescing assertion is deterministic rather than a scheduling coincidence.
+   */
+  private static final class CountingBatchStore
+      extends io.github.bams22.outboxer.core.support.ForwardingEventStore {
+
+    final AtomicInteger batchCalls = new AtomicInteger();
+    final AtomicInteger totalMarksFlushed = new AtomicInteger();
+
+    CountingBatchStore(InMemoryEventStore delegate) {
+      super(delegate);
+    }
+
+    @Override
+    public Set<UUID> markProcessedAll(
+        List<io.github.bams22.outboxer.spi.EventStore.ProcessedMark> marks,
+        io.github.bams22.outboxer.domain.WorkerId workerId) {
+      batchCalls.incrementAndGet();
+      totalMarksFlushed.addAndGet(marks.size());
+      sleepQuietly(20);
+      return delegate.markProcessedAll(marks, workerId);
+    }
+  }
 
   private OutboxEngineBuilder fastEngine() {
     EventTypeConfig fast =
