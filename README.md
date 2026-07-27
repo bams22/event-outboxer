@@ -31,6 +31,12 @@ Transactional Outbox pattern.
 - **Composable failure handling**: `FailureHandler<T>` chain (log →
   max-retries → backoff → listener-notify) — each handler type may have its
   own policy.
+- **End-to-end trace continuity**: the trace active at `publish()` continues
+  into handler execution — a PRODUCER span per insert, its W3C context stored
+  with the event, a CONSUMER span per handler attempt. Optional adapters for
+  OpenTelemetry (`event-outboxer-tracing-otel`, works with the OTel Java
+  agent) and Micrometer Tracing (`event-outboxer-tracing-micrometer`),
+  auto-detected by the starter.
 - **Deep Spring Boot integration**: MDC / tracing / security-context
   propagation via `ContextPropagatingTaskDecorator`, graceful shutdown
   through `SmartLifecycle`.

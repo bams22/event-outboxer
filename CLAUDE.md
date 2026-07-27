@@ -31,7 +31,7 @@ ADR, amend the ADR in the same PR.
 - PostgreSQL 15+, KeyDB 6 / Redis 7 (adapter-level).
 - JUnit 5 + AssertJ + Testcontainers for testing.
 
-## Module layout (16 modules)
+## Module layout (18 modules)
 
 ```
 event-outboxer (parent pom)
@@ -47,6 +47,8 @@ event-outboxer (parent pom)
 ├── event-outboxer-lock-redis              Redis/KeyDB EntityLocker (Lettuce)
 ├── event-outboxer-cache-redis             Redis/KeyDB MetricsSnapshotCache (Lettuce)
 ├── event-outboxer-metrics-micrometer      MicrometerOutboxListener
+├── event-outboxer-tracing-otel            OpenTelemetry OutboxTracer (ADR-0023)
+├── event-outboxer-tracing-micrometer      Micrometer Tracing OutboxTracer (ADR-0023)
 ├── event-outboxer-admin-actuator          Actuator endpoint over OutboxAdmin SPI
 ├── event-outboxer-admin-rest              opt-in REST controller over OutboxAdmin SPI
 ├── event-outboxer-testkit                 SettableClock, ManualEngine, assertions

@@ -122,6 +122,11 @@ event-outboxer:
     # chosen to avoid clashing with other libraries that publish outbox.*.
     prefix: event_outboxer
 
+  tracing:
+    # Auto-detection of the OutboxTracer adapters (ADR-0023). false disables
+    # both; a user-defined OutboxTracer bean is honoured regardless.
+    enabled: true
+
   health:
     # Merge the outbox indicator into these Actuator health groups. Default
     # empty = no influence on /actuator/health/liveness or /readiness.
@@ -429,6 +434,22 @@ module are on the classpath and a `MeterRegistry` bean exists.
   requires a different namespace. See [docs/OBSERVABILITY.md](OBSERVABILITY.md)
   for the full metric catalogue.
 
+### `event-outboxer.tracing.*`
+
+Distributed-tracing integration (ADR-0023). A `PRODUCER` span wraps
+every event insert and its context is stored with the event; a
+`CONSUMER` span restores that context around every handler attempt —
+one trace across the outbox hop. The adapter is picked automatically:
+`event-outboxer-tracing-micrometer` when Boot's tracing provides
+`Tracer`/`Propagator` beans, else `event-outboxer-tracing-otel` when
+the OpenTelemetry API is present (OTel Java agent included). See
+[docs/OBSERVABILITY.md §Distributed tracing](OBSERVABILITY.md#distributed-tracing).
+
+- `enabled` — master switch for the adapter auto-detection.
+  **Default: `true`.** With no adapter module on the classpath the
+  engine uses a zero-cost no-op tracer either way. A user-defined
+  `OutboxTracer` bean always wins, regardless of this flag.
+
 ### `event-outboxer.health.*`
 
 Spring Boot Actuator integration.
@@ -672,6 +693,18 @@ public class ValidationHandler implements EventHandler<ValidationPayload> {
         return new NoRetryFailureHandler<>();
     }
     // ...
+}
+```
+
+### Custom OutboxTracer
+
+A user-defined bean replaces both tracing auto-configurations
+(ADR-0023) — for a bespoke backend or non-standard span naming:
+
+```java
+@Bean
+OutboxTracer outboxTracer(OpenTelemetry otel) {
+    return new OtelOutboxTracer(otel); // or your own implementation
 }
 ```
 

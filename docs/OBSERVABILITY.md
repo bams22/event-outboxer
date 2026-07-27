@@ -2,8 +2,9 @@
 
 How to tell what event-outboxer is doing from the outside: the
 Actuator health indicator, the Micrometer metrics catalogue, the
-`OutboxListener` callback reference, and a short troubleshooting
-playbook for the five most common production scenarios.
+`OutboxListener` callback reference, distributed tracing, and a short
+troubleshooting playbook for the five most common production
+scenarios.
 
 ## Contents
 
@@ -11,7 +12,8 @@ playbook for the five most common production scenarios.
 2. [Kubernetes probes](#kubernetes-probes)
 3. [Micrometer metrics reference](#micrometer-metrics-reference)
 4. [OutboxListener callback catalogue](#outboxlistener-callback-catalogue)
-5. [Troubleshooting playbook](#troubleshooting-playbook)
+5. [Distributed tracing](#distributed-tracing)
+6. [Troubleshooting playbook](#troubleshooting-playbook)
 
 ---
 
@@ -271,6 +273,65 @@ and the shared maintenance executor. Keep them fast and non-blocking;
 offload anything substantial to a dedicated executor owned by the
 listener. Every invocation is wrapped in try/catch by the registry, so
 uncaught exceptions are logged and swallowed.
+
+---
+
+## Distributed tracing
+
+The trace active at `publish()` continues into handler execution
+(ADR-0023). The mechanics:
+
+1. `publish()` starts a PRODUCER span `outbox publish <eventType>` as
+   a child of the caller's current span and captures its context
+   (`traceparent` / `tracestate` / `baggage`, or whatever the
+   configured propagator emits) into the event row's `trace_context`
+   column. An explicit `PublishOptions.traceContext` overrides the
+   captured map.
+2. When a worker claims the event, the dispatcher starts a CONSUMER
+   span `outbox process <eventType>` as a child of the stored context
+   and makes it — baggage included — current around
+   `handler.handle(...)`. The handler's own spans (HTTP clients, JDBC,
+   ...) nest under it automatically. Each retry attempt gets a fresh
+   span in the same trace; a handler exception is recorded on the span
+   (exception event + ERROR status).
+
+### Span attributes
+
+| Attribute | Side | Value |
+|---|---|---|
+| `messaging.system` | both | `event_outboxer` |
+| `messaging.operation.type` | both | `send` (publish) / `process` (handle) |
+| `messaging.destination.name` | both | event type |
+| `messaging.message.id` | both | event UUID |
+| `event_outboxer.attempt` | consumer | 1-based attempt number |
+| `event_outboxer.worker.id` | consumer | worker executing the handler |
+| `event_outboxer.coalesced_into` | producer | id of the existing PENDING event this publish coalesced into (ADR-0021); the surviving row keeps the first publish's context |
+
+### Choosing an adapter
+
+Tracing engages when one of the two adapter modules is on the
+classpath (both are `<optional>` in the starter):
+
+| Your setup | Add | Auto-configured when |
+|---|---|---|
+| Spring Boot Actuator + `micrometer-tracing-bridge-otel` (or `-brave`) | `event-outboxer-tracing-micrometer` | Boot provides `Tracer` + `Propagator` beans; the stored carrier follows `management.tracing.propagation.*` and `management.tracing.baggage.remote-fields` |
+| OpenTelemetry Java agent, or a hand-built OTel SDK | `event-outboxer-tracing-otel` | always (uses the `OpenTelemetry` bean if present, else `GlobalOpenTelemetry`); an unconfigured instance stores an empty context |
+| Both modules present | — | Micrometer wins; the OTel adapter backs off |
+| Neither | — | `OutboxTracer.NOOP` — zero cost, empty `trace_context` |
+
+`event-outboxer.tracing.enabled=false` disables both
+auto-configurations; a user-defined `OutboxTracer` bean always takes
+precedence. Without Spring, wire an adapter directly:
+`builder.tracer(new OtelOutboxTracer(openTelemetry))`.
+
+Adapter failures never affect delivery: the engine wraps the tracer
+defensively (`SafeOutboxTracer`), so a throwing tracing backend
+degrades to no-op with a debug log line.
+
+Deliberately untraced (ADR-0009: background operations must not
+pollute traces): poller iterations, heartbeat, orphan recovery,
+watchdog, retention, and the finalize write (which may group-commit on
+a different thread after the consumer span closed).
 
 ---
 

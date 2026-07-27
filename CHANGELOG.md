@@ -8,6 +8,27 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **End-to-end distributed-trace continuity (ADR-0023) — new SPI port
+  `OutboxTracer` and two adapter modules `event-outboxer-tracing-otel`
+  and `event-outboxer-tracing-micrometer`.** The publisher now starts a
+  PRODUCER span (`outbox publish <type>`) around every insert and
+  stores its context in the previously inert `trace_context` column
+  (explicit `PublishOptions.traceContext` still wins, as its javadoc
+  always promised); the dispatcher starts a CONSUMER span
+  (`outbox process <type>`) around every handler attempt, restoring
+  the stored context — and baggage — as current, recording handler
+  exceptions (exception event + ERROR status), one fresh span per
+  retry in the same trace. Spans carry OTel messaging semconv
+  attributes plus `event_outboxer.attempt` / `.worker.id` /
+  `.coalesced_into` (ADR-0021 coalesce tag). A core-internal
+  `SafeOutboxTracer` shields dispatch from adapter failures; plain-Java
+  users wire adapters via `OutboxEngineBuilder.tracer(...)`, the
+  starter auto-detects them (micrometer wins over otel when both are
+  present, `event-outboxer.tracing.enabled` opts out, a user
+  `OutboxTracer` bean overrides). STORAGE.md's documented
+  `trace_context` shape was corrected to the flat carrier the
+  PostgreSQL adapter actually persists (single-string `baggage`
+  header value, no nested objects).
 - **Lease-table PostgreSQL entity locker (ADR-0022) — new module
   `event-outboxer-lock-postgres-lease`, selected via
   `lock.type=postgres-lease`.** `PgLeaseEntityLocker` keeps lock state in an
