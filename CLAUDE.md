@@ -31,25 +31,26 @@ ADR, amend the ADR in the same PR.
 - PostgreSQL 15+, KeyDB 6 / Redis 7 (adapter-level).
 - JUnit 5 + AssertJ + Testcontainers for testing.
 
-## Module layout (15 modules)
+## Module layout (16 modules)
 
 ```
 event-outboxer (parent pom)
-├── event-outboxer-bom                   versions-only BOM for consumers
-├── event-outboxer-api                   public API: publisher, handler, listener, domain, exceptions
-├── event-outboxer-spi                   ports for adapters (EventStore, WorkerRegistry, ...)
-├── event-outboxer-core                  engine (NO Spring dependency, enforced by banned-deps)
-├── event-outboxer-storage-inmemory      TEST infrastructure: contract tests, testkit, @Import test config (ADR-0020)
-├── event-outboxer-storage-postgres      PostgreSQL adapter (plain JDBC + ConnectionSupplier SPI)
-├── event-outboxer-serializer-jackson    Jackson EventSerializer + JacksonObjectMapperFactory
-├── event-outboxer-lock-postgres         PostgreSQL EntityLocker: lease table (default) + advisory opt-out
-├── event-outboxer-lock-redis            Redis/KeyDB EntityLocker (Lettuce)
-├── event-outboxer-cache-redis           Redis/KeyDB MetricsSnapshotCache (Lettuce)
-├── event-outboxer-metrics-micrometer    MicrometerOutboxListener
-├── event-outboxer-admin-actuator        Actuator endpoint over OutboxAdmin SPI
-├── event-outboxer-admin-rest            opt-in REST controller over OutboxAdmin SPI
-├── event-outboxer-testkit                SettableClock, ManualEngine, assertions
-└── event-outboxer-spring-boot-starter    autoconfiguration + SmartLifecycle + TX integration
+├── event-outboxer-bom                     versions-only BOM for consumers
+├── event-outboxer-api                     public API: publisher, handler, listener, domain, exceptions
+├── event-outboxer-spi                     ports for adapters (EventStore, WorkerRegistry, ...)
+├── event-outboxer-core                    engine (NO Spring dependency, enforced by banned-deps)
+├── event-outboxer-storage-inmemory        TEST infrastructure: contract tests, testkit, @Import test config (ADR-0020)
+├── event-outboxer-storage-postgres        PostgreSQL adapter (plain JDBC + ConnectionSupplier SPI)
+├── event-outboxer-serializer-jackson      Jackson EventSerializer + JacksonObjectMapperFactory
+├── event-outboxer-lock-postgres-advisory  pg_advisory_lock EntityLocker (postgres-advisory opt-out)
+├── event-outboxer-lock-postgres-lease     lease-table EntityLocker — PostgreSQL default (ADR-0022)
+├── event-outboxer-lock-redis              Redis/KeyDB EntityLocker (Lettuce)
+├── event-outboxer-cache-redis             Redis/KeyDB MetricsSnapshotCache (Lettuce)
+├── event-outboxer-metrics-micrometer      MicrometerOutboxListener
+├── event-outboxer-admin-actuator          Actuator endpoint over OutboxAdmin SPI
+├── event-outboxer-admin-rest              opt-in REST controller over OutboxAdmin SPI
+├── event-outboxer-testkit                 SettableClock, ManualEngine, assertions
+└── event-outboxer-spring-boot-starter     autoconfiguration + SmartLifecycle + TX integration
 ```
 
 Java package layout mirrors modules 1-to-1 under

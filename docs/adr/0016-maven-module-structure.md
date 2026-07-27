@@ -16,7 +16,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 15 modules
+### 16 modules
 
 ```
 event-outboxer (root parent pom)
@@ -27,7 +27,8 @@ event-outboxer (root parent pom)
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
 ├── event-outboxer-storage-inmemory         Test infrastructure (ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
-├── event-outboxer-lock-postgres            PostgreSQL EntityLocker (lease + advisory, ADR-0022)
+├── event-outboxer-lock-postgres-advisory   pg_advisory_lock EntityLocker (postgres-advisory opt-out)
+├── event-outboxer-lock-postgres-lease      lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
@@ -62,7 +63,8 @@ Why `groupId=io.github.bams22` (rather than
 | `-storage-postgres` | `io.github.bams22.outboxer.storage.postgres.*` |
 | `-storage-inmemory` | `io.github.bams22.outboxer.storage.inmemory.*` |
 | `-serializer-jackson` | `io.github.bams22.outboxer.serializer.jackson.*` |
-| `-lock-postgres` | `io.github.bams22.outboxer.lock.postgres.*` |
+| `-lock-postgres-advisory` | `io.github.bams22.outboxer.lock.postgres.advisory.*` |
+| `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
 | `-testkit` | `io.github.bams22.outboxer.testkit.*` |
@@ -205,9 +207,15 @@ The BOM POM manages:
 
 ### Negative consequences
 
-- 15 modules — more than a monorepo. That is the price of the pluggable
+- 16 modules — more than a monorepo. That is the price of the pluggable
   architecture. (`event-outboxer-cache-redis` was added after the
-  original decision when `MetricsSnapshotCache` became an SPI port.)
+  original decision when `MetricsSnapshotCache` became an SPI port;
+  `event-outboxer-lock-postgres-lease` was added by ADR-0022 so the
+  lease locker ships as its own artifact, and the advisory module was
+  renamed `event-outboxer-lock-postgres` →
+  `event-outboxer-lock-postgres-advisory` in the same release so each
+  PostgreSQL locker backend carries an explicit suffix — pre-1.0,
+  no published consumers.)
 - An SPI breaking change requires updates to every adapter.
 
 ## Related decisions

@@ -8,6 +8,49 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Lease-table PostgreSQL entity locker (ADR-0022) — new module
+  `event-outboxer-lock-postgres-lease`, selected via
+  `lock.type=postgres-lease`.** `PgLeaseEntityLocker` keeps lock state in an
+  `event_outboxer.entity_locks` row (migration V005, Flyway location
+  `classpath:db/migration/outbox/lock` + Liquibase changelog): acquire
+  is one atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE expired ...
+  RETURNING`, release a fencing-token-guarded `DELETE`. No connection
+  is held while the handler runs (the advisory self-deadlock scenario
+  is structurally impossible; the pool warning now fires only for
+  `postgres-advisory`), every statement is safe behind pgBouncer
+  transaction pooling, and `lock-ttl` is finally honoured on PostgreSQL
+  (crash release ≤ ttl, DB-clock arithmetic). The starter adds a
+  fail-fast startup probe for the missing V005 (ordered after
+  Flyway/Liquibase), a 10-minute expired-lease sweep on a dedicated
+  daemon thread, and a `<metrics.prefix>.entity_locks.held` gauge.
+  The entity-locker contract test gains an opt-in
+  `supportsTtlExpiry()`/`forceExpire()` hook covering expiry takeover
+  and stale-release semantics.
+
+### Changed
+- **BREAKING: the `postgres` lock type is split into explicit
+  values.** `event-outboxer.lock.type` now accepts
+  `noop | postgres-lease | postgres-advisory | redis`:
+  `postgres-lease` selects the new lease-table locker,
+  `postgres-advisory` the pre-ADR-0022 session-advisory locker
+  (`event-outboxer-lock-postgres-advisory` artifact, unchanged
+  semantics), and the old `postgres` value no longer binds — startup
+  fails listing the valid values, forcing an explicit choice instead
+  of a silent semantics change. When switching a fleet from advisory
+  to lease, apply V005 first (the startup probe names it); during the
+  rolling deploy old and new pods form disjoint exclusion domains for
+  the rollout window (ADR-0022 §Rollout).
+- **BREAKING (coordinates): `event-outboxer-lock-postgres` renamed to
+  `event-outboxer-lock-postgres-advisory`.** Java package
+  `io.github.bams22.outboxer.lock.postgres` →
+  `io.github.bams22.outboxer.lock.postgres.advisory`, starter class
+  `PostgresLockAutoConfiguration` →
+  `PostgresAdvisoryLockAutoConfiguration`. With the lease module
+  landing in the same release, each PostgreSQL locker backend now
+  carries an explicit suffix. Pre-1.0 rename with no published
+  consumers of the old artifact beyond 0.2.0 — update the artifactId
+  and imports when upgrading.
+
 - **Poll-interval jitter.** Every wait emitted by the adaptive poller
   backoff now carries a uniform ±10% jitter, desynchronizing claim
   bursts across a fleet of JVMs deployed together (same
@@ -97,8 +140,9 @@ All notable changes to this project are documented here. Format follows
   TTL let the Redis lock expire under a legitimately running handler),
   and the default `lock-ttl` rose from 5m to 10m (2 × the handler
   budget). Configs that set `lock-ttl` below `handler-max-runtime` fail
-  fast with instructions. The starter warns when `lock.type=postgres`
-  and the total handler pool size reaches HikariCP's maximum-pool-size
+  fast with instructions. The starter warns when
+  `lock.type=postgres-advisory` and the total handler pool size
+  reaches HikariCP's maximum-pool-size
   (each held advisory lock pins a pooled connection — self-deadlock
   risk). ADR-0012 now documents the per-backend guarantees, including
   the no-fencing best-effort nature of the Redis locker.
@@ -301,7 +345,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
 - `event-outboxer-serializer-jackson` — `EventSerializer` + a shared
   `JacksonObjectMapperFactory.defaults()` (JavaTime + Jdk8 +
   ParameterNames modules, ISO-8601 dates, strict deserialisation).
-- `event-outboxer-lock-postgres` — session-scoped `pg_advisory_lock`
+- `event-outboxer-lock-postgres-advisory` — session-scoped `pg_advisory_lock`
   with SHA-256 key hashing; the handle owns its connection so HikariCP
   hand-off does not leak locks.
 - `event-outboxer-lock-redis` — `SET NX PX` with UUID fencing tokens;

@@ -74,7 +74,7 @@ is an anti-pattern and is explicitly not supported.
     </dependency>
     <dependency>
         <groupId>io.github.bams22</groupId>
-        <artifactId>event-outboxer-lock-postgres</artifactId>
+        <artifactId>event-outboxer-lock-postgres-lease</artifactId>
     </dependency>
 </dependencies>
 ```
@@ -84,6 +84,7 @@ is an anti-pattern and is explicitly not supported.
 spring.flyway.locations:
   - classpath:db/migration
   - classpath:db/migration/outbox/core
+  - classpath:db/migration/outbox/lock   # only with event-outboxer.lock.type=postgres-lease
 ```
 
 ```java

@@ -33,7 +33,7 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0005: Worker heartbeat in a separate table](0005-workers-heartbeat-table.md)
 - [ADR-0006: LISTEN/NOTIFY removed from MVP](0006-no-listen-notify-in-mvp.md)
 - [ADR-0014: Optimistic locking via version](0014-optimistic-locking-via-version-field.md)
-- [ADR-0022: Lease-table PostgreSQL EntityLocker (default for lock.type=postgres)](0022-lease-table-postgres-entity-locker.md)
+- [ADR-0022: Lease-table PostgreSQL EntityLocker (lock.type=postgres-lease)](0022-lease-table-postgres-entity-locker.md)
 
 ### Lifecycle and error handling
 

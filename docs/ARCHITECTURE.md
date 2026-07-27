@@ -75,7 +75,7 @@ asynchronously with atomicity guarantees relative to business transactions.
 
 ## Module layout
 
-The library consists of 15 Maven modules:
+The library consists of 16 Maven modules:
 
 ```
 event-outboxer (parent pom)
@@ -86,7 +86,8 @@ event-outboxer (parent pom)
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
 ├── event-outboxer-storage-inmemory         Test infrastructure (never a production storage, ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
-├── event-outboxer-lock-postgres            PostgreSQL EntityLocker (lease table, ADR-0022; advisory opt-out)
+├── event-outboxer-lock-postgres-advisory   pg_advisory_lock EntityLocker (postgres-advisory opt-out)
+├── event-outboxer-lock-postgres-lease      lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
@@ -122,7 +123,8 @@ Packages mirror the modules 1-to-1 under `io.github.bams22.outboxer.*`:
 | `-spi` | `io.github.bams22.outboxer.spi.*` |
 | `-core` | `io.github.bams22.outboxer.core.*` |
 | `-storage-postgres` | `io.github.bams22.outboxer.storage.postgres.*` |
-| `-lock-postgres` | `io.github.bams22.outboxer.lock.postgres.*` |
+| `-lock-postgres-advisory` | `io.github.bams22.outboxer.lock.postgres.advisory.*` |
+| `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
 | `-serializer-jackson` | `io.github.bams22.outboxer.serializer.jackson.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |

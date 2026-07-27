@@ -56,7 +56,7 @@
         </dependency>
         <dependency>
             <groupId>io.github.bams22</groupId>
-            <artifactId>event-outboxer-lock-postgres</artifactId>
+            <artifactId>event-outboxer-lock-postgres-lease</artifactId>
         </dependency>
         <dependency>
             <groupId>io.github.bams22</groupId>

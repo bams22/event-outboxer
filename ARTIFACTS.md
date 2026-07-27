@@ -8,9 +8,9 @@ The table below is the quickest way to decide what to add to your `pom.xml`.
 
 | Goal | Modules to add | Transitive runtime cost |
 |---|---|---|
-| Spring Boot + PostgreSQL (typical production) | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-postgres` <br> `event-outboxer-metrics-micrometer` (optional) | Spring Boot 3.5, PostgreSQL JDBC, HikariCP (via your `spring-boot-starter-jdbc`), Micrometer. |
+| Spring Boot + PostgreSQL (typical production) | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-postgres-lease` <br> `event-outboxer-metrics-micrometer` (optional) | Spring Boot 3.5, PostgreSQL JDBC, HikariCP (via your `spring-boot-starter-jdbc`), Micrometer. |
 | Spring Boot + PG with Redis-coordinated locks | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-redis` | Additional: Lettuce 6. |
-| Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` <br> `event-outboxer-lock-postgres` (or redis / noop) | SLF4J, Jackson, adapter dependencies. |
+| Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` <br> `event-outboxer-lock-postgres-lease` (or postgres-advisory / redis / noop) | SLF4J, Jackson, adapter dependencies. |
 | Unit / integration tests for your handlers | `event-outboxer-testkit` (test scope) | Transitively brings in-memory adapter + Jackson. |
 
 Always import the BOM first and let it manage versions:
@@ -40,7 +40,8 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-storage-inmemory` | Thread-safe in-process `EventStore` / `WorkerRegistry` / `EntityLocker`. | `event-outboxer-api`, `event-outboxer-spi`. | Tests, dev setups, experimentation. Do NOT use in production. |
 | `event-outboxer-storage-postgres` | PG 15+ backend with CTE + `SKIP LOCKED` claim, optional archive. Ships Flyway migrations. | `event-outboxer-api`, `event-outboxer-spi`, `postgresql` JDBC, `flyway-core` (optional). | Production default. |
 | `event-outboxer-serializer-jackson` | `JacksonEventSerializer` + `JacksonObjectMapperFactory.defaults()`. | Jackson databind + JavaTime + Jdk8 + ParameterNames. | Transitive via the starter; add directly in plain-Java setups. |
-| `event-outboxer-lock-postgres` | `pg_advisory_lock`-backed `EntityLocker`. | PostgreSQL JDBC. | Single-region deployments sharing the outbox DB. |
+| `event-outboxer-lock-postgres-lease` | Lease-table `EntityLocker` (`entity_locks`, ADR-0022) — no pinned connections, pgBouncer-safe, TTL honoured. Ships migration V005. | PostgreSQL JDBC. | Recommended PostgreSQL locker (`lock.type=postgres-lease`). |
+| `event-outboxer-lock-postgres-advisory` | `pg_advisory_lock`-backed `EntityLocker` (session-scoped; pins one pooled connection per held lock, incompatible with pgBouncer transaction pooling). | PostgreSQL JDBC. | Opt-out (`lock.type=postgres-advisory`) for immediate clean-crash release. |
 | `event-outboxer-lock-redis` | Redis/KeyDB `EntityLocker` with fencing-token unlock. | Lettuce 6. | Multi-region or cross-DB deployments. |
 | `event-outboxer-cache-redis` | Redis/KeyDB `MetricsSnapshotCache` — shares the metrics snapshot across replicas. | Lettuce 6. | Fleets where per-JVM snapshot queries would hammer the DB. |
 | `event-outboxer-metrics-micrometer` | `OutboxListener` publishing to a Micrometer `MeterRegistry`. | `micrometer-core`. | Any Boot app with Micrometer/Observation; the starter auto-wires it if present. |
@@ -95,7 +96,8 @@ io.github.bams22:event-outboxer-core:0.2.0
 io.github.bams22:event-outboxer-storage-inmemory:0.2.0
 io.github.bams22:event-outboxer-storage-postgres:0.2.0
 io.github.bams22:event-outboxer-serializer-jackson:0.2.0
-io.github.bams22:event-outboxer-lock-postgres:0.2.0
+io.github.bams22:event-outboxer-lock-postgres-lease:0.3.0     (ships in 0.3.0)
+io.github.bams22:event-outboxer-lock-postgres-advisory:0.3.0  (0.2.0 shipped as event-outboxer-lock-postgres)
 io.github.bams22:event-outboxer-lock-redis:0.2.0
 io.github.bams22:event-outboxer-cache-redis:0.3.0          (ships in 0.3.0)
 io.github.bams22:event-outboxer-metrics-micrometer:0.2.0
