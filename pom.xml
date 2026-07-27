@@ -103,7 +103,7 @@
         -->
         <versions-maven-plugin.version>2.16.2</versions-maven-plugin.version>
         <flatten-maven-plugin.version>1.7.0</flatten-maven-plugin.version>
-        <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
+        <spotless-maven-plugin.version>3.8.0</spotless-maven-plugin.version>
         <central-publishing-maven-plugin.version>0.6.0</central-publishing-maven-plugin.version>
         <japicmp-maven-plugin.version>0.23.1</japicmp-maven-plugin.version>
         <!--
@@ -361,7 +361,7 @@
                     <configuration>
                         <java>
                             <googleJavaFormat>
-                                <version>1.27.0</version>
+                                <version>1.28.0</version>
                                 <style>GOOGLE</style>
                                 <reflowLongStrings>true</reflowLongStrings>
                             </googleJavaFormat>
@@ -485,35 +485,14 @@
                 <groupId>com.github.siom79.japicmp</groupId>
                 <artifactId>japicmp-maven-plugin</artifactId>
             </plugin>
-            <!--
-                Spotless intentionally NOT activated in the default build: Spotless 2.44.5
-                together with google-java-format 1.27.0 (current latest as of April 2026) uses
-                an internal javac API that was changed in JDK 25 and fails with
-                NoSuchMethodError at runtime. The plugin configuration remains in
-                pluginManagement above and can be re-enabled once Spotless / GJF ship a
-                JDK 25-compatible release. Invoke `mvn -Pspotless spotless:apply` or
-                `spotless:check` explicitly when running on JDK ≤ 24.
-            -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+            </plugin>
         </plugins>
     </build>
 
     <profiles>
-        <!--
-            Spotless: opt-in until JDK 25 compatible Spotless/GJF is available.
-            Invoke with -Pspotless to activate the check.
-        -->
-        <profile>
-            <id>spotless</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.diffplug.spotless</groupId>
-                        <artifactId>spotless-maven-plugin</artifactId>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
         <!-- Integration tests: activated with -P it; runs failsafe IT classes. -->
         <profile>
             <id>it</id>
