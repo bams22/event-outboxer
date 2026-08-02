@@ -5,7 +5,7 @@ All notable changes to this project are documented here. Format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.3.0] — 2026-08-03
 
 ### Breaking
 - **Binary-capable serializer SPI and per-event payload format
@@ -175,7 +175,19 @@ All notable changes to this project are documented here. Format follows
   landing in the same release, each PostgreSQL locker backend now
   carries an explicit suffix. Pre-1.0 rename with no published
   consumers of the old artifact beyond 0.2.0 — update the artifactId
-  and imports when upgrading.
+  and imports when upgrading. The retired coordinate keeps publishing
+  as a pom-only **relocation stub** (`event-outboxer-lock-postgres`
+  module) pointing at `-advisory`: Maven Central coordinates are
+  immutable, so 0.1.0/0.2.0 can never be withdrawn, and a relocation
+  is the supported way to redirect anyone still resolving the old
+  artifactId. It targets `-advisory` rather than `-lease` because a
+  relocation must preserve behaviour — the stub is not listed in
+  `event-outboxer-bom`.
+- **DEPRECATED: 0.1.0 and 0.2.0.** Both predate ADR-0019, ADR-0022,
+  ADR-0023 and ADR-0025 and receive no fixes or backports; 0.3.0 is
+  the supported baseline. They stay resolvable on Maven Central
+  (coordinates are immutable) — deprecated by policy, not withdrawn.
+  See the Versions section in `README.md`.
 
 - **Poll-interval jitter.** Every wait emitted by the adaptive poller
   backoff now carries a uniform ±10% jitter, desynchronizing claim
@@ -607,6 +619,6 @@ or Micrometer registry, the library's defaults use a specific prefix:
   `spring-boot-dependencies` BOM; patch releases will follow
   upstream advisories.
 
-[Unreleased]: https://github.com/bams22/event-outboxer/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/bams22/event-outboxer/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/bams22/event-outboxer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bams22/event-outboxer/releases/tag/v0.1.0

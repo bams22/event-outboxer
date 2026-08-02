@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bams22</groupId>
+        <artifactId>event-outboxer-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>event-outboxer-lock-postgres</artifactId>
+    <packaging>pom</packaging>
+
+    <name>event-outboxer :: lock-postgres (relocated)</name>
+    <description>Relocation stub. Published up to 0.2.0 as the single PostgreSQL
+        EntityLocker; since 0.3.0 that adapter is named
+        event-outboxer-lock-postgres-advisory, alongside the new
+        event-outboxer-lock-postgres-lease (the PostgreSQL default, ADR-0022).
+        Carries no code — it only redirects Maven to the advisory
+        adapter.</description>
+
+    <!--
+        Maven Central artifacts are immutable: 0.1.0/0.2.0 of this artifactId
+        can never be withdrawn. A relocation stub is the supported way to
+        retire a coordinate — consumers resolving event-outboxer-lock-postgres
+        get a build warning naming the replacement and transparently resolve
+        the new GAV instead.
+
+        <version> is deliberately omitted: Maven then relocates to the SAME
+        version as the requested artifact, so this pom stays correct for every
+        future release without edits.
+
+        This artifact is intentionally NOT listed in event-outboxer-bom — the
+        BOM advertises the supported module set, and a retired coordinate does
+        not belong there.
+
+        Nothing else is needed for the release pipeline: packaging=pom means
+        maven-source-plugin/maven-javadoc-plugin produce nothing (Central does
+        not require sources/javadoc for pom artifacts, same as the BOM module),
+        and japicmp is skipped via <skipPomModules>true</skipPomModules>.
+    -->
+    <!--
+        Target is -advisory, not -lease. A relocation swaps the dependency
+        silently, so it must be behaviour-preserving: -advisory IS this
+        artifact renamed (same pg_advisory_lock semantics), whereas -lease is
+        a different locker that additionally requires migration V005. Callers
+        who want the lease locker must opt in explicitly — see the message
+        below and ADR-0022 §Rollout.
+    -->
+    <distributionManagement>
+        <relocation>
+            <groupId>io.github.bams22</groupId>
+            <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
+            <!-- Kept on one line: Maven echoes it verbatim into consumer build logs. -->
+            <message>Renamed in 0.3.0; same pg_advisory_lock semantics, set event-outboxer.lock.type=postgres-advisory. The new PostgreSQL default is the lease-table locker event-outboxer-lock-postgres-lease (ADR-0022) — moving to it also needs migration V005, so it is a deliberate migration rather than an artifact rename.</message>
+        </relocation>
+    </distributionManagement>
+</project>

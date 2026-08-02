@@ -129,6 +129,44 @@ public class SendOrderConfirmationHandler
 }
 ```
 
+## Versions
+
+> [!WARNING]
+> **0.1.0 and 0.2.0 are deprecated — do not use them in new code.**
+> Both were published before the architecture settled: they predate the
+> binary-capable serializer SPI (ADR-0025), the tracing SPI and its two
+> adapters (ADR-0023), the admin surfaces (ADR-0019) and the split of
+> the PostgreSQL locker into lease and advisory adapters (ADR-0022).
+> Start on **0.3.0** or later.
+
+Maven Central coordinates are immutable, so `0.1.0` and `0.2.0` stay
+resolvable forever — they are deprecated by policy, not withdrawn. No
+fixes or backports will be published for them; the upgrade path is
+`0.3.0`, whose breaking changes are enumerated in
+[CHANGELOG.md](CHANGELOG.md).
+
+The project is pre-1.0: minor versions may break API and SPI until
+`1.0.0`, and every break is listed under **Breaking** in the changelog.
+
+### Retired coordinates
+
+| Removed in | Artifact | Replacement |
+|------------|----------|-------------|
+| 0.3.0 | `event-outboxer-lock-postgres` | `event-outboxer-lock-postgres-advisory` (same `pg_advisory_lock` semantics, renamed) |
+
+`event-outboxer-lock-postgres` still publishes as a *relocation stub*:
+depending on it resolves `-advisory` automatically and prints a build
+warning naming the replacement. The stub is not part of
+`event-outboxer-bom` — switch the coordinate explicitly.
+
+The relocation targets `-advisory` because it preserves behaviour. The
+new PostgreSQL default is the lease-table locker
+`event-outboxer-lock-postgres-lease`
+([ADR-0022](docs/adr/0022-lease-table-postgres-entity-locker.md)) —
+moving to it means applying migration V005 and setting
+`event-outboxer.lock.type: postgres-lease`, so it is a deliberate
+migration rather than a coordinate swap.
+
 ## Observability at a glance
 
 When Spring Boot Actuator is on the classpath, the starter auto-wires

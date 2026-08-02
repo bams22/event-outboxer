@@ -40,6 +40,8 @@
         <module>event-outboxer-serializer-protobuf</module>
         <module>event-outboxer-lock-postgres-advisory</module>
         <module>event-outboxer-lock-postgres-lease</module>
+        <!-- Relocation stub for the retired pre-0.3.0 coordinate; no code. -->
+        <module>event-outboxer-lock-postgres</module>
         <module>event-outboxer-lock-redis</module>
         <module>event-outboxer-cache-redis</module>
         <module>event-outboxer-metrics-micrometer</module>

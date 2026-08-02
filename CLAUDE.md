@@ -28,7 +28,7 @@ ADR, amend the ADR in the same PR.
 - PostgreSQL 15+, KeyDB 6 / Redis 7 (adapter-level).
 - JUnit 5 + AssertJ + Testcontainers for testing.
 
-## Module layout (19 modules)
+## Module layout (19 modules + 1 relocation stub)
 
 ```
 event-outboxer (parent pom)
@@ -42,6 +42,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-serializer-protobuf     Protobuf EventSerializer (schema-first Message payloads, ADR-0026)
 ├── event-outboxer-lock-postgres-advisory  pg_advisory_lock EntityLocker (postgres-advisory opt-out)
 ├── event-outboxer-lock-postgres-lease     lease-table EntityLocker — PostgreSQL default (ADR-0022)
+├── event-outboxer-lock-postgres           pom-only relocation stub → -lock-postgres-advisory (retired coordinate, no code)
 ├── event-outboxer-lock-redis              Redis/KeyDB EntityLocker (Lettuce)
 ├── event-outboxer-cache-redis             Redis/KeyDB MetricsSnapshotCache (Lettuce)
 ├── event-outboxer-metrics-micrometer      MicrometerOutboxListener
