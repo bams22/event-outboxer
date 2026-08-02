@@ -47,9 +47,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -165,6 +168,7 @@ public final class OutboxTestContext {
     private @Nullable EntityLocker entityLocker;
     private @Nullable EventSerializer serializer;
     private final List<EventSerializer> additionalSerializers = new ArrayList<>();
+    private final Map<String, EventSerializer> writeSerializerOverrides = new LinkedHashMap<>();
     private @Nullable SettableClock clock;
     private @Nullable TransactionContext txContext;
     private @Nullable ObjectMapper objectMapper;
@@ -212,6 +216,21 @@ public final class OutboxTestContext {
       for (EventSerializer s : more) {
         additionalSerializers.add(Objects.requireNonNull(s, "serializer must not be null"));
       }
+      return this;
+    }
+
+    /**
+     * Per-event-type write serializer override — mirrors {@code
+     * OutboxEngineBuilder.writeSerializerOverride} (ADR-0025 amendment) for per-type
+     * format-migration tests. The override serializer is registered for reads automatically.
+     */
+    public Builder writeSerializerOverride(String eventType, EventSerializer serializer) {
+      Objects.requireNonNull(eventType, "eventType must not be null");
+      if (eventType.isBlank()) {
+        throw new IllegalArgumentException("eventType must not be blank");
+      }
+      writeSerializerOverrides.put(
+          eventType, Objects.requireNonNull(serializer, "serializer must not be null"));
       return this;
     }
 
@@ -346,6 +365,17 @@ public final class OutboxTestContext {
       List<EventSerializer> allSerializers = new ArrayList<>();
       allSerializers.add(resolvedSerializer);
       allSerializers.addAll(additionalSerializers);
+      // Per-type write serializers are auto-registered for reads; formats already present are
+      // not re-added (mirrors OutboxEngineBuilder).
+      Set<String> registeredFormats = new HashSet<>();
+      for (EventSerializer s : allSerializers) {
+        registeredFormats.add(s.format());
+      }
+      for (EventSerializer s : writeSerializerOverrides.values()) {
+        if (registeredFormats.add(s.format())) {
+          allSerializers.add(s);
+        }
+      }
       EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
 
       HandlerDispatcher dispatcher =
@@ -396,6 +426,7 @@ public final class OutboxTestContext {
           new DefaultOutboxEventPublisher(
               resolvedStore,
               resolvedSerializer,
+              writeSerializerOverrides,
               resolvedClock,
               resolvedTxCtx,
               noTransactionPolicy,

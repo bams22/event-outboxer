@@ -167,6 +167,15 @@ public class OutboxProperties {
      * null} (default): resolve automatically.
      */
     private @Nullable String writeFormat;
+
+    /**
+     * Per-event-type write serializer overrides: event type → format id, e.g. {@code
+     * write-format-per-type.ORDER_CREATED: protobuf}. Events of a listed type are written with that
+     * format; every other type keeps the default writer. Each format must belong to a registered
+     * {@code EventSerializer} bean — startup fails fast otherwise. Useful for a gradual format
+     * migration one event type at a time (ADR-0025 amendment).
+     */
+    private Map<String, String> writeFormatPerType = new LinkedHashMap<>();
   }
 
   /**

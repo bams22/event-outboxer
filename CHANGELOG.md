@@ -38,6 +38,17 @@ All notable changes to this project are documented here. Format follows
     `payloadFormat` fields.
 
 ### Added
+- **Per-event-type write serializer overrides (ADR-0025 amendment).**
+  The default writer can now be overridden per event type — the
+  gradual-migration knob: `event-outboxer.serializer.
+  write-format-per-type.<TYPE>: <format>` in the starter (each listed
+  format must belong to a registered serializer bean, else startup
+  fails fast listing the registered formats),
+  `OutboxEngineBuilder.writeSerializerOverride(type, serializer)` in
+  plain Java (override serializers are auto-registered for reads), and
+  the mirrored `OutboxTestContext.Builder.writeSerializerOverride` in
+  the testkit. Reads are unaffected — deserialization keeps routing by
+  the stored `payload_format`.
 - **Protobuf serializer module (`event-outboxer-serializer-protobuf`,
   ADR-0026).** First shipped binary serializer on the ADR-0025 seam:
   `ProtobufEventSerializer` (format id `protobuf`, bytes lane,

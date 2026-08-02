@@ -117,7 +117,10 @@ public class OutboxEngineAutoConfiguration {
   @ConditionalOnMissingBean
   public OutboxSerializers outboxSerializers(
       OutboxProperties properties, Map<String, EventSerializer> serializerBeans) {
-    return OutboxSerializers.resolve(serializerBeans, properties.getSerializer().getWriteFormat());
+    return OutboxSerializers.resolve(
+        serializerBeans,
+        properties.getSerializer().getWriteFormat(),
+        properties.getSerializer().getWriteFormatPerType());
   }
 
   @Bean
@@ -138,6 +141,7 @@ public class OutboxEngineAutoConfiguration {
     return new io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher(
         store,
         serializers.write(),
+        serializers.writePerType(),
         clock,
         txContext,
         policy,
@@ -177,6 +181,7 @@ public class OutboxEngineAutoConfiguration {
             .workerRegistry(registry)
             .eventSerializer(serializers.write())
             .additionalSerializers(serializers.readOnly().toArray(EventSerializer[]::new))
+            .writeSerializerOverrides(serializers.writePerType())
             .entityLocker(locker)
             .clock(clock)
             .transactionContext(txContext)

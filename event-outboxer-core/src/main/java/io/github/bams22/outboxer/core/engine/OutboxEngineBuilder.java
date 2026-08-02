@@ -59,10 +59,12 @@ import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -87,6 +89,7 @@ public final class OutboxEngineBuilder {
   private @Nullable WorkerRegistry registry;
   private @Nullable EventSerializer serializer;
   private final List<EventSerializer> additionalSerializers = new ArrayList<>();
+  private final Map<String, EventSerializer> writeSerializerOverrides = new LinkedHashMap<>();
   private EntityLocker locker = EntityLocker.NOOP;
   private Clock clock = Clock.system();
   private TransactionContext txContext = TransactionContext.alwaysActive();
@@ -142,6 +145,30 @@ public final class OutboxEngineBuilder {
     for (EventSerializer s : more) {
       additionalSerializers.add(Objects.requireNonNull(s, "serializer must not be null"));
     }
+    return this;
+  }
+
+  /**
+   * Per-event-type write serializer override (ADR-0025 amendment): events of {@code eventType} are
+   * serialized with — and stamped with the {@code format()} of — the given serializer instead of
+   * the default {@link #eventSerializer(EventSerializer)}. Every other type keeps the default.
+   * Useful for a gradual format migration one event type at a time; the override serializer is
+   * registered for reads automatically.
+   */
+  public OutboxEngineBuilder writeSerializerOverride(String eventType, EventSerializer serializer) {
+    Objects.requireNonNull(eventType, "eventType must not be null");
+    if (eventType.isBlank()) {
+      throw new IllegalArgumentException("eventType must not be blank");
+    }
+    writeSerializerOverrides.put(
+        eventType, Objects.requireNonNull(serializer, "serializer must not be null"));
+    return this;
+  }
+
+  /** Bulk variant of {@link #writeSerializerOverride(String, EventSerializer)}. */
+  public OutboxEngineBuilder writeSerializerOverrides(Map<String, EventSerializer> overrides) {
+    Objects.requireNonNull(overrides, "overrides must not be null");
+    overrides.forEach(this::writeSerializerOverride);
     return this;
   }
 
@@ -302,6 +329,18 @@ public final class OutboxEngineBuilder {
     List<EventSerializer> allSerializers = new ArrayList<>();
     allSerializers.add(eventSerializer);
     allSerializers.addAll(additionalSerializers);
+    // Per-type write serializers are auto-registered for reads; a format already present
+    // (typically the same instance also passed to additionalSerializers) is not re-added, so
+    // the registry's duplicate-format check keeps guarding genuinely conflicting registrations.
+    Set<String> registeredFormats = new HashSet<>();
+    for (EventSerializer s : allSerializers) {
+      registeredFormats.add(s.format());
+    }
+    for (EventSerializer s : writeSerializerOverrides.values()) {
+      if (registeredFormats.add(s.format())) {
+        allSerializers.add(s);
+      }
+    }
     EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
 
     OutboxListenerRegistry listener = new OutboxListenerRegistry(listeners);
@@ -382,7 +421,15 @@ public final class OutboxEngineBuilder {
 
     OutboxEventPublisher publisher =
         new DefaultOutboxEventPublisher(
-            eventStore, eventSerializer, clock, txContext, noTxPolicy, listener, hub, safeTracer);
+            eventStore,
+            eventSerializer,
+            writeSerializerOverrides,
+            clock,
+            txContext,
+            noTxPolicy,
+            listener,
+            hub,
+            safeTracer);
 
     HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
     OrphanRecoveryTask orphanTask =

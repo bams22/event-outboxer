@@ -231,7 +231,73 @@ class DefaultOutboxEventPublisherTest {
     assertThat(store.findById(ids.get(2))).isPresent();
   }
 
+  @Test
+  void perTypeOverrideWritesWithItsOwnSerializerAndFormat() {
+    InMemoryEventStore store = new InMemoryEventStore();
+    DefaultOutboxEventPublisher publisher = withOverride(store, "B");
+
+    UUID plain = publisher.publish("A", "hello");
+    UUID overridden = publisher.publish("B", "hello");
+
+    assertThat(store.findById(plain).orElseThrow().payloadFormat())
+        .isEqualTo(StringEventSerializer.FORMAT);
+    Event b = store.findById(overridden).orElseThrow();
+    assertThat(b.payloadFormat()).isEqualTo("test-alt");
+    assertThat(b.payload())
+        .isEqualTo(io.github.bams22.outboxer.domain.SerializedPayload.ofText("alt:hello"));
+  }
+
+  @Test
+  void publishAllAppliesPerTypeOverridePerRequest() {
+    InMemoryEventStore store = new InMemoryEventStore();
+    DefaultOutboxEventPublisher publisher = withOverride(store, "B");
+
+    java.util.List<UUID> ids =
+        publisher.publishAll(
+            java.util.List.of(
+                new io.github.bams22.outboxer.api.publish.PublishRequest("A", "one", null),
+                new io.github.bams22.outboxer.api.publish.PublishRequest("B", "two", null)));
+
+    assertThat(store.findById(ids.get(0)).orElseThrow().payloadFormat())
+        .isEqualTo(StringEventSerializer.FORMAT);
+    assertThat(store.findById(ids.get(1)).orElseThrow().payloadFormat()).isEqualTo("test-alt");
+  }
+
   private static final OutboxListener NOOP = new OutboxListener() {};
+
+  /** Distinct-format stub so per-type routing is observable in the stored payloadFormat. */
+  private static final io.github.bams22.outboxer.spi.EventSerializer ALT_SERIALIZER =
+      new io.github.bams22.outboxer.spi.EventSerializer() {
+        @Override
+        public String format() {
+          return "test-alt";
+        }
+
+        @Override
+        public io.github.bams22.outboxer.domain.SerializedPayload serialize(Object payload) {
+          return io.github.bams22.outboxer.domain.SerializedPayload.ofText("alt:" + payload);
+        }
+
+        @Override
+        public <T> T deserialize(
+            io.github.bams22.outboxer.domain.SerializedPayload payload, Class<T> type) {
+          return type.cast(payload.requireText().substring("alt:".length()));
+        }
+      };
+
+  private static DefaultOutboxEventPublisher withOverride(
+      InMemoryEventStore store, String overriddenType) {
+    return new DefaultOutboxEventPublisher(
+        store,
+        new StringEventSerializer(),
+        java.util.Map.of(overriddenType, ALT_SERIALIZER),
+        Clock.system(),
+        TransactionContext.alwaysActive(),
+        NoTransactionPolicy.FAIL,
+        NOOP,
+        PollerWaker.NOOP,
+        io.github.bams22.outboxer.spi.OutboxTracer.NOOP);
+  }
 
   private static DefaultOutboxEventPublisher plain(InMemoryEventStore store) {
     return new DefaultOutboxEventPublisher(

@@ -558,7 +558,9 @@ The write serializer resolves as:
 ```yaml
 event-outboxer:
   serializer:
-    write-format: jackson-json   # only needed with several serializer beans
+    write-format: jackson-json    # default writer (only needed with several serializer beans)
+    write-format-per-type:        # per-event-type overrides (ADR-0025 amendment)
+      ORDER_CREATED: protobuf     # this type writes protobuf; every other type keeps the default
 ```
 
 With both shipped modules on the classpath and no `write-format`,
@@ -567,6 +569,15 @@ Jackson keeps writing (rule 3 — its auto-configured bean carries the
 `write-format: protobuf` to switch the writer. In a protobuf-only
 setup (no Jackson serializer module) the single bean writes with zero
 config (rule 2).
+
+`write-format-per-type` maps event types to the format that writes
+them instead of the default — each listed format must belong to a
+registered serializer bean (startup fails fast otherwise, listing the
+registered formats). Deserialization is unaffected: reads always route
+by the `payload_format` stored on each event. Plain-Java setups get
+the same knob via `OutboxEngineBuilder.writeSerializerOverride(type,
+serializer)` (the override serializer is auto-registered for reads),
+and the testkit mirrors it on `OutboxTestContext.Builder`.
 
 #### Migrating between payload formats
 
@@ -581,6 +592,12 @@ Because reads route by the stored format, a format migration (e.g.
    serializer until they drain.
 4. Once no old-format events remain (check `payload_format` in the
    events/archive tables), drop the old serializer bean.
+
+For a **gradual migration one event type at a time**, use
+`write-format-per-type` instead of flipping the global writer at once:
+move a single type to the new format, watch it drain and process
+cleanly, then add the next type. Once every type is listed (or you are
+confident), switch `write-format` to the new id and drop the map.
 
 An event whose stored format has no registered serializer is not lost:
 `OUTBOX-203` routes through the `FailureHandler` chain (retry with

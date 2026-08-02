@@ -161,7 +161,9 @@ constraint.
 - **Per-event-type write serializer configuration**: rejected for now —
   the registry covers the read side; a per-type write override adds
   configuration surface without a demonstrated need. Can be layered on
-  later without schema or SPI changes.
+  later without schema or SPI changes. *(The need materialized once
+  ADR-0026 shipped a second format — implemented by the amendment
+  below, exactly as the predicted layering: no schema or SPI changes.)*
 - **Do nothing until a binary format is demanded** (ADR-0011 status
   quo): rejected — post-1.0 the same change costs a semver major plus a
   user-facing migration story; pre-1.0 it costs neither.
@@ -202,3 +204,29 @@ constraint.
   gains `format()` and `EventSerializerRegistry`.
 - [ADR-0026](0026-protobuf-serializer-module.md) — the first shipped
   binary serializer module built on this seam.
+
+## Amendment (2026-08-02): per-event-type write serializer overrides
+
+With a second format shipped (ADR-0026), the per-type write
+configuration this ADR deferred gained its demonstrated need: a
+gradual format migration one event type at a time. It is now layered
+on exactly as predicted — no schema or SPI changes:
+
+- **Core**: `OutboxEngineBuilder.writeSerializerOverride(eventType,
+  serializer)` (and a bulk `writeSerializerOverrides(Map)`) route the
+  listed types to their serializer at publish time; every other type
+  keeps the default write serializer. The publisher stamps the
+  override's `format()`; override serializers are auto-registered for
+  reads (formats already registered are not re-added, so the
+  registry's duplicate-format check keeps guarding genuine conflicts).
+- **Starter**: `event-outboxer.serializer.write-format-per-type`
+  (event type → format id). Every listed format must belong to a
+  registered `EventSerializer` bean — startup fails fast otherwise,
+  listing the registered formats. The default-writer resolution rules
+  above are unchanged.
+- **Testkit**: `OutboxTestContext.Builder.writeSerializerOverride`
+  mirrors the engine builder.
+- **Read side is untouched**: deserialization still routes solely by
+  the stored `payload_format`, so per-type writers, the default
+  writer, and drained old formats coexist safely during rolling
+  deploys.

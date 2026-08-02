@@ -63,6 +63,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
   private final EventStore store;
   private final EventSerializer serializer;
+  private final Map<String, EventSerializer> writeSerializerOverrides;
   private final Clock clock;
   private final TransactionContext txContext;
   private final NoTransactionPolicy noTxPolicy;
@@ -90,8 +91,31 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
       OutboxListener listener,
       PollerWaker waker,
       OutboxTracer tracer) {
+    this(store, serializer, Map.of(), clock, txContext, noTxPolicy, listener, waker, tracer);
+  }
+
+  /**
+   * Variant with per-event-type write serializer overrides (ADR-0025 amendment): events of a listed
+   * type are serialized with — and stamped with the {@code format()} of — the mapped serializer;
+   * every other type uses the default {@code serializer}. Deserialization is unaffected here: it
+   * routes by the stored {@code payload_format} in the dispatcher.
+   */
+  public DefaultOutboxEventPublisher(
+      EventStore store,
+      EventSerializer serializer,
+      Map<String, EventSerializer> writeSerializerOverrides,
+      Clock clock,
+      TransactionContext txContext,
+      NoTransactionPolicy noTxPolicy,
+      OutboxListener listener,
+      PollerWaker waker,
+      OutboxTracer tracer) {
     this.store = Objects.requireNonNull(store, "store must not be null");
     this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
+    this.writeSerializerOverrides =
+        Map.copyOf(
+            Objects.requireNonNull(
+                writeSerializerOverrides, "writeSerializerOverrides must not be null"));
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
     this.txContext = Objects.requireNonNull(txContext, "txContext must not be null");
     this.noTxPolicy = Objects.requireNonNull(noTxPolicy, "noTxPolicy must not be null");
@@ -125,7 +149,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
     // Serialization stays outside the span: a serialization failure is a caller bug, not a
     // messaging operation, and no event exists yet to trace.
-    SerializedPayload serialized = serialize(payload);
+    SerializedPayload serialized = serialize(eventType, payload);
     UUID id = UUID.randomUUID();
     try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
       PendingEvent pending =
@@ -240,7 +264,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         Objects.requireNonNull(r, "request element must not be null");
         validate(r.eventType(), r.payload());
         PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
-        SerializedPayload serialized = serialize(r.payload());
+        SerializedPayload serialized = serialize(r.eventType(), r.payload());
         UUID id = UUID.randomUUID();
         if (opts.dedupKey() != null) {
           try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType())) {
@@ -330,9 +354,13 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
   }
 
-  private SerializedPayload serialize(Object payload) {
+  private EventSerializer serializerFor(String eventType) {
+    return writeSerializerOverrides.getOrDefault(eventType, serializer);
+  }
+
+  private SerializedPayload serialize(String eventType, Object payload) {
     try {
-      return serializer.serialize(payload);
+      return serializerFor(eventType).serialize(payload);
     } catch (PublishSerializationException ex) {
       throw ex;
     } catch (RuntimeException ex) {
@@ -364,7 +392,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         .id(id)
         .eventType(eventType)
         .payload(serialized)
-        .payloadFormat(serializer.format())
+        .payloadFormat(serializerFor(eventType).format())
         .payloadClass(payload.getClass().getName())
         .priority(priority)
         .runAt(runAt)

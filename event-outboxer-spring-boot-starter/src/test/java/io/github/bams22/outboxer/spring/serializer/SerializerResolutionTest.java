@@ -88,6 +88,40 @@ class SerializerResolutionTest {
   }
 
   @Test
+  @DisplayName("write-format-per-type routes listed event types to their serializer")
+  void writeFormatPerTypeMapsTypeToSerializer() {
+    runner
+        .withUserConfiguration(ExtraSerializer.class)
+        .withPropertyValues(
+            "event-outboxer.serializer.write-format-per-type.ORDER_CREATED=test-extra")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              OutboxSerializers serializers = ctx.getBean(OutboxSerializers.class);
+              assertThat(serializers.write()).isInstanceOf(JacksonEventSerializer.class);
+              assertThat(serializers.writePerType()).containsOnlyKeys("ORDER_CREATED");
+              assertThat(serializers.writePerType().get("ORDER_CREATED").format())
+                  .isEqualTo("test-extra");
+            });
+  }
+
+  @Test
+  @DisplayName("unknown per-type write format fails startup listing the registered formats")
+  void unknownPerTypeWriteFormatFailsFast() {
+    runner
+        .withPropertyValues(
+            "event-outboxer.serializer.write-format-per-type.ORDER_CREATED=no-such-format")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .hasMessageContaining("write-format-per-type.ORDER_CREATED")
+                  .hasMessageContaining("jackson-json");
+            });
+  }
+
+  @Test
   @DisplayName("multiple beans without write-format: the outboxEventSerializer override wins")
   void overrideBeanNameWinsAmongMultipleBeans() {
     // The user override replaces the auto-configured bean (@ConditionalOnMissingBean by name)

@@ -79,6 +79,24 @@ class ProtobufSerializerResolutionTest {
   }
 
   @Test
+  @DisplayName("write-format-per-type moves one event type to protobuf; Jackson keeps the rest")
+  void perTypeProtobufOverrideKeepsJacksonAsDefaultWriter() {
+    // The gradual-migration setup (ADR-0025 amendment): one event type writes protobuf while
+    // every other type — and the default writer — stays Jackson.
+    runner
+        .withPropertyValues(
+            "event-outboxer.serializer.write-format-per-type.ORDER_CREATED=protobuf")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              OutboxSerializers serializers = ctx.getBean(OutboxSerializers.class);
+              assertThat(serializers.write()).isInstanceOf(JacksonEventSerializer.class);
+              assertThat(serializers.writePerType().get("ORDER_CREATED"))
+                  .isInstanceOf(ProtobufEventSerializer.class);
+            });
+  }
+
+  @Test
   @DisplayName("a user-defined ProtobufEventSerializer backs off the auto-configured one")
   void userDefinedProtobufSerializerBacksOffTheAutoConfiguredOne() {
     // Without the type-based backoff two beans would share the "protobuf" format id and fail
