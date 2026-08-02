@@ -132,13 +132,13 @@ class HandlerDispatcherFormatRoutingTest {
   void unknownFormatIsRecoverable() {
     EventSerializerRegistry registry =
         EventSerializerRegistry.of(List.of(new StringEventSerializer()));
-    ClaimedEvent claimed = saveAndClaim("protobuf");
+    ClaimedEvent claimed = saveAndClaim("no-such-format");
 
     dispatcher(registry).dispatch(claimed);
 
     SerializationErrorInfo info = serializationError.get();
     assertThat(info).isNotNull();
-    assertThat(info.payloadFormat()).isEqualTo("protobuf");
+    assertThat(info.payloadFormat()).isEqualTo("no-such-format");
     assertThat(info.storedPayloadClass()).isEqualTo("java.lang.String");
     assertThat(info.targetType()).isEqualTo("java.lang.String");
     assertThat(info.cause().getMessage()).contains("OUTBOX-203");

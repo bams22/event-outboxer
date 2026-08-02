@@ -531,11 +531,16 @@ For plain-Java (non-Spring) tests use the testkit's
 
 ### Serialization
 
-The library ships Jackson only (ADR-0011); it activates automatically
-when Jackson is on the classpath. Customise serialization by providing
-an `ObjectMapper` bean named `outboxObjectMapper` (falls back to the
-primary `ObjectMapper`, then to library defaults) or by registering
-your own `@Bean EventSerializer`.
+The library ships two serializers: Jackson JSON (`jackson-json`, text
+lane, ADR-0011) and Protobuf (`protobuf`, bytes lane, ADR-0026). Each
+activates automatically when its module (and format library) is on the
+classpath. Customise Jackson by providing an `ObjectMapper` bean named
+`outboxObjectMapper` (falls back to the primary `ObjectMapper`, then
+to library defaults). Customise Protobuf by providing an
+`ExtensionRegistryLite` bean or your own `ProtobufEventSerializer`
+bean; protobuf payloads must be protoc-generated `Message` classes
+(schema-first, ADR-0026). Any other format plugs in via your own
+`@Bean EventSerializer`.
 
 The serialization seam itself is format-flexible (ADR-0025): every
 registered `EventSerializer` bean is available for **deserialization**
@@ -556,10 +561,17 @@ event-outboxer:
     write-format: jackson-json   # only needed with several serializer beans
 ```
 
+With both shipped modules on the classpath and no `write-format`,
+Jackson keeps writing (rule 3 — its auto-configured bean carries the
+`outboxEventSerializer` name) and `protobuf` registers read-only; set
+`write-format: protobuf` to switch the writer. In a protobuf-only
+setup (no Jackson serializer module) the single bean writes with zero
+config (rule 2).
+
 #### Migrating between payload formats
 
-Because reads route by the stored format, a format migration needs no
-data rewrite:
+Because reads route by the stored format, a format migration (e.g.
+`jackson-json` → `protobuf`) needs no data rewrite:
 
 1. Register the new serializer bean alongside the old one; keep the old
    format writing (or set `write-format` to the old id).

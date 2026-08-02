@@ -16,7 +16,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 18 modules
+### 19 modules
 
 ```
 event-outboxer (root parent pom)
@@ -27,6 +27,7 @@ event-outboxer (root parent pom)
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
 ├── event-outboxer-storage-inmemory         Test infrastructure (ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
+├── event-outboxer-serializer-protobuf      Protobuf EventSerializer (ADR-0026)
 ├── event-outboxer-lock-postgres-advisory   pg_advisory_lock EntityLocker (postgres-advisory opt-out)
 ├── event-outboxer-lock-postgres-lease      lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
@@ -65,6 +66,7 @@ Why `groupId=io.github.bams22` (rather than
 | `-storage-postgres` | `io.github.bams22.outboxer.storage.postgres.*` |
 | `-storage-inmemory` | `io.github.bams22.outboxer.storage.inmemory.*` |
 | `-serializer-jackson` | `io.github.bams22.outboxer.serializer.jackson.*` |
+| `-serializer-protobuf` | `io.github.bams22.outboxer.serializer.protobuf.*` |
 | `-lock-postgres-advisory` | `io.github.bams22.outboxer.lock.postgres.advisory.*` |
 | `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
@@ -212,7 +214,7 @@ The BOM POM manages:
 
 ### Negative consequences
 
-- 18 modules — more than a monorepo. That is the price of the pluggable
+- 19 modules — more than a monorepo. That is the price of the pluggable
   architecture. (`event-outboxer-cache-redis` was added after the
   original decision when `MetricsSnapshotCache` became an SPI port;
   `event-outboxer-lock-postgres-lease` was added by ADR-0022 so the

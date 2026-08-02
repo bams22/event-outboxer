@@ -27,6 +27,7 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0011: Jackson JSON as the only serializer in MVP](0011-jackson-json-only-in-mvp.md)
 - [ADR-0012: extractLockKey() on the handler (not in PublishOptions, not in the DB)](0012-extract-lock-key-on-handler.md)
 - [ADR-0025: Binary-capable serializer SPI and per-event payload format](0025-binary-capable-serializer-spi-and-payload-format.md)
+- [ADR-0026: Protobuf serializer module](0026-protobuf-serializer-module.md)
 
 ### Concurrency and isolation
 

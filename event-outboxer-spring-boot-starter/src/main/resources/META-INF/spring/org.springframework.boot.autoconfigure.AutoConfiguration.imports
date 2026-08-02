@@ -6,6 +6,7 @@ io.github.bams22.outboxer.spring.lock.PostgresLeaseLockAutoConfiguration
 io.github.bams22.outboxer.spring.lock.PostgresAdvisoryLockAutoConfiguration
 io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration
 io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration
+io.github.bams22.outboxer.spring.serializer.ProtobufSerializerAutoConfiguration
 io.github.bams22.outboxer.spring.metrics.MicrometerAutoConfiguration
 io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration
 io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration

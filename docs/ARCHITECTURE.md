@@ -75,7 +75,7 @@ asynchronously with atomicity guarantees relative to business transactions.
 
 ## Module layout
 
-The library consists of 16 Maven modules:
+The library consists of 19 Maven modules:
 
 ```
 event-outboxer (parent pom)
@@ -86,6 +86,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-storage-postgres         PG implementation of EventStore/WorkerRegistry
 ├── event-outboxer-storage-inmemory         Test infrastructure (never a production storage, ADR-0020)
 ├── event-outboxer-serializer-jackson       Jackson EventSerializer
+├── event-outboxer-serializer-protobuf      Protobuf EventSerializer (schema-first, ADR-0026)
 ├── event-outboxer-lock-postgres-advisory   pg_advisory_lock EntityLocker (postgres-advisory opt-out)
 ├── event-outboxer-lock-postgres-lease      lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
@@ -131,6 +132,7 @@ Packages mirror the modules 1-to-1 under `io.github.bams22.outboxer.*`:
 | `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
 | `-serializer-jackson` | `io.github.bams22.outboxer.serializer.jackson.*` |
+| `-serializer-protobuf` | `io.github.bams22.outboxer.serializer.protobuf.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
 | `-tracing-otel` | `io.github.bams22.outboxer.tracing.otel.*` |
 | `-tracing-micrometer` | `io.github.bams22.outboxer.tracing.micrometer.*` |
@@ -162,7 +164,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | `EventStore` | PostgreSQL, InMemory | CRUD + claim + finalize + reclaim |
 | `WorkerRegistry` | PostgreSQL, InMemory | register / heartbeat / findDead / deregister |
 | `EntityLocker` | PostgreSQL (lease table; advisory opt-out), Redis, NoOp | Lock by lockKey |
-| `EventSerializer` | Jackson | Serialize/deserialize payload; `format()` id persisted per event, reads routed via `EventSerializerRegistry` (ADR-0025) |
+| `EventSerializer` | Jackson, Protobuf | Serialize/deserialize payload; `format()` id persisted per event, reads routed via `EventSerializerRegistry` (ADR-0025) |
 | `Clock` | SystemClock, SettableClock | Time source (testability) |
 | `OutboxTracer` | OpenTelemetry, Micrometer Tracing, NoOp | Trace continuity publish → handle (ADR-0023) |
 
@@ -588,7 +590,7 @@ other) has been a real source of bugs.
 | Crash detection | `EngineHealthCheckTask` in the maintenance scheduler; flips `state()` → `STOPPED`, fires `onEngineCrashed` | inherited — starter only surfaces the result via the health indicator |
 | Flyway migrations | classpath `db/migration/outbox/{core,archive}` with `${eventOutboxerSchema}` placeholder | `FlywayConfigurationCustomizer` auto-feeds `event-outboxer.storage.schema` into the placeholder |
 | Liquibase changelog | classpath `db/changelog/outbox/{core,archive}/changelog.xml` with the same parameter name | `OutboxLiquibaseParameterEnvironmentPostProcessor` auto-feeds `spring.liquibase.parameters.eventOutboxerSchema` |
-| Serializer | `EventSerializer` SPI — caller wires write serializer via `eventSerializer(...)`, read-only formats via `additionalSerializers(...)` | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last); write serializer resolved per `event-outboxer.serializer.write-format` (ADR-0025) |
+| Serializer | `EventSerializer` SPI — caller wires write serializer via `eventSerializer(...)`, read-only formats via `additionalSerializers(...)` | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last) + additive `ProtobufSerializerAutoConfiguration` (ADR-0026); write serializer resolved per `event-outboxer.serializer.write-format` (ADR-0025) |
 | Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
 | Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
 | Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("outbox")` → `OutboxPropertiesValidator` → builder |

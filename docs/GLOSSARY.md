@@ -61,10 +61,11 @@ up automatically by the core engine via `eventType()`.
 
 **EventSerializer** — SPI port for payload serialization. Declares a
 stable `format()` id and works over `SerializedPayload` (text or bytes
-lane), so binary formats plug in without SPI changes; the only shipped
-implementation is Jackson JSON. See
-[ADR-0011](adr/0011-jackson-json-only-in-mvp.md) and
-[ADR-0025](adr/0025-binary-capable-serializer-spi-and-payload-format.md).
+lane), so binary formats plug in without SPI changes; shipped
+implementations are Jackson JSON (text lane) and Protobuf (bytes
+lane). See [ADR-0011](adr/0011-jackson-json-only-in-mvp.md),
+[ADR-0025](adr/0025-binary-capable-serializer-spi-and-payload-format.md)
+and [ADR-0026](adr/0026-protobuf-serializer-module.md).
 
 **EventSerializerRegistry** — immutable lookup of serializers by format
 id. The dispatcher uses it to deserialize each claimed event with the

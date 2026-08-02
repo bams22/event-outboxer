@@ -1,0 +1,31 @@
+// Test fixtures for ProtobufEventSerializerTest. Never shipped — compiled into
+// target/generated-test-sources by the protobuf-maven-plugin (test scope only).
+syntax = "proto3";
+
+package outboxer.test;
+
+option java_package = "io.github.bams22.outboxer.serializer.protobuf.testproto";
+option java_multiple_files = true;
+
+message OrderCreatedProto {
+  string order_id = 1;
+  int32 count = 2;
+  int64 occurred_at_epoch_millis = 3;
+  repeated string tags = 4;
+  map<string, string> attributes = 5;
+  repeated OrderLineProto lines = 6;
+  OrderStatusProto status = 7;
+
+  message OrderLineProto {
+    string sku = 1;
+    int32 quantity = 2;
+  }
+}
+
+enum OrderStatusProto {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_NEW = 1;
+  ORDER_STATUS_PAID = 2;
+}
+
+message EmptyEventProto {}

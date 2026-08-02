@@ -104,6 +104,11 @@
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-serializer-protobuf</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
             <optional>true</optional>
         </dependency>
@@ -138,10 +143,10 @@
             <optional>true</optional>
         </dependency>
         <!--
-            Optional compile classpath: Micrometer, OpenTelemetry, Lettuce. Present so the
-            starter's autoconfigurations compile; consumers must still depend on them explicitly
-            at runtime to actually engage the feature (@ConditionalOnClass / @ConditionalOnBean
-            guards).
+            Optional compile classpath: Micrometer, OpenTelemetry, Lettuce, Protobuf. Present so
+            the starter's autoconfigurations compile; consumers must still depend on them
+            explicitly at runtime to actually engage the feature (@ConditionalOnClass /
+            @ConditionalOnBean guards).
         -->
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -156,6 +161,11 @@
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-api</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
             <optional>true</optional>
         </dependency>
         <!--

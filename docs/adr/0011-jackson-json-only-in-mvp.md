@@ -255,11 +255,14 @@ this ADR predicted):
   `EventHandler.payloadType()` (ADR-0003); the column is publish-time
   diagnostics.
 
-Everything else stands: **Jackson remains the only shipped
-implementation** (path 4 — actual binary modules — still awaits real
-demand), the ObjectMapper resolution order, the
-`outboxEventSerializer` override contract, and the whole "Why
-Jackson / why not X" rationale.
+Everything else stands: the ObjectMapper resolution order, the
+`outboxEventSerializer` override contract, and the "Why Jackson"
+rationale for the default. Post-MVP path 4 is realized as well:
+[ADR-0026](0026-protobuf-serializer-module.md) ships
+`event-outboxer-serializer-protobuf`, superseding the "Why NOT
+Protobuf/Avro in MVP" clause above for Protobuf — while **Jackson
+remains the default writer** (the protobuf serializer registers
+additively and writes only when `write-format=protobuf` selects it).
 
 ## Related decisions
 

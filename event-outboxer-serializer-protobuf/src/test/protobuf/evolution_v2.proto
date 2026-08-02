@@ -1,0 +1,14 @@
+// "Today's" version of SubscriptionChangedProto for schema-evolution tests.
+// See evolution_v1.proto for the coexistence mechanism.
+syntax = "proto3";
+
+package outboxer.test.evolution.v2;
+
+option java_package = "io.github.bams22.outboxer.serializer.protobuf.testproto.v2";
+option java_multiple_files = true;
+
+message SubscriptionChangedProto {
+  string subscription_id = 1;
+  reserved 2; // old_plan_code removed — number stays reserved
+  string new_plan_name = 3; // added in v2
+}

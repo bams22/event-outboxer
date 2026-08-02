@@ -55,10 +55,10 @@ class EventSerializerRegistryTest {
   void requireUnknownFormatThrowsOutbox203() {
     EventSerializerRegistry registry = EventSerializerRegistry.of(List.of(serializer("a")));
 
-    assertThatThrownBy(() -> registry.require("protobuf"))
+    assertThatThrownBy(() -> registry.require("no-such-format"))
         .isInstanceOf(UnknownPayloadFormatException.class)
         .hasMessageContaining("OUTBOX-203")
-        .hasMessageContaining("protobuf")
+        .hasMessageContaining("no-such-format")
         .hasMessageContaining("a");
   }
 

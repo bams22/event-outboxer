@@ -37,6 +37,7 @@
         <module>event-outboxer-storage-inmemory</module>
         <module>event-outboxer-storage-postgres</module>
         <module>event-outboxer-serializer-jackson</module>
+        <module>event-outboxer-serializer-protobuf</module>
         <module>event-outboxer-lock-postgres-advisory</module>
         <module>event-outboxer-lock-postgres-lease</module>
         <module>event-outboxer-lock-redis</module>
@@ -104,6 +105,7 @@
         <versions-maven-plugin.version>2.16.2</versions-maven-plugin.version>
         <flatten-maven-plugin.version>1.7.0</flatten-maven-plugin.version>
         <spotless-maven-plugin.version>3.8.0</spotless-maven-plugin.version>
+        <protobuf-maven-plugin.version>5.1.7</protobuf-maven-plugin.version>
         <central-publishing-maven-plugin.version>0.6.0</central-publishing-maven-plugin.version>
         <japicmp-maven-plugin.version>0.23.1</japicmp-maven-plugin.version>
         <!--
@@ -118,6 +120,15 @@
 
         <!-- Nullness annotations (ADR-0018) -->
         <jspecify.version>1.0.0</jspecify.version>
+
+        <!--
+            Protobuf runtime — NOT managed by spring-boot-dependencies. protoc
+            is pinned to the same version in the serializer-protobuf module
+            (via the protobuf-maven-plugin pluginManagement below) so generated
+            code and runtime never diverge: protobuf 4.x requires
+            gencode <= runtime. ADR-0026.
+        -->
+        <protobuf.version>4.35.1</protobuf.version>
     </properties>
 
     <dependencyManagement>
@@ -152,6 +163,13 @@
                 <groupId>org.jspecify</groupId>
                 <artifactId>jspecify</artifactId>
                 <version>${jspecify.version}</version>
+            </dependency>
+
+            <!-- Protobuf runtime (not in Boot BOM) — ADR-0026 -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.version}</version>
             </dependency>
 
             <!-- Inter-module dependencies at project version -->
@@ -190,6 +208,11 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-serializer-jackson</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-serializer-protobuf</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -324,6 +347,17 @@
                     <version>${versions-maven-plugin.version}</version>
                 </plugin>
                 <plugin>
+                    <groupId>io.github.ascopes</groupId>
+                    <artifactId>protobuf-maven-plugin</artifactId>
+                    <version>${protobuf-maven-plugin.version}</version>
+                    <configuration>
+                        <!-- protoc pinned to the protobuf-java runtime version (ADR-0026) -->
+                        <protoc kind="binary-maven">
+                            <version>${protobuf.version}</version>
+                        </protoc>
+                    </configuration>
+                </plugin>
+                <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>flatten-maven-plugin</artifactId>
                     <version>${flatten-maven-plugin.version}</version>
@@ -420,8 +454,9 @@
                             <breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
                             <!--
                                 Modules that did not exist in the baseline release
-                                (cache-redis, admin-actuator, admin-rest) have no old artifact
-                                to compare against — skip them instead of failing resolution.
+                                (cache-redis, admin-actuator, admin-rest,
+                                serializer-protobuf) have no old artifact to
+                                compare against — skip them instead of failing resolution.
                             -->
                             <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                             <skipPomModules>true</skipPomModules>

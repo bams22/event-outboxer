@@ -49,6 +49,11 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-serializer-protobuf</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
                 <version>${project.version}</version>
             </dependency>

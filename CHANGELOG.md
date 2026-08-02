@@ -10,8 +10,9 @@ All notable changes to this project are documented here. Format follows
 ### Breaking
 - **Binary-capable serializer SPI and per-event payload format
   (ADR-0025).** Pre-1.0 breaking change preparing the serialization
-  seam for binary formats (Protobuf, Smile, Fury) without shipping any
-  — Jackson remains the only implementation:
+  seam for binary formats (Protobuf, Smile, Fury) — the first of them
+  ships in this release (see the Protobuf serializer module entry under
+  Added, ADR-0026); Jackson remains the default writer:
   - `EventSerializer` now declares `String format()` and works over the
     new two-lane `SerializedPayload` value type
     (`ofText`/`ofBytes`, exactly one lane set) instead of `String`.
@@ -37,6 +38,22 @@ All notable changes to this project are documented here. Format follows
     `payloadFormat` fields.
 
 ### Added
+- **Protobuf serializer module (`event-outboxer-serializer-protobuf`,
+  ADR-0026).** First shipped binary serializer on the ADR-0025 seam:
+  `ProtobufEventSerializer` (format id `protobuf`, bytes lane,
+  byte-exact round-trips through `payload_binary BYTEA`). Schema-first
+  — payloads are protoc-generated `Message` classes; anything else is
+  a publish-time `PublishSerializationException`. Deserialization uses
+  the generated static `parser()` accessor, resolved reflectively once
+  per class and cached; an optional `ExtensionRegistryLite` constructor
+  collaborator serves proto2 extension users. The starter's new
+  `ProtobufSerializerAutoConfiguration` registers the bean
+  `outboxProtobufEventSerializer` additively: Jackson keeps writing
+  until `event-outboxer.serializer.write-format=protobuf` selects the
+  protobuf writer, and protobuf-only setups write with zero config.
+  protoc runs at build time for the module's own tests only — the
+  published jar ships no generated code and consumers never need
+  protoc through this library.
 - **Format-flexible serialization seam (ADR-0025).** New
   `EventSerializerRegistry` in `-spi`: one configured serializer writes
   every new event and stamps its `format()` into the new

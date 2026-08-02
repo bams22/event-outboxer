@@ -76,13 +76,13 @@ class SerializerResolutionTest {
   @DisplayName("unknown write-format fails startup listing the registered formats")
   void unknownWriteFormatFailsFast() {
     runner
-        .withPropertyValues("event-outboxer.serializer.write-format=protobuf")
+        .withPropertyValues("event-outboxer.serializer.write-format=no-such-format")
         .run(
             ctx -> {
               assertThat(ctx).hasFailed();
               assertThat(ctx.getStartupFailure())
                   .rootCause()
-                  .hasMessageContaining("protobuf")
+                  .hasMessageContaining("no-such-format")
                   .hasMessageContaining("jackson-json");
             });
   }

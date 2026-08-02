@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bams22</groupId>
+        <artifactId>event-outboxer-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>event-outboxer-serializer-protobuf</artifactId>
+
+    <name>event-outboxer (Protobuf serializer)</name>
+    <description>Protobuf implementation of EventSerializer for
+        schema-first payloads: every payload DTO is a protoc-generated
+        com.google.protobuf.Message. Binary lane, byte-exact round
+        trips (ADR-0026).</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- Nullness annotations (transitive from api, declared for clarity). -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <!-- Compile-only: does not propagate to runtime classpath of consumers. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <!--
+                Compiles the test-only .proto fixtures under src/test/protobuf
+                into target/generated-test-sources (auto-added to the test
+                compile source roots). Runs at generate-test-sources, so the
+                published jar ships NO generated code and consumers never need
+                protoc. protoc is pinned to ${protobuf.version} in the parent
+                pluginManagement (ADR-0026).
+            -->
+            <plugin>
+                <groupId>io.github.ascopes</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generate-test-protos</id>
+                        <goals>
+                            <goal>generate-test</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+                Adapters must not depend on event-outboxer-core (CLAUDE.md
+                invariant 2): they are wired through -api / -spi only, so
+                that core internals stay swappable without breaking adapters.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>ban-core-in-adapter</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>io.github.bams22:event-outboxer-core</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
