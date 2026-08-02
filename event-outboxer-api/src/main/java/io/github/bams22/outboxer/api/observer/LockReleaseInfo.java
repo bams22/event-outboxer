@@ -24,10 +24,10 @@ import java.util.UUID;
  */
 public record LockReleaseInfo(UUID eventId, String eventType, String lockKey, Throwable cause) {
 
-  public LockReleaseInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(lockKey, "lockKey must not be null");
-    Objects.requireNonNull(cause, "cause must not be null");
-  }
+    public LockReleaseInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(lockKey, "lockKey must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+    }
 }

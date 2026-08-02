@@ -22,8 +22,8 @@ import java.util.UUID;
  */
 public record UnknownEventTypeInfo(UUID eventId, String eventType) {
 
-  public UnknownEventTypeInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-  }
+    public UnknownEventTypeInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+    }
 }

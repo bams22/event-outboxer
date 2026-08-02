@@ -28,119 +28,122 @@ import org.testcontainers.utility.DockerImageName;
 
 class LettuceMetricsSnapshotCacheIT {
 
-  @SuppressWarnings("resource")
-  private static final GenericContainer<?> REDIS =
-      new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+    @SuppressWarnings("resource")
+    private static final GenericContainer<?> REDIS =
+            new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
 
-  private static RedisClient client;
-  private static StatefulRedisConnection<String, String> connection;
+    private static RedisClient client;
+    private static StatefulRedisConnection<String, String> connection;
 
-  @BeforeAll
-  static void boot() {
-    REDIS.start();
-    client =
-        RedisClient.create(
-            RedisURI.builder()
-                .withHost(REDIS.getHost())
-                .withPort(REDIS.getMappedPort(6379))
-                .build());
-    connection = client.connect();
-  }
-
-  @AfterAll
-  static void shutdown() {
-    if (connection != null) {
-      connection.close();
+    @BeforeAll
+    static void boot() {
+        REDIS.start();
+        client =
+                RedisClient.create(
+                        RedisURI.builder()
+                                .withHost(REDIS.getHost())
+                                .withPort(REDIS.getMappedPort(6379))
+                                .build());
+        connection = client.connect();
     }
-    if (client != null) {
-      client.shutdown();
+
+    @AfterAll
+    static void shutdown() {
+        if (connection != null) {
+            connection.close();
+        }
+        if (client != null) {
+            client.shutdown();
+        }
+        REDIS.stop();
     }
-    REDIS.stop();
-  }
 
-  @BeforeEach
-  void flushBetweenTests() {
-    connection.sync().flushdb();
-  }
+    @BeforeEach
+    void flushBetweenTests() {
+        connection.sync().flushdb();
+    }
 
-  private static final OutboxMetricsSnapshot SNAPSHOT =
-      OutboxMetricsSnapshot.builder()
-          .totalPending(7)
-          .totalProcessing(3)
-          .totalDisabled(1)
-          .oldestPendingRunAt(Instant.parse("2026-04-22T12:00:00Z"))
-          .oldestClaimedAt(Instant.parse("2026-04-22T12:01:00Z"))
-          .takenAt(Instant.parse("2026-04-22T12:02:00Z"))
-          .perType(
-              List.of(
-                  OutboxMetricsSnapshot.EventTypeStats.builder()
-                      .eventType("ORDER")
-                      .pending(5)
-                      .processing(2)
-                      .disabled(0)
-                      .oldestPendingRunAt(Instant.parse("2026-04-22T12:00:00Z"))
-                      .build()))
-          .build();
+    private static final OutboxMetricsSnapshot SNAPSHOT =
+            OutboxMetricsSnapshot.builder()
+                    .totalPending(7)
+                    .totalProcessing(3)
+                    .totalDisabled(1)
+                    .oldestPendingRunAt(Instant.parse("2026-04-22T12:00:00Z"))
+                    .oldestClaimedAt(Instant.parse("2026-04-22T12:01:00Z"))
+                    .takenAt(Instant.parse("2026-04-22T12:02:00Z"))
+                    .perType(
+                            List.of(
+                                    OutboxMetricsSnapshot.EventTypeStats.builder()
+                                            .eventType("ORDER")
+                                            .pending(5)
+                                            .processing(2)
+                                            .disabled(0)
+                                            .oldestPendingRunAt(
+                                                    Instant.parse("2026-04-22T12:00:00Z"))
+                                            .build()))
+                    .build();
 
-  @Test
-  void putThenGetReturnsDeserialisedSnapshot() {
-    MetricsSnapshotCache cache =
-        new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
+    @Test
+    void putThenGetReturnsDeserialisedSnapshot() {
+        MetricsSnapshotCache cache =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
 
-    cache.put(SNAPSHOT);
+        cache.put(SNAPSHOT);
 
-    assertThat(cache.get()).contains(SNAPSHOT);
-  }
+        assertThat(cache.get()).contains(SNAPSHOT);
+    }
 
-  @Test
-  void getReturnsEmptyWhenKeyAbsent() {
-    MetricsSnapshotCache cache =
-        new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
+    @Test
+    void getReturnsEmptyWhenKeyAbsent() {
+        MetricsSnapshotCache cache =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
 
-    assertThat(cache.get()).isEmpty();
-  }
+        assertThat(cache.get()).isEmpty();
+    }
 
-  @Test
-  void invalidateRemovesEntry() {
-    MetricsSnapshotCache cache =
-        new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
-    cache.put(SNAPSHOT);
+    @Test
+    void invalidateRemovesEntry() {
+        MetricsSnapshotCache cache =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
+        cache.put(SNAPSHOT);
 
-    cache.invalidate();
+        cache.invalidate();
 
-    assertThat(cache.get()).isEmpty();
-  }
+        assertThat(cache.get()).isEmpty();
+    }
 
-  @Test
-  void serverSideTtlExpiresTheEntry() throws InterruptedException {
-    MetricsSnapshotCache cache =
-        new LettuceMetricsSnapshotCache(connection, Duration.ofMillis(200));
-    cache.put(SNAPSHOT);
-    assertThat(cache.get()).as("entry present immediately after put").contains(SNAPSHOT);
+    @Test
+    void serverSideTtlExpiresTheEntry() throws InterruptedException {
+        MetricsSnapshotCache cache =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofMillis(200));
+        cache.put(SNAPSHOT);
+        assertThat(cache.get()).as("entry present immediately after put").contains(SNAPSHOT);
 
-    Thread.sleep(400);
+        Thread.sleep(400);
 
-    assertThat(cache.get()).as("entry gone after TTL").isEmpty();
-  }
+        assertThat(cache.get()).as("entry gone after TTL").isEmpty();
+    }
 
-  @Test
-  void customKeyPrefixIsHonoured() {
-    MetricsSnapshotCache a =
-        new LettuceMetricsSnapshotCache(
-            connection,
-            Duration.ofSeconds(30),
-            "tenant-a:outbox:metrics:",
-            new com.fasterxml.jackson.databind.json.JsonMapper().findAndRegisterModules());
-    MetricsSnapshotCache b =
-        new LettuceMetricsSnapshotCache(
-            connection,
-            Duration.ofSeconds(30),
-            "tenant-b:outbox:metrics:",
-            new com.fasterxml.jackson.databind.json.JsonMapper().findAndRegisterModules());
+    @Test
+    void customKeyPrefixIsHonoured() {
+        MetricsSnapshotCache a =
+                new LettuceMetricsSnapshotCache(
+                        connection,
+                        Duration.ofSeconds(30),
+                        "tenant-a:outbox:metrics:",
+                        new com.fasterxml.jackson.databind.json.JsonMapper()
+                                .findAndRegisterModules());
+        MetricsSnapshotCache b =
+                new LettuceMetricsSnapshotCache(
+                        connection,
+                        Duration.ofSeconds(30),
+                        "tenant-b:outbox:metrics:",
+                        new com.fasterxml.jackson.databind.json.JsonMapper()
+                                .findAndRegisterModules());
 
-    a.put(SNAPSHOT);
+        a.put(SNAPSHOT);
 
-    assertThat(a.get()).contains(SNAPSHOT);
-    assertThat(b.get()).isEmpty();
-  }
+        assertThat(a.get()).contains(SNAPSHOT);
+        assertThat(b.get()).isEmpty();
+    }
 }

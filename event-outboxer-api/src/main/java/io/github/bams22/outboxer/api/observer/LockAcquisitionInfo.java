@@ -24,9 +24,9 @@ import java.util.UUID;
  */
 public record LockAcquisitionInfo(UUID eventId, String eventType, String lockKey) {
 
-  public LockAcquisitionInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(lockKey, "lockKey must not be null");
-  }
+    public LockAcquisitionInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(lockKey, "lockKey must not be null");
+    }
 }

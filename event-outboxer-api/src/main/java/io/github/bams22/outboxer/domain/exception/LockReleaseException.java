@@ -19,12 +19,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class LockReleaseException extends LockException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-402";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-402";
 
-  public LockReleaseException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public LockReleaseException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

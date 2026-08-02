@@ -23,119 +23,123 @@ import org.junit.jupiter.api.Test;
 
 class OutboxTestContextSmokeTest {
 
-  @Test
-  void publishTickProcesses() {
-    AtomicInteger invoked = new AtomicInteger();
-    OutboxTestContext ctx =
-        OutboxTestContext.builder()
-            .handler(
-                stringHandler(
-                    "ORDER",
-                    (c, p) -> {
-                      invoked.incrementAndGet();
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .build();
+    @Test
+    void publishTickProcesses() {
+        AtomicInteger invoked = new AtomicInteger();
+        OutboxTestContext ctx =
+                OutboxTestContext.builder()
+                        .handler(
+                                stringHandler(
+                                        "ORDER",
+                                        (c, p) -> {
+                                            invoked.incrementAndGet();
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
 
-    UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 3));
+        UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 3));
 
-    // Before tick, event is PENDING.
-    assertThatStore(ctx.eventStore())
-        .hasEvent(id)
-        .withStatus(EventStatus.PENDING)
-        .withEventType("ORDER")
-        .withAttempts(0);
+        // Before tick, event is PENDING.
+        assertThatStore(ctx.eventStore())
+                .hasEvent(id)
+                .withStatus(EventStatus.PENDING)
+                .withEventType("ORDER")
+                .withAttempts(0);
 
-    int dispatched = ctx.manualEngine().tick();
+        int dispatched = ctx.manualEngine().tick();
 
-    assertThat(dispatched).isEqualTo(1);
-    assertThat(invoked).hasValue(1);
-    assertThatStore(ctx.eventStore()).hasNoEvent(id);
-    assertThat(ctx.recording().processed()).hasSize(1);
-    assertThat(ctx.recording().published()).hasSize(1);
-  }
+        assertThat(dispatched).isEqualTo(1);
+        assertThat(invoked).hasValue(1);
+        assertThatStore(ctx.eventStore()).hasNoEvent(id);
+        assertThat(ctx.recording().processed()).hasSize(1);
+        assertThat(ctx.recording().published()).hasSize(1);
+    }
 
-  @Test
-  void retryOutcomeReschedulesEvent() {
-    OutboxTestContext ctx =
-        OutboxTestContext.builder()
-            .handler(
-                stringHandler(
-                    "ORDER",
-                    (c, p) -> new EventOutcome.Retry("transient", Duration.ofMinutes(1), null)))
-            .build();
+    @Test
+    void retryOutcomeReschedulesEvent() {
+        OutboxTestContext ctx =
+                OutboxTestContext.builder()
+                        .handler(
+                                stringHandler(
+                                        "ORDER",
+                                        (c, p) ->
+                                                new EventOutcome.Retry(
+                                                        "transient", Duration.ofMinutes(1), null)))
+                        .build();
 
-    UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 1));
-    ctx.manualEngine().tick();
+        UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 1));
+        ctx.manualEngine().tick();
 
-    assertThatStore(ctx.eventStore())
-        .hasEvent(id)
-        .withStatus(EventStatus.PENDING)
-        .withAttempts(1)
-        .withLastFailReason("transient");
-    assertThat(ctx.recording().retryScheduled()).hasSize(1);
-  }
+        assertThatStore(ctx.eventStore())
+                .hasEvent(id)
+                .withStatus(EventStatus.PENDING)
+                .withAttempts(1)
+                .withLastFailReason("transient");
+        assertThat(ctx.recording().retryScheduled()).hasSize(1);
+    }
 
-  @Test
-  void watchdogReclaimsStuckHandler() throws InterruptedException {
-    // Build with an aggressive handlerMaxRuntime so a quick sleep makes the event "stuck".
-    OutboxTestContext ctx =
-        OutboxTestContext.builder()
-            .defaultEventTypeConfig(
-                io.github.bams22.outboxer.core.config.EventTypeConfig.defaults().toBuilder()
-                    .handlerMaxRuntime(Duration.ofMillis(10))
-                    .build())
-            .handler(
-                stringHandler(
-                    "SLOW",
-                    (c, p) -> {
-                      // Simulate stuck handler — but return to avoid blocking the test.
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .build();
+    @Test
+    void watchdogReclaimsStuckHandler() throws InterruptedException {
+        // Build with an aggressive handlerMaxRuntime so a quick sleep makes the event "stuck".
+        OutboxTestContext ctx =
+                OutboxTestContext.builder()
+                        .defaultEventTypeConfig(
+                                io.github.bams22.outboxer.core.config.EventTypeConfig.defaults()
+                                        .toBuilder()
+                                        .handlerMaxRuntime(Duration.ofMillis(10))
+                                        .build())
+                        .handler(
+                                stringHandler(
+                                        "SLOW",
+                                        (c, p) -> {
+                                            // Simulate stuck handler — but return to avoid blocking
+                                            // the test.
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
 
-    // Manually mark a claimed event as in-flight past maxRuntime via clock advance.
-    UUID id = ctx.publisher().publish("SLOW", new OrderCreated("ord-1", 1));
-    // Process the event normally first to cover the full flow.
-    ctx.manualEngine().tick();
-    assertThatStore(ctx.eventStore()).hasNoEvent(id);
-  }
+        // Manually mark a claimed event as in-flight past maxRuntime via clock advance.
+        UUID id = ctx.publisher().publish("SLOW", new OrderCreated("ord-1", 1));
+        // Process the event normally first to cover the full flow.
+        ctx.manualEngine().tick();
+        assertThatStore(ctx.eventStore()).hasNoEvent(id);
+    }
 
-  @Test
-  void extensionInjectsFreshContext() {
-    // Extension-injected context isn't tested here (no ExtendWith on this class); see
-    // OutboxExtensionTest for the happy path. This smoke test just guards the builder default
-    // used by the extension.
-    OutboxTestContext ctx = OutboxTestContext.builder().build();
-    assertThat(ctx.publisher()).isNotNull();
-    assertThat(ctx.manualEngine()).isNotNull();
-    assertThat(ctx.recording()).isNotNull();
-    assertThat(ctx.clock()).isNotNull();
-  }
+    @Test
+    void extensionInjectsFreshContext() {
+        // Extension-injected context isn't tested here (no ExtendWith on this class); see
+        // OutboxExtensionTest for the happy path. This smoke test just guards the builder default
+        // used by the extension.
+        OutboxTestContext ctx = OutboxTestContext.builder().build();
+        assertThat(ctx.publisher()).isNotNull();
+        assertThat(ctx.manualEngine()).isNotNull();
+        assertThat(ctx.recording()).isNotNull();
+        assertThat(ctx.clock()).isNotNull();
+    }
 
-  record OrderCreated(String orderId, int count) {}
+    record OrderCreated(String orderId, int count) {}
 
-  @FunctionalInterface
-  private interface HandleFn {
-    EventOutcome handle(EventContext ctx, OrderCreated payload);
-  }
+    @FunctionalInterface
+    private interface HandleFn {
+        EventOutcome handle(EventContext ctx, OrderCreated payload);
+    }
 
-  private static EventHandler<OrderCreated> stringHandler(String type, HandleFn fn) {
-    return new EventHandler<OrderCreated>() {
-      @Override
-      public String eventType() {
-        return type;
-      }
+    private static EventHandler<OrderCreated> stringHandler(String type, HandleFn fn) {
+        return new EventHandler<OrderCreated>() {
+            @Override
+            public String eventType() {
+                return type;
+            }
 
-      @Override
-      public Class<OrderCreated> payloadType() {
-        return OrderCreated.class;
-      }
+            @Override
+            public Class<OrderCreated> payloadType() {
+                return OrderCreated.class;
+            }
 
-      @Override
-      public EventOutcome handle(EventContext ctx, OrderCreated payload) {
-        return fn.handle(ctx, payload);
-      }
-    };
-  }
+            @Override
+            public EventOutcome handle(EventContext ctx, OrderCreated payload) {
+                return fn.handle(ctx, payload);
+            }
+        };
+    }
 }

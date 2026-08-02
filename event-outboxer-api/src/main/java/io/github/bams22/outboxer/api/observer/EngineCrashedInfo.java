@@ -34,14 +34,14 @@ import org.jspecify.annotations.Nullable;
  * @param workerId identifier of the worker JVM
  */
 public record EngineCrashedInfo(
-    String reason, @Nullable Throwable cause, Instant at, WorkerId workerId) {
+        String reason, @Nullable Throwable cause, Instant at, WorkerId workerId) {
 
-  public EngineCrashedInfo {
-    Objects.requireNonNull(reason, "reason must not be null");
-    if (reason.isBlank()) {
-      throw new IllegalArgumentException("reason must not be blank");
+    public EngineCrashedInfo {
+        Objects.requireNonNull(reason, "reason must not be null");
+        if (reason.isBlank()) {
+            throw new IllegalArgumentException("reason must not be blank");
+        }
+        Objects.requireNonNull(at, "at must not be null");
+        Objects.requireNonNull(workerId, "workerId must not be null");
     }
-    Objects.requireNonNull(at, "at must not be null");
-    Objects.requireNonNull(workerId, "workerId must not be null");
-  }
 }

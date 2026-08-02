@@ -24,42 +24,45 @@ import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
  */
 public class AmbiguousOutboxDataSourceException extends NoUniqueBeanDefinitionException {
 
-  private final List<String> candidates;
+    private final List<String> candidates;
 
-  private AmbiguousOutboxDataSourceException(String message, Collection<String> candidates) {
-    super(DataSource.class, candidates.size(), message);
-    this.candidates = List.copyOf(candidates);
-  }
+    private AmbiguousOutboxDataSourceException(String message, Collection<String> candidates) {
+        super(DataSource.class, candidates.size(), message);
+        this.candidates = List.copyOf(candidates);
+    }
 
-  /** Two or more beans carry {@code @OutboxDataSource} — the qualifier must be unique. */
-  static AmbiguousOutboxDataSourceException multipleQualified(Collection<String> candidates) {
-    return new AmbiguousOutboxDataSourceException(
-        "Found "
-            + candidates.size()
-            + " DataSource beans marked with @OutboxDataSource"
-            + (candidates.isEmpty() ? "" : ": " + candidates)
-            + " — exactly one bean may carry the qualifier, the outbox cannot choose between them.",
-        candidates);
-  }
+    /** Two or more beans carry {@code @OutboxDataSource} — the qualifier must be unique. */
+    static AmbiguousOutboxDataSourceException multipleQualified(Collection<String> candidates) {
+        return new AmbiguousOutboxDataSourceException(
+                "Found "
+                        + candidates.size()
+                        + " DataSource beans marked with @OutboxDataSource"
+                        + (candidates.isEmpty() ? "" : ": " + candidates)
+                        + " — exactly one bean may carry the qualifier, the outbox cannot choose"
+                        + " between them.",
+                candidates);
+    }
 
-  /**
-   * Several {@code DataSource} beans exist and neither {@code @OutboxDataSource} nor
-   * {@code @Primary} singles one out.
-   */
-  static AmbiguousOutboxDataSourceException noneQualified(Collection<String> candidates) {
-    return new AmbiguousOutboxDataSourceException(
-        "Found "
-            + candidates.size()
-            + " DataSource beans and none is @Primary or marked with @OutboxDataSource: "
-            + candidates
-            + ". The outbox cannot choose which database holds its tables — mark exactly one "
-            + "bean with io.github.bams22.outboxer.spring.@OutboxDataSource (or declare one "
-            + "@Primary).",
-        candidates);
-  }
+    /**
+     * Several {@code DataSource} beans exist and neither {@code @OutboxDataSource} nor
+     * {@code @Primary} singles one out.
+     */
+    static AmbiguousOutboxDataSourceException noneQualified(Collection<String> candidates) {
+        return new AmbiguousOutboxDataSourceException(
+                "Found "
+                        + candidates.size()
+                        + " DataSource beans and none is @Primary or marked with @OutboxDataSource:"
+                        + " "
+                        + candidates
+                        + ". The outbox cannot choose which database holds its tables — mark"
+                        + " exactly one bean with"
+                        + " io.github.bams22.outboxer.spring.@OutboxDataSource (or declare one "
+                        + "@Primary).",
+                candidates);
+    }
 
-  /** Bean names of the conflicting {@code DataSource} candidates. */
-  public List<String> getCandidates() {
-    return candidates;
-  }
+    /** Bean names of the conflicting {@code DataSource} candidates. */
+    public List<String> getCandidates() {
+        return candidates;
+    }
 }

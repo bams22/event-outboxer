@@ -21,24 +21,24 @@ import org.junit.jupiter.api.Test;
  */
 class PgLockPoolWarningTest {
 
-  @Test
-  @DisplayName("warns when total handler threads reach the pool size")
-  void warnsAtBoundary() {
-    assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(10, 10))
-        .isPresent()
-        .get()
-        .asString()
-        .contains("maximum-pool-size")
-        // Since ADR-0022 the self-deadlock applies to the advisory opt-out only; the
-        // message must name the mode and point at the lease locker as the fix.
-        .contains("postgres-advisory")
-        .contains("lock.type=postgres-lease,");
-    assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(23, 10)).isPresent();
-  }
+    @Test
+    @DisplayName("warns when total handler threads reach the pool size")
+    void warnsAtBoundary() {
+        assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(10, 10))
+                .isPresent()
+                .get()
+                .asString()
+                .contains("maximum-pool-size")
+                // Since ADR-0022 the self-deadlock applies to the advisory opt-out only; the
+                // message must name the mode and point at the lease locker as the fix.
+                .contains("postgres-advisory")
+                .contains("lock.type=postgres-lease,");
+        assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(23, 10)).isPresent();
+    }
 
-  @Test
-  @DisplayName("silent while the pool is strictly larger than the handler fleet")
-  void silentBelowBoundary() {
-    assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(9, 10)).isEmpty();
-  }
+    @Test
+    @DisplayName("silent while the pool is strictly larger than the handler fleet")
+    void silentBelowBoundary() {
+        assertThat(OutboxEngineAutoConfiguration.pgLockPoolWarning(9, 10)).isEmpty();
+    }
 }

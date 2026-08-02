@@ -20,86 +20,88 @@ import org.springframework.core.env.StandardEnvironment;
 
 class OutboxProbeGroupsEnvironmentPostProcessorTest {
 
-  private final OutboxProbeGroupsEnvironmentPostProcessor epp =
-      new OutboxProbeGroupsEnvironmentPostProcessor();
-  private final SpringApplication app = new SpringApplication();
+    private final OutboxProbeGroupsEnvironmentPostProcessor epp =
+            new OutboxProbeGroupsEnvironmentPostProcessor();
+    private final SpringApplication app = new SpringApplication();
 
-  @Test
-  void noOp_whenPropertyUnset() {
-    StandardEnvironment env = new StandardEnvironment();
+    @Test
+    void noOp_whenPropertyUnset() {
+        StandardEnvironment env = new StandardEnvironment();
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    assertThat(env.getPropertySources().contains("event-outboxer-probe-groups")).isFalse();
-  }
+        assertThat(env.getPropertySources().contains("event-outboxer-probe-groups")).isFalse();
+    }
 
-  @Test
-  void seedsDefaultStateIndicator_whenUserHasNoIncludes() {
-    StandardEnvironment env = envWith("event-outboxer.health.probe-groups", "readiness");
+    @Test
+    void seedsDefaultStateIndicator_whenUserHasNoIncludes() {
+        StandardEnvironment env = envWith("event-outboxer.health.probe-groups", "readiness");
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    String include = env.getProperty("management.endpoint.health.group.readiness.include");
-    assertThat(include).isEqualTo("readinessState,outbox");
-  }
+        String include = env.getProperty("management.endpoint.health.group.readiness.include");
+        assertThat(include).isEqualTo("readinessState,outbox");
+    }
 
-  @Test
-  void mergesWithUserIncludes_preservingOrderAndUniqueness() {
-    StandardEnvironment env =
-        envWith(
-            Map.of(
-                "event-outboxer.health.probe-groups", "readiness",
-                "management.endpoint.health.group.readiness.include", "readinessState, db "));
+    @Test
+    void mergesWithUserIncludes_preservingOrderAndUniqueness() {
+        StandardEnvironment env =
+                envWith(
+                        Map.of(
+                                "event-outboxer.health.probe-groups", "readiness",
+                                "management.endpoint.health.group.readiness.include",
+                                        "readinessState, db "));
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    String include = env.getProperty("management.endpoint.health.group.readiness.include");
-    assertThat(include).isEqualTo("readinessState,db,outbox");
-  }
+        String include = env.getProperty("management.endpoint.health.group.readiness.include");
+        assertThat(include).isEqualTo("readinessState,db,outbox");
+    }
 
-  @Test
-  void supportsMultipleGroups() {
-    StandardEnvironment env = envWith("event-outboxer.health.probe-groups", "readiness,liveness");
+    @Test
+    void supportsMultipleGroups() {
+        StandardEnvironment env =
+                envWith("event-outboxer.health.probe-groups", "readiness,liveness");
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    assertThat(env.getProperty("management.endpoint.health.group.readiness.include"))
-        .isEqualTo("readinessState,outbox");
-    assertThat(env.getProperty("management.endpoint.health.group.liveness.include"))
-        .isEqualTo("livenessState,outbox");
-  }
+        assertThat(env.getProperty("management.endpoint.health.group.readiness.include"))
+                .isEqualTo("readinessState,outbox");
+        assertThat(env.getProperty("management.endpoint.health.group.liveness.include"))
+                .isEqualTo("livenessState,outbox");
+    }
 
-  @Test
-  void doesNotDuplicateOutboxIfUserAlreadyIncludedIt() {
-    StandardEnvironment env =
-        envWith(
-            Map.of(
-                "event-outboxer.health.probe-groups", "readiness",
-                "management.endpoint.health.group.readiness.include",
-                    "readinessState,outbox,custom"));
+    @Test
+    void doesNotDuplicateOutboxIfUserAlreadyIncludedIt() {
+        StandardEnvironment env =
+                envWith(
+                        Map.of(
+                                "event-outboxer.health.probe-groups", "readiness",
+                                "management.endpoint.health.group.readiness.include",
+                                        "readinessState,outbox,custom"));
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    String include = env.getProperty("management.endpoint.health.group.readiness.include");
-    assertThat(include).isEqualTo("readinessState,outbox,custom");
-  }
+        String include = env.getProperty("management.endpoint.health.group.readiness.include");
+        assertThat(include).isEqualTo("readinessState,outbox,custom");
+    }
 
-  @Test
-  void runsAtLowestPrecedence() {
-    assertThat(epp.getOrder()).isEqualTo(Integer.MAX_VALUE);
-  }
+    @Test
+    void runsAtLowestPrecedence() {
+        assertThat(epp.getOrder()).isEqualTo(Integer.MAX_VALUE);
+    }
 
-  // ---------------------------------------------------------------------------------------------
-  // helpers
-  // ---------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------
+    // helpers
+    // ---------------------------------------------------------------------------------------------
 
-  private static StandardEnvironment envWith(String key, String value) {
-    return envWith(Map.of(key, value));
-  }
+    private static StandardEnvironment envWith(String key, String value) {
+        return envWith(Map.of(key, value));
+    }
 
-  private static StandardEnvironment envWith(Map<String, String> properties) {
-    StandardEnvironment env = new StandardEnvironment();
-    env.getPropertySources().addFirst(new MapPropertySource("test", new HashMap<>(properties)));
-    return env;
-  }
+    private static StandardEnvironment envWith(Map<String, String> properties) {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("test", new HashMap<>(properties)));
+        return env;
+    }
 }

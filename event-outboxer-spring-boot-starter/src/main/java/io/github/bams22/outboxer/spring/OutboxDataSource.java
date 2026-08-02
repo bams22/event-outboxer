@@ -45,11 +45,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
  * {@code spring.datasource.*} properties participates via the primary/unique rule instead.
  */
 @Target({
-  ElementType.FIELD,
-  ElementType.METHOD,
-  ElementType.PARAMETER,
-  ElementType.TYPE,
-  ElementType.ANNOTATION_TYPE
+    ElementType.FIELD,
+    ElementType.METHOD,
+    ElementType.PARAMETER,
+    ElementType.TYPE,
+    ElementType.ANNOTATION_TYPE
 })
 @Retention(RetentionPolicy.RUNTIME)
 @Documented

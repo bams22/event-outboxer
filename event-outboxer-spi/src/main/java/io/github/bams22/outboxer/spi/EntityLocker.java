@@ -46,46 +46,47 @@ import java.util.Optional;
  */
 public interface EntityLocker {
 
-  /**
-   * Attempt to acquire the lock named {@code key} with the given {@code ttl}. Returns a {@link
-   * LockHandle} on success or {@link Optional#empty()} if the lock is currently held by someone
-   * else.
-   *
-   * <p>{@code ttl} is a safety timeout used by implementations that support TTLs (Redis {@code SET
-   * PX}, for example) so that a dead process cannot hold the lock forever. Implementations without
-   * intrinsic TTL support (PG session-scoped advisory locks, for example) still honour the {@code
-   * ttl} contract by relying on handler-level timeouts — see the adapter's documentation.
-   *
-   * <p>Exclusion guarantees differ per backend (ADR-0012 amendment): TTL-honouring lockers release
-   * the lock at {@code min(close, ttl)} — the engine therefore requires {@code lockTtl >=
-   * handlerMaxRuntime} so a legitimate handler can never outlive its own lock; session-scoped
-   * lockers hold until close or connection loss, at the price of one pooled connection per held
-   * lock.
-   *
-   * @throws LockAcquisitionException if the locker backend is unreachable or returns an error
-   *     distinct from "lock is busy"
-   */
-  Optional<LockHandle> tryLock(String key, Duration ttl);
+    /**
+     * Attempt to acquire the lock named {@code key} with the given {@code ttl}. Returns a {@link
+     * LockHandle} on success or {@link Optional#empty()} if the lock is currently held by someone
+     * else.
+     *
+     * <p>{@code ttl} is a safety timeout used by implementations that support TTLs (Redis {@code
+     * SET PX}, for example) so that a dead process cannot hold the lock forever. Implementations
+     * without intrinsic TTL support (PG session-scoped advisory locks, for example) still honour
+     * the {@code ttl} contract by relying on handler-level timeouts — see the adapter's
+     * documentation.
+     *
+     * <p>Exclusion guarantees differ per backend (ADR-0012 amendment): TTL-honouring lockers
+     * release the lock at {@code min(close, ttl)} — the engine therefore requires {@code lockTtl >=
+     * handlerMaxRuntime} so a legitimate handler can never outlive its own lock; session-scoped
+     * lockers hold until close or connection loss, at the price of one pooled connection per held
+     * lock.
+     *
+     * @throws LockAcquisitionException if the locker backend is unreachable or returns an error
+     *     distinct from "lock is busy"
+     */
+    Optional<LockHandle> tryLock(String key, Duration ttl);
 
-  /** No-op {@code EntityLocker} used when no handler declares a lock key. */
-  EntityLocker NOOP = new NoopEntityLocker();
-
-  /**
-   * Handle to an acquired lock. Callers must release the lock via {@link #close()} in a {@code
-   * try-with-resources} block; the engine does this automatically after the handler returns or
-   * throws.
-   *
-   * <p>{@link #close()} is idempotent: double-release must not throw.
-   */
-  interface LockHandle extends AutoCloseable {
+    /** No-op {@code EntityLocker} used when no handler declares a lock key. */
+    EntityLocker NOOP = new NoopEntityLocker();
 
     /**
-     * Release the lock. Must be idempotent — releasing a handle more than once is a no-op.
+     * Handle to an acquired lock. Callers must release the lock via {@link #close()} in a {@code
+     * try-with-resources} block; the engine does this automatically after the handler returns or
+     * throws.
      *
-     * @throws LockReleaseException if the locker backend refuses the release (for example, the
-     *     fencing token mismatched)
+     * <p>{@link #close()} is idempotent: double-release must not throw.
      */
-    @Override
-    void close();
-  }
+    interface LockHandle extends AutoCloseable {
+
+        /**
+         * Release the lock. Must be idempotent — releasing a handle more than once is a no-op.
+         *
+         * @throws LockReleaseException if the locker backend refuses the release (for example, the
+         *     fencing token mismatched)
+         */
+        @Override
+        void close();
+    }
 }

@@ -23,53 +23,56 @@ import org.junit.jupiter.api.Test;
  */
 class EventTypeThinMergeTest {
 
-  @Test
-  @DisplayName("empty properties object resolves to the library defaults unchanged")
-  void emptyOverride_keepsBase() {
-    EventTypeConfig base = EventTypeConfig.defaults();
+    @Test
+    @DisplayName("empty properties object resolves to the library defaults unchanged")
+    void emptyOverride_keepsBase() {
+        EventTypeConfig base = EventTypeConfig.defaults();
 
-    EventTypeConfig merged =
-        OutboxEngineAutoConfiguration.mergeEventType(new OutboxProperties.EventType(), base);
+        EventTypeConfig merged =
+                OutboxEngineAutoConfiguration.mergeEventType(
+                        new OutboxProperties.EventType(), base);
 
-    assertThat(merged).isEqualTo(base);
-  }
+        assertThat(merged).isEqualTo(base);
+    }
 
-  @Test
-  @DisplayName("override with a single field keeps every other field from the base")
-  void singleFieldOverride_keepsOtherFields() {
-    EventTypeConfig base = EventTypeConfig.defaults();
-    OutboxProperties.EventType override = new OutboxProperties.EventType();
-    override.setHandlerPoolSize(7);
+    @Test
+    @DisplayName("override with a single field keeps every other field from the base")
+    void singleFieldOverride_keepsOtherFields() {
+        EventTypeConfig base = EventTypeConfig.defaults();
+        OutboxProperties.EventType override = new OutboxProperties.EventType();
+        override.setHandlerPoolSize(7);
 
-    EventTypeConfig merged = OutboxEngineAutoConfiguration.mergeEventType(override, base);
+        EventTypeConfig merged = OutboxEngineAutoConfiguration.mergeEventType(override, base);
 
-    assertThat(merged.handlerPoolSize()).isEqualTo(7);
-    assertThat(merged.pollMinInterval()).isEqualTo(base.pollMinInterval());
-    assertThat(merged.pollMaxInterval()).isEqualTo(base.pollMaxInterval());
-    assertThat(merged.pollMultiplier()).isEqualTo(base.pollMultiplier());
-    assertThat(merged.claimBatchSize()).isEqualTo(base.claimBatchSize());
-    assertThat(merged.handlerQueueCapacity()).isEqualTo(base.handlerQueueCapacity());
-    assertThat(merged.handlerMaxRuntime()).isEqualTo(base.handlerMaxRuntime());
-    assertThat(merged.lockTtl()).isEqualTo(base.lockTtl());
-  }
+        assertThat(merged.handlerPoolSize()).isEqualTo(7);
+        assertThat(merged.pollMinInterval()).isEqualTo(base.pollMinInterval());
+        assertThat(merged.pollMaxInterval()).isEqualTo(base.pollMaxInterval());
+        assertThat(merged.pollMultiplier()).isEqualTo(base.pollMultiplier());
+        assertThat(merged.claimBatchSize()).isEqualTo(base.claimBatchSize());
+        assertThat(merged.handlerQueueCapacity()).isEqualTo(base.handlerQueueCapacity());
+        assertThat(merged.handlerMaxRuntime()).isEqualTo(base.handlerMaxRuntime());
+        assertThat(merged.lockTtl()).isEqualTo(base.lockTtl());
+    }
 
-  @Test
-  @DisplayName("per-type override layers on top of user defaults, not on library defaults")
-  void overrideLayersOnUserDefaults() {
-    OutboxProperties.EventType userDefaults = new OutboxProperties.EventType();
-    userDefaults.setClaimBatchSize(42);
-    userDefaults.setPollMinInterval(Duration.ofMillis(250));
-    EventTypeConfig resolvedDefaults =
-        OutboxEngineAutoConfiguration.mergeEventType(userDefaults, EventTypeConfig.defaults());
+    @Test
+    @DisplayName("per-type override layers on top of user defaults, not on library defaults")
+    void overrideLayersOnUserDefaults() {
+        OutboxProperties.EventType userDefaults = new OutboxProperties.EventType();
+        userDefaults.setClaimBatchSize(42);
+        userDefaults.setPollMinInterval(Duration.ofMillis(250));
+        EventTypeConfig resolvedDefaults =
+                OutboxEngineAutoConfiguration.mergeEventType(
+                        userDefaults, EventTypeConfig.defaults());
 
-    OutboxProperties.EventType override = new OutboxProperties.EventType();
-    override.setHandlerPoolSize(9);
-    EventTypeConfig merged =
-        OutboxEngineAutoConfiguration.mergeEventType(override, resolvedDefaults);
+        OutboxProperties.EventType override = new OutboxProperties.EventType();
+        override.setHandlerPoolSize(9);
+        EventTypeConfig merged =
+                OutboxEngineAutoConfiguration.mergeEventType(override, resolvedDefaults);
 
-    assertThat(merged.handlerPoolSize()).isEqualTo(9);
-    assertThat(merged.claimBatchSize()).isEqualTo(42);
-    assertThat(merged.pollMinInterval()).isEqualTo(Duration.ofMillis(250));
-    assertThat(merged.pollMaxInterval()).isEqualTo(EventTypeConfig.defaults().pollMaxInterval());
-  }
+        assertThat(merged.handlerPoolSize()).isEqualTo(9);
+        assertThat(merged.claimBatchSize()).isEqualTo(42);
+        assertThat(merged.pollMinInterval()).isEqualTo(Duration.ofMillis(250));
+        assertThat(merged.pollMaxInterval())
+                .isEqualTo(EventTypeConfig.defaults().pollMaxInterval());
+    }
 }

@@ -43,21 +43,21 @@ import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
  */
 public final class JacksonObjectMapperFactory {
 
-  private JacksonObjectMapperFactory() {}
+    private JacksonObjectMapperFactory() {}
 
-  /**
-   * Canonical outbox {@link ObjectMapper}. Each call returns a fresh instance — callers are free to
-   * further customize it via {@code objectMapper.registerModule(...)} before handing it to {@link
-   * JacksonEventSerializer}.
-   */
-  public static ObjectMapper defaults() {
-    return new ObjectMapper()
-        .registerModule(new JavaTimeModule())
-        .registerModule(new Jdk8Module())
-        .registerModule(new ParameterNamesModule())
-        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-        .enable(SerializationFeature.WRITE_DATES_WITH_ZONE_ID)
-        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-        .disable(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE);
-  }
+    /**
+     * Canonical outbox {@link ObjectMapper}. Each call returns a fresh instance — callers are free
+     * to further customize it via {@code objectMapper.registerModule(...)} before handing it to
+     * {@link JacksonEventSerializer}.
+     */
+    public static ObjectMapper defaults() {
+        return new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .registerModule(new Jdk8Module())
+                .registerModule(new ParameterNamesModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .enable(SerializationFeature.WRITE_DATES_WITH_ZONE_ID)
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .disable(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE);
+    }
 }

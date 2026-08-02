@@ -38,28 +38,28 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @ConditionalOnProperty(
-    prefix = "event-outboxer",
-    name = "enabled",
-    havingValue = "true",
-    matchIfMissing = true)
+        prefix = "event-outboxer",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class CacheAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(MetricsSnapshotCache.class)
-  @ConditionalOnProperty(
-      prefix = "event-outboxer.cache",
-      name = "type",
-      havingValue = "memory",
-      matchIfMissing = true)
-  public MetricsSnapshotCache outboxInMemoryMetricsSnapshotCache(
-      Clock clock, OutboxProperties properties) {
-    return MetricsSnapshotCache.inMemory(clock, properties.getStorage().getMetricsCacheTtl());
-  }
+    @Bean
+    @ConditionalOnMissingBean(MetricsSnapshotCache.class)
+    @ConditionalOnProperty(
+            prefix = "event-outboxer.cache",
+            name = "type",
+            havingValue = "memory",
+            matchIfMissing = true)
+    public MetricsSnapshotCache outboxInMemoryMetricsSnapshotCache(
+            Clock clock, OutboxProperties properties) {
+        return MetricsSnapshotCache.inMemory(clock, properties.getStorage().getMetricsCacheTtl());
+    }
 
-  @Bean
-  @ConditionalOnMissingBean(MetricsSnapshotCache.class)
-  @ConditionalOnProperty(prefix = "event-outboxer.cache", name = "type", havingValue = "noop")
-  public MetricsSnapshotCache outboxNoopMetricsSnapshotCache() {
-    return MetricsSnapshotCache.noop();
-  }
+    @Bean
+    @ConditionalOnMissingBean(MetricsSnapshotCache.class)
+    @ConditionalOnProperty(prefix = "event-outboxer.cache", name = "type", havingValue = "noop")
+    public MetricsSnapshotCache outboxNoopMetricsSnapshotCache() {
+        return MetricsSnapshotCache.noop();
+    }
 }

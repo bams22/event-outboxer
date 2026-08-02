@@ -25,47 +25,48 @@ import java.util.Set;
  */
 public final class EventHandlerResolver {
 
-  private final Map<String, EventHandler<?>> byType;
+    private final Map<String, EventHandler<?>> byType;
 
-  public EventHandlerResolver(List<EventHandler<?>> handlers) {
-    Objects.requireNonNull(handlers, "handlers must not be null");
-    Map<String, EventHandler<?>> map = new HashMap<>(handlers.size() * 2);
-    for (EventHandler<?> h : handlers) {
-      Objects.requireNonNull(h, "handler element must not be null");
-      String type = h.eventType();
-      // eventType() is non-null by contract, but user-supplied handlers built without JSpecify
-      // tooling can still return null — validate loudly instead of failing later with an NPE.
-      if (type == null || type.isBlank()) {
-        throw new IllegalArgumentException(
-            "handler " + h.getClass().getName() + " returned null/blank eventType");
-      }
-      EventHandler<?> previous = map.putIfAbsent(type, h);
-      if (previous != null) {
-        throw new DuplicateHandlerException(
-            type,
-            "two handlers registered for eventType '"
-                + type
-                + "': "
-                + previous.getClass().getName()
-                + " and "
-                + h.getClass().getName());
-      }
+    public EventHandlerResolver(List<EventHandler<?>> handlers) {
+        Objects.requireNonNull(handlers, "handlers must not be null");
+        Map<String, EventHandler<?>> map = new HashMap<>(handlers.size() * 2);
+        for (EventHandler<?> h : handlers) {
+            Objects.requireNonNull(h, "handler element must not be null");
+            String type = h.eventType();
+            // eventType() is non-null by contract, but user-supplied handlers built without
+            // JSpecify
+            // tooling can still return null — validate loudly instead of failing later with an NPE.
+            if (type == null || type.isBlank()) {
+                throw new IllegalArgumentException(
+                        "handler " + h.getClass().getName() + " returned null/blank eventType");
+            }
+            EventHandler<?> previous = map.putIfAbsent(type, h);
+            if (previous != null) {
+                throw new DuplicateHandlerException(
+                        type,
+                        "two handlers registered for eventType '"
+                                + type
+                                + "': "
+                                + previous.getClass().getName()
+                                + " and "
+                                + h.getClass().getName());
+            }
+        }
+        this.byType = Map.copyOf(map);
     }
-    this.byType = Map.copyOf(map);
-  }
 
-  /** Lookup a handler by event type, or {@link Optional#empty()} if none is registered. */
-  public Optional<EventHandler<?>> find(String eventType) {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    return Optional.ofNullable(byType.get(eventType));
-  }
+    /** Lookup a handler by event type, or {@link Optional#empty()} if none is registered. */
+    public Optional<EventHandler<?>> find(String eventType) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        return Optional.ofNullable(byType.get(eventType));
+    }
 
-  /** Set of registered event types — used by the engine to build per-type pollers and pools. */
-  public Set<String> registeredTypes() {
-    return byType.keySet();
-  }
+    /** Set of registered event types — used by the engine to build per-type pollers and pools. */
+    public Set<String> registeredTypes() {
+        return byType.keySet();
+    }
 
-  public int size() {
-    return byType.size();
-  }
+    public int size() {
+        return byType.size();
+    }
 }

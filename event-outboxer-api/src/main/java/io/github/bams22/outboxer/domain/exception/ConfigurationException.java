@@ -22,13 +22,13 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class ConfigurationException extends OutboxException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  protected ConfigurationException(String message) {
-    super(message);
-  }
+    protected ConfigurationException(String message) {
+        super(message);
+    }
 
-  protected ConfigurationException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    protected ConfigurationException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

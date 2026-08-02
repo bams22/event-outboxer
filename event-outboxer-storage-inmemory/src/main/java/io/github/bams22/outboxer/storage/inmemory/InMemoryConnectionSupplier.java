@@ -19,16 +19,16 @@ import java.sql.Connection;
  */
 public final class InMemoryConnectionSupplier implements ConnectionSupplier {
 
-  @Override
-  public Connection get() {
-    throw new UnsupportedOperationException(
-        "InMemoryConnectionSupplier does not provide JDBC connections; "
-            + "use event-outboxer-storage-postgres for a real backend.");
-  }
+    @Override
+    public Connection get() {
+        throw new UnsupportedOperationException(
+                "InMemoryConnectionSupplier does not provide JDBC connections; "
+                        + "use event-outboxer-storage-postgres for a real backend.");
+    }
 
-  @Override
-  public void release(Connection connection) {
-    throw new UnsupportedOperationException(
-        "InMemoryConnectionSupplier does not manage JDBC connections.");
-  }
+    @Override
+    public void release(Connection connection) {
+        throw new UnsupportedOperationException(
+                "InMemoryConnectionSupplier does not manage JDBC connections.");
+    }
 }

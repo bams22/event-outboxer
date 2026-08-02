@@ -32,54 +32,57 @@ import org.slf4j.LoggerFactory;
  */
 public final class WatchdogTask implements Runnable {
 
-  private static final Logger log = LoggerFactory.getLogger(WatchdogTask.class);
+    private static final Logger log = LoggerFactory.getLogger(WatchdogTask.class);
 
-  private final InFlightRegistry inFlight;
-  private final EventStore store;
-  private final Clock clock;
-  private final EventTypeConfigProvider typeConfig;
-  private final OutboxListener listener;
+    private final InFlightRegistry inFlight;
+    private final EventStore store;
+    private final Clock clock;
+    private final EventTypeConfigProvider typeConfig;
+    private final OutboxListener listener;
 
-  public WatchdogTask(
-      InFlightRegistry inFlight,
-      EventStore store,
-      Clock clock,
-      EventTypeConfigProvider typeConfig,
-      OutboxListener listener) {
-    this.inFlight = Objects.requireNonNull(inFlight);
-    this.store = Objects.requireNonNull(store);
-    this.clock = Objects.requireNonNull(clock);
-    this.typeConfig = Objects.requireNonNull(typeConfig);
-    this.listener = Objects.requireNonNull(listener);
-  }
-
-  @Override
-  public void run() {
-    Instant now = clock.now();
-    for (Entry entry : inFlight.snapshot()) {
-      try {
-        EventTypeConfig cfg = typeConfig.forType(entry.eventType());
-        Duration elapsed = Duration.between(entry.startedAt(), now);
-        if (elapsed.compareTo(cfg.handlerMaxRuntime()) <= 0) {
-          continue;
-        }
-        boolean reclaimed =
-            store.forceReclaim(entry.eventId(), entry.workerId(), entry.claimedVersion(), now);
-        if (reclaimed) {
-          inFlight.unregister(entry.eventId());
-          listener.onStuckHandlerReclaimed(
-              new StuckHandlerReclaimedInfo(
-                  entry.eventId(), entry.eventType(), elapsed, entry.workerId()));
-          log.warn(
-              "watchdog reclaimed stuck handler: eventId={} type={} elapsed={}",
-              entry.eventId(),
-              entry.eventType(),
-              elapsed);
-        }
-      } catch (RuntimeException ex) {
-        log.warn(
-            "watchdog force-reclaim failed for eventId={}: {}", entry.eventId(), ex.toString());
-      }
+    public WatchdogTask(
+            InFlightRegistry inFlight,
+            EventStore store,
+            Clock clock,
+            EventTypeConfigProvider typeConfig,
+            OutboxListener listener) {
+        this.inFlight = Objects.requireNonNull(inFlight);
+        this.store = Objects.requireNonNull(store);
+        this.clock = Objects.requireNonNull(clock);
+        this.typeConfig = Objects.requireNonNull(typeConfig);
+        this.listener = Objects.requireNonNull(listener);
     }
-  }
+
+    @Override
+    public void run() {
+        Instant now = clock.now();
+        for (Entry entry : inFlight.snapshot()) {
+            try {
+                EventTypeConfig cfg = typeConfig.forType(entry.eventType());
+                Duration elapsed = Duration.between(entry.startedAt(), now);
+                if (elapsed.compareTo(cfg.handlerMaxRuntime()) <= 0) {
+                    continue;
+                }
+                boolean reclaimed =
+                        store.forceReclaim(
+                                entry.eventId(), entry.workerId(), entry.claimedVersion(), now);
+                if (reclaimed) {
+                    inFlight.unregister(entry.eventId());
+                    listener.onStuckHandlerReclaimed(
+                            new StuckHandlerReclaimedInfo(
+                                    entry.eventId(), entry.eventType(), elapsed, entry.workerId()));
+                    log.warn(
+                            "watchdog reclaimed stuck handler: eventId={} type={} elapsed={}",
+                            entry.eventId(),
+                            entry.eventType(),
+                            elapsed);
+                }
+            } catch (RuntimeException ex) {
+                log.warn(
+                        "watchdog force-reclaim failed for eventId={}: {}",
+                        entry.eventId(),
+                        ex.toString());
+            }
+        }
+    }
 }

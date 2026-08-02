@@ -19,30 +19,31 @@ import org.junit.jupiter.api.Test;
 
 class BinaryTestEventSerializerTest {
 
-  private final BinaryTestEventSerializer serializer = new BinaryTestEventSerializer();
+    private final BinaryTestEventSerializer serializer = new BinaryTestEventSerializer();
 
-  @Test
-  void roundTripsThroughTheBinaryLane() {
-    BinaryTestPayload dto = new BinaryTestPayload("héllo-байт", 42);
+    @Test
+    void roundTripsThroughTheBinaryLane() {
+        BinaryTestPayload dto = new BinaryTestPayload("héllo-байт", 42);
 
-    SerializedPayload serialized = serializer.serialize(dto);
+        SerializedPayload serialized = serializer.serialize(dto);
 
-    assertThat(serialized.isText()).isFalse();
-    byte[] bytes = serialized.requireBytes();
-    assertThat(bytes[0]).isEqualTo((byte) 0x00);
-    assertThat(bytes[1]).isEqualTo((byte) 0xFF);
-    assertThat(new String(bytes, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8))
-        .as("payload must not survive a UTF-8 decode/encode round-trip")
-        .isNotEqualTo(bytes);
-    assertThat(serializer.deserialize(serialized, BinaryTestPayload.class)).isEqualTo(dto);
-  }
+        assertThat(serialized.isText()).isFalse();
+        byte[] bytes = serialized.requireBytes();
+        assertThat(bytes[0]).isEqualTo((byte) 0x00);
+        assertThat(bytes[1]).isEqualTo((byte) 0xFF);
+        assertThat(new String(bytes, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8))
+                .as("payload must not survive a UTF-8 decode/encode round-trip")
+                .isNotEqualTo(bytes);
+        assertThat(serializer.deserialize(serialized, BinaryTestPayload.class)).isEqualTo(dto);
+    }
 
-  @Test
-  void rejectsCorruptedBytes() {
-    assertThatThrownBy(
-            () ->
-                serializer.deserialize(
-                    SerializedPayload.ofBytes(new byte[] {1, 2, 3}), BinaryTestPayload.class))
-        .isInstanceOf(PayloadDeserializationException.class);
-  }
+    @Test
+    void rejectsCorruptedBytes() {
+        assertThatThrownBy(
+                        () ->
+                                serializer.deserialize(
+                                        SerializedPayload.ofBytes(new byte[] {1, 2, 3}),
+                                        BinaryTestPayload.class))
+                .isInstanceOf(PayloadDeserializationException.class);
+    }
 }

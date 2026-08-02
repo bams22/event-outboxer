@@ -29,73 +29,74 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
  */
 class OutboxAdminRestAutoConfigurationTest {
 
-  private final WebApplicationContextRunner runner =
-      new WebApplicationContextRunner()
-          .withConfiguration(AutoConfigurations.of(OutboxAdminRestAutoConfiguration.class))
-          .withUserConfiguration(AdminBeans.class);
+    private final WebApplicationContextRunner runner =
+            new WebApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(OutboxAdminRestAutoConfiguration.class))
+                    .withUserConfiguration(AdminBeans.class);
 
-  @Test
-  @DisplayName("disabled by default: no controller bean")
-  void disabledByDefault() {
-    runner.run(ctx -> assertThat(ctx).doesNotHaveBean(OutboxAdminController.class));
-  }
-
-  @Test
-  @DisplayName("enabled + security on classpath + no method security → context fails fast")
-  void failsFastWithoutMethodSecurity() {
-    runner
-        .withPropertyValues("event-outboxer.admin.rest.enabled=true")
-        .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure()).hasStackTraceContaining("@EnableMethodSecurity");
-            });
-  }
-
-  @Test
-  @DisplayName("enabled + method security active → controller registered")
-  void startsWithMethodSecurity() {
-    runner
-        .withUserConfiguration(MethodSecurityConfig.class)
-        .withPropertyValues(
-            "event-outboxer.admin.rest.enabled=true",
-            "event-outboxer.admin.rest.required-authority=MY_PERMIT")
-        .run(
-            ctx -> {
-              assertThat(ctx).hasSingleBean(OutboxAdminController.class);
-              assertThat(
-                      ctx.getBean("outboxAdminRestProperties", OutboxAdminRestProperties.class)
-                          .getRequiredAuthority())
-                  .isEqualTo("MY_PERMIT");
-            });
-  }
-
-  @Test
-  @DisplayName(
-      "enabled + enforce-authority=false → starts without method security (explicit opt-out)")
-  void startsWithExplicitOptOut() {
-    runner
-        .withPropertyValues(
-            "event-outboxer.admin.rest.enabled=true",
-            "event-outboxer.admin.rest.enforce-authority=false")
-        .run(ctx -> assertThat(ctx).hasSingleBean(OutboxAdminController.class));
-  }
-
-  @Configuration
-  static class AdminBeans {
-
-    @Bean
-    EventStore eventStore() {
-      return new InMemoryEventStore();
+    @Test
+    @DisplayName("disabled by default: no controller bean")
+    void disabledByDefault() {
+        runner.run(ctx -> assertThat(ctx).doesNotHaveBean(OutboxAdminController.class));
     }
 
-    @Bean
-    OutboxAdmin outboxAdmin(EventStore store) {
-      return new InMemoryOutboxAdmin((InMemoryEventStore) store);
+    @Test
+    @DisplayName("enabled + security on classpath + no method security → context fails fast")
+    void failsFastWithoutMethodSecurity() {
+        runner.withPropertyValues("event-outboxer.admin.rest.enabled=true")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasFailed();
+                            assertThat(ctx.getStartupFailure())
+                                    .hasStackTraceContaining("@EnableMethodSecurity");
+                        });
     }
-  }
 
-  @Configuration
-  @EnableMethodSecurity
-  static class MethodSecurityConfig {}
+    @Test
+    @DisplayName("enabled + method security active → controller registered")
+    void startsWithMethodSecurity() {
+        runner.withUserConfiguration(MethodSecurityConfig.class)
+                .withPropertyValues(
+                        "event-outboxer.admin.rest.enabled=true",
+                        "event-outboxer.admin.rest.required-authority=MY_PERMIT")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasSingleBean(OutboxAdminController.class);
+                            assertThat(
+                                            ctx.getBean(
+                                                            "outboxAdminRestProperties",
+                                                            OutboxAdminRestProperties.class)
+                                                    .getRequiredAuthority())
+                                    .isEqualTo("MY_PERMIT");
+                        });
+    }
+
+    @Test
+    @DisplayName(
+            "enabled + enforce-authority=false → starts without method security (explicit opt-out)")
+    void startsWithExplicitOptOut() {
+        runner.withPropertyValues(
+                        "event-outboxer.admin.rest.enabled=true",
+                        "event-outboxer.admin.rest.enforce-authority=false")
+                .run(ctx -> assertThat(ctx).hasSingleBean(OutboxAdminController.class));
+    }
+
+    @Configuration
+    static class AdminBeans {
+
+        @Bean
+        EventStore eventStore() {
+            return new InMemoryEventStore();
+        }
+
+        @Bean
+        OutboxAdmin outboxAdmin(EventStore store) {
+            return new InMemoryOutboxAdmin((InMemoryEventStore) store);
+        }
+    }
+
+    @Configuration
+    @EnableMethodSecurity
+    static class MethodSecurityConfig {}
 }

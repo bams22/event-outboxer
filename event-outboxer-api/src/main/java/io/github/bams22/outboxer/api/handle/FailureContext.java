@@ -31,18 +31,18 @@ import org.jspecify.annotations.Nullable;
  * @param <T> payload type corresponding to the {@code EventHandler} that failed
  */
 public record FailureContext<T>(
-    ClaimedEvent event,
-    @Nullable T payload,
-    @Nullable EventOutcome outcome,
-    @Nullable Throwable cause,
-    int attempt,
-    Instant now) {
+        ClaimedEvent event,
+        @Nullable T payload,
+        @Nullable EventOutcome outcome,
+        @Nullable Throwable cause,
+        int attempt,
+        Instant now) {
 
-  public FailureContext {
-    Objects.requireNonNull(event, "event must not be null");
-    Objects.requireNonNull(now, "now must not be null");
-    if (attempt < 1) {
-      throw new IllegalArgumentException("attempt must be >= 1, got " + attempt);
+    public FailureContext {
+        Objects.requireNonNull(event, "event must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        if (attempt < 1) {
+            throw new IllegalArgumentException("attempt must be >= 1, got " + attempt);
+        }
     }
-  }
 }

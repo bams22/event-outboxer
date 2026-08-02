@@ -36,31 +36,31 @@ import org.jspecify.annotations.Nullable;
  * @param archivedBy worker that finalized the event
  */
 public record ArchivedEvent(
-    UUID id,
-    String eventType,
-    SerializedPayload payload,
-    String payloadFormat,
-    String payloadClass,
-    short priority,
-    int attempts,
-    Instant createdAt,
-    Instant runAt,
-    @Nullable String lastFailReason,
-    Map<String, String> traceContext,
-    Instant archivedAt,
-    String archivedBy) {
+        UUID id,
+        String eventType,
+        SerializedPayload payload,
+        String payloadFormat,
+        String payloadClass,
+        short priority,
+        int attempts,
+        Instant createdAt,
+        Instant runAt,
+        @Nullable String lastFailReason,
+        Map<String, String> traceContext,
+        Instant archivedAt,
+        String archivedBy) {
 
-  public ArchivedEvent {
-    Objects.requireNonNull(id, "id must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(payload, "payload must not be null");
-    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
-    Objects.requireNonNull(payloadClass, "payloadClass must not be null");
-    Objects.requireNonNull(createdAt, "createdAt must not be null");
-    Objects.requireNonNull(runAt, "runAt must not be null");
-    Objects.requireNonNull(traceContext, "traceContext must not be null");
-    Objects.requireNonNull(archivedAt, "archivedAt must not be null");
-    Objects.requireNonNull(archivedBy, "archivedBy must not be null");
-    traceContext = Map.copyOf(traceContext);
-  }
+    public ArchivedEvent {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(payload, "payload must not be null");
+        Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
+        Objects.requireNonNull(payloadClass, "payloadClass must not be null");
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
+        Objects.requireNonNull(runAt, "runAt must not be null");
+        Objects.requireNonNull(traceContext, "traceContext must not be null");
+        Objects.requireNonNull(archivedAt, "archivedAt must not be null");
+        Objects.requireNonNull(archivedBy, "archivedBy must not be null");
+        traceContext = Map.copyOf(traceContext);
+    }
 }

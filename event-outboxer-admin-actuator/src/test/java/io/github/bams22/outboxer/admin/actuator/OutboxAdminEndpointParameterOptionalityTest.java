@@ -31,46 +31,48 @@ import org.springframework.boot.actuate.endpoint.invoke.reflect.OperationMethod;
  */
 class OutboxAdminEndpointParameterOptionalityTest {
 
-  @Test
-  @DisplayName("events(): all four query parameters are optional")
-  void eventsParametersAreOptional() throws Exception {
-    Map<String, Boolean> mandatory =
-        mandatoryByName("events", String.class, String.class, Integer.class, String.class);
+    @Test
+    @DisplayName("events(): all four query parameters are optional")
+    void eventsParametersAreOptional() throws Exception {
+        Map<String, Boolean> mandatory =
+                mandatoryByName("events", String.class, String.class, Integer.class, String.class);
 
-    assertThat(mandatory)
-        .containsOnlyKeys("status", "eventType", "limit", "cursor")
-        .allSatisfy((name, isMandatory) -> assertThat(isMandatory).as(name).isFalse());
-  }
-
-  @Test
-  @DisplayName("reenableAll(): eventType is mandatory, limit is optional")
-  void reenableAllParameterOptionality() throws Exception {
-    Map<String, Boolean> mandatory = mandatoryByName("reenableAll", String.class, Integer.class);
-
-    assertThat(mandatory).containsEntry("eventType", true).containsEntry("limit", false);
-  }
-
-  @Test
-  @DisplayName("purge(): target and olderThanDays are mandatory, eventType and limit are optional")
-  void purgeParameterOptionality() throws Exception {
-    Map<String, Boolean> mandatory =
-        mandatoryByName("purge", String.class, long.class, String.class, Integer.class);
-
-    assertThat(mandatory)
-        .containsEntry("target", true)
-        .containsEntry("olderThanDays", true)
-        .containsEntry("eventType", false)
-        .containsEntry("limit", false);
-  }
-
-  private static Map<String, Boolean> mandatoryByName(String methodName, Class<?>... paramTypes)
-      throws NoSuchMethodException {
-    Method method = OutboxAdminEndpoint.class.getMethod(methodName, paramTypes);
-    OperationMethod operationMethod = new OperationMethod(method, OperationType.READ);
-    Map<String, Boolean> byName = new LinkedHashMap<>();
-    for (OperationParameter parameter : operationMethod.getParameters()) {
-      byName.put(parameter.getName(), parameter.isMandatory());
+        assertThat(mandatory)
+                .containsOnlyKeys("status", "eventType", "limit", "cursor")
+                .allSatisfy((name, isMandatory) -> assertThat(isMandatory).as(name).isFalse());
     }
-    return byName;
-  }
+
+    @Test
+    @DisplayName("reenableAll(): eventType is mandatory, limit is optional")
+    void reenableAllParameterOptionality() throws Exception {
+        Map<String, Boolean> mandatory =
+                mandatoryByName("reenableAll", String.class, Integer.class);
+
+        assertThat(mandatory).containsEntry("eventType", true).containsEntry("limit", false);
+    }
+
+    @Test
+    @DisplayName(
+            "purge(): target and olderThanDays are mandatory, eventType and limit are optional")
+    void purgeParameterOptionality() throws Exception {
+        Map<String, Boolean> mandatory =
+                mandatoryByName("purge", String.class, long.class, String.class, Integer.class);
+
+        assertThat(mandatory)
+                .containsEntry("target", true)
+                .containsEntry("olderThanDays", true)
+                .containsEntry("eventType", false)
+                .containsEntry("limit", false);
+    }
+
+    private static Map<String, Boolean> mandatoryByName(String methodName, Class<?>... paramTypes)
+            throws NoSuchMethodException {
+        Method method = OutboxAdminEndpoint.class.getMethod(methodName, paramTypes);
+        OperationMethod operationMethod = new OperationMethod(method, OperationType.READ);
+        Map<String, Boolean> byName = new LinkedHashMap<>();
+        for (OperationParameter parameter : operationMethod.getParameters()) {
+            byName.put(parameter.getName(), parameter.isMandatory());
+        }
+        return byName;
+    }
 }

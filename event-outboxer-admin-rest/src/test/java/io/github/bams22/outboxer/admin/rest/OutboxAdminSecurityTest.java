@@ -34,71 +34,72 @@ import org.springframework.security.core.context.SecurityContextHolder;
  */
 class OutboxAdminSecurityTest {
 
-  private AnnotationConfigApplicationContext context;
-  private OutboxAdminController controller;
+    private AnnotationConfigApplicationContext context;
+    private OutboxAdminController controller;
 
-  @BeforeEach
-  void setUp() {
-    context = new AnnotationConfigApplicationContext(SecuredConfig.class);
-    controller = context.getBean(OutboxAdminController.class);
-  }
-
-  @AfterEach
-  void tearDown() {
-    SecurityContextHolder.clearContext();
-    context.close();
-  }
-
-  @Test
-  @DisplayName("without the configured authority → AccessDeniedException")
-  void deniedWithoutAuthority() {
-    authenticate("SOME_OTHER_AUTHORITY");
-
-    assertThatThrownBy(() -> controller.events(EventStatus.DISABLED, null, 10, null))
-        .isInstanceOf(AccessDeniedException.class);
-    assertThatThrownBy(() -> controller.reenable(UUID.randomUUID()))
-        .isInstanceOf(AccessDeniedException.class);
-  }
-
-  @Test
-  @DisplayName("with the property-configured authority → allowed")
-  void allowedWithConfiguredAuthority() {
-    authenticate("CUSTOM_PERMIT"); // matches the property below, not the default
-
-    assertThat(controller.events(EventStatus.DISABLED, null, 10, null).events()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("unauthenticated → denied")
-  void deniedWhenUnauthenticated() {
-    SecurityContextHolder.clearContext();
-
-    assertThatThrownBy(() -> controller.events(EventStatus.DISABLED, null, 10, null))
-        .isInstanceOf(RuntimeException.class); // AuthenticationCredentialsNotFound / AccessDenied
-  }
-
-  private static void authenticate(String... authorities) {
-    TestingAuthenticationToken auth =
-        new TestingAuthenticationToken("admin-user", "n/a", authorities);
-    auth.setAuthenticated(true);
-    SecurityContextHolder.getContext().setAuthentication(auth);
-  }
-
-  @Configuration
-  @EnableMethodSecurity
-  static class SecuredConfig {
-
-    @Bean
-    OutboxAdminRestProperties outboxAdminRestProperties() {
-      OutboxAdminRestProperties props = new OutboxAdminRestProperties();
-      props.setRequiredAuthority("CUSTOM_PERMIT");
-      return props;
+    @BeforeEach
+    void setUp() {
+        context = new AnnotationConfigApplicationContext(SecuredConfig.class);
+        controller = context.getBean(OutboxAdminController.class);
     }
 
-    @Bean
-    OutboxAdminController outboxAdminController() {
-      InMemoryEventStore store = new InMemoryEventStore();
-      return new OutboxAdminController(new InMemoryOutboxAdmin(store), store);
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+        context.close();
     }
-  }
+
+    @Test
+    @DisplayName("without the configured authority → AccessDeniedException")
+    void deniedWithoutAuthority() {
+        authenticate("SOME_OTHER_AUTHORITY");
+
+        assertThatThrownBy(() -> controller.events(EventStatus.DISABLED, null, 10, null))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> controller.reenable(UUID.randomUUID()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("with the property-configured authority → allowed")
+    void allowedWithConfiguredAuthority() {
+        authenticate("CUSTOM_PERMIT"); // matches the property below, not the default
+
+        assertThat(controller.events(EventStatus.DISABLED, null, 10, null).events()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("unauthenticated → denied")
+    void deniedWhenUnauthenticated() {
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> controller.events(EventStatus.DISABLED, null, 10, null))
+                .isInstanceOf(
+                        RuntimeException.class); // AuthenticationCredentialsNotFound / AccessDenied
+    }
+
+    private static void authenticate(String... authorities) {
+        TestingAuthenticationToken auth =
+                new TestingAuthenticationToken("admin-user", "n/a", authorities);
+        auth.setAuthenticated(true);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    @Configuration
+    @EnableMethodSecurity
+    static class SecuredConfig {
+
+        @Bean
+        OutboxAdminRestProperties outboxAdminRestProperties() {
+            OutboxAdminRestProperties props = new OutboxAdminRestProperties();
+            props.setRequiredAuthority("CUSTOM_PERMIT");
+            return props;
+        }
+
+        @Bean
+        OutboxAdminController outboxAdminController() {
+            InMemoryEventStore store = new InMemoryEventStore();
+            return new OutboxAdminController(new InMemoryOutboxAdmin(store), store);
+        }
+    }
 }

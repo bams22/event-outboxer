@@ -45,163 +45,161 @@ import java.util.concurrent.TimeUnit;
  */
 public final class MicrometerOutboxListener implements OutboxListener {
 
-  /**
-   * Prefix applied to every metric name. Default: {@code event_outboxer} — a specific name chosen
-   * to avoid clashing with other libraries that publish {@code outbox.*} metrics. Configurable via
-   * the two-argument constructor; the Spring Boot starter binds {@code
-   * event-outboxer.metrics.prefix} into the same slot.
-   */
-  public static final String DEFAULT_PREFIX = "event_outboxer";
+    /**
+     * Prefix applied to every metric name. Default: {@code event_outboxer} — a specific name chosen
+     * to avoid clashing with other libraries that publish {@code outbox.*} metrics. Configurable
+     * via the two-argument constructor; the Spring Boot starter binds {@code
+     * event-outboxer.metrics.prefix} into the same slot.
+     */
+    public static final String DEFAULT_PREFIX = "event_outboxer";
 
-  private final MeterRegistry registry;
-  private final String prefix;
+    private final MeterRegistry registry;
+    private final String prefix;
 
-  public MicrometerOutboxListener(MeterRegistry registry) {
-    this(registry, DEFAULT_PREFIX);
-  }
+    public MicrometerOutboxListener(MeterRegistry registry) {
+        this(registry, DEFAULT_PREFIX);
+    }
 
-  public MicrometerOutboxListener(MeterRegistry registry, String prefix) {
-    this.registry = Objects.requireNonNull(registry, "registry must not be null");
-    this.prefix = Objects.requireNonNull(prefix, "prefix must not be null");
-  }
+    public MicrometerOutboxListener(MeterRegistry registry, String prefix) {
+        this.registry = Objects.requireNonNull(registry, "registry must not be null");
+        this.prefix = Objects.requireNonNull(prefix, "prefix must not be null");
+    }
 
-  private String metric(String name) {
-    return prefix + "." + name;
-  }
+    private String metric(String name) {
+        return prefix + "." + name;
+    }
 
-  private void incType(String name, String eventType) {
-    registry.counter(metric(name), "event_type", eventType).increment();
-  }
+    private void incType(String name, String eventType) {
+        registry.counter(metric(name), "event_type", eventType).increment();
+    }
 
-  private void inc(String name) {
-    registry.counter(metric(name)).increment();
-  }
+    private void inc(String name) {
+        registry.counter(metric(name)).increment();
+    }
 
-  // ==================== Publication ====================
+    // ==================== Publication ====================
 
-  @Override
-  public void onEventPublished(EventPublishedInfo info) {
-    incType("events.published", info.eventType());
-  }
+    @Override
+    public void onEventPublished(EventPublishedInfo info) {
+        incType("events.published", info.eventType());
+    }
 
-  // ==================== Processing lifecycle ====================
+    // ==================== Processing lifecycle ====================
 
-  @Override
-  public void onEventClaimed(EventClaimedInfo info) {
-    incType("events.claimed", info.eventType());
-  }
+    @Override
+    public void onEventClaimed(EventClaimedInfo info) {
+        incType("events.claimed", info.eventType());
+    }
 
-  @Override
-  public void onEventProcessed(EventProcessedInfo info) {
-    incType("events.processed", info.eventType());
-    registry
-        .timer(metric("events.processing_time"), "event_type", info.eventType())
-        .record(info.duration().toNanos(), TimeUnit.NANOSECONDS);
-    registry
-        .summary(metric("events.attempts"), "event_type", info.eventType())
-        .record(info.attempts());
-  }
+    @Override
+    public void onEventProcessed(EventProcessedInfo info) {
+        incType("events.processed", info.eventType());
+        registry.timer(metric("events.processing_time"), "event_type", info.eventType())
+                .record(info.duration().toNanos(), TimeUnit.NANOSECONDS);
+        registry.summary(metric("events.attempts"), "event_type", info.eventType())
+                .record(info.attempts());
+    }
 
-  @Override
-  public void onEventRetryScheduled(EventRetryScheduledInfo info) {
-    incType("events.retry_scheduled", info.eventType());
-  }
+    @Override
+    public void onEventRetryScheduled(EventRetryScheduledInfo info) {
+        incType("events.retry_scheduled", info.eventType());
+    }
 
-  @Override
-  public void onEventDisabled(EventDisabledInfo info) {
-    incType("events.disabled", info.eventType());
-  }
+    @Override
+    public void onEventDisabled(EventDisabledInfo info) {
+        incType("events.disabled", info.eventType());
+    }
 
-  @Override
-  public void onEventDeleted(EventDeletedInfo info) {
-    incType("events.deleted", info.eventType());
-  }
+    @Override
+    public void onEventDeleted(EventDeletedInfo info) {
+        incType("events.deleted", info.eventType());
+    }
 
-  @Override
-  public void onEventSkipped(EventSkippedInfo info) {
-    incType("events.skipped", info.eventType());
-  }
+    @Override
+    public void onEventSkipped(EventSkippedInfo info) {
+        incType("events.skipped", info.eventType());
+    }
 
-  // ==================== Errors & anomalies ====================
+    // ==================== Errors & anomalies ====================
 
-  @Override
-  public void onHandlerError(HandlerErrorInfo info) {
-    incType("handler.errors", info.eventType());
-  }
+    @Override
+    public void onHandlerError(HandlerErrorInfo info) {
+        incType("handler.errors", info.eventType());
+    }
 
-  @Override
-  public void onUnknownEventType(UnknownEventTypeInfo info) {
-    incType("events.unknown_type", info.eventType());
-  }
+    @Override
+    public void onUnknownEventType(UnknownEventTypeInfo info) {
+        incType("events.unknown_type", info.eventType());
+    }
 
-  @Override
-  public void onEventSerializationError(SerializationErrorInfo info) {
-    incType("events.serialization_errors", info.eventType());
-  }
+    @Override
+    public void onEventSerializationError(SerializationErrorInfo info) {
+        incType("events.serialization_errors", info.eventType());
+    }
 
-  @Override
-  public void onLockAcquisitionFailed(LockAcquisitionInfo info) {
-    incType("lock.acquisition_failed", info.eventType());
-  }
+    @Override
+    public void onLockAcquisitionFailed(LockAcquisitionInfo info) {
+        incType("lock.acquisition_failed", info.eventType());
+    }
 
-  @Override
-  public void onLockReleaseFailed(LockReleaseInfo info) {
-    incType("lock.release_failed", info.eventType());
-  }
+    @Override
+    public void onLockReleaseFailed(LockReleaseInfo info) {
+        incType("lock.release_failed", info.eventType());
+    }
 
-  // ==================== Worker lifecycle ====================
+    // ==================== Worker lifecycle ====================
 
-  @Override
-  public void onWorkerRegistered(WorkerRegisteredInfo info) {
-    inc("workers.registered");
-  }
+    @Override
+    public void onWorkerRegistered(WorkerRegisteredInfo info) {
+        inc("workers.registered");
+    }
 
-  @Override
-  public void onWorkerGracefulStop(WorkerGracefulStopInfo info) {
-    inc("workers.graceful_stops");
-  }
+    @Override
+    public void onWorkerGracefulStop(WorkerGracefulStopInfo info) {
+        inc("workers.graceful_stops");
+    }
 
-  @Override
-  public void onWorkerDeregistered(WorkerDeregisteredInfo info) {
-    inc("workers.deregistered");
-  }
+    @Override
+    public void onWorkerDeregistered(WorkerDeregisteredInfo info) {
+        inc("workers.deregistered");
+    }
 
-  @Override
-  public void onHeartbeatFailed(HeartbeatFailedInfo info) {
-    inc("heartbeat.failed");
-  }
+    @Override
+    public void onHeartbeatFailed(HeartbeatFailedInfo info) {
+        inc("heartbeat.failed");
+    }
 
-  // ==================== Recovery ====================
+    // ==================== Recovery ====================
 
-  @Override
-  public void onOrphansReclaimed(OrphansReclaimedInfo info) {
-    registry.counter(metric("orphans.reclaimed")).increment(info.eventCount());
-    registry.counter(metric("orphans.dead_workers")).increment(info.deadWorkers().size());
-  }
+    @Override
+    public void onOrphansReclaimed(OrphansReclaimedInfo info) {
+        registry.counter(metric("orphans.reclaimed")).increment(info.eventCount());
+        registry.counter(metric("orphans.dead_workers")).increment(info.deadWorkers().size());
+    }
 
-  @Override
-  public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
-    incType("handler.stuck_reclaimed", info.eventType());
-  }
+    @Override
+    public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
+        incType("handler.stuck_reclaimed", info.eventType());
+    }
 
-  // ==================== Storage ====================
+    // ==================== Storage ====================
 
-  @Override
-  public void onStorageError(StorageErrorInfo info) {
-    registry.counter(metric("storage.errors"), "operation", info.operation()).increment();
-  }
+    @Override
+    public void onStorageError(StorageErrorInfo info) {
+        registry.counter(metric("storage.errors"), "operation", info.operation()).increment();
+    }
 
-  // ==================== Dispatch ====================
+    // ==================== Dispatch ====================
 
-  @Override
-  public void onDispatchRejected(DispatchRejectedInfo info) {
-    incType("dispatch.rejected", info.eventType());
-  }
+    @Override
+    public void onDispatchRejected(DispatchRejectedInfo info) {
+        incType("dispatch.rejected", info.eventType());
+    }
 
-  // ==================== Engine crash ====================
+    // ==================== Engine crash ====================
 
-  @Override
-  public void onEngineCrashed(EngineCrashedInfo info) {
-    inc("engine.crashed");
-  }
+    @Override
+    public void onEngineCrashed(EngineCrashedInfo info) {
+        inc("engine.crashed");
+    }
 }

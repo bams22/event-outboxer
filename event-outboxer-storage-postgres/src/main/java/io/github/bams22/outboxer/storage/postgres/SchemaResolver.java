@@ -19,27 +19,27 @@ import java.util.Objects;
  */
 public final class SchemaResolver {
 
-  private final String eventsTable;
-  private final String workersTable;
-  private final String archiveTable;
+    private final String eventsTable;
+    private final String workersTable;
+    private final String archiveTable;
 
-  public SchemaResolver(PostgresStorageProperties props) {
-    Objects.requireNonNull(props, "props must not be null");
-    String prefix = props.tablePrefix();
-    this.eventsTable = props.schema() + "." + prefix + "events";
-    this.workersTable = props.schema() + "." + prefix + "workers";
-    this.archiveTable = props.schema() + "." + prefix + "event_archive";
-  }
+    public SchemaResolver(PostgresStorageProperties props) {
+        Objects.requireNonNull(props, "props must not be null");
+        String prefix = props.tablePrefix();
+        this.eventsTable = props.schema() + "." + prefix + "events";
+        this.workersTable = props.schema() + "." + prefix + "workers";
+        this.archiveTable = props.schema() + "." + prefix + "event_archive";
+    }
 
-  public String events() {
-    return eventsTable;
-  }
+    public String events() {
+        return eventsTable;
+    }
 
-  public String workers() {
-    return workersTable;
-  }
+    public String workers() {
+        return workersTable;
+    }
 
-  public String archive() {
-    return archiveTable;
-  }
+    public String archive() {
+        return archiveTable;
+    }
 }

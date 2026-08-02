@@ -22,12 +22,12 @@ import java.util.Optional;
  */
 final class NoopEntityLocker implements EntityLocker {
 
-  private static final LockHandle HANDLE = () -> {};
+    private static final LockHandle HANDLE = () -> {};
 
-  @Override
-  public Optional<LockHandle> tryLock(String key, Duration ttl) {
-    Objects.requireNonNull(key, "key must not be null");
-    Objects.requireNonNull(ttl, "ttl must not be null");
-    return Optional.of(HANDLE);
-  }
+    @Override
+    public Optional<LockHandle> tryLock(String key, Duration ttl) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        return Optional.of(HANDLE);
+    }
 }

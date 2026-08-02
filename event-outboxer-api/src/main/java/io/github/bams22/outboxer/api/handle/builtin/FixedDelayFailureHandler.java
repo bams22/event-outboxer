@@ -28,24 +28,25 @@ import java.util.Objects;
  */
 public final class FixedDelayFailureHandler<T> implements FailureHandler<T> {
 
-  private final Duration delay;
+    private final Duration delay;
 
-  public FixedDelayFailureHandler(Duration delay) {
-    Objects.requireNonNull(delay, "delay must not be null");
-    if (delay.isNegative() || delay.isZero()) {
-      throw new IllegalArgumentException("delay must be positive, got " + delay);
+    public FixedDelayFailureHandler(Duration delay) {
+        Objects.requireNonNull(delay, "delay must not be null");
+        if (delay.isNegative() || delay.isZero()) {
+            throw new IllegalArgumentException("delay must be positive, got " + delay);
+        }
+        this.delay = delay;
     }
-    this.delay = delay;
-  }
 
-  public Duration delay() {
-    return delay;
-  }
+    public Duration delay() {
+        return delay;
+    }
 
-  @Override
-  public FailureDecision onFailure(FailureContext<T> ctx) {
-    Duration override = ctx.outcome() instanceof EventOutcome.Retry r ? r.delayOverride() : null;
-    Duration effective = override != null ? override : delay;
-    return new FailureDecision.RetryAt(ctx.now().plus(effective), FailureUtil.reason(ctx));
-  }
+    @Override
+    public FailureDecision onFailure(FailureContext<T> ctx) {
+        Duration override =
+                ctx.outcome() instanceof EventOutcome.Retry r ? r.delayOverride() : null;
+        Duration effective = override != null ? override : delay;
+        return new FailureDecision.RetryAt(ctx.now().plus(effective), FailureUtil.reason(ctx));
+    }
 }

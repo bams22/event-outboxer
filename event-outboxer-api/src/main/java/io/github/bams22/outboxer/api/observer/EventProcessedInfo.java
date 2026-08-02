@@ -24,9 +24,9 @@ import java.util.UUID;
  */
 public record EventProcessedInfo(UUID eventId, String eventType, int attempts, Duration duration) {
 
-  public EventProcessedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(duration, "duration must not be null");
-  }
+    public EventProcessedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(duration, "duration must not be null");
+    }
 }

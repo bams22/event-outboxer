@@ -25,37 +25,37 @@ import org.springframework.beans.factory.InitializingBean;
  */
 final class PgLeaseTableProbe implements InitializingBean {
 
-  private final @Nullable DataSource dataSource;
-  private final String schema;
+    private final @Nullable DataSource dataSource;
+    private final String schema;
 
-  /**
-   * A {@code null} dataSource disables the probe — used when a user-defined {@code EntityLocker}
-   * displaced the lease locker and the table is not required.
-   */
-  PgLeaseTableProbe(@Nullable DataSource dataSource, String schema) {
-    this.dataSource = dataSource;
-    this.schema = schema;
-  }
+    /**
+     * A {@code null} dataSource disables the probe — used when a user-defined {@code EntityLocker}
+     * displaced the lease locker and the table is not required.
+     */
+    PgLeaseTableProbe(@Nullable DataSource dataSource, String schema) {
+        this.dataSource = dataSource;
+        this.schema = schema;
+    }
 
-  @Override
-  public void afterPropertiesSet() {
-    if (dataSource == null) {
-      return;
+    @Override
+    public void afterPropertiesSet() {
+        if (dataSource == null) {
+            return;
+        }
+        String sql = "SELECT 1 FROM " + schema + ".entity_locks LIMIT 1";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.executeQuery().close();
+        } catch (SQLException ex) {
+            throw new IllegalStateException(
+                    "event-outboxer.lock.type=postgres-lease requires the "
+                            + schema
+                            + ".entity_locks lease table (migration V005__outbox_entity_locks.sql)."
+                            + " Add 'classpath:db/migration/outbox/lock' to spring.flyway.locations"
+                            + " (or the db/changelog/outbox/lock/changelog.xml Liquibase changelog)"
+                            + " and redeploy. To keep the pre-ADR-0022 advisory locker instead, set"
+                            + " event-outboxer.lock.type=postgres-advisory.",
+                    ex);
+        }
     }
-    String sql = "SELECT 1 FROM " + schema + ".entity_locks LIMIT 1";
-    try (Connection conn = dataSource.getConnection();
-        PreparedStatement ps = conn.prepareStatement(sql)) {
-      ps.executeQuery().close();
-    } catch (SQLException ex) {
-      throw new IllegalStateException(
-          "event-outboxer.lock.type=postgres-lease requires the "
-              + schema
-              + ".entity_locks lease table (migration V005__outbox_entity_locks.sql). Add "
-              + "'classpath:db/migration/outbox/lock' to spring.flyway.locations (or the "
-              + "db/changelog/outbox/lock/changelog.xml Liquibase changelog) and redeploy. To "
-              + "keep the pre-ADR-0022 advisory locker instead, set "
-              + "event-outboxer.lock.type=postgres-advisory.",
-          ex);
-    }
-  }
 }

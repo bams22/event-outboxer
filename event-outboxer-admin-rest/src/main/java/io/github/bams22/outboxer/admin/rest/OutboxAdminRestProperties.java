@@ -24,23 +24,23 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties("event-outboxer.admin.rest")
 public class OutboxAdminRestProperties {
 
-  /**
-   * Master switch. {@code false} (default): no controller is registered. A write-capable HTTP
-   * surface must be a deliberate decision.
-   */
-  private boolean enabled = false;
+    /**
+     * Master switch. {@code false} (default): no controller is registered. A write-capable HTTP
+     * surface must be a deliberate decision.
+     */
+    private boolean enabled = false;
 
-  /** Base path of the admin API. */
-  private String basePath = "/outbox-admin";
+    /** Base path of the admin API. */
+    private String basePath = "/outbox-admin";
 
-  /** Authority required on the authenticated principal for every admin operation. */
-  private String requiredAuthority = "OUTBOX_ADMIN";
+    /** Authority required on the authenticated principal for every admin operation. */
+    private String requiredAuthority = "OUTBOX_ADMIN";
 
-  /**
-   * When {@code true} (default) and Spring Security is on the classpath, startup fails unless
-   * method security ({@code @EnableMethodSecurity}) is active — otherwise {@code @PreAuthorize}
-   * would be silently ignored and the API would run unprotected while appearing secured. Set to
-   * {@code false} to explicitly accept an unprotected admin API (dev environments).
-   */
-  private boolean enforceAuthority = true;
+    /**
+     * When {@code true} (default) and Spring Security is on the classpath, startup fails unless
+     * method security ({@code @EnableMethodSecurity}) is active — otherwise {@code @PreAuthorize}
+     * would be silently ignored and the API would run unprotected while appearing secured. Set to
+     * {@code false} to explicitly accept an unprotected admin API (dev environments).
+     */
+    private boolean enforceAuthority = true;
 }

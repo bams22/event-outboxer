@@ -27,53 +27,54 @@ import java.io.IOException;
  */
 public final class BinaryTestEventSerializer implements EventSerializer {
 
-  /** Stable format id persisted with events written by this serializer. */
-  public static final String FORMAT = "test-binary";
+    /** Stable format id persisted with events written by this serializer. */
+    public static final String FORMAT = "test-binary";
 
-  private static final byte[] MAGIC = {0x00, (byte) 0xFF};
+    private static final byte[] MAGIC = {0x00, (byte) 0xFF};
 
-  @Override
-  public String format() {
-    return FORMAT;
-  }
+    @Override
+    public String format() {
+        return FORMAT;
+    }
 
-  @Override
-  public SerializedPayload serialize(Object payload) {
-    if (!(payload instanceof BinaryTestPayload dto)) {
-      throw new PublishSerializationException(
-          "BinaryTestEventSerializer only encodes BinaryTestPayload, got "
-              + payload.getClass().getName(),
-          null);
+    @Override
+    public SerializedPayload serialize(Object payload) {
+        if (!(payload instanceof BinaryTestPayload dto)) {
+            throw new PublishSerializationException(
+                    "BinaryTestEventSerializer only encodes BinaryTestPayload, got "
+                            + payload.getClass().getName(),
+                    null);
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (DataOutputStream data = new DataOutputStream(out)) {
+            data.write(MAGIC);
+            data.writeUTF(dto.name());
+            data.writeInt(dto.number());
+        } catch (IOException e) {
+            throw new PublishSerializationException("failed to encode BinaryTestPayload", e);
+        }
+        return SerializedPayload.ofBytes(out.toByteArray());
     }
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (DataOutputStream data = new DataOutputStream(out)) {
-      data.write(MAGIC);
-      data.writeUTF(dto.name());
-      data.writeInt(dto.number());
-    } catch (IOException e) {
-      throw new PublishSerializationException("failed to encode BinaryTestPayload", e);
-    }
-    return SerializedPayload.ofBytes(out.toByteArray());
-  }
 
-  @Override
-  public <T> T deserialize(SerializedPayload payload, Class<T> type) {
-    if (!type.isAssignableFrom(BinaryTestPayload.class)) {
-      throw new PayloadDeserializationException(
-          "BinaryTestEventSerializer only decodes BinaryTestPayload, asked for " + type.getName(),
-          null);
+    @Override
+    public <T> T deserialize(SerializedPayload payload, Class<T> type) {
+        if (!type.isAssignableFrom(BinaryTestPayload.class)) {
+            throw new PayloadDeserializationException(
+                    "BinaryTestEventSerializer only decodes BinaryTestPayload, asked for "
+                            + type.getName(),
+                    null);
+        }
+        byte[] bytes = payload.requireBytes();
+        try (DataInputStream data = new DataInputStream(new ByteArrayInputStream(bytes))) {
+            byte[] magic = new byte[MAGIC.length];
+            data.readFully(magic);
+            if (magic[0] != MAGIC[0] || magic[1] != MAGIC[1]) {
+                throw new PayloadDeserializationException("bad magic prefix", null);
+            }
+            BinaryTestPayload dto = new BinaryTestPayload(data.readUTF(), data.readInt());
+            return type.cast(dto);
+        } catch (IOException e) {
+            throw new PayloadDeserializationException("failed to decode BinaryTestPayload", e);
+        }
     }
-    byte[] bytes = payload.requireBytes();
-    try (DataInputStream data = new DataInputStream(new ByteArrayInputStream(bytes))) {
-      byte[] magic = new byte[MAGIC.length];
-      data.readFully(magic);
-      if (magic[0] != MAGIC[0] || magic[1] != MAGIC[1]) {
-        throw new PayloadDeserializationException("bad magic prefix", null);
-      }
-      BinaryTestPayload dto = new BinaryTestPayload(data.readUTF(), data.readInt());
-      return type.cast(dto);
-    } catch (IOException e) {
-      throw new PayloadDeserializationException("failed to decode BinaryTestPayload", e);
-    }
-  }
 }

@@ -39,97 +39,96 @@ import org.springframework.core.task.TaskDecorator;
  * OutboxEngineAutoConfiguration}.
  */
 @SpringBootTest(
-    classes = CustomTaskDecoratorTest.TestApp.class,
-    properties = {
-      "event-outboxer.publisher.no-transaction-policy=IGNORE",
-      "event-outboxer.event-types.defaults.poll-min-interval=20ms",
-      "event-outboxer.event-types.defaults.poll-max-interval=50ms",
-      "event-outboxer.event-types.defaults.handler-pool-size=1",
-      "event-outboxer.maintenance.heartbeat-interval=200ms",
-      "event-outboxer.maintenance.dead-threshold=1s",
-      "event-outboxer.maintenance.orphan-recovery-interval=500ms",
-      "event-outboxer.maintenance.watchdog-interval=500ms"
-    })
+        classes = CustomTaskDecoratorTest.TestApp.class,
+        properties = {
+            "event-outboxer.publisher.no-transaction-policy=IGNORE",
+            "event-outboxer.event-types.defaults.poll-min-interval=20ms",
+            "event-outboxer.event-types.defaults.poll-max-interval=50ms",
+            "event-outboxer.event-types.defaults.handler-pool-size=1",
+            "event-outboxer.maintenance.heartbeat-interval=200ms",
+            "event-outboxer.maintenance.dead-threshold=1s",
+            "event-outboxer.maintenance.orphan-recovery-interval=500ms",
+            "event-outboxer.maintenance.watchdog-interval=500ms"
+        })
 @Import(OutboxInMemoryTestConfiguration.class)
 class CustomTaskDecoratorTest {
 
-  @Autowired OutboxEventPublisher publisher;
-  @Autowired EventStore store;
-  @Autowired CountingTaskDecorator decorator;
-  @Autowired RecordingHandler handler;
+    @Autowired OutboxEventPublisher publisher;
+    @Autowired EventStore store;
+    @Autowired CountingTaskDecorator decorator;
+    @Autowired RecordingHandler handler;
 
-  @Test
-  void userDefinedTaskDecoratorIsAppliedToHandlerExecutor() {
-    UUID id = publisher.publish("ORDER", new OrderCreated("ord-1"));
+    @Test
+    void userDefinedTaskDecoratorIsAppliedToHandlerExecutor() {
+        UUID id = publisher.publish("ORDER", new OrderCreated("ord-1"));
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .pollInterval(Duration.ofMillis(20))
-        .until(() -> store.findById(id).isEmpty());
+        await().atMost(Duration.ofSeconds(5))
+                .pollInterval(Duration.ofMillis(20))
+                .until(() -> store.findById(id).isEmpty());
 
-    assertThat(handler.invocationCount()).isGreaterThanOrEqualTo(1);
-    assertThat(decorator.decorations())
-        .as("custom TaskDecorator must wrap at least one handler submission")
-        .isGreaterThanOrEqualTo(1);
-  }
-
-  record OrderCreated(String orderId) {}
-
-  static class RecordingHandler implements EventHandler<OrderCreated> {
-    private final AtomicInteger invocations = new AtomicInteger();
-
-    @Override
-    public String eventType() {
-      return "ORDER";
+        assertThat(handler.invocationCount()).isGreaterThanOrEqualTo(1);
+        assertThat(decorator.decorations())
+                .as("custom TaskDecorator must wrap at least one handler submission")
+                .isGreaterThanOrEqualTo(1);
     }
 
-    @Override
-    public Class<OrderCreated> payloadType() {
-      return OrderCreated.class;
+    record OrderCreated(String orderId) {}
+
+    static class RecordingHandler implements EventHandler<OrderCreated> {
+        private final AtomicInteger invocations = new AtomicInteger();
+
+        @Override
+        public String eventType() {
+            return "ORDER";
+        }
+
+        @Override
+        public Class<OrderCreated> payloadType() {
+            return OrderCreated.class;
+        }
+
+        @Override
+        public EventOutcome handle(EventContext ctx, OrderCreated payload) {
+            invocations.incrementAndGet();
+            return EventOutcome.Success.INSTANCE;
+        }
+
+        int invocationCount() {
+            return invocations.get();
+        }
     }
 
-    @Override
-    public EventOutcome handle(EventContext ctx, OrderCreated payload) {
-      invocations.incrementAndGet();
-      return EventOutcome.Success.INSTANCE;
+    static final class CountingTaskDecorator implements TaskDecorator {
+        private final AtomicInteger count = new AtomicInteger();
+
+        @Override
+        public Runnable decorate(Runnable runnable) {
+            count.incrementAndGet();
+            return runnable;
+        }
+
+        int decorations() {
+            return count.get();
+        }
     }
 
-    int invocationCount() {
-      return invocations.get();
+    @SpringBootConfiguration
+    @EnableAutoConfiguration(
+            exclude = {
+                DataSourceAutoConfiguration.class,
+                DataSourceTransactionManagerAutoConfiguration.class,
+                JdbcTemplateAutoConfiguration.class
+            })
+    static class TestApp {
+
+        @Bean
+        RecordingHandler recordingHandler() {
+            return new RecordingHandler();
+        }
+
+        @Bean
+        CountingTaskDecorator customTaskDecorator() {
+            return new CountingTaskDecorator();
+        }
     }
-  }
-
-  static final class CountingTaskDecorator implements TaskDecorator {
-    private final AtomicInteger count = new AtomicInteger();
-
-    @Override
-    public Runnable decorate(Runnable runnable) {
-      count.incrementAndGet();
-      return runnable;
-    }
-
-    int decorations() {
-      return count.get();
-    }
-  }
-
-  @SpringBootConfiguration
-  @EnableAutoConfiguration(
-      exclude = {
-        DataSourceAutoConfiguration.class,
-        DataSourceTransactionManagerAutoConfiguration.class,
-        JdbcTemplateAutoConfiguration.class
-      })
-  static class TestApp {
-
-    @Bean
-    RecordingHandler recordingHandler() {
-      return new RecordingHandler();
-    }
-
-    @Bean
-    CountingTaskDecorator customTaskDecorator() {
-      return new CountingTaskDecorator();
-    }
-  }
 }

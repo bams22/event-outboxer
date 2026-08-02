@@ -28,70 +28,78 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 public final class PostgresTestEnvironment {
 
-  /** Must match the default in {@code PostgresStorageProperties.defaults()}. */
-  public static final String SCHEMA = "event_outboxer";
+    /** Must match the default in {@code PostgresStorageProperties.defaults()}. */
+    public static final String SCHEMA = "event_outboxer";
 
-  private static final PostgreSQLContainer<?> CONTAINER;
-  private static final HikariDataSource DATA_SOURCE;
+    private static final PostgreSQLContainer<?> CONTAINER;
+    private static final HikariDataSource DATA_SOURCE;
 
-  static {
-    CONTAINER =
-        new PostgreSQLContainer<>("postgres:15")
-            .withDatabaseName("outboxer")
-            .withUsername("outboxer")
-            .withPassword("outboxer");
-    CONTAINER.start();
-    Runtime.getRuntime().addShutdownHook(new Thread(CONTAINER::stop, "pg-testcontainer-shutdown"));
+    static {
+        CONTAINER =
+                new PostgreSQLContainer<>("postgres:15")
+                        .withDatabaseName("outboxer")
+                        .withUsername("outboxer")
+                        .withPassword("outboxer");
+        CONTAINER.start();
+        Runtime.getRuntime()
+                .addShutdownHook(new Thread(CONTAINER::stop, "pg-testcontainer-shutdown"));
 
-    HikariConfig cfg = new HikariConfig();
-    cfg.setJdbcUrl(CONTAINER.getJdbcUrl());
-    cfg.setUsername(CONTAINER.getUsername());
-    cfg.setPassword(CONTAINER.getPassword());
-    cfg.setMaximumPoolSize(16);
-    DATA_SOURCE = new HikariDataSource(cfg);
+        HikariConfig cfg = new HikariConfig();
+        cfg.setJdbcUrl(CONTAINER.getJdbcUrl());
+        cfg.setUsername(CONTAINER.getUsername());
+        cfg.setPassword(CONTAINER.getPassword());
+        cfg.setMaximumPoolSize(16);
+        DATA_SOURCE = new HikariDataSource(cfg);
 
-    Flyway.configure()
-        .dataSource(DATA_SOURCE)
-        .locations("classpath:db/migration/outbox/core", "classpath:db/migration/outbox/archive")
-        .placeholders(Map.of("eventOutboxerSchema", SCHEMA))
-        .load()
-        .migrate();
-  }
-
-  private PostgresTestEnvironment() {}
-
-  public static DataSource dataSource() {
-    return DATA_SOURCE;
-  }
-
-  /**
-   * Simple {@link ConnectionSupplier} that leases a pool connection per call and closes it on
-   * release. The tests never span multiple statements under a single tx, so this is enough.
-   */
-  public static ConnectionSupplier connectionSupplier() {
-    return new ConnectionSupplier() {
-      @Override
-      public Connection get() throws SQLException {
-        return DATA_SOURCE.getConnection();
-      }
-
-      @Override
-      public void release(Connection connection) throws SQLException {
-        if (connection != null && !connection.isClosed()) {
-          connection.close();
-        }
-      }
-    };
-  }
-
-  /** Wipe outbox tables between tests for isolation. */
-  public static void truncate() {
-    try (Connection conn = DATA_SOURCE.getConnection();
-        Statement st = conn.createStatement()) {
-      st.execute("TRUNCATE TABLE " + SCHEMA + ".events, " + SCHEMA + ".workers RESTART IDENTITY");
-      st.execute("TRUNCATE TABLE " + SCHEMA + ".event_archive RESTART IDENTITY");
-    } catch (SQLException e) {
-      throw new IllegalStateException("failed to truncate outbox tables", e);
+        Flyway.configure()
+                .dataSource(DATA_SOURCE)
+                .locations(
+                        "classpath:db/migration/outbox/core",
+                        "classpath:db/migration/outbox/archive")
+                .placeholders(Map.of("eventOutboxerSchema", SCHEMA))
+                .load()
+                .migrate();
     }
-  }
+
+    private PostgresTestEnvironment() {}
+
+    public static DataSource dataSource() {
+        return DATA_SOURCE;
+    }
+
+    /**
+     * Simple {@link ConnectionSupplier} that leases a pool connection per call and closes it on
+     * release. The tests never span multiple statements under a single tx, so this is enough.
+     */
+    public static ConnectionSupplier connectionSupplier() {
+        return new ConnectionSupplier() {
+            @Override
+            public Connection get() throws SQLException {
+                return DATA_SOURCE.getConnection();
+            }
+
+            @Override
+            public void release(Connection connection) throws SQLException {
+                if (connection != null && !connection.isClosed()) {
+                    connection.close();
+                }
+            }
+        };
+    }
+
+    /** Wipe outbox tables between tests for isolation. */
+    public static void truncate() {
+        try (Connection conn = DATA_SOURCE.getConnection();
+                Statement st = conn.createStatement()) {
+            st.execute(
+                    "TRUNCATE TABLE "
+                            + SCHEMA
+                            + ".events, "
+                            + SCHEMA
+                            + ".workers RESTART IDENTITY");
+            st.execute("TRUNCATE TABLE " + SCHEMA + ".event_archive RESTART IDENTITY");
+        } catch (SQLException e) {
+            throw new IllegalStateException("failed to truncate outbox tables", e);
+        }
+    }
 }

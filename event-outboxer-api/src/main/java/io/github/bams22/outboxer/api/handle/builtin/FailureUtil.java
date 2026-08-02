@@ -18,25 +18,25 @@ import io.github.bams22.outboxer.api.handle.FailureContext;
  */
 final class FailureUtil {
 
-  private FailureUtil() {}
+    private FailureUtil() {}
 
-  /**
-   * Picks a human-readable reason string from a {@link FailureContext}, preferring the handler's
-   * outcome reason (if any), then the exception message, then a generic fallback.
-   */
-  static String reason(FailureContext<?> ctx) {
-    EventOutcome outcome = ctx.outcome();
-    if (outcome instanceof EventOutcome.Retry r) {
-      return r.reason();
+    /**
+     * Picks a human-readable reason string from a {@link FailureContext}, preferring the handler's
+     * outcome reason (if any), then the exception message, then a generic fallback.
+     */
+    static String reason(FailureContext<?> ctx) {
+        EventOutcome outcome = ctx.outcome();
+        if (outcome instanceof EventOutcome.Retry r) {
+            return r.reason();
+        }
+        if (outcome instanceof EventOutcome.Fail f) {
+            return f.reason();
+        }
+        Throwable cause = ctx.cause();
+        if (cause != null) {
+            String m = cause.getMessage();
+            return m == null ? cause.getClass().getSimpleName() : m;
+        }
+        return "handler returned a non-success outcome";
     }
-    if (outcome instanceof EventOutcome.Fail f) {
-      return f.reason();
-    }
-    Throwable cause = ctx.cause();
-    if (cause != null) {
-      String m = cause.getMessage();
-      return m == null ? cause.getClass().getSimpleName() : m;
-    }
-    return "handler returned a non-success outcome";
-  }
 }

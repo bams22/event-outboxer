@@ -30,104 +30,97 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
  */
 class TracingAutoConfigurationTest {
 
-  private final ApplicationContextRunner runner =
-      new ApplicationContextRunner()
-          .withConfiguration(
-              AutoConfigurations.of(
-                  MicrometerTracingAutoConfiguration.class, OtelTracingAutoConfiguration.class));
+    private final ApplicationContextRunner runner =
+            new ApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(
+                                    MicrometerTracingAutoConfiguration.class,
+                                    OtelTracingAutoConfiguration.class));
 
-  @Test
-  void noTracingLibrariesOnClasspathMeansNoTracerBean() {
-    runner
-        .withClassLoader(new FilteredClassLoader(Tracer.class, OpenTelemetry.class))
-        .run(context -> assertThat(context).doesNotHaveBean(OutboxTracer.class));
-  }
+    @Test
+    void noTracingLibrariesOnClasspathMeansNoTracerBean() {
+        runner.withClassLoader(new FilteredClassLoader(Tracer.class, OpenTelemetry.class))
+                .run(context -> assertThat(context).doesNotHaveBean(OutboxTracer.class));
+    }
 
-  @Test
-  void micrometerBeansActivateTheMicrometerAdapter() {
-    runner
-        .withBean(Tracer.class, () -> mock(Tracer.class))
-        .withBean(Propagator.class, () -> mock(Propagator.class))
-        .withClassLoader(new FilteredClassLoader(OpenTelemetry.class))
-        .run(
-            context ->
-                assertThat(context)
-                    .getBean(OutboxTracer.class)
-                    .isInstanceOf(MicrometerOutboxTracer.class));
-  }
+    @Test
+    void micrometerBeansActivateTheMicrometerAdapter() {
+        runner.withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(Propagator.class, () -> mock(Propagator.class))
+                .withClassLoader(new FilteredClassLoader(OpenTelemetry.class))
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .getBean(OutboxTracer.class)
+                                        .isInstanceOf(MicrometerOutboxTracer.class));
+    }
 
-  @Test
-  void otelBeanActivatesTheOtelAdapterWhenMicrometerAbsent() {
-    runner
-        .withBean(OpenTelemetry.class, OpenTelemetry::noop)
-        .withClassLoader(new FilteredClassLoader(Tracer.class))
-        .run(
-            context ->
-                assertThat(context)
-                    .getBean(OutboxTracer.class)
-                    .isInstanceOf(OtelOutboxTracer.class));
-  }
+    @Test
+    void otelBeanActivatesTheOtelAdapterWhenMicrometerAbsent() {
+        runner.withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .withClassLoader(new FilteredClassLoader(Tracer.class))
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .getBean(OutboxTracer.class)
+                                        .isInstanceOf(OtelOutboxTracer.class));
+    }
 
-  @Test
-  void otelAdapterFallsBackToGlobalOpenTelemetryWithoutABean() {
-    runner
-        .withClassLoader(new FilteredClassLoader(Tracer.class))
-        .run(
-            context ->
-                assertThat(context)
-                    .getBean(OutboxTracer.class)
-                    .isInstanceOf(OtelOutboxTracer.class));
-  }
+    @Test
+    void otelAdapterFallsBackToGlobalOpenTelemetryWithoutABean() {
+        runner.withClassLoader(new FilteredClassLoader(Tracer.class))
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .getBean(OutboxTracer.class)
+                                        .isInstanceOf(OtelOutboxTracer.class));
+    }
 
-  @Test
-  void micrometerWinsWhenBothAdaptersAreAvailable() {
-    runner
-        .withBean(Tracer.class, () -> mock(Tracer.class))
-        .withBean(Propagator.class, () -> mock(Propagator.class))
-        .withBean(OpenTelemetry.class, OpenTelemetry::noop)
-        .run(
-            context -> {
-              assertThat(context).hasSingleBean(OutboxTracer.class);
-              assertThat(context)
-                  .getBean(OutboxTracer.class)
-                  .isInstanceOf(MicrometerOutboxTracer.class);
-            });
-  }
+    @Test
+    void micrometerWinsWhenBothAdaptersAreAvailable() {
+        runner.withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(Propagator.class, () -> mock(Propagator.class))
+                .withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(OutboxTracer.class);
+                            assertThat(context)
+                                    .getBean(OutboxTracer.class)
+                                    .isInstanceOf(MicrometerOutboxTracer.class);
+                        });
+    }
 
-  @Test
-  void micrometerWithoutPropagatorBeanBacksOffToOtel() {
-    runner
-        .withBean(Tracer.class, () -> mock(Tracer.class))
-        .withBean(OpenTelemetry.class, OpenTelemetry::noop)
-        .run(
-            context ->
-                assertThat(context)
-                    .getBean(OutboxTracer.class)
-                    .isInstanceOf(OtelOutboxTracer.class));
-  }
+    @Test
+    void micrometerWithoutPropagatorBeanBacksOffToOtel() {
+        runner.withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .getBean(OutboxTracer.class)
+                                        .isInstanceOf(OtelOutboxTracer.class));
+    }
 
-  @Test
-  void disabledPropertySuppressesBothAdapters() {
-    runner
-        .withPropertyValues("event-outboxer.tracing.enabled=false")
-        .withBean(Tracer.class, () -> mock(Tracer.class))
-        .withBean(Propagator.class, () -> mock(Propagator.class))
-        .withBean(OpenTelemetry.class, OpenTelemetry::noop)
-        .run(context -> assertThat(context).doesNotHaveBean(OutboxTracer.class));
-  }
+    @Test
+    void disabledPropertySuppressesBothAdapters() {
+        runner.withPropertyValues("event-outboxer.tracing.enabled=false")
+                .withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(Propagator.class, () -> mock(Propagator.class))
+                .withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .run(context -> assertThat(context).doesNotHaveBean(OutboxTracer.class));
+    }
 
-  @Test
-  void userDefinedTracerBeanBeatsBothAdapters() {
-    OutboxTracer custom = OutboxTracer.NOOP;
-    runner
-        .withBean("customOutboxTracer", OutboxTracer.class, () -> custom)
-        .withBean(Tracer.class, () -> mock(Tracer.class))
-        .withBean(Propagator.class, () -> mock(Propagator.class))
-        .withBean(OpenTelemetry.class, OpenTelemetry::noop)
-        .run(
-            context -> {
-              assertThat(context).hasSingleBean(OutboxTracer.class);
-              assertThat(context.getBean(OutboxTracer.class)).isSameAs(custom);
-            });
-  }
+    @Test
+    void userDefinedTracerBeanBeatsBothAdapters() {
+        OutboxTracer custom = OutboxTracer.NOOP;
+        runner.withBean("customOutboxTracer", OutboxTracer.class, () -> custom)
+                .withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(Propagator.class, () -> mock(Propagator.class))
+                .withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(OutboxTracer.class);
+                            assertThat(context.getBean(OutboxTracer.class)).isSameAs(custom);
+                        });
+    }
 }

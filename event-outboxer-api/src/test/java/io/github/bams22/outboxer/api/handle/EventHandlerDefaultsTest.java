@@ -15,31 +15,31 @@ import org.junit.jupiter.api.Test;
 
 class EventHandlerDefaultsTest {
 
-  private static final EventHandler<String> MINIMAL =
-      new EventHandler<>() {
-        @Override
-        public String eventType() {
-          return "TEST";
-        }
+    private static final EventHandler<String> MINIMAL =
+            new EventHandler<>() {
+                @Override
+                public String eventType() {
+                    return "TEST";
+                }
 
-        @Override
-        public Class<String> payloadType() {
-          return String.class;
-        }
+                @Override
+                public Class<String> payloadType() {
+                    return String.class;
+                }
 
-        @Override
-        public EventOutcome handle(EventContext ctx, String payload) {
-          return EventOutcome.Success.INSTANCE;
-        }
-      };
+                @Override
+                public EventOutcome handle(EventContext ctx, String payload) {
+                    return EventOutcome.Success.INSTANCE;
+                }
+            };
 
-  @Test
-  void extractLockKeyDefaultsToNull() {
-    assertThat(MINIMAL.extractLockKey("anything")).isNull();
-  }
+    @Test
+    void extractLockKeyDefaultsToNull() {
+        assertThat(MINIMAL.extractLockKey("anything")).isNull();
+    }
 
-  @Test
-  void failureHandlerDefaultsToNull() {
-    assertThat(MINIMAL.failureHandler()).isNull();
-  }
+    @Test
+    void failureHandlerDefaultsToNull() {
+        assertThat(MINIMAL.failureHandler()).isNull();
+    }
 }

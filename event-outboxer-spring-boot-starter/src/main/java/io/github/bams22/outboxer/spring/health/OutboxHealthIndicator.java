@@ -26,35 +26,35 @@ import org.springframework.boot.actuate.health.HealthIndicator;
  */
 public final class OutboxHealthIndicator implements HealthIndicator {
 
-  private final OutboxEngine engine;
-  private final EventStore store;
+    private final OutboxEngine engine;
+    private final EventStore store;
 
-  public OutboxHealthIndicator(OutboxEngine engine, EventStore store) {
-    this.engine = engine;
-    this.store = store;
-  }
+    public OutboxHealthIndicator(OutboxEngine engine, EventStore store) {
+        this.engine = engine;
+        this.store = store;
+    }
 
-  @Override
-  public Health health() {
-    Health.Builder builder;
-    if (engine.state() != OutboxEngine.State.RUNNING) {
-      builder = Health.down().withDetail("state", engine.state().name());
-    } else {
-      builder = Health.up().withDetail("state", engine.state().name());
+    @Override
+    public Health health() {
+        Health.Builder builder;
+        if (engine.state() != OutboxEngine.State.RUNNING) {
+            builder = Health.down().withDetail("state", engine.state().name());
+        } else {
+            builder = Health.up().withDetail("state", engine.state().name());
+        }
+        try {
+            OutboxMetricsSnapshot snapshot = store.metricsSnapshot();
+            builder.withDetail("totalPending", snapshot.totalPending())
+                    .withDetail("totalProcessing", snapshot.totalProcessing())
+                    .withDetail("totalDisabled", snapshot.totalDisabled())
+                    .withDetail("takenAt", snapshot.takenAt().toString());
+        } catch (RuntimeException ex) {
+            // ex.toString(), not ex.getMessage(): withDetail rejects null values, and getMessage()
+            // can
+            // legitimately be null (e.g. bare NullPointerException).
+            builder.down().withDetail("metricsError", ex.toString());
+        }
+        builder.withDetail("workerId", engine.workerId().value());
+        return builder.build();
     }
-    try {
-      OutboxMetricsSnapshot snapshot = store.metricsSnapshot();
-      builder
-          .withDetail("totalPending", snapshot.totalPending())
-          .withDetail("totalProcessing", snapshot.totalProcessing())
-          .withDetail("totalDisabled", snapshot.totalDisabled())
-          .withDetail("takenAt", snapshot.takenAt().toString());
-    } catch (RuntimeException ex) {
-      // ex.toString(), not ex.getMessage(): withDetail rejects null values, and getMessage() can
-      // legitimately be null (e.g. bare NullPointerException).
-      builder.down().withDetail("metricsError", ex.toString());
-    }
-    builder.withDetail("workerId", engine.workerId().value());
-    return builder.build();
-  }
 }

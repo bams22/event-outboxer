@@ -19,47 +19,48 @@ import org.springframework.core.env.StandardEnvironment;
 
 class OutboxLiquibaseParameterEnvironmentPostProcessorTest {
 
-  private final OutboxLiquibaseParameterEnvironmentPostProcessor epp =
-      new OutboxLiquibaseParameterEnvironmentPostProcessor();
-  private final SpringApplication app = new SpringApplication();
+    private final OutboxLiquibaseParameterEnvironmentPostProcessor epp =
+            new OutboxLiquibaseParameterEnvironmentPostProcessor();
+    private final SpringApplication app = new SpringApplication();
 
-  @Test
-  void seedsDefaultSchema_whenOutboxSchemaNotSet() {
-    StandardEnvironment env = new StandardEnvironment();
+    @Test
+    void seedsDefaultSchema_whenOutboxSchemaNotSet() {
+        StandardEnvironment env = new StandardEnvironment();
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    assertThat(env.getProperty("spring.liquibase.parameters.eventOutboxerSchema"))
-        .isEqualTo("event_outboxer");
-  }
+        assertThat(env.getProperty("spring.liquibase.parameters.eventOutboxerSchema"))
+                .isEqualTo("event_outboxer");
+    }
 
-  @Test
-  void propagatesUserSchema_fromOutboxStorageSchema() {
-    StandardEnvironment env = envWith(Map.of("event-outboxer.storage.schema", "my_outbox"));
+    @Test
+    void propagatesUserSchema_fromOutboxStorageSchema() {
+        StandardEnvironment env = envWith(Map.of("event-outboxer.storage.schema", "my_outbox"));
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    assertThat(env.getProperty("spring.liquibase.parameters.eventOutboxerSchema"))
-        .isEqualTo("my_outbox");
-  }
+        assertThat(env.getProperty("spring.liquibase.parameters.eventOutboxerSchema"))
+                .isEqualTo("my_outbox");
+    }
 
-  @Test
-  void userLiquibaseParameterWins_overOurDefault() {
-    StandardEnvironment env =
-        envWith(
-            Map.of(
-                "event-outboxer.storage.schema", "my_outbox",
-                "spring.liquibase.parameters.eventOutboxerSchema", "explicit_override"));
+    @Test
+    void userLiquibaseParameterWins_overOurDefault() {
+        StandardEnvironment env =
+                envWith(
+                        Map.of(
+                                "event-outboxer.storage.schema", "my_outbox",
+                                "spring.liquibase.parameters.eventOutboxerSchema",
+                                        "explicit_override"));
 
-    epp.postProcessEnvironment(env, app);
+        epp.postProcessEnvironment(env, app);
 
-    assertThat(env.getProperty("spring.liquibase.parameters.eventOutboxerSchema"))
-        .isEqualTo("explicit_override");
-  }
+        assertThat(env.getProperty("spring.liquibase.parameters.eventOutboxerSchema"))
+                .isEqualTo("explicit_override");
+    }
 
-  private static StandardEnvironment envWith(Map<String, Object> props) {
-    StandardEnvironment env = new StandardEnvironment();
-    env.getPropertySources().addFirst(new MapPropertySource("user", props));
-    return env;
-  }
+    private static StandardEnvironment envWith(Map<String, Object> props) {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("user", props));
+        return env;
+    }
 }

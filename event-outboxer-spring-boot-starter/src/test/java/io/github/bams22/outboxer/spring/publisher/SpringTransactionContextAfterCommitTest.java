@@ -26,54 +26,54 @@ import org.springframework.transaction.support.TransactionSynchronizationUtils;
  */
 class SpringTransactionContextAfterCommitTest {
 
-  private final SpringTransactionContext ctx = new SpringTransactionContext();
+    private final SpringTransactionContext ctx = new SpringTransactionContext();
 
-  @AfterEach
-  void cleanupSynchronization() {
-    if (TransactionSynchronizationManager.isSynchronizationActive()) {
-      TransactionSynchronizationManager.clearSynchronization();
+    @AfterEach
+    void cleanupSynchronization() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
-  }
 
-  @Test
-  @DisplayName("no active synchronization → action runs immediately")
-  void runsImmediatelyWithoutTransaction() {
-    AtomicInteger runs = new AtomicInteger();
+    @Test
+    @DisplayName("no active synchronization → action runs immediately")
+    void runsImmediatelyWithoutTransaction() {
+        AtomicInteger runs = new AtomicInteger();
 
-    ctx.afterCommit(runs::incrementAndGet);
+        ctx.afterCommit(runs::incrementAndGet);
 
-    assertThat(runs).hasValue(1);
-  }
-
-  @Test
-  @DisplayName("active synchronization → action deferred until afterCommit fires")
-  void deferredUntilCommit() {
-    TransactionSynchronizationManager.initSynchronization();
-    AtomicInteger runs = new AtomicInteger();
-
-    ctx.afterCommit(runs::incrementAndGet);
-    assertThat(runs).hasValue(0);
-
-    for (TransactionSynchronization sync :
-        TransactionSynchronizationManager.getSynchronizations()) {
-      sync.afterCommit();
+        assertThat(runs).hasValue(1);
     }
-    assertThat(runs).hasValue(1);
-  }
 
-  @Test
-  @DisplayName("rollback → action never runs")
-  void droppedOnRollback() {
-    TransactionSynchronizationManager.initSynchronization();
-    AtomicInteger runs = new AtomicInteger();
+    @Test
+    @DisplayName("active synchronization → action deferred until afterCommit fires")
+    void deferredUntilCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        AtomicInteger runs = new AtomicInteger();
 
-    ctx.afterCommit(runs::incrementAndGet);
+        ctx.afterCommit(runs::incrementAndGet);
+        assertThat(runs).hasValue(0);
 
-    // Simulate a rollback completion: afterCompletion(STATUS_ROLLED_BACK), no afterCommit.
-    TransactionSynchronizationUtils.invokeAfterCompletion(
-        TransactionSynchronizationManager.getSynchronizations(),
-        TransactionSynchronization.STATUS_ROLLED_BACK);
+        for (TransactionSynchronization sync :
+                TransactionSynchronizationManager.getSynchronizations()) {
+            sync.afterCommit();
+        }
+        assertThat(runs).hasValue(1);
+    }
 
-    assertThat(runs).hasValue(0);
-  }
+    @Test
+    @DisplayName("rollback → action never runs")
+    void droppedOnRollback() {
+        TransactionSynchronizationManager.initSynchronization();
+        AtomicInteger runs = new AtomicInteger();
+
+        ctx.afterCommit(runs::incrementAndGet);
+
+        // Simulate a rollback completion: afterCompletion(STATUS_ROLLED_BACK), no afterCommit.
+        TransactionSynchronizationUtils.invokeAfterCompletion(
+                TransactionSynchronizationManager.getSynchronizations(),
+                TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        assertThat(runs).hasValue(0);
+    }
 }

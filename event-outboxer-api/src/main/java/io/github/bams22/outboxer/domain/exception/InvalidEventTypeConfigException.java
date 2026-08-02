@@ -19,13 +19,13 @@ import org.jspecify.annotations.Nullable;
  */
 public final class InvalidEventTypeConfigException extends ConfigurationException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  public InvalidEventTypeConfigException(String message) {
-    super(message);
-  }
+    public InvalidEventTypeConfigException(String message) {
+        super(message);
+    }
 
-  public InvalidEventTypeConfigException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    public InvalidEventTypeConfigException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

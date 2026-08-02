@@ -16,20 +16,20 @@ import org.junit.jupiter.api.Test;
 
 class MaintenanceConfigTest {
 
-  @Test
-  void rejectsDeadThresholdSmallerThanThreeHeartbeats() {
-    assertThatThrownBy(
-            () ->
-                MaintenanceConfig.builder()
-                    .heartbeatInterval(Duration.ofSeconds(5))
-                    .deadThreshold(Duration.ofSeconds(10))
-                    .orphanRecoveryInterval(Duration.ofSeconds(10))
-                    .watchdogInterval(Duration.ofSeconds(10))
-                    .reclaimBatchSize(10)
-                    .shutdownTimeout(Duration.ofSeconds(10))
-                    .staleClaimSweepInterval(Duration.ofMinutes(5))
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("deadThreshold must be >= 3 * heartbeatInterval");
-  }
+    @Test
+    void rejectsDeadThresholdSmallerThanThreeHeartbeats() {
+        assertThatThrownBy(
+                        () ->
+                                MaintenanceConfig.builder()
+                                        .heartbeatInterval(Duration.ofSeconds(5))
+                                        .deadThreshold(Duration.ofSeconds(10))
+                                        .orphanRecoveryInterval(Duration.ofSeconds(10))
+                                        .watchdogInterval(Duration.ofSeconds(10))
+                                        .reclaimBatchSize(10)
+                                        .shutdownTimeout(Duration.ofSeconds(10))
+                                        .staleClaimSweepInterval(Duration.ofMinutes(5))
+                                        .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("deadThreshold must be >= 3 * heartbeatInterval");
+    }
 }

@@ -23,25 +23,25 @@ import org.postgresql.util.PGobject;
  */
 public final class JsonbHandler {
 
-  private JsonbHandler() {}
+    private JsonbHandler() {}
 
-  /** Wrap a non-null JSON string into a {@code jsonb} {@link PGobject}. */
-  public static PGobject jsonb(String json) {
-    Objects.requireNonNull(json, "json must not be null");
-    PGobject obj = new PGobject();
-    obj.setType("jsonb");
-    try {
-      obj.setValue(json);
-    } catch (SQLException e) {
-      // PGobject.setValue throws checked SQLException only by signature; the default
-      // implementation never actually throws.
-      throw new IllegalStateException("failed to set jsonb value", e);
+    /** Wrap a non-null JSON string into a {@code jsonb} {@link PGobject}. */
+    public static PGobject jsonb(String json) {
+        Objects.requireNonNull(json, "json must not be null");
+        PGobject obj = new PGobject();
+        obj.setType("jsonb");
+        try {
+            obj.setValue(json);
+        } catch (SQLException e) {
+            // PGobject.setValue throws checked SQLException only by signature; the default
+            // implementation never actually throws.
+            throw new IllegalStateException("failed to set jsonb value", e);
+        }
+        return obj;
     }
-    return obj;
-  }
 
-  /** Wrap a nullable JSON string; returns {@code null} if the input is {@code null}. */
-  public static @Nullable PGobject jsonbNullable(@Nullable String json) {
-    return json == null ? null : jsonb(json);
-  }
+    /** Wrap a nullable JSON string; returns {@code null} if the input is {@code null}. */
+    public static @Nullable PGobject jsonbNullable(@Nullable String json) {
+        return json == null ? null : jsonb(json);
+    }
 }

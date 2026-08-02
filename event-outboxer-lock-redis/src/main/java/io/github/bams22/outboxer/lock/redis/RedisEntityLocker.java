@@ -57,84 +57,88 @@ import org.slf4j.LoggerFactory;
  */
 public final class RedisEntityLocker implements EntityLocker {
 
-  private static final Logger log = LoggerFactory.getLogger(RedisEntityLocker.class);
+    private static final Logger log = LoggerFactory.getLogger(RedisEntityLocker.class);
 
-  /** Default key prefix — avoids collisions with other Redis tenants. */
-  public static final String DEFAULT_KEY_PREFIX = "outbox:lock:";
+    /** Default key prefix — avoids collisions with other Redis tenants. */
+    public static final String DEFAULT_KEY_PREFIX = "outbox:lock:";
 
-  private static final String UNLOCK_SCRIPT =
-      "if redis.call('get', KEYS[1]) == ARGV[1] then "
-          + "  return redis.call('del', KEYS[1]) "
-          + "else "
-          + "  return 0 "
-          + "end";
+    private static final String UNLOCK_SCRIPT =
+            "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                    + "  return redis.call('del', KEYS[1]) "
+                    + "else "
+                    + "  return 0 "
+                    + "end";
 
-  private final RedisCommands<String, String> commands;
-  private final String keyPrefix;
+    private final RedisCommands<String, String> commands;
+    private final String keyPrefix;
 
-  public RedisEntityLocker(StatefulRedisConnection<String, String> connection) {
-    this(connection, DEFAULT_KEY_PREFIX);
-  }
-
-  public RedisEntityLocker(StatefulRedisConnection<String, String> connection, String keyPrefix) {
-    Objects.requireNonNull(connection, "connection must not be null");
-    this.keyPrefix = Objects.requireNonNull(keyPrefix, "keyPrefix must not be null");
-    this.commands = connection.sync();
-  }
-
-  @Override
-  public Optional<LockHandle> tryLock(String key, Duration ttl) {
-    Objects.requireNonNull(key, "key must not be null");
-    Objects.requireNonNull(ttl, "ttl must not be null");
-    if (ttl.isNegative() || ttl.isZero()) {
-      throw new IllegalArgumentException("ttl must be positive, got " + ttl);
+    public RedisEntityLocker(StatefulRedisConnection<String, String> connection) {
+        this(connection, DEFAULT_KEY_PREFIX);
     }
-    String namespacedKey = keyPrefix + key;
-    String token = UUID.randomUUID().toString();
-    String result;
-    try {
-      result = commands.set(namespacedKey, token, SetArgs.Builder.nx().px(ttl.toMillis()));
-    } catch (RuntimeException ex) {
-      throw new LockAcquisitionException("redis SET NX PX failed for key '" + key + "'", ex);
-    }
-    if (result == null) {
-      return Optional.empty();
-    }
-    return Optional.of(new RedisLockHandle(namespacedKey, token));
-  }
 
-  private final class RedisLockHandle implements LockHandle {
-
-    private final String namespacedKey;
-    private final String token;
-    private volatile boolean closed;
-
-    RedisLockHandle(String namespacedKey, String token) {
-      this.namespacedKey = namespacedKey;
-      this.token = token;
+    public RedisEntityLocker(StatefulRedisConnection<String, String> connection, String keyPrefix) {
+        Objects.requireNonNull(connection, "connection must not be null");
+        this.keyPrefix = Objects.requireNonNull(keyPrefix, "keyPrefix must not be null");
+        this.commands = connection.sync();
     }
 
     @Override
-    public void close() {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      Long result;
-      try {
-        result =
-            commands.eval(
-                UNLOCK_SCRIPT, ScriptOutputType.INTEGER, new String[] {namespacedKey}, token);
-      } catch (RuntimeException ex) {
-        throw new LockReleaseException(
-            "redis unlock script failed for key '" + namespacedKey + "'", ex);
-      }
-      if (result != null && result == 0L) {
-        // Key expired before close() arrived, or someone else already owns it now.
-        log.debug(
-            "redis lock '{}' was already released (TTL expired) by the time close() ran",
-            namespacedKey);
-      }
+    public Optional<LockHandle> tryLock(String key, Duration ttl) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        if (ttl.isNegative() || ttl.isZero()) {
+            throw new IllegalArgumentException("ttl must be positive, got " + ttl);
+        }
+        String namespacedKey = keyPrefix + key;
+        String token = UUID.randomUUID().toString();
+        String result;
+        try {
+            result = commands.set(namespacedKey, token, SetArgs.Builder.nx().px(ttl.toMillis()));
+        } catch (RuntimeException ex) {
+            throw new LockAcquisitionException("redis SET NX PX failed for key '" + key + "'", ex);
+        }
+        if (result == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new RedisLockHandle(namespacedKey, token));
     }
-  }
+
+    private final class RedisLockHandle implements LockHandle {
+
+        private final String namespacedKey;
+        private final String token;
+        private volatile boolean closed;
+
+        RedisLockHandle(String namespacedKey, String token) {
+            this.namespacedKey = namespacedKey;
+            this.token = token;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            Long result;
+            try {
+                result =
+                        commands.eval(
+                                UNLOCK_SCRIPT,
+                                ScriptOutputType.INTEGER,
+                                new String[] {namespacedKey},
+                                token);
+            } catch (RuntimeException ex) {
+                throw new LockReleaseException(
+                        "redis unlock script failed for key '" + namespacedKey + "'", ex);
+            }
+            if (result != null && result == 0L) {
+                // Key expired before close() arrived, or someone else already owns it now.
+                log.debug(
+                        "redis lock '{}' was already released (TTL expired) by the time close()"
+                                + " ran",
+                        namespacedKey);
+            }
+        }
+    }
 }

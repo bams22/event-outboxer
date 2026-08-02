@@ -41,34 +41,34 @@ import java.util.UUID;
  *     optimistic concurrency control when finalizing
  */
 public record ClaimedEvent(
-    UUID id,
-    String eventType,
-    SerializedPayload payload,
-    String payloadFormat,
-    String payloadClass,
-    short priority,
-    int attempts,
-    Instant createdAt,
-    Instant claimedAt,
-    Map<String, String> traceContext,
-    long claimedVersion) {
+        UUID id,
+        String eventType,
+        SerializedPayload payload,
+        String payloadFormat,
+        String payloadClass,
+        short priority,
+        int attempts,
+        Instant createdAt,
+        Instant claimedAt,
+        Map<String, String> traceContext,
+        long claimedVersion) {
 
-  public ClaimedEvent {
-    Objects.requireNonNull(id, "id must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(payload, "payload must not be null");
-    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
-    Objects.requireNonNull(payloadClass, "payloadClass must not be null");
-    Objects.requireNonNull(createdAt, "createdAt must not be null");
-    Objects.requireNonNull(claimedAt, "claimedAt must not be null");
-    if (attempts < 0) {
-      throw new IllegalArgumentException("attempts must not be negative, got " + attempts);
+    public ClaimedEvent {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(payload, "payload must not be null");
+        Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
+        Objects.requireNonNull(payloadClass, "payloadClass must not be null");
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
+        Objects.requireNonNull(claimedAt, "claimedAt must not be null");
+        if (attempts < 0) {
+            throw new IllegalArgumentException("attempts must not be negative, got " + attempts);
+        }
+        if (claimedVersion < 0) {
+            throw new IllegalArgumentException(
+                    "claimedVersion must not be negative, got " + claimedVersion);
+        }
+        Objects.requireNonNull(traceContext, "traceContext must not be null");
+        traceContext = Map.copyOf(traceContext);
     }
-    if (claimedVersion < 0) {
-      throw new IllegalArgumentException(
-          "claimedVersion must not be negative, got " + claimedVersion);
-    }
-    Objects.requireNonNull(traceContext, "traceContext must not be null");
-    traceContext = Map.copyOf(traceContext);
-  }
 }

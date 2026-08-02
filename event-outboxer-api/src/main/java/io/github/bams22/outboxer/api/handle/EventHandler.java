@@ -44,47 +44,47 @@ import org.jspecify.annotations.Nullable;
  */
 public interface EventHandler<T> {
 
-  /**
-   * Stable string identifier of the event type. Used to bind the handler to events stored with the
-   * same {@code event_type} value. Must not change between releases — it is a natural key in the
-   * database.
-   */
-  String eventType();
+    /**
+     * Stable string identifier of the event type. Used to bind the handler to events stored with
+     * the same {@code event_type} value. Must not change between releases — it is a natural key in
+     * the database.
+     */
+    String eventType();
 
-  /**
-   * Java class of the payload. The engine uses this to drive strict deserialization of the JSON
-   * stored alongside the event.
-   */
-  Class<T> payloadType();
+    /**
+     * Java class of the payload. The engine uses this to drive strict deserialization of the JSON
+     * stored alongside the event.
+     */
+    Class<T> payloadType();
 
-  /**
-   * Process the event. See {@linkplain EventHandler class-level Javadoc} for the idempotency
-   * contract and exception handling semantics.
-   */
-  EventOutcome handle(EventContext ctx, T payload);
+    /**
+     * Process the event. See {@linkplain EventHandler class-level Javadoc} for the idempotency
+     * contract and exception handling semantics.
+     */
+    EventOutcome handle(EventContext ctx, T payload);
 
-  /**
-   * Optional business-key lock guarding concurrent processing of events that touch the same
-   * aggregate. If non-null, the engine acquires the lock through {@code EntityLocker.tryLock}
-   * before {@link #handle}; if the lock is busy, the event is re-scheduled with a short delay and
-   * {@code handle} is not invoked (see ADR-0012).
-   *
-   * <p>Default: {@code null} — no locking. Override when two events of potentially different types
-   * can target the same aggregate and must not run in parallel.
-   */
-  default @Nullable String extractLockKey(T payload) {
-    return null;
-  }
+    /**
+     * Optional business-key lock guarding concurrent processing of events that touch the same
+     * aggregate. If non-null, the engine acquires the lock through {@code EntityLocker.tryLock}
+     * before {@link #handle}; if the lock is busy, the event is re-scheduled with a short delay and
+     * {@code handle} is not invoked (see ADR-0012).
+     *
+     * <p>Default: {@code null} — no locking. Override when two events of potentially different
+     * types can target the same aggregate and must not run in parallel.
+     */
+    default @Nullable String extractLockKey(T payload) {
+        return null;
+    }
 
-  /**
-   * Optional per-handler override of the failure strategy. When non-null, it wins over the
-   * starter-configured per-type failure handler and the global default. Use it for handlers that
-   * need a different retry policy than everything else (for example, a validation handler that
-   * should go straight to {@code Fail}).
-   *
-   * <p>Default: {@code null} — fall back to the per-type or global chain.
-   */
-  default @Nullable FailureHandler<T> failureHandler() {
-    return null;
-  }
+    /**
+     * Optional per-handler override of the failure strategy. When non-null, it wins over the
+     * starter-configured per-type failure handler and the global default. Use it for handlers that
+     * need a different retry policy than everything else (for example, a validation handler that
+     * should go straight to {@code Fail}).
+     *
+     * <p>Default: {@code null} — fall back to the per-type or global chain.
+     */
+    default @Nullable FailureHandler<T> failureHandler() {
+        return null;
+    }
 }

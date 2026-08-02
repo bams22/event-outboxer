@@ -85,478 +85,483 @@ import org.jspecify.annotations.Nullable;
  */
 public final class OutboxEngineBuilder {
 
-  private @Nullable EventStore store;
-  private @Nullable WorkerRegistry registry;
-  private @Nullable EventSerializer serializer;
-  private final List<EventSerializer> additionalSerializers = new ArrayList<>();
-  private final Map<String, EventSerializer> writeSerializerOverrides = new LinkedHashMap<>();
-  private EntityLocker locker = EntityLocker.NOOP;
-  private Clock clock = Clock.system();
-  private TransactionContext txContext = TransactionContext.alwaysActive();
-  private NoTransactionPolicy noTxPolicy = NoTransactionPolicy.IGNORE;
-  private final List<EventHandler<?>> handlers = new ArrayList<>();
-  private @Nullable FailureHandler<?> defaultFailureHandler;
-  private final Map<String, FailureHandler<?>> perTypeFailureHandlers = new HashMap<>();
-  private EventTypeConfig defaultEventTypeConfig = EventTypeConfig.defaults();
-  private final Map<String, EventTypeConfig> perTypeOverrides = new HashMap<>();
-  private MaintenanceConfig maintenanceConfig = MaintenanceConfig.defaults();
-  private DispatcherConfig dispatcherConfig = DispatcherConfig.defaults();
-  private final List<OutboxListener> listeners = new ArrayList<>();
-  private boolean includeLoggingListener = true;
-  private OutboxTracer tracer = OutboxTracer.NOOP;
-  private Supplier<WorkerId> workerIdSupplier = WorkerIdFactory.defaultGenerator();
-  private @Nullable String host;
-  private final Map<String, String> workerMetadata = new LinkedHashMap<>();
-  private @Nullable Function<EventTypeConfig, ExecutorService> handlerExecutorFactory;
-  private @Nullable PollStrategy pollStrategy;
-  private @Nullable PollerWakeHub wakeHub;
-  private @Nullable OutboxAdmin admin;
-  private RetentionConfig retentionConfig = RetentionConfig.disabled();
+    private @Nullable EventStore store;
+    private @Nullable WorkerRegistry registry;
+    private @Nullable EventSerializer serializer;
+    private final List<EventSerializer> additionalSerializers = new ArrayList<>();
+    private final Map<String, EventSerializer> writeSerializerOverrides = new LinkedHashMap<>();
+    private EntityLocker locker = EntityLocker.NOOP;
+    private Clock clock = Clock.system();
+    private TransactionContext txContext = TransactionContext.alwaysActive();
+    private NoTransactionPolicy noTxPolicy = NoTransactionPolicy.IGNORE;
+    private final List<EventHandler<?>> handlers = new ArrayList<>();
+    private @Nullable FailureHandler<?> defaultFailureHandler;
+    private final Map<String, FailureHandler<?>> perTypeFailureHandlers = new HashMap<>();
+    private EventTypeConfig defaultEventTypeConfig = EventTypeConfig.defaults();
+    private final Map<String, EventTypeConfig> perTypeOverrides = new HashMap<>();
+    private MaintenanceConfig maintenanceConfig = MaintenanceConfig.defaults();
+    private DispatcherConfig dispatcherConfig = DispatcherConfig.defaults();
+    private final List<OutboxListener> listeners = new ArrayList<>();
+    private boolean includeLoggingListener = true;
+    private OutboxTracer tracer = OutboxTracer.NOOP;
+    private Supplier<WorkerId> workerIdSupplier = WorkerIdFactory.defaultGenerator();
+    private @Nullable String host;
+    private final Map<String, String> workerMetadata = new LinkedHashMap<>();
+    private @Nullable Function<EventTypeConfig, ExecutorService> handlerExecutorFactory;
+    private @Nullable PollStrategy pollStrategy;
+    private @Nullable PollerWakeHub wakeHub;
+    private @Nullable OutboxAdmin admin;
+    private RetentionConfig retentionConfig = RetentionConfig.disabled();
 
-  // ---------------------------------------------------------------------------------------------
-  // required collaborators
-  // ---------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------
+    // required collaborators
+    // ---------------------------------------------------------------------------------------------
 
-  public OutboxEngineBuilder eventStore(EventStore store) {
-    this.store = Objects.requireNonNull(store);
-    return this;
-  }
-
-  public OutboxEngineBuilder workerRegistry(WorkerRegistry registry) {
-    this.registry = Objects.requireNonNull(registry);
-    return this;
-  }
-
-  /**
-   * The write serializer: every published event is serialized with it and stamped with its {@code
-   * format()}. It is also registered for reads automatically.
-   */
-  public OutboxEngineBuilder eventSerializer(EventSerializer serializer) {
-    this.serializer = Objects.requireNonNull(serializer);
-    return this;
-  }
-
-  /**
-   * Read-only serializers for formats other than the write serializer's (ADR-0025). During a format
-   * migration, register yesterday's serializer here so in-flight events written in the old format
-   * keep deserializing until they drain.
-   */
-  public OutboxEngineBuilder additionalSerializers(EventSerializer... more) {
-    for (EventSerializer s : more) {
-      additionalSerializers.add(Objects.requireNonNull(s, "serializer must not be null"));
-    }
-    return this;
-  }
-
-  /**
-   * Per-event-type write serializer override (ADR-0025 amendment): events of {@code eventType} are
-   * serialized with — and stamped with the {@code format()} of — the given serializer instead of
-   * the default {@link #eventSerializer(EventSerializer)}. Every other type keeps the default.
-   * Useful for a gradual format migration one event type at a time; the override serializer is
-   * registered for reads automatically.
-   */
-  public OutboxEngineBuilder writeSerializerOverride(String eventType, EventSerializer serializer) {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    if (eventType.isBlank()) {
-      throw new IllegalArgumentException("eventType must not be blank");
-    }
-    writeSerializerOverrides.put(
-        eventType, Objects.requireNonNull(serializer, "serializer must not be null"));
-    return this;
-  }
-
-  /** Bulk variant of {@link #writeSerializerOverride(String, EventSerializer)}. */
-  public OutboxEngineBuilder writeSerializerOverrides(Map<String, EventSerializer> overrides) {
-    Objects.requireNonNull(overrides, "overrides must not be null");
-    overrides.forEach(this::writeSerializerOverride);
-    return this;
-  }
-
-  public OutboxEngineBuilder entityLocker(EntityLocker locker) {
-    this.locker = Objects.requireNonNull(locker);
-    return this;
-  }
-
-  public OutboxEngineBuilder clock(Clock clock) {
-    this.clock = Objects.requireNonNull(clock);
-    return this;
-  }
-
-  public OutboxEngineBuilder transactionContext(TransactionContext txContext) {
-    this.txContext = Objects.requireNonNull(txContext);
-    return this;
-  }
-
-  public OutboxEngineBuilder noTransactionPolicy(NoTransactionPolicy policy) {
-    this.noTxPolicy = Objects.requireNonNull(policy);
-    return this;
-  }
-
-  public OutboxEngineBuilder handler(EventHandler<?> handler) {
-    handlers.add(Objects.requireNonNull(handler));
-    return this;
-  }
-
-  public OutboxEngineBuilder handlers(List<? extends EventHandler<?>> list) {
-    Objects.requireNonNull(list, "list must not be null");
-    for (EventHandler<?> h : list) {
-      handler(h);
-    }
-    return this;
-  }
-
-  public OutboxEngineBuilder defaultFailureHandler(FailureHandler<?> fh) {
-    this.defaultFailureHandler = Objects.requireNonNull(fh);
-    return this;
-  }
-
-  public OutboxEngineBuilder failureHandlerFor(String eventType, FailureHandler<?> fh) {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(fh, "fh must not be null");
-    perTypeFailureHandlers.put(eventType, fh);
-    return this;
-  }
-
-  public OutboxEngineBuilder defaultEventTypeConfig(EventTypeConfig cfg) {
-    this.defaultEventTypeConfig = Objects.requireNonNull(cfg);
-    return this;
-  }
-
-  public OutboxEngineBuilder eventTypeConfig(String eventType, EventTypeConfig cfg) {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(cfg, "cfg must not be null");
-    perTypeOverrides.put(eventType, cfg);
-    return this;
-  }
-
-  public OutboxEngineBuilder maintenance(MaintenanceConfig cfg) {
-    this.maintenanceConfig = Objects.requireNonNull(cfg);
-    return this;
-  }
-
-  public OutboxEngineBuilder dispatcher(DispatcherConfig cfg) {
-    this.dispatcherConfig = Objects.requireNonNull(cfg);
-    return this;
-  }
-
-  public OutboxEngineBuilder listener(OutboxListener listener) {
-    listeners.add(Objects.requireNonNull(listener));
-    return this;
-  }
-
-  public OutboxEngineBuilder includeLoggingListener(boolean include) {
-    this.includeLoggingListener = include;
-    return this;
-  }
-
-  /**
-   * Tracing port (ADR-0023): PRODUCER span around every event insert, CONSUMER span around every
-   * handler invocation. Default: {@link OutboxTracer#NOOP}. The builder wraps the tracer
-   * defensively, so implementation failures degrade to no-op instead of breaking dispatch.
-   */
-  public OutboxEngineBuilder tracer(OutboxTracer tracer) {
-    this.tracer = Objects.requireNonNull(tracer);
-    return this;
-  }
-
-  public OutboxEngineBuilder workerIdSupplier(Supplier<WorkerId> supplier) {
-    this.workerIdSupplier = Objects.requireNonNull(supplier);
-    return this;
-  }
-
-  public OutboxEngineBuilder host(String host) {
-    this.host = Objects.requireNonNull(host);
-    return this;
-  }
-
-  public OutboxEngineBuilder workerMetadata(String key, String value) {
-    Objects.requireNonNull(key, "key must not be null");
-    Objects.requireNonNull(value, "value must not be null");
-    workerMetadata.put(key, value);
-    return this;
-  }
-
-  public OutboxEngineBuilder handlerExecutorFactory(
-      Function<EventTypeConfig, ExecutorService> factory) {
-    this.handlerExecutorFactory = Objects.requireNonNull(factory);
-    return this;
-  }
-
-  public OutboxEngineBuilder pollStrategy(PollStrategy strategy) {
-    this.pollStrategy = Objects.requireNonNull(strategy);
-    return this;
-  }
-
-  /**
-   * Externally owned {@link PollerWakeHub} to register this engine's pollers in. Used by the Spring
-   * Boot starter, where the {@code OutboxEventPublisher} bean is built independently of the engine
-   * and both must share one hub. When unset, the builder creates a private hub for the
-   * engine-internal publisher.
-   */
-  public OutboxEngineBuilder wakeHub(PollerWakeHub hub) {
-    this.wakeHub = Objects.requireNonNull(hub);
-    return this;
-  }
-
-  /**
-   * Admin port used by the optional retention task. The engine itself never calls admin operations;
-   * the port is only consumed when {@link #retention(RetentionConfig)} enables at least one
-   * threshold.
-   */
-  public OutboxEngineBuilder admin(OutboxAdmin admin) {
-    this.admin = Objects.requireNonNull(admin);
-    return this;
-  }
-
-  /** Retention thresholds (ADR-0019). Default: fully disabled. */
-  public OutboxEngineBuilder retention(RetentionConfig config) {
-    this.retentionConfig = Objects.requireNonNull(config);
-    return this;
-  }
-
-  // ---------------------------------------------------------------------------------------------
-  // build
-  // ---------------------------------------------------------------------------------------------
-
-  public OutboxEngine build() {
-    EventStore eventStore = require(store, "eventStore");
-    WorkerRegistry workerRegistry = require(registry, "workerRegistry");
-    EventSerializer eventSerializer = require(serializer, "eventSerializer");
-    if (handlers.isEmpty()) {
-      throw new IllegalStateException("at least one EventHandler must be registered");
+    public OutboxEngineBuilder eventStore(EventStore store) {
+        this.store = Objects.requireNonNull(store);
+        return this;
     }
 
-    List<EventSerializer> allSerializers = new ArrayList<>();
-    allSerializers.add(eventSerializer);
-    allSerializers.addAll(additionalSerializers);
-    // Per-type write serializers are auto-registered for reads; a format already present
-    // (typically the same instance also passed to additionalSerializers) is not re-added, so
-    // the registry's duplicate-format check keeps guarding genuinely conflicting registrations.
-    Set<String> registeredFormats = new HashSet<>();
-    for (EventSerializer s : allSerializers) {
-      registeredFormats.add(s.format());
-    }
-    for (EventSerializer s : writeSerializerOverrides.values()) {
-      if (registeredFormats.add(s.format())) {
-        allSerializers.add(s);
-      }
-    }
-    EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
-
-    OutboxListenerRegistry listener = new OutboxListenerRegistry(listeners);
-    if (includeLoggingListener) {
-      listener.add(new LoggingOutboxListener());
+    public OutboxEngineBuilder workerRegistry(WorkerRegistry registry) {
+        this.registry = Objects.requireNonNull(registry);
+        return this;
     }
 
-    FailureHandler<?> defaults =
-        defaultFailureHandler != null ? defaultFailureHandler : FailureHandlers.defaults();
-    FailureHandlerResolver failureResolver =
-        new FailureHandlerResolver(perTypeFailureHandlers, defaults);
-    EventHandlerResolver handlerResolver = new EventHandlerResolver(handlers);
-    EventTypeConfigProvider typeConfig =
-        new EventTypeConfigProvider(defaultEventTypeConfig, perTypeOverrides);
-    InFlightRegistry inFlight = new InFlightRegistry();
-
-    WorkerId workerId = workerIdSupplier.get();
-    WorkerInfo workerInfo =
-        WorkerInfo.builder()
-            .id(workerId)
-            .host(host != null ? host : resolveHost())
-            .pid((int) ProcessHandle.current().pid())
-            .startedAt(clock.now())
-            .metadata(Map.copyOf(workerMetadata))
-            .build();
-
-    // Group-commit batching applies only to the dispatcher's finalize path: pollers, publisher
-    // and maintenance keep the raw store (their operations are either already batched or rare).
-    EventStore dispatcherStore =
-        dispatcherConfig.finalizeBatching()
-            ? new GroupCommitEventStore(
-                eventStore, workerId, dispatcherConfig.finalizeBatchMaxSize())
-            : eventStore;
-
-    // Wrap once here so both the dispatcher and the publisher share the same shielded instance.
-    OutboxTracer safeTracer = SafeOutboxTracer.wrap(tracer);
-
-    HandlerDispatcher dispatcher =
-        new HandlerDispatcher(
-            dispatcherStore,
-            locker,
-            serializerRegistry,
-            handlerResolver,
-            failureResolver,
-            inFlight,
-            listener,
-            clock,
-            workerId,
-            typeConfig,
-            dispatcherConfig,
-            safeTracer);
-
-    PollStrategy strategy =
-        pollStrategy != null ? pollStrategy : new LockAndFetchStrategy(eventStore);
-    Function<EventTypeConfig, ExecutorService> executorFactory =
-        handlerExecutorFactory != null ? handlerExecutorFactory : defaultExecutorFactory();
-
-    Map<String, EventTypeConfig> executorConfigs = new LinkedHashMap<>();
-    for (EventHandler<?> h : handlers) {
-      executorConfigs.put(h.eventType(), typeConfig.forType(h.eventType()));
-    }
-    HandlerExecutorManager executors = new HandlerExecutorManager(executorFactory, executorConfigs);
-
-    PollerWakeHub hub = wakeHub != null ? wakeHub : new PollerWakeHub();
-    List<Poller> pollers = new ArrayList<>(handlers.size());
-    for (EventHandler<?> h : handlers) {
-      String type = h.eventType();
-      EventTypeConfig cfg =
-          Objects.requireNonNull(executorConfigs.get(type), "no executor config for type " + type);
-      io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate = executors.executorFor(type);
-      Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
-      // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the
-      // poller immediately instead of costing the remainder of the poll interval.
-      gate.onCapacityAvailable(poller::wake);
-      hub.register(poller);
-      pollers.add(poller);
+    /**
+     * The write serializer: every published event is serialized with it and stamped with its {@code
+     * format()}. It is also registered for reads automatically.
+     */
+    public OutboxEngineBuilder eventSerializer(EventSerializer serializer) {
+        this.serializer = Objects.requireNonNull(serializer);
+        return this;
     }
 
-    OutboxEventPublisher publisher =
-        new DefaultOutboxEventPublisher(
-            eventStore,
-            eventSerializer,
-            writeSerializerOverrides,
-            clock,
-            txContext,
-            noTxPolicy,
-            listener,
-            hub,
-            safeTracer);
-
-    HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
-    OrphanRecoveryTask orphanTask =
-        new OrphanRecoveryTask(workerRegistry, eventStore, clock, maintenanceConfig, listener);
-    WatchdogTask watchdog = new WatchdogTask(inFlight, eventStore, clock, typeConfig, listener);
-
-    // The engine-health-check needs to report crashes to the engine, but the engine isn't
-    // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.
-    java.util.concurrent.atomic.AtomicReference<OutboxEngine> engineRef =
-        new java.util.concurrent.atomic.AtomicReference<>();
-    EngineHealthCheckTask engineHealthCheck =
-        new EngineHealthCheckTask(
-            pollers,
-            (reason, cause) -> {
-              OutboxEngine e = engineRef.get();
-              if (e != null) {
-                e.markCrashed(reason, cause);
-              }
-            });
-    RetentionTask retention =
-        admin != null && retentionConfig.enabled()
-            ? new RetentionTask(admin, clock, retentionConfig)
-            : null;
-    StaleClaimSweeperTask staleClaimSweeper =
-        new StaleClaimSweeperTask(
-            eventStore,
-            resolveStaleClaimThreshold(maintenanceConfig, executorConfigs.values()),
-            maintenanceConfig.staleClaimSweepInterval(),
-            maintenanceConfig.reclaimBatchSize());
-    MaintenanceScheduler maintenance =
-        new MaintenanceScheduler(
-            heartbeat,
-            orphanTask,
-            watchdog,
-            engineHealthCheck,
-            retention,
-            staleClaimSweeper,
-            maintenanceConfig);
-
-    OutboxEngine engine =
-        new OutboxEngine(
-            workerRegistry,
-            workerInfo,
-            eventStore,
-            clock,
-            publisher,
-            maintenance,
-            pollers,
-            executors,
-            listener,
-            maintenanceConfig.shutdownTimeout());
-    engineRef.set(engine);
-    return engine;
-  }
-
-  /**
-   * The sweep threshold must exceed every per-type {@code handlerMaxRuntime}: the sweeper cannot
-   * see any JVM's in-flight registry, so a smaller threshold would reclaim a legitimately
-   * long-running handler's row on another pod. When unset, derive {@code 2 × max}; an explicit
-   * value that violates the invariant fails the build. Heterogeneous fleets (a rolling deploy that
-   * raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
-   */
-  static Duration resolveStaleClaimThreshold(
-      MaintenanceConfig maintenance, java.util.Collection<EventTypeConfig> typeConfigs) {
-    Duration maxRuntime = Duration.ZERO;
-    for (EventTypeConfig cfg : typeConfigs) {
-      if (cfg.handlerMaxRuntime().compareTo(maxRuntime) > 0) {
-        maxRuntime = cfg.handlerMaxRuntime();
-      }
+    /**
+     * Read-only serializers for formats other than the write serializer's (ADR-0025). During a
+     * format migration, register yesterday's serializer here so in-flight events written in the old
+     * format keep deserializing until they drain.
+     */
+    public OutboxEngineBuilder additionalSerializers(EventSerializer... more) {
+        for (EventSerializer s : more) {
+            additionalSerializers.add(Objects.requireNonNull(s, "serializer must not be null"));
+        }
+        return this;
     }
-    Duration explicit = maintenance.staleClaimThreshold();
-    if (explicit == null) {
-      return maxRuntime.multipliedBy(2);
-    }
-    if (explicit.compareTo(maxRuntime) <= 0) {
-      throw new IllegalArgumentException(
-          "staleClaimThreshold ("
-              + explicit
-              + ") must exceed the largest per-type handlerMaxRuntime ("
-              + maxRuntime
-              + ") — otherwise the sweeper would reclaim rows of legitimately running handlers "
-              + "on other instances");
-    }
-    return explicit;
-  }
 
-  // ---------------------------------------------------------------------------------------------
-  // defaults
-  // ---------------------------------------------------------------------------------------------
-
-  private static Function<EventTypeConfig, ExecutorService> defaultExecutorFactory() {
-    return cfg -> {
-      BlockingQueue<Runnable> queue =
-          cfg.handlerQueueCapacity() == 0
-              ? new SynchronousQueue<>()
-              : (cfg.handlerQueueCapacity() > 0
-                  ? new ArrayBlockingQueue<>(cfg.handlerQueueCapacity())
-                  : new LinkedBlockingQueue<>());
-      return new ThreadPoolExecutor(
-          cfg.handlerPoolSize(),
-          cfg.handlerPoolSize(),
-          0L,
-          TimeUnit.MILLISECONDS,
-          queue,
-          new NamedThreadFactory("outbox-handler", true),
-          new ThreadPoolExecutor.AbortPolicy());
-    };
-  }
-
-  private static String resolveHost() {
-    try {
-      String h = InetAddress.getLocalHost().getHostName();
-      if (h != null && !h.isBlank()) {
-        return h;
-      }
-    } catch (UnknownHostException _) {
-      // fall through
+    /**
+     * Per-event-type write serializer override (ADR-0025 amendment): events of {@code eventType}
+     * are serialized with — and stamped with the {@code format()} of — the given serializer instead
+     * of the default {@link #eventSerializer(EventSerializer)}. Every other type keeps the default.
+     * Useful for a gradual format migration one event type at a time; the override serializer is
+     * registered for reads automatically.
+     */
+    public OutboxEngineBuilder writeSerializerOverride(
+            String eventType, EventSerializer serializer) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        if (eventType.isBlank()) {
+            throw new IllegalArgumentException("eventType must not be blank");
+        }
+        writeSerializerOverrides.put(
+                eventType, Objects.requireNonNull(serializer, "serializer must not be null"));
+        return this;
     }
-    String name = ManagementFactory.getRuntimeMXBean().getName();
-    int at = name.indexOf('@');
-    return at >= 0 && at + 1 < name.length() ? name.substring(at + 1) : "unknown-host";
-  }
 
-  private static <T> T require(@Nullable T value, String name) {
-    if (value == null) {
-      throw new IllegalStateException(name + " must be configured before build()");
+    /** Bulk variant of {@link #writeSerializerOverride(String, EventSerializer)}. */
+    public OutboxEngineBuilder writeSerializerOverrides(Map<String, EventSerializer> overrides) {
+        Objects.requireNonNull(overrides, "overrides must not be null");
+        overrides.forEach(this::writeSerializerOverride);
+        return this;
     }
-    return value;
-  }
+
+    public OutboxEngineBuilder entityLocker(EntityLocker locker) {
+        this.locker = Objects.requireNonNull(locker);
+        return this;
+    }
+
+    public OutboxEngineBuilder clock(Clock clock) {
+        this.clock = Objects.requireNonNull(clock);
+        return this;
+    }
+
+    public OutboxEngineBuilder transactionContext(TransactionContext txContext) {
+        this.txContext = Objects.requireNonNull(txContext);
+        return this;
+    }
+
+    public OutboxEngineBuilder noTransactionPolicy(NoTransactionPolicy policy) {
+        this.noTxPolicy = Objects.requireNonNull(policy);
+        return this;
+    }
+
+    public OutboxEngineBuilder handler(EventHandler<?> handler) {
+        handlers.add(Objects.requireNonNull(handler));
+        return this;
+    }
+
+    public OutboxEngineBuilder handlers(List<? extends EventHandler<?>> list) {
+        Objects.requireNonNull(list, "list must not be null");
+        for (EventHandler<?> h : list) {
+            handler(h);
+        }
+        return this;
+    }
+
+    public OutboxEngineBuilder defaultFailureHandler(FailureHandler<?> fh) {
+        this.defaultFailureHandler = Objects.requireNonNull(fh);
+        return this;
+    }
+
+    public OutboxEngineBuilder failureHandlerFor(String eventType, FailureHandler<?> fh) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(fh, "fh must not be null");
+        perTypeFailureHandlers.put(eventType, fh);
+        return this;
+    }
+
+    public OutboxEngineBuilder defaultEventTypeConfig(EventTypeConfig cfg) {
+        this.defaultEventTypeConfig = Objects.requireNonNull(cfg);
+        return this;
+    }
+
+    public OutboxEngineBuilder eventTypeConfig(String eventType, EventTypeConfig cfg) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(cfg, "cfg must not be null");
+        perTypeOverrides.put(eventType, cfg);
+        return this;
+    }
+
+    public OutboxEngineBuilder maintenance(MaintenanceConfig cfg) {
+        this.maintenanceConfig = Objects.requireNonNull(cfg);
+        return this;
+    }
+
+    public OutboxEngineBuilder dispatcher(DispatcherConfig cfg) {
+        this.dispatcherConfig = Objects.requireNonNull(cfg);
+        return this;
+    }
+
+    public OutboxEngineBuilder listener(OutboxListener listener) {
+        listeners.add(Objects.requireNonNull(listener));
+        return this;
+    }
+
+    public OutboxEngineBuilder includeLoggingListener(boolean include) {
+        this.includeLoggingListener = include;
+        return this;
+    }
+
+    /**
+     * Tracing port (ADR-0023): PRODUCER span around every event insert, CONSUMER span around every
+     * handler invocation. Default: {@link OutboxTracer#NOOP}. The builder wraps the tracer
+     * defensively, so implementation failures degrade to no-op instead of breaking dispatch.
+     */
+    public OutboxEngineBuilder tracer(OutboxTracer tracer) {
+        this.tracer = Objects.requireNonNull(tracer);
+        return this;
+    }
+
+    public OutboxEngineBuilder workerIdSupplier(Supplier<WorkerId> supplier) {
+        this.workerIdSupplier = Objects.requireNonNull(supplier);
+        return this;
+    }
+
+    public OutboxEngineBuilder host(String host) {
+        this.host = Objects.requireNonNull(host);
+        return this;
+    }
+
+    public OutboxEngineBuilder workerMetadata(String key, String value) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(value, "value must not be null");
+        workerMetadata.put(key, value);
+        return this;
+    }
+
+    public OutboxEngineBuilder handlerExecutorFactory(
+            Function<EventTypeConfig, ExecutorService> factory) {
+        this.handlerExecutorFactory = Objects.requireNonNull(factory);
+        return this;
+    }
+
+    public OutboxEngineBuilder pollStrategy(PollStrategy strategy) {
+        this.pollStrategy = Objects.requireNonNull(strategy);
+        return this;
+    }
+
+    /**
+     * Externally owned {@link PollerWakeHub} to register this engine's pollers in. Used by the
+     * Spring Boot starter, where the {@code OutboxEventPublisher} bean is built independently of
+     * the engine and both must share one hub. When unset, the builder creates a private hub for the
+     * engine-internal publisher.
+     */
+    public OutboxEngineBuilder wakeHub(PollerWakeHub hub) {
+        this.wakeHub = Objects.requireNonNull(hub);
+        return this;
+    }
+
+    /**
+     * Admin port used by the optional retention task. The engine itself never calls admin
+     * operations; the port is only consumed when {@link #retention(RetentionConfig)} enables at
+     * least one threshold.
+     */
+    public OutboxEngineBuilder admin(OutboxAdmin admin) {
+        this.admin = Objects.requireNonNull(admin);
+        return this;
+    }
+
+    /** Retention thresholds (ADR-0019). Default: fully disabled. */
+    public OutboxEngineBuilder retention(RetentionConfig config) {
+        this.retentionConfig = Objects.requireNonNull(config);
+        return this;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // build
+    // ---------------------------------------------------------------------------------------------
+
+    public OutboxEngine build() {
+        EventStore eventStore = require(store, "eventStore");
+        WorkerRegistry workerRegistry = require(registry, "workerRegistry");
+        EventSerializer eventSerializer = require(serializer, "eventSerializer");
+        if (handlers.isEmpty()) {
+            throw new IllegalStateException("at least one EventHandler must be registered");
+        }
+
+        List<EventSerializer> allSerializers = new ArrayList<>();
+        allSerializers.add(eventSerializer);
+        allSerializers.addAll(additionalSerializers);
+        // Per-type write serializers are auto-registered for reads; a format already present
+        // (typically the same instance also passed to additionalSerializers) is not re-added, so
+        // the registry's duplicate-format check keeps guarding genuinely conflicting registrations.
+        Set<String> registeredFormats = new HashSet<>();
+        for (EventSerializer s : allSerializers) {
+            registeredFormats.add(s.format());
+        }
+        for (EventSerializer s : writeSerializerOverrides.values()) {
+            if (registeredFormats.add(s.format())) {
+                allSerializers.add(s);
+            }
+        }
+        EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
+
+        OutboxListenerRegistry listener = new OutboxListenerRegistry(listeners);
+        if (includeLoggingListener) {
+            listener.add(new LoggingOutboxListener());
+        }
+
+        FailureHandler<?> defaults =
+                defaultFailureHandler != null ? defaultFailureHandler : FailureHandlers.defaults();
+        FailureHandlerResolver failureResolver =
+                new FailureHandlerResolver(perTypeFailureHandlers, defaults);
+        EventHandlerResolver handlerResolver = new EventHandlerResolver(handlers);
+        EventTypeConfigProvider typeConfig =
+                new EventTypeConfigProvider(defaultEventTypeConfig, perTypeOverrides);
+        InFlightRegistry inFlight = new InFlightRegistry();
+
+        WorkerId workerId = workerIdSupplier.get();
+        WorkerInfo workerInfo =
+                WorkerInfo.builder()
+                        .id(workerId)
+                        .host(host != null ? host : resolveHost())
+                        .pid((int) ProcessHandle.current().pid())
+                        .startedAt(clock.now())
+                        .metadata(Map.copyOf(workerMetadata))
+                        .build();
+
+        // Group-commit batching applies only to the dispatcher's finalize path: pollers, publisher
+        // and maintenance keep the raw store (their operations are either already batched or rare).
+        EventStore dispatcherStore =
+                dispatcherConfig.finalizeBatching()
+                        ? new GroupCommitEventStore(
+                                eventStore, workerId, dispatcherConfig.finalizeBatchMaxSize())
+                        : eventStore;
+
+        // Wrap once here so both the dispatcher and the publisher share the same shielded instance.
+        OutboxTracer safeTracer = SafeOutboxTracer.wrap(tracer);
+
+        HandlerDispatcher dispatcher =
+                new HandlerDispatcher(
+                        dispatcherStore,
+                        locker,
+                        serializerRegistry,
+                        handlerResolver,
+                        failureResolver,
+                        inFlight,
+                        listener,
+                        clock,
+                        workerId,
+                        typeConfig,
+                        dispatcherConfig,
+                        safeTracer);
+
+        PollStrategy strategy =
+                pollStrategy != null ? pollStrategy : new LockAndFetchStrategy(eventStore);
+        Function<EventTypeConfig, ExecutorService> executorFactory =
+                handlerExecutorFactory != null ? handlerExecutorFactory : defaultExecutorFactory();
+
+        Map<String, EventTypeConfig> executorConfigs = new LinkedHashMap<>();
+        for (EventHandler<?> h : handlers) {
+            executorConfigs.put(h.eventType(), typeConfig.forType(h.eventType()));
+        }
+        HandlerExecutorManager executors =
+                new HandlerExecutorManager(executorFactory, executorConfigs);
+
+        PollerWakeHub hub = wakeHub != null ? wakeHub : new PollerWakeHub();
+        List<Poller> pollers = new ArrayList<>(handlers.size());
+        for (EventHandler<?> h : handlers) {
+            String type = h.eventType();
+            EventTypeConfig cfg =
+                    Objects.requireNonNull(
+                            executorConfigs.get(type), "no executor config for type " + type);
+            io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate =
+                    executors.executorFor(type);
+            Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
+            // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the
+            // poller immediately instead of costing the remainder of the poll interval.
+            gate.onCapacityAvailable(poller::wake);
+            hub.register(poller);
+            pollers.add(poller);
+        }
+
+        OutboxEventPublisher publisher =
+                new DefaultOutboxEventPublisher(
+                        eventStore,
+                        eventSerializer,
+                        writeSerializerOverrides,
+                        clock,
+                        txContext,
+                        noTxPolicy,
+                        listener,
+                        hub,
+                        safeTracer);
+
+        HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
+        OrphanRecoveryTask orphanTask =
+                new OrphanRecoveryTask(
+                        workerRegistry, eventStore, clock, maintenanceConfig, listener);
+        WatchdogTask watchdog = new WatchdogTask(inFlight, eventStore, clock, typeConfig, listener);
+
+        // The engine-health-check needs to report crashes to the engine, but the engine isn't
+        // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.
+        java.util.concurrent.atomic.AtomicReference<OutboxEngine> engineRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        EngineHealthCheckTask engineHealthCheck =
+                new EngineHealthCheckTask(
+                        pollers,
+                        (reason, cause) -> {
+                            OutboxEngine e = engineRef.get();
+                            if (e != null) {
+                                e.markCrashed(reason, cause);
+                            }
+                        });
+        RetentionTask retention =
+                admin != null && retentionConfig.enabled()
+                        ? new RetentionTask(admin, clock, retentionConfig)
+                        : null;
+        StaleClaimSweeperTask staleClaimSweeper =
+                new StaleClaimSweeperTask(
+                        eventStore,
+                        resolveStaleClaimThreshold(maintenanceConfig, executorConfigs.values()),
+                        maintenanceConfig.staleClaimSweepInterval(),
+                        maintenanceConfig.reclaimBatchSize());
+        MaintenanceScheduler maintenance =
+                new MaintenanceScheduler(
+                        heartbeat,
+                        orphanTask,
+                        watchdog,
+                        engineHealthCheck,
+                        retention,
+                        staleClaimSweeper,
+                        maintenanceConfig);
+
+        OutboxEngine engine =
+                new OutboxEngine(
+                        workerRegistry,
+                        workerInfo,
+                        eventStore,
+                        clock,
+                        publisher,
+                        maintenance,
+                        pollers,
+                        executors,
+                        listener,
+                        maintenanceConfig.shutdownTimeout());
+        engineRef.set(engine);
+        return engine;
+    }
+
+    /**
+     * The sweep threshold must exceed every per-type {@code handlerMaxRuntime}: the sweeper cannot
+     * see any JVM's in-flight registry, so a smaller threshold would reclaim a legitimately
+     * long-running handler's row on another pod. When unset, derive {@code 2 × max}; an explicit
+     * value that violates the invariant fails the build. Heterogeneous fleets (a rolling deploy
+     * that raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
+     */
+    static Duration resolveStaleClaimThreshold(
+            MaintenanceConfig maintenance, java.util.Collection<EventTypeConfig> typeConfigs) {
+        Duration maxRuntime = Duration.ZERO;
+        for (EventTypeConfig cfg : typeConfigs) {
+            if (cfg.handlerMaxRuntime().compareTo(maxRuntime) > 0) {
+                maxRuntime = cfg.handlerMaxRuntime();
+            }
+        }
+        Duration explicit = maintenance.staleClaimThreshold();
+        if (explicit == null) {
+            return maxRuntime.multipliedBy(2);
+        }
+        if (explicit.compareTo(maxRuntime) <= 0) {
+            throw new IllegalArgumentException(
+                    "staleClaimThreshold ("
+                            + explicit
+                            + ") must exceed the largest per-type handlerMaxRuntime ("
+                            + maxRuntime
+                            + ") — otherwise the sweeper would reclaim rows of legitimately running"
+                            + " handlers on other instances");
+        }
+        return explicit;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // defaults
+    // ---------------------------------------------------------------------------------------------
+
+    private static Function<EventTypeConfig, ExecutorService> defaultExecutorFactory() {
+        return cfg -> {
+            BlockingQueue<Runnable> queue =
+                    cfg.handlerQueueCapacity() == 0
+                            ? new SynchronousQueue<>()
+                            : (cfg.handlerQueueCapacity() > 0
+                                    ? new ArrayBlockingQueue<>(cfg.handlerQueueCapacity())
+                                    : new LinkedBlockingQueue<>());
+            return new ThreadPoolExecutor(
+                    cfg.handlerPoolSize(),
+                    cfg.handlerPoolSize(),
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    queue,
+                    new NamedThreadFactory("outbox-handler", true),
+                    new ThreadPoolExecutor.AbortPolicy());
+        };
+    }
+
+    private static String resolveHost() {
+        try {
+            String h = InetAddress.getLocalHost().getHostName();
+            if (h != null && !h.isBlank()) {
+                return h;
+            }
+        } catch (UnknownHostException _) {
+            // fall through
+        }
+        String name = ManagementFactory.getRuntimeMXBean().getName();
+        int at = name.indexOf('@');
+        return at >= 0 && at + 1 < name.length() ? name.substring(at + 1) : "unknown-host";
+    }
+
+    private static <T> T require(@Nullable T value, String name) {
+        if (value == null) {
+            throw new IllegalStateException(name + " must be configured before build()");
+        }
+        return value;
+    }
 }

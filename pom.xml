@@ -396,7 +396,7 @@
                         <java>
                             <googleJavaFormat>
                                 <version>1.28.0</version>
-                                <style>GOOGLE</style>
+                                <style>AOSP</style>
                                 <reflowLongStrings>true</reflowLongStrings>
                             </googleJavaFormat>
                             <removeUnusedImports/>

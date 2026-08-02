@@ -28,37 +28,37 @@ import org.slf4j.LoggerFactory;
  */
 public final class EngineHealthCheckTask implements Runnable {
 
-  private static final Logger log = LoggerFactory.getLogger(EngineHealthCheckTask.class);
+    private static final Logger log = LoggerFactory.getLogger(EngineHealthCheckTask.class);
 
-  private final List<Poller> pollers;
-  private final CrashReporter reporter;
+    private final List<Poller> pollers;
+    private final CrashReporter reporter;
 
-  public EngineHealthCheckTask(List<Poller> pollers, CrashReporter reporter) {
-    this.pollers = List.copyOf(Objects.requireNonNull(pollers, "pollers must not be null"));
-    this.reporter = Objects.requireNonNull(reporter, "reporter must not be null");
-  }
-
-  @Override
-  public void run() {
-    try {
-      for (Poller poller : pollers) {
-        if (poller.isCrashed()) {
-          reporter.report("poller thread died for eventType=" + poller.eventType(), null);
-          return;
-        }
-      }
-    } catch (RuntimeException ex) {
-      log.warn("engine health check pass failed: {}", ex.toString(), ex);
+    public EngineHealthCheckTask(List<Poller> pollers, CrashReporter reporter) {
+        this.pollers = List.copyOf(Objects.requireNonNull(pollers, "pollers must not be null"));
+        this.reporter = Objects.requireNonNull(reporter, "reporter must not be null");
     }
-  }
 
-  /**
-   * Bridge between the task and the engine — lets the maintenance scheduler drive crash reporting
-   * without a direct reference to {@code OutboxEngine}, which eliminates the construction-order
-   * circular dependency.
-   */
-  @FunctionalInterface
-  public interface CrashReporter {
-    void report(String reason, @Nullable Throwable cause);
-  }
+    @Override
+    public void run() {
+        try {
+            for (Poller poller : pollers) {
+                if (poller.isCrashed()) {
+                    reporter.report("poller thread died for eventType=" + poller.eventType(), null);
+                    return;
+                }
+            }
+        } catch (RuntimeException ex) {
+            log.warn("engine health check pass failed: {}", ex.toString(), ex);
+        }
+    }
+
+    /**
+     * Bridge between the task and the engine — lets the maintenance scheduler drive crash reporting
+     * without a direct reference to {@code OutboxEngine}, which eliminates the construction-order
+     * circular dependency.
+     */
+    @FunctionalInterface
+    public interface CrashReporter {
+        void report(String reason, @Nullable Throwable cause);
+    }
 }

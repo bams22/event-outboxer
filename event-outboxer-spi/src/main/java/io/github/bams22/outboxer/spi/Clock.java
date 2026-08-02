@@ -23,14 +23,14 @@ import java.time.Instant;
 @FunctionalInterface
 public interface Clock {
 
-  /** Current wall-clock time. Implementations must be thread-safe. */
-  Instant now();
+    /** Current wall-clock time. Implementations must be thread-safe. */
+    Instant now();
 
-  /**
-   * System clock backed by {@link Instant#now()}. Suitable for production wiring. Returns a fresh
-   * instance each call because the contract is trivially stateless; callers may cache the result.
-   */
-  static Clock system() {
-    return Instant::now;
-  }
+    /**
+     * System clock backed by {@link Instant#now()}. Suitable for production wiring. Returns a fresh
+     * instance each call because the contract is trivially stateless; callers may cache the result.
+     */
+    static Clock system() {
+        return Instant::now;
+    }
 }

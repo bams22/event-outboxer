@@ -29,50 +29,50 @@ import org.slf4j.LoggerFactory;
  */
 public final class StaleClaimSweeperTask implements Runnable {
 
-  private static final Logger log = LoggerFactory.getLogger(StaleClaimSweeperTask.class);
+    private static final Logger log = LoggerFactory.getLogger(StaleClaimSweeperTask.class);
 
-  private final EventStore store;
-  private final Duration threshold;
-  private final Duration interval;
-  private final int batchSize;
+    private final EventStore store;
+    private final Duration threshold;
+    private final Duration interval;
+    private final int batchSize;
 
-  public StaleClaimSweeperTask(
-      EventStore store, Duration threshold, Duration interval, int batchSize) {
-    this.store = Objects.requireNonNull(store, "store must not be null");
-    this.threshold = Objects.requireNonNull(threshold, "threshold must not be null");
-    this.interval = Objects.requireNonNull(interval, "interval must not be null");
-    if (batchSize <= 0) {
-      throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
+    public StaleClaimSweeperTask(
+            EventStore store, Duration threshold, Duration interval, int batchSize) {
+        this.store = Objects.requireNonNull(store, "store must not be null");
+        this.threshold = Objects.requireNonNull(threshold, "threshold must not be null");
+        this.interval = Objects.requireNonNull(interval, "interval must not be null");
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
+        }
+        this.batchSize = batchSize;
     }
-    this.batchSize = batchSize;
-  }
 
-  /** Cadence of the sweep, exposed for the scheduler. */
-  public Duration interval() {
-    return interval;
-  }
-
-  @Override
-  public void run() {
-    long total = 0;
-    try {
-      int swept;
-      do {
-        swept = store.sweepStale(threshold, batchSize);
-        total += swept;
-      } while (swept >= batchSize);
-      if (total > 0) {
-        log.warn(
-            "swept {} stale PROCESSING claim(s) older than {} back to PENDING — "
-                + "these rows were invisible to the watchdog and orphan recovery",
-            total,
-            threshold);
-      }
-    } catch (RuntimeException ex) {
-      log.warn(
-          "stale-claim sweep failed after {} row(s); will retry next pass: {}",
-          total,
-          ex.toString());
+    /** Cadence of the sweep, exposed for the scheduler. */
+    public Duration interval() {
+        return interval;
     }
-  }
+
+    @Override
+    public void run() {
+        long total = 0;
+        try {
+            int swept;
+            do {
+                swept = store.sweepStale(threshold, batchSize);
+                total += swept;
+            } while (swept >= batchSize);
+            if (total > 0) {
+                log.warn(
+                        "swept {} stale PROCESSING claim(s) older than {} back to PENDING — "
+                                + "these rows were invisible to the watchdog and orphan recovery",
+                        total,
+                        threshold);
+            }
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "stale-claim sweep failed after {} row(s); will retry next pass: {}",
+                    total,
+                    ex.toString());
+        }
+    }
 }

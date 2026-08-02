@@ -20,43 +20,43 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 class PgAdvisoryLockerIT extends AbstractEntityLockerContractTest {
 
-  private static PostgreSQLContainer<?> container;
-  private static HikariDataSource dataSource;
+    private static PostgreSQLContainer<?> container;
+    private static HikariDataSource dataSource;
 
-  @BeforeAll
-  static void boot() {
-    container =
-        new PostgreSQLContainer<>("postgres:15")
-            .withDatabaseName("lockerit")
-            .withUsername("lockerit")
-            .withPassword("lockerit");
-    container.start();
+    @BeforeAll
+    static void boot() {
+        container =
+                new PostgreSQLContainer<>("postgres:15")
+                        .withDatabaseName("lockerit")
+                        .withUsername("lockerit")
+                        .withPassword("lockerit");
+        container.start();
 
-    HikariConfig cfg = new HikariConfig();
-    cfg.setJdbcUrl(container.getJdbcUrl());
-    cfg.setUsername(container.getUsername());
-    cfg.setPassword(container.getPassword());
-    // Pool >= threads used by the contract's concurrent exclusivity test.
-    cfg.setMaximumPoolSize(64);
-    dataSource = new HikariDataSource(cfg);
-  }
-
-  @AfterAll
-  static void shutdown() {
-    if (dataSource != null) {
-      dataSource.close();
+        HikariConfig cfg = new HikariConfig();
+        cfg.setJdbcUrl(container.getJdbcUrl());
+        cfg.setUsername(container.getUsername());
+        cfg.setPassword(container.getPassword());
+        // Pool >= threads used by the contract's concurrent exclusivity test.
+        cfg.setMaximumPoolSize(64);
+        dataSource = new HikariDataSource(cfg);
     }
-    if (container != null) {
-      container.stop();
+
+    @AfterAll
+    static void shutdown() {
+        if (dataSource != null) {
+            dataSource.close();
+        }
+        if (container != null) {
+            container.stop();
+        }
     }
-  }
 
-  @Override
-  protected EntityLocker newLocker() {
-    return new PgAdvisoryLocker(dataSource());
-  }
+    @Override
+    protected EntityLocker newLocker() {
+        return new PgAdvisoryLocker(dataSource());
+    }
 
-  private static DataSource dataSource() {
-    return dataSource;
-  }
+    private static DataSource dataSource() {
+        return dataSource;
+    }
 }

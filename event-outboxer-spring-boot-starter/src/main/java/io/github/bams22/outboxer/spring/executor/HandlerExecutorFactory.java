@@ -42,62 +42,63 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  */
 public final class HandlerExecutorFactory {
 
-  private HandlerExecutorFactory() {}
+    private HandlerExecutorFactory() {}
 
-  /**
-   * Fixed-size {@link ThreadPoolTaskExecutor} per event type.
-   *
-   * <p>Configuration:
-   *
-   * <ul>
-   *   <li>{@code core = max = handlerPoolSize} — fixed pool; no on-demand scaling.
-   *   <li>{@code queueCapacity = handlerQueueCapacity} — bounded LinkedBlockingQueue when positive;
-   *       SynchronousQueue when 0 (tasks fail fast when the pool is saturated and surface as {@code
-   *       onDispatchRejected}).
-   *   <li>{@code keepAliveSeconds = 0} — core threads stay alive forever (no pool shrink).
-   *   <li>Daemon threads named {@code outbox-handler-<N>}.
-   *   <li>Rejection policy: {@link ThreadPoolExecutor.AbortPolicy}.
-   *   <li>The given {@link TaskDecorator} wraps every submission for context propagation from the
-   *       poller thread.
-   * </ul>
-   */
-  public static Function<EventTypeConfig, ExecutorService> platform(TaskDecorator decorator) {
-    Objects.requireNonNull(decorator, "decorator must not be null");
-    return cfg -> {
-      ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-      executor.setCorePoolSize(cfg.handlerPoolSize());
-      executor.setMaxPoolSize(cfg.handlerPoolSize());
-      executor.setQueueCapacity(cfg.handlerQueueCapacity());
-      executor.setKeepAliveSeconds(0);
-      executor.setAllowCoreThreadTimeOut(false);
-      executor.setThreadNamePrefix("outbox-handler-");
-      executor.setDaemon(true);
-      executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
-      executor.setTaskDecorator(decorator);
-      executor.initialize();
-      return new SpringTaskExecutorAdapter(executor);
-    };
-  }
+    /**
+     * Fixed-size {@link ThreadPoolTaskExecutor} per event type.
+     *
+     * <p>Configuration:
+     *
+     * <ul>
+     *   <li>{@code core = max = handlerPoolSize} — fixed pool; no on-demand scaling.
+     *   <li>{@code queueCapacity = handlerQueueCapacity} — bounded LinkedBlockingQueue when
+     *       positive; SynchronousQueue when 0 (tasks fail fast when the pool is saturated and
+     *       surface as {@code onDispatchRejected}).
+     *   <li>{@code keepAliveSeconds = 0} — core threads stay alive forever (no pool shrink).
+     *   <li>Daemon threads named {@code outbox-handler-<N>}.
+     *   <li>Rejection policy: {@link ThreadPoolExecutor.AbortPolicy}.
+     *   <li>The given {@link TaskDecorator} wraps every submission for context propagation from the
+     *       poller thread.
+     * </ul>
+     */
+    public static Function<EventTypeConfig, ExecutorService> platform(TaskDecorator decorator) {
+        Objects.requireNonNull(decorator, "decorator must not be null");
+        return cfg -> {
+            ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+            executor.setCorePoolSize(cfg.handlerPoolSize());
+            executor.setMaxPoolSize(cfg.handlerPoolSize());
+            executor.setQueueCapacity(cfg.handlerQueueCapacity());
+            executor.setKeepAliveSeconds(0);
+            executor.setAllowCoreThreadTimeOut(false);
+            executor.setThreadNamePrefix("outbox-handler-");
+            executor.setDaemon(true);
+            executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+            executor.setTaskDecorator(decorator);
+            executor.initialize();
+            return new SpringTaskExecutorAdapter(executor);
+        };
+    }
 
-  /** {@code platform(...)} with the default {@link ContextPropagatingTaskDecorator}. */
-  public static Function<EventTypeConfig, ExecutorService> platform() {
-    return platform(new ContextPropagatingTaskDecorator());
-  }
+    /** {@code platform(...)} with the default {@link ContextPropagatingTaskDecorator}. */
+    public static Function<EventTypeConfig, ExecutorService> platform() {
+        return platform(new ContextPropagatingTaskDecorator());
+    }
 
-  /**
-   * Virtual-thread-per-task factory. JEP 491 (JDK 25) makes {@code synchronized}-heavy drivers safe
-   * on virtual threads.
-   */
-  public static Function<EventTypeConfig, ExecutorService> virtual(TaskDecorator decorator) {
-    Objects.requireNonNull(decorator, "decorator must not be null");
-    return _ ->
-        new ContextPropagatingExecutorService(
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("outbox-vt-", 0L).factory()),
-            decorator);
-  }
+    /**
+     * Virtual-thread-per-task factory. JEP 491 (JDK 25) makes {@code synchronized}-heavy drivers
+     * safe on virtual threads.
+     */
+    public static Function<EventTypeConfig, ExecutorService> virtual(TaskDecorator decorator) {
+        Objects.requireNonNull(decorator, "decorator must not be null");
+        return _ ->
+                new ContextPropagatingExecutorService(
+                        Executors.newThreadPerTaskExecutor(
+                                Thread.ofVirtual().name("outbox-vt-", 0L).factory()),
+                        decorator);
+    }
 
-  /** {@code virtual(...)} with the default {@link ContextPropagatingTaskDecorator}. */
-  public static Function<EventTypeConfig, ExecutorService> virtual() {
-    return virtual(new ContextPropagatingTaskDecorator());
-  }
+    /** {@code virtual(...)} with the default {@link ContextPropagatingTaskDecorator}. */
+    public static Function<EventTypeConfig, ExecutorService> virtual() {
+        return virtual(new ContextPropagatingTaskDecorator());
+    }
 }

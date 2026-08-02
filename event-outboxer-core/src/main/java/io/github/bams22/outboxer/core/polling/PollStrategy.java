@@ -21,6 +21,6 @@ import java.util.List;
 @FunctionalInterface
 public interface PollStrategy {
 
-  /** Claim up to {@code batchSize} events for the given type. */
-  List<ClaimedEvent> pollOnce(String eventType, WorkerId workerId, int batchSize);
+    /** Claim up to {@code batchSize} events for the given type. */
+    List<ClaimedEvent> pollOnce(String eventType, WorkerId workerId, int batchSize);
 }

@@ -64,99 +64,102 @@ import org.slf4j.LoggerFactory;
  */
 public final class PgAdvisoryLocker implements EntityLocker {
 
-  private static final Logger log = LoggerFactory.getLogger(PgAdvisoryLocker.class);
+    private static final Logger log = LoggerFactory.getLogger(PgAdvisoryLocker.class);
 
-  private final DataSource dataSource;
+    private final DataSource dataSource;
 
-  public PgAdvisoryLocker(DataSource dataSource) {
-    this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-  }
-
-  @Override
-  public Optional<LockHandle> tryLock(String key, Duration ttl) {
-    Objects.requireNonNull(key, "key must not be null");
-    Objects.requireNonNull(ttl, "ttl must not be null");
-    long hash = hash(key);
-
-    Connection conn = null;
-    try {
-      conn = dataSource.getConnection();
-      boolean acquired;
-      try (PreparedStatement ps = conn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
-        ps.setLong(1, hash);
-        try (ResultSet rs = ps.executeQuery()) {
-          rs.next();
-          acquired = rs.getBoolean(1);
-        }
-      }
-      if (!acquired) {
-        conn.close();
-        return Optional.empty();
-      }
-      return Optional.of(new PgLockHandle(conn, key, hash));
-    } catch (SQLException ex) {
-      if (conn != null) {
-        try {
-          conn.close();
-        } catch (SQLException _) {
-          // best-effort
-        }
-      }
-      throw new LockAcquisitionException("pg_try_advisory_lock failed for key '" + key + "'", ex);
-    }
-  }
-
-  /** Deterministic 64-bit hash of {@code key}. Public for cross-checking against SQL queries. */
-  public static long hash(String key) {
-    try {
-      MessageDigest md = MessageDigest.getInstance("SHA-256");
-      byte[] digest = md.digest(key.getBytes(StandardCharsets.UTF_8));
-      return ByteBuffer.wrap(digest, 0, 8).getLong();
-    } catch (NoSuchAlgorithmException e) {
-      // SHA-256 is guaranteed present by the JDK spec.
-      throw new IllegalStateException("SHA-256 must be available", e);
-    }
-  }
-
-  private static final class PgLockHandle implements LockHandle {
-
-    private final Connection connection;
-    private final String key;
-    private final long hash;
-    private volatile boolean closed;
-
-    PgLockHandle(Connection connection, String key, long hash) {
-      this.connection = connection;
-      this.key = key;
-      this.hash = hash;
+    public PgAdvisoryLocker(DataSource dataSource) {
+        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
     }
 
     @Override
-    public void close() {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      try (PreparedStatement ps = connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {
-        ps.setLong(1, hash);
-        try (ResultSet rs = ps.executeQuery()) {
-          if (rs.next() && !rs.getBoolean(1)) {
-            log.warn(
-                "pg_advisory_unlock returned false for key '{}' (hash={}) — "
-                    + "lock was not owned by this session",
-                key,
-                hash);
-          }
-        }
-      } catch (SQLException ex) {
-        throw new LockReleaseException("pg_advisory_unlock failed for key '" + key + "'", ex);
-      } finally {
+    public Optional<LockHandle> tryLock(String key, Duration ttl) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        long hash = hash(key);
+
+        Connection conn = null;
         try {
-          connection.close();
+            conn = dataSource.getConnection();
+            boolean acquired;
+            try (PreparedStatement ps = conn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                ps.setLong(1, hash);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    acquired = rs.getBoolean(1);
+                }
+            }
+            if (!acquired) {
+                conn.close();
+                return Optional.empty();
+            }
+            return Optional.of(new PgLockHandle(conn, key, hash));
         } catch (SQLException ex) {
-          log.warn("failed to release advisory-lock connection: {}", ex.toString());
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException _) {
+                    // best-effort
+                }
+            }
+            throw new LockAcquisitionException(
+                    "pg_try_advisory_lock failed for key '" + key + "'", ex);
         }
-      }
     }
-  }
+
+    /** Deterministic 64-bit hash of {@code key}. Public for cross-checking against SQL queries. */
+    public static long hash(String key) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(key.getBytes(StandardCharsets.UTF_8));
+            return ByteBuffer.wrap(digest, 0, 8).getLong();
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is guaranteed present by the JDK spec.
+            throw new IllegalStateException("SHA-256 must be available", e);
+        }
+    }
+
+    private static final class PgLockHandle implements LockHandle {
+
+        private final Connection connection;
+        private final String key;
+        private final long hash;
+        private volatile boolean closed;
+
+        PgLockHandle(Connection connection, String key, long hash) {
+            this.connection = connection;
+            this.key = key;
+            this.hash = hash;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try (PreparedStatement ps =
+                    connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+                ps.setLong(1, hash);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && !rs.getBoolean(1)) {
+                        log.warn(
+                                "pg_advisory_unlock returned false for key '{}' (hash={}) — "
+                                        + "lock was not owned by this session",
+                                key,
+                                hash);
+                    }
+                }
+            } catch (SQLException ex) {
+                throw new LockReleaseException(
+                        "pg_advisory_unlock failed for key '" + key + "'", ex);
+            } finally {
+                try {
+                    connection.close();
+                } catch (SQLException ex) {
+                    log.warn("failed to release advisory-lock connection: {}", ex.toString());
+                }
+            }
+        }
+    }
 }

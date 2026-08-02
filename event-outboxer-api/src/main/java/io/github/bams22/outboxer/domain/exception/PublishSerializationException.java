@@ -17,12 +17,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PublishSerializationException extends PublishException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-102";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-102";
 
-  public PublishSerializationException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public PublishSerializationException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

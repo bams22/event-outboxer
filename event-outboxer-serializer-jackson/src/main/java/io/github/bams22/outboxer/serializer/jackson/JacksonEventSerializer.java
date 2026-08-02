@@ -30,48 +30,48 @@ import java.util.Objects;
  */
 public final class JacksonEventSerializer implements EventSerializer {
 
-  /**
-   * Stable format id persisted with every event written by this serializer (ADR-0025). Never
-   * renamed — stored events reference it forever.
-   */
-  public static final String FORMAT = "jackson-json";
+    /**
+     * Stable format id persisted with every event written by this serializer (ADR-0025). Never
+     * renamed — stored events reference it forever.
+     */
+    public static final String FORMAT = "jackson-json";
 
-  private final ObjectMapper mapper;
+    private final ObjectMapper mapper;
 
-  public JacksonEventSerializer(ObjectMapper mapper) {
-    this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
-  }
-
-  @Override
-  public String format() {
-    return FORMAT;
-  }
-
-  @Override
-  public SerializedPayload serialize(Object payload) {
-    Objects.requireNonNull(payload, "payload must not be null");
-    try {
-      return SerializedPayload.ofText(mapper.writeValueAsString(payload));
-    } catch (JsonProcessingException ex) {
-      throw new PublishSerializationException(
-          "failed to serialize payload of type " + payload.getClass().getName(), ex);
+    public JacksonEventSerializer(ObjectMapper mapper) {
+        this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
     }
-  }
 
-  @Override
-  public <T> T deserialize(SerializedPayload payload, Class<T> type) {
-    Objects.requireNonNull(payload, "payload must not be null");
-    Objects.requireNonNull(type, "type must not be null");
-    try {
-      return mapper.readValue(payload.requireText(), type);
-    } catch (JsonProcessingException ex) {
-      throw new PayloadDeserializationException(
-          "failed to deserialize payload as " + type.getName(), ex);
+    @Override
+    public String format() {
+        return FORMAT;
     }
-  }
 
-  /** The underlying {@link ObjectMapper} — exposed for diagnostics. */
-  public ObjectMapper objectMapper() {
-    return mapper;
-  }
+    @Override
+    public SerializedPayload serialize(Object payload) {
+        Objects.requireNonNull(payload, "payload must not be null");
+        try {
+            return SerializedPayload.ofText(mapper.writeValueAsString(payload));
+        } catch (JsonProcessingException ex) {
+            throw new PublishSerializationException(
+                    "failed to serialize payload of type " + payload.getClass().getName(), ex);
+        }
+    }
+
+    @Override
+    public <T> T deserialize(SerializedPayload payload, Class<T> type) {
+        Objects.requireNonNull(payload, "payload must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        try {
+            return mapper.readValue(payload.requireText(), type);
+        } catch (JsonProcessingException ex) {
+            throw new PayloadDeserializationException(
+                    "failed to deserialize payload as " + type.getName(), ex);
+        }
+    }
+
+    /** The underlying {@link ObjectMapper} — exposed for diagnostics. */
+    public ObjectMapper objectMapper() {
+        return mapper;
+    }
 }

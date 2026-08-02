@@ -21,16 +21,16 @@ import java.util.function.Supplier;
  */
 public final class WorkerIdFactory {
 
-  private WorkerIdFactory() {}
+    private WorkerIdFactory() {}
 
-  /** Default generator — delegates to {@link WorkerId#generateDefault()}. */
-  public static Supplier<WorkerId> defaultGenerator() {
-    return WorkerId::generateDefault;
-  }
+    /** Default generator — delegates to {@link WorkerId#generateDefault()}. */
+    public static Supplier<WorkerId> defaultGenerator() {
+        return WorkerId::generateDefault;
+    }
 
-  /** Always returns the given id. */
-  public static Supplier<WorkerId> explicit(WorkerId id) {
-    Objects.requireNonNull(id, "id must not be null");
-    return () -> id;
-  }
+    /** Always returns the given id. */
+    public static Supplier<WorkerId> explicit(WorkerId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        return () -> id;
+    }
 }

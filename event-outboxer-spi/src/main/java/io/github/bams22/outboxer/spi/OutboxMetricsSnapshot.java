@@ -40,64 +40,67 @@ import org.jspecify.annotations.Nullable;
  */
 @Builder
 public record OutboxMetricsSnapshot(
-    long totalPending,
-    long totalProcessing,
-    long totalDisabled,
-    @Nullable Instant oldestPendingRunAt,
-    @Nullable Instant oldestClaimedAt,
-    Instant takenAt,
-    List<EventTypeStats> perType) {
+        long totalPending,
+        long totalProcessing,
+        long totalDisabled,
+        @Nullable Instant oldestPendingRunAt,
+        @Nullable Instant oldestClaimedAt,
+        Instant takenAt,
+        List<EventTypeStats> perType) {
 
-  public OutboxMetricsSnapshot {
-    if (totalPending < 0) {
-      throw new IllegalArgumentException("totalPending must not be negative, got " + totalPending);
+    public OutboxMetricsSnapshot {
+        if (totalPending < 0) {
+            throw new IllegalArgumentException(
+                    "totalPending must not be negative, got " + totalPending);
+        }
+        if (totalProcessing < 0) {
+            throw new IllegalArgumentException(
+                    "totalProcessing must not be negative, got " + totalProcessing);
+        }
+        if (totalDisabled < 0) {
+            throw new IllegalArgumentException(
+                    "totalDisabled must not be negative, got " + totalDisabled);
+        }
+        Objects.requireNonNull(takenAt, "takenAt must not be null");
+        Objects.requireNonNull(perType, "perType must not be null");
+        perType = List.copyOf(perType);
     }
-    if (totalProcessing < 0) {
-      throw new IllegalArgumentException(
-          "totalProcessing must not be negative, got " + totalProcessing);
-    }
-    if (totalDisabled < 0) {
-      throw new IllegalArgumentException(
-          "totalDisabled must not be negative, got " + totalDisabled);
-    }
-    Objects.requireNonNull(takenAt, "takenAt must not be null");
-    Objects.requireNonNull(perType, "perType must not be null");
-    perType = List.copyOf(perType);
-  }
 
-  /**
-   * Per-event-type breakdown of the outbox state. One instance per registered event type that has
-   * at least one row in the store at snapshot time.
-   *
-   * @param eventType non-blank event-type string
-   * @param pending count of {@code PENDING} rows for this type
-   * @param processing count of {@code PROCESSING} rows for this type
-   * @param disabled count of {@code DISABLED} rows for this type
-   * @param oldestPendingRunAt earliest {@code run_at} among pending rows of this type, or {@code
-   *     null} if none
-   */
-  @Builder
-  public record EventTypeStats(
-      String eventType,
-      long pending,
-      long processing,
-      long disabled,
-      @Nullable Instant oldestPendingRunAt) {
+    /**
+     * Per-event-type breakdown of the outbox state. One instance per registered event type that has
+     * at least one row in the store at snapshot time.
+     *
+     * @param eventType non-blank event-type string
+     * @param pending count of {@code PENDING} rows for this type
+     * @param processing count of {@code PROCESSING} rows for this type
+     * @param disabled count of {@code DISABLED} rows for this type
+     * @param oldestPendingRunAt earliest {@code run_at} among pending rows of this type, or {@code
+     *     null} if none
+     */
+    @Builder
+    public record EventTypeStats(
+            String eventType,
+            long pending,
+            long processing,
+            long disabled,
+            @Nullable Instant oldestPendingRunAt) {
 
-    public EventTypeStats {
-      Objects.requireNonNull(eventType, "eventType must not be null");
-      if (eventType.isBlank()) {
-        throw new IllegalArgumentException("eventType must not be blank");
-      }
-      if (pending < 0) {
-        throw new IllegalArgumentException("pending must not be negative, got " + pending);
-      }
-      if (processing < 0) {
-        throw new IllegalArgumentException("processing must not be negative, got " + processing);
-      }
-      if (disabled < 0) {
-        throw new IllegalArgumentException("disabled must not be negative, got " + disabled);
-      }
+        public EventTypeStats {
+            Objects.requireNonNull(eventType, "eventType must not be null");
+            if (eventType.isBlank()) {
+                throw new IllegalArgumentException("eventType must not be blank");
+            }
+            if (pending < 0) {
+                throw new IllegalArgumentException("pending must not be negative, got " + pending);
+            }
+            if (processing < 0) {
+                throw new IllegalArgumentException(
+                        "processing must not be negative, got " + processing);
+            }
+            if (disabled < 0) {
+                throw new IllegalArgumentException(
+                        "disabled must not be negative, got " + disabled);
+            }
+        }
     }
-  }
 }

@@ -22,14 +22,14 @@ import java.util.Objects;
  */
 public final class LockAndFetchStrategy implements PollStrategy {
 
-  private final EventStore store;
+    private final EventStore store;
 
-  public LockAndFetchStrategy(EventStore store) {
-    this.store = Objects.requireNonNull(store, "store must not be null");
-  }
+    public LockAndFetchStrategy(EventStore store) {
+        this.store = Objects.requireNonNull(store, "store must not be null");
+    }
 
-  @Override
-  public List<ClaimedEvent> pollOnce(String eventType, WorkerId workerId, int batchSize) {
-    return store.claim(new ClaimRequest(eventType, workerId, batchSize));
-  }
+    @Override
+    public List<ClaimedEvent> pollOnce(String eventType, WorkerId workerId, int batchSize) {
+        return store.claim(new ClaimRequest(eventType, workerId, batchSize));
+    }
 }

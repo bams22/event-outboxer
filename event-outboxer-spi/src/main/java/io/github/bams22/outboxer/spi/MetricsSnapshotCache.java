@@ -54,31 +54,31 @@ import java.util.Optional;
  */
 public interface MetricsSnapshotCache {
 
-  /** Returns the cached snapshot if present and not expired. */
-  Optional<OutboxMetricsSnapshot> get();
+    /** Returns the cached snapshot if present and not expired. */
+    Optional<OutboxMetricsSnapshot> get();
 
-  /** Stores {@code snapshot}; callers pass a freshly-computed aggregate. */
-  void put(OutboxMetricsSnapshot snapshot);
+    /** Stores {@code snapshot}; callers pass a freshly-computed aggregate. */
+    void put(OutboxMetricsSnapshot snapshot);
 
-  /** Drops the cached entry. Next {@link #get()} misses. */
-  void invalidate();
+    /** Drops the cached entry. Next {@link #get()} misses. */
+    void invalidate();
 
-  /** Cache that never stores anything — every {@link #get()} misses. */
-  static MetricsSnapshotCache noop() {
-    return NoopMetricsSnapshotCache.INSTANCE;
-  }
-
-  /**
-   * Per-JVM TTL cache backed by a single {@code AtomicReference}. {@code clock} drives expiry
-   * decisions so tests can feed a {@code SettableClock}; production code passes {@link
-   * Clock#system()}.
-   */
-  static MetricsSnapshotCache inMemory(Clock clock, Duration ttl) {
-    Objects.requireNonNull(clock, "clock must not be null");
-    Objects.requireNonNull(ttl, "ttl must not be null");
-    if (ttl.isNegative() || ttl.isZero()) {
-      throw new IllegalArgumentException("ttl must be positive, got " + ttl);
+    /** Cache that never stores anything — every {@link #get()} misses. */
+    static MetricsSnapshotCache noop() {
+        return NoopMetricsSnapshotCache.INSTANCE;
     }
-    return new InMemoryMetricsSnapshotCache(clock, ttl);
-  }
+
+    /**
+     * Per-JVM TTL cache backed by a single {@code AtomicReference}. {@code clock} drives expiry
+     * decisions so tests can feed a {@code SettableClock}; production code passes {@link
+     * Clock#system()}.
+     */
+    static MetricsSnapshotCache inMemory(Clock clock, Duration ttl) {
+        Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        if (ttl.isNegative() || ttl.isZero()) {
+            throw new IllegalArgumentException("ttl must be positive, got " + ttl);
+        }
+        return new InMemoryMetricsSnapshotCache(clock, ttl);
+    }
 }

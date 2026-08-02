@@ -36,20 +36,20 @@ import org.springframework.context.annotation.Bean;
  * instead expose an {@link OpenTelemetry} bean or a custom {@link OutboxTracer} bean.
  */
 @AutoConfiguration(
-    after = MicrometerTracingAutoConfiguration.class,
-    afterName =
-        "org.springframework.boot.actuate.autoconfigure.opentelemetry.OpenTelemetryAutoConfiguration")
+        after = MicrometerTracingAutoConfiguration.class,
+        afterName =
+                "org.springframework.boot.actuate.autoconfigure.opentelemetry.OpenTelemetryAutoConfiguration")
 @ConditionalOnClass({OpenTelemetry.class, OtelOutboxTracer.class})
 @ConditionalOnProperty(
-    prefix = "event-outboxer.tracing",
-    name = "enabled",
-    havingValue = "true",
-    matchIfMissing = true)
+        prefix = "event-outboxer.tracing",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class OtelTracingAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(OutboxTracer.class)
-  public OutboxTracer outboxOtelTracer(ObjectProvider<OpenTelemetry> openTelemetryProvider) {
-    return new OtelOutboxTracer(openTelemetryProvider.getIfAvailable(GlobalOpenTelemetry::get));
-  }
+    @Bean
+    @ConditionalOnMissingBean(OutboxTracer.class)
+    public OutboxTracer outboxOtelTracer(ObjectProvider<OpenTelemetry> openTelemetryProvider) {
+        return new OtelOutboxTracer(openTelemetryProvider.getIfAvailable(GlobalOpenTelemetry::get));
+    }
 }

@@ -28,73 +28,79 @@ import org.springframework.util.ClassUtils;
  */
 public class OutboxStorageFailureAnalyzer implements FailureAnalyzer, EnvironmentAware, Ordered {
 
-  private static final String STORAGE_TYPE_PROPERTY = "event-outboxer.storage.type";
-  private static final String PG_STORE_CLASS =
-      "io.github.bams22.outboxer.storage.postgres.PostgresEventStore";
+    private static final String STORAGE_TYPE_PROPERTY = "event-outboxer.storage.type";
+    private static final String PG_STORE_CLASS =
+            "io.github.bams22.outboxer.storage.postgres.PostgresEventStore";
 
-  private @Nullable Environment environment;
+    private @Nullable Environment environment;
 
-  @Override
-  public void setEnvironment(Environment environment) {
-    this.environment = environment;
-  }
-
-  @Override
-  public int getOrder() {
-    // Ahead of Boot's generic NoSuchBeanDefinitionFailureAnalyzer.
-    return Ordered.HIGHEST_PRECEDENCE + 100;
-  }
-
-  @Override
-  public @Nullable FailureAnalysis analyze(Throwable failure) {
-    NoSuchBeanDefinitionException noBean = findEventStoreFailure(failure);
-    if (noBean == null) {
-      return null;
+    @Override
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
     }
-    String configuredType =
-        environment == null
-            ? null
-            : Binder.get(environment).bind(STORAGE_TYPE_PROPERTY, String.class).orElse(null);
-    return new FailureAnalysis(describe(configuredType), action(configuredType), failure);
-  }
 
-  private static String describe(@Nullable String configuredType) {
-    if (configuredType == null) {
-      return "The outbox has no storage configured: '"
-          + STORAGE_TYPE_PROPERTY
-          + "' is not set and no EventStore bean is defined. There is deliberately no default "
-          + "and no in-memory fallback — a silently non-durable outbox would not participate "
-          + "in your transactions and would lose events on restart (ADR-0020).";
+    @Override
+    public int getOrder() {
+        // Ahead of Boot's generic NoSuchBeanDefinitionFailureAnalyzer.
+        return Ordered.HIGHEST_PRECEDENCE + 100;
     }
-    return "The outbox storage type is set to '"
-        + configuredType
-        + "' but no EventStore bean was created.";
-  }
 
-  private String action(@Nullable String configuredType) {
-    if (configuredType == null) {
-      return "Set "
-          + STORAGE_TYPE_PROPERTY
-          + "=postgres (with a DataSource and the event-outboxer-storage-postgres dependency). "
-          + "For tests without a database, add event-outboxer-storage-inmemory (test scope) and "
-          + "@Import(OutboxInMemoryTestConfiguration.class).";
+    @Override
+    public @Nullable FailureAnalysis analyze(Throwable failure) {
+        NoSuchBeanDefinitionException noBean = findEventStoreFailure(failure);
+        if (noBean == null) {
+            return null;
+        }
+        String configuredType =
+                environment == null
+                        ? null
+                        : Binder.get(environment)
+                                .bind(STORAGE_TYPE_PROPERTY, String.class)
+                                .orElse(null);
+        return new FailureAnalysis(describe(configuredType), action(configuredType), failure);
     }
-    if ("postgres".equalsIgnoreCase(configuredType)
-        && !ClassUtils.isPresent(PG_STORE_CLASS, getClass().getClassLoader())) {
-      return "Add the event-outboxer-storage-postgres dependency — it is not on the classpath.";
-    }
-    return "Ensure a javax.sql.DataSource bean exists (e.g. add spring-boot-starter-jdbc and "
-        + "spring.datasource.* properties): the PostgreSQL storage auto-configuration only "
-        + "activates when a DataSource is present.";
-  }
 
-  private static @Nullable NoSuchBeanDefinitionException findEventStoreFailure(Throwable failure) {
-    for (Throwable t = failure; t != null; t = t.getCause()) {
-      if (t instanceof NoSuchBeanDefinitionException noBean
-          && EventStore.class.equals(noBean.getBeanType())) {
-        return noBean;
-      }
+    private static String describe(@Nullable String configuredType) {
+        if (configuredType == null) {
+            return "The outbox has no storage configured: '"
+                    + STORAGE_TYPE_PROPERTY
+                    + "' is not set and no EventStore bean is defined. There is deliberately no"
+                    + " default and no in-memory fallback — a silently non-durable outbox would not"
+                    + " participate in your transactions and would lose events on restart"
+                    + " (ADR-0020).";
+        }
+        return "The outbox storage type is set to '"
+                + configuredType
+                + "' but no EventStore bean was created.";
     }
-    return null;
-  }
+
+    private String action(@Nullable String configuredType) {
+        if (configuredType == null) {
+            return "Set "
+                    + STORAGE_TYPE_PROPERTY
+                    + "=postgres (with a DataSource and the event-outboxer-storage-postgres"
+                    + " dependency). For tests without a database, add"
+                    + " event-outboxer-storage-inmemory (test scope) and "
+                    + "@Import(OutboxInMemoryTestConfiguration.class).";
+        }
+        if ("postgres".equalsIgnoreCase(configuredType)
+                && !ClassUtils.isPresent(PG_STORE_CLASS, getClass().getClassLoader())) {
+            return "Add the event-outboxer-storage-postgres dependency — it is not on the"
+                    + " classpath.";
+        }
+        return "Ensure a javax.sql.DataSource bean exists (e.g. add spring-boot-starter-jdbc and "
+                + "spring.datasource.* properties): the PostgreSQL storage auto-configuration only "
+                + "activates when a DataSource is present.";
+    }
+
+    private static @Nullable NoSuchBeanDefinitionException findEventStoreFailure(
+            Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof NoSuchBeanDefinitionException noBean
+                    && EventStore.class.equals(noBean.getBeanType())) {
+                return noBean;
+            }
+        }
+        return null;
+    }
 }

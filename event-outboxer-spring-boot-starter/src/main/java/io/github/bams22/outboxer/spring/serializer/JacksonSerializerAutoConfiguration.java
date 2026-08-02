@@ -36,16 +36,16 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnClass({JacksonEventSerializer.class, ObjectMapper.class})
 public class JacksonSerializerAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(name = "outboxEventSerializer")
-  public EventSerializer outboxEventSerializer(
-      @Autowired(required = false) @Qualifier("outboxObjectMapper")
-          @Nullable ObjectMapper qualified,
-      ObjectProvider<ObjectMapper> primary) {
-    ObjectMapper mapper =
-        qualified != null
-            ? qualified
-            : primary.getIfAvailable(JacksonObjectMapperFactory::defaults);
-    return new JacksonEventSerializer(mapper);
-  }
+    @Bean
+    @ConditionalOnMissingBean(name = "outboxEventSerializer")
+    public EventSerializer outboxEventSerializer(
+            @Autowired(required = false) @Qualifier("outboxObjectMapper")
+                    @Nullable ObjectMapper qualified,
+            ObjectProvider<ObjectMapper> primary) {
+        ObjectMapper mapper =
+                qualified != null
+                        ? qualified
+                        : primary.getIfAvailable(JacksonObjectMapperFactory::defaults);
+        return new JacksonEventSerializer(mapper);
+    }
 }

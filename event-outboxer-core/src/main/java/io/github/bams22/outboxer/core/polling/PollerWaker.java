@@ -22,12 +22,12 @@ package io.github.bams22.outboxer.core.polling;
 @FunctionalInterface
 public interface PollerWaker {
 
-  /**
-   * Wake the local poller responsible for {@code eventType}, if one exists. Unknown types are a
-   * no-op. Never throws.
-   */
-  void wake(String eventType);
+    /**
+     * Wake the local poller responsible for {@code eventType}, if one exists. Unknown types are a
+     * no-op. Never throws.
+     */
+    void wake(String eventType);
 
-  /** No-op waker for wirings without local pollers (testkit's ManualEngine, bare publishers). */
-  PollerWaker NOOP = eventType -> {};
+    /** No-op waker for wirings without local pollers (testkit's ManualEngine, bare publishers). */
+    PollerWaker NOOP = eventType -> {};
 }

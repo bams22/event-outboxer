@@ -26,31 +26,32 @@ import java.util.Objects;
  */
 public final class FailureHandlerResolver {
 
-  private final Map<String, FailureHandler<?>> perType;
-  private final FailureHandler<?> defaultHandler;
+    private final Map<String, FailureHandler<?>> perType;
+    private final FailureHandler<?> defaultHandler;
 
-  public FailureHandlerResolver(
-      Map<String, FailureHandler<?>> perType, FailureHandler<?> defaultHandler) {
-    Objects.requireNonNull(perType, "perType must not be null");
-    this.perType = Map.copyOf(perType);
-    this.defaultHandler = Objects.requireNonNull(defaultHandler, "defaultHandler must not be null");
-  }
+    public FailureHandlerResolver(
+            Map<String, FailureHandler<?>> perType, FailureHandler<?> defaultHandler) {
+        Objects.requireNonNull(perType, "perType must not be null");
+        this.perType = Map.copyOf(perType);
+        this.defaultHandler =
+                Objects.requireNonNull(defaultHandler, "defaultHandler must not be null");
+    }
 
-  /**
-   * Resolve the failure handler to invoke for this failed event. Returns a raw-typed handler
-   * because the payload type {@code T} is only known to the caller and the dispatcher sometimes
-   * does not even have a deserialized payload (unknown-type / pre-handle failures).
-   */
-  public FailureHandler<?> resolve(EventHandler<?> handler) {
-    Objects.requireNonNull(handler, "handler must not be null");
-    FailureHandler<?> onHandler = handler.failureHandler();
-    if (onHandler != null) {
-      return onHandler;
+    /**
+     * Resolve the failure handler to invoke for this failed event. Returns a raw-typed handler
+     * because the payload type {@code T} is only known to the caller and the dispatcher sometimes
+     * does not even have a deserialized payload (unknown-type / pre-handle failures).
+     */
+    public FailureHandler<?> resolve(EventHandler<?> handler) {
+        Objects.requireNonNull(handler, "handler must not be null");
+        FailureHandler<?> onHandler = handler.failureHandler();
+        if (onHandler != null) {
+            return onHandler;
+        }
+        FailureHandler<?> byType = perType.get(handler.eventType());
+        if (byType != null) {
+            return byType;
+        }
+        return defaultHandler;
     }
-    FailureHandler<?> byType = perType.get(handler.eventType());
-    if (byType != null) {
-      return byType;
-    }
-    return defaultHandler;
-  }
 }

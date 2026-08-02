@@ -38,104 +38,107 @@ import org.junit.jupiter.api.Test;
  */
 class PostgresDedupCoalescingIT {
 
-  private static final WorkerId WORKER = new WorkerId("dedup-it");
-  private static final String TYPE = "SYNC_ORDER";
+    private static final WorkerId WORKER = new WorkerId("dedup-it");
+    private static final String TYPE = "SYNC_ORDER";
 
-  private EventStore pooledStore;
-  private Connection publisherTx;
-  private EventStore publisherTxStore;
+    private EventStore pooledStore;
+    private Connection publisherTx;
+    private EventStore publisherTxStore;
 
-  @BeforeEach
-  void setUp() throws SQLException {
-    PostgresTestEnvironment.truncate();
-    pooledStore = storeOver(PostgresTestEnvironment.connectionSupplier());
-    publisherTx = PostgresTestEnvironment.dataSource().getConnection();
-    publisherTx.setAutoCommit(false);
-    // Simulates the application transaction: every statement of this store runs on the single
-    // manual connection, exactly like ConnectionSupplier -> DataSourceUtils in the starter.
-    publisherTxStore =
-        storeOver(
-            new ConnectionSupplier() {
-              @Override
-              public Connection get() {
-                return publisherTx;
-              }
+    @BeforeEach
+    void setUp() throws SQLException {
+        PostgresTestEnvironment.truncate();
+        pooledStore = storeOver(PostgresTestEnvironment.connectionSupplier());
+        publisherTx = PostgresTestEnvironment.dataSource().getConnection();
+        publisherTx.setAutoCommit(false);
+        // Simulates the application transaction: every statement of this store runs on the single
+        // manual connection, exactly like ConnectionSupplier -> DataSourceUtils in the starter.
+        publisherTxStore =
+                storeOver(
+                        new ConnectionSupplier() {
+                            @Override
+                            public Connection get() {
+                                return publisherTx;
+                            }
 
-              @Override
-              public void release(Connection connection) {
-                // owned by the test — released in tearDown
-              }
-            });
-  }
-
-  @AfterEach
-  void tearDown() throws SQLException {
-    if (publisherTx != null && !publisherTx.isClosed()) {
-      publisherTx.rollback();
-      publisherTx.close();
+                            @Override
+                            public void release(Connection connection) {
+                                // owned by the test — released in tearDown
+                            }
+                        });
     }
-  }
 
-  @Test
-  @DisplayName("pinned coalesced-into row is invisible to claims until the publisher commits")
-  void pinnedRowIsSkippedByClaimsUntilCommit() throws SQLException {
-    // An earlier transaction published SYNC_ORDER:42 — committed, PENDING.
-    PendingEvent original = pendingWithKey("v1", "42");
-    assertThat(pooledStore.save(original)).isTrue();
+    @AfterEach
+    void tearDown() throws SQLException {
+        if (publisherTx != null && !publisherTx.isClosed()) {
+            publisherTx.rollback();
+            publisherTx.close();
+        }
+    }
 
-    // The current business transaction modifies the order and publishes the same key:
-    // conditional insert conflicts, then the existing row is locked inside the transaction.
-    assertThat(publisherTxStore.save(pendingWithKey("v2", "42"))).isFalse();
-    assertThat(publisherTxStore.lockPendingByDedupKey(TYPE, "42")).contains(original.id());
+    @Test
+    @DisplayName("pinned coalesced-into row is invisible to claims until the publisher commits")
+    void pinnedRowIsSkippedByClaimsUntilCommit() throws SQLException {
+        // An earlier transaction published SYNC_ORDER:42 — committed, PENDING.
+        PendingEvent original = pendingWithKey("v1", "42");
+        assertThat(pooledStore.save(original)).isTrue();
 
-    // THE CRUX: a concurrent worker must NOT be able to claim the pinned row now — otherwise
-    // it would process the order without seeing this transaction's uncommitted changes.
-    assertThat(pooledStore.claim(new ClaimRequest(TYPE, WORKER, 10))).isEmpty();
+        // The current business transaction modifies the order and publishes the same key:
+        // conditional insert conflicts, then the existing row is locked inside the transaction.
+        assertThat(publisherTxStore.save(pendingWithKey("v2", "42"))).isFalse();
+        assertThat(publisherTxStore.lockPendingByDedupKey(TYPE, "42")).contains(original.id());
 
-    publisherTx.commit();
+        // THE CRUX: a concurrent worker must NOT be able to claim the pinned row now — otherwise
+        // it would process the order without seeing this transaction's uncommitted changes.
+        assertThat(pooledStore.claim(new ClaimRequest(TYPE, WORKER, 10))).isEmpty();
 
-    // After the commit the row is claimable, and the handler sees the committed data.
-    assertThat(pooledStore.claim(new ClaimRequest(TYPE, WORKER, 10)))
-        .singleElement()
-        .satisfies(ce -> assertThat(ce.id()).isEqualTo(original.id()));
-  }
+        publisherTx.commit();
 
-  @Test
-  @DisplayName("a key whose event is already PROCESSING inserts a new event instead of coalescing")
-  void processingKeyDoesNotCoalesce() {
-    PendingEvent original = pendingWithKey("v1", "77");
-    assertThat(pooledStore.save(original)).isTrue();
-    assertThat(pooledStore.claim(new ClaimRequest(TYPE, WORKER, 10))).hasSize(1);
+        // After the commit the row is claimable, and the handler sees the committed data.
+        assertThat(pooledStore.claim(new ClaimRequest(TYPE, WORKER, 10)))
+                .singleElement()
+                .satisfies(ce -> assertThat(ce.id()).isEqualTo(original.id()));
+    }
 
-    // The first event is mid-handling: coalescing into it would lose our update, so a fresh
-    // event must insert and run afterwards.
-    assertThat(pooledStore.save(pendingWithKey("v2", "77"))).isTrue();
-    assertThat(pooledStore.lockPendingByDedupKey(TYPE, "77")).isPresent();
-  }
+    @Test
+    @DisplayName(
+            "a key whose event is already PROCESSING inserts a new event instead of coalescing")
+    void processingKeyDoesNotCoalesce() {
+        PendingEvent original = pendingWithKey("v1", "77");
+        assertThat(pooledStore.save(original)).isTrue();
+        assertThat(pooledStore.claim(new ClaimRequest(TYPE, WORKER, 10))).hasSize(1);
 
-  // ---------------------------------------------------------------------------------------------
-  // helpers
-  // ---------------------------------------------------------------------------------------------
+        // The first event is mid-handling: coalescing into it would lose our update, so a fresh
+        // event must insert and run afterwards.
+        assertThat(pooledStore.save(pendingWithKey("v2", "77"))).isTrue();
+        assertThat(pooledStore.lockPendingByDedupKey(TYPE, "77")).isPresent();
+    }
 
-  private static EventStore storeOver(ConnectionSupplier connections) {
-    return new PostgresEventStore(
-        connections,
-        PostgresStorageProperties.defaults(),
-        Clock.system(),
-        MetricsSnapshotCache.noop());
-  }
+    // ---------------------------------------------------------------------------------------------
+    // helpers
+    // ---------------------------------------------------------------------------------------------
 
-  private static PendingEvent pendingWithKey(String payload, String key) {
-    return PendingEvent.builder()
-        .id(UUID.randomUUID())
-        .eventType(TYPE)
-        .payload(io.github.bams22.outboxer.domain.SerializedPayload.ofText("\"" + payload + "\""))
-        .payloadFormat("test-json")
-        .payloadClass("java.lang.String")
-        .priority((short) 0)
-        .runAt(Instant.now().minusSeconds(1))
-        .traceContext(Map.of())
-        .dedupKey(key)
-        .build();
-  }
+    private static EventStore storeOver(ConnectionSupplier connections) {
+        return new PostgresEventStore(
+                connections,
+                PostgresStorageProperties.defaults(),
+                Clock.system(),
+                MetricsSnapshotCache.noop());
+    }
+
+    private static PendingEvent pendingWithKey(String payload, String key) {
+        return PendingEvent.builder()
+                .id(UUID.randomUUID())
+                .eventType(TYPE)
+                .payload(
+                        io.github.bams22.outboxer.domain.SerializedPayload.ofText(
+                                "\"" + payload + "\""))
+                .payloadFormat("test-json")
+                .payloadClass("java.lang.String")
+                .priority((short) 0)
+                .runAt(Instant.now().minusSeconds(1))
+                .traceContext(Map.of())
+                .dedupKey(key)
+                .build();
+    }
 }

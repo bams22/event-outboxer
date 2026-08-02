@@ -37,32 +37,32 @@ import org.junit.jupiter.api.extension.ParameterResolver;
  */
 public final class OutboxExtension implements ParameterResolver, BeforeEachCallback {
 
-  private static final ExtensionContext.Namespace NS =
-      ExtensionContext.Namespace.create(OutboxExtension.class);
+    private static final ExtensionContext.Namespace NS =
+            ExtensionContext.Namespace.create(OutboxExtension.class);
 
-  @Override
-  public void beforeEach(ExtensionContext context) {
-    // Context is created lazily on first parameter resolution; this hook just clears any
-    // lingering state from prior runs.
-    context.getStore(NS).remove("context");
-  }
-
-  @Override
-  public boolean supportsParameter(
-      ParameterContext parameterContext, ExtensionContext extensionContext) {
-    return parameterContext.getParameter().getType() == OutboxTestContext.class;
-  }
-
-  @Override
-  public Object resolveParameter(
-      ParameterContext parameterContext, ExtensionContext extensionContext)
-      throws ParameterResolutionException {
-    ExtensionContext.Store store = extensionContext.getStore(NS);
-    OutboxTestContext ctx = store.get("context", OutboxTestContext.class);
-    if (ctx == null) {
-      ctx = OutboxTestContext.builder().build();
-      store.put("context", ctx);
+    @Override
+    public void beforeEach(ExtensionContext context) {
+        // Context is created lazily on first parameter resolution; this hook just clears any
+        // lingering state from prior runs.
+        context.getStore(NS).remove("context");
     }
-    return ctx;
-  }
+
+    @Override
+    public boolean supportsParameter(
+            ParameterContext parameterContext, ExtensionContext extensionContext) {
+        return parameterContext.getParameter().getType() == OutboxTestContext.class;
+    }
+
+    @Override
+    public Object resolveParameter(
+            ParameterContext parameterContext, ExtensionContext extensionContext)
+            throws ParameterResolutionException {
+        ExtensionContext.Store store = extensionContext.getStore(NS);
+        OutboxTestContext ctx = store.get("context", OutboxTestContext.class);
+        if (ctx == null) {
+            ctx = OutboxTestContext.builder().build();
+            store.put("context", ctx);
+        }
+        return ctx;
+    }
 }

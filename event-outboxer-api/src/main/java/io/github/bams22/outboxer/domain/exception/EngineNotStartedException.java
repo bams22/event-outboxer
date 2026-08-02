@@ -15,9 +15,9 @@ package io.github.bams22.outboxer.domain.exception;
  */
 public final class EngineNotStartedException extends EngineLifecycleException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  public EngineNotStartedException(String message) {
-    super(message);
-  }
+    public EngineNotStartedException(String message) {
+        super(message);
+    }
 }

@@ -29,24 +29,24 @@ import java.util.UUID;
  * @param traceContext restored W3C trace/baggage context (never null, empty map allowed)
  */
 public record EventContext(
-    UUID eventId,
-    String eventType,
-    int attempt,
-    Instant createdAt,
-    Instant claimedAt,
-    WorkerId workerId,
-    Map<String, String> traceContext) {
+        UUID eventId,
+        String eventType,
+        int attempt,
+        Instant createdAt,
+        Instant claimedAt,
+        WorkerId workerId,
+        Map<String, String> traceContext) {
 
-  public EventContext {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(createdAt, "createdAt must not be null");
-    Objects.requireNonNull(claimedAt, "claimedAt must not be null");
-    Objects.requireNonNull(workerId, "workerId must not be null");
-    if (attempt < 1) {
-      throw new IllegalArgumentException("attempt must be >= 1, got " + attempt);
+    public EventContext {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
+        Objects.requireNonNull(claimedAt, "claimedAt must not be null");
+        Objects.requireNonNull(workerId, "workerId must not be null");
+        if (attempt < 1) {
+            throw new IllegalArgumentException("attempt must be >= 1, got " + attempt);
+        }
+        Objects.requireNonNull(traceContext, "traceContext must not be null");
+        traceContext = Map.copyOf(traceContext);
     }
-    Objects.requireNonNull(traceContext, "traceContext must not be null");
-    traceContext = Map.copyOf(traceContext);
-  }
 }

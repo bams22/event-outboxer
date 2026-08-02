@@ -21,7 +21,7 @@ import java.util.Objects;
  */
 public record WorkerGracefulStopInfo(WorkerId workerId) {
 
-  public WorkerGracefulStopInfo {
-    Objects.requireNonNull(workerId, "workerId must not be null");
-  }
+    public WorkerGracefulStopInfo {
+        Objects.requireNonNull(workerId, "workerId must not be null");
+    }
 }

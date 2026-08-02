@@ -58,115 +58,115 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
  * candidates (see {@link OutboxDataSourceResolver}).
  */
 @AutoConfiguration(
-    after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+        after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass({PostgresEventStore.class, TransactionAwareDataSourceProxy.class})
 @ConditionalOnBean(DataSource.class)
 @ConditionalOnProperty(prefix = "event-outboxer.storage", name = "type", havingValue = "postgres")
 public class PostgresStorageAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(OutboxAdmin.class)
-  public PostgresOutboxAdmin outboxAdmin(
-      ConnectionSupplier connections, PostgresStorageProperties properties) {
-    return new PostgresOutboxAdmin(connections, properties);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean(ConnectionSupplier.class)
-  public ConnectionSupplier outboxConnectionSupplier(
-      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
-      ObjectProvider<DataSource> dataSources,
-      ListableBeanFactory beanFactory) {
-    DataSource dataSource =
-        OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory);
-    DataSource txAware =
-        dataSource instanceof TransactionAwareDataSourceProxy proxy
-            ? proxy
-            : new TransactionAwareDataSourceProxy(dataSource);
-    return new DataSourceConnectionSupplier(txAware);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  public PostgresStorageProperties outboxPostgresStorageProperties(OutboxProperties props) {
-    OutboxProperties.Storage s = props.getStorage();
-    return PostgresStorageProperties.builder()
-        .schema(s.getSchema())
-        .tablePrefix(s.getTablePrefix())
-        .archiveEnabled(s.isArchiveEnabled())
-        .metricsCacheTtl(s.getMetricsCacheTtl())
-        .build();
-  }
-
-  @Bean
-  @ConditionalOnMissingBean(EventStore.class)
-  public PostgresEventStore outboxEventStore(
-      ConnectionSupplier connections,
-      PostgresStorageProperties properties,
-      Clock clock,
-      io.github.bams22.outboxer.spi.MetricsSnapshotCache metricsCache) {
-    return new PostgresEventStore(connections, properties, clock, metricsCache);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean(WorkerRegistry.class)
-  public PostgresWorkerRegistry outboxWorkerRegistry(
-      ConnectionSupplier connections, PostgresStorageProperties properties) {
-    return new PostgresWorkerRegistry(connections, properties);
-  }
-
-  /**
-   * Feeds {@code event-outboxer.storage.schema} into Flyway as the {@code ${eventOutboxerSchema}}
-   * placeholder so the library's classpath migrations pick up the same schema name as the adapter
-   * at runtime.
-   *
-   * <p>Merges with any other placeholders the user has configured via {@code
-   * spring.flyway.placeholders.*} — existing keys win on conflict, so users can always override the
-   * schema name explicitly.
-   */
-  @Bean
-  @ConditionalOnClass(name = "org.flywaydb.core.Flyway")
-  public FlywayConfigurationCustomizer outboxFlywayPlaceholderCustomizer(
-      OutboxProperties properties) {
-    String schema = properties.getStorage().getSchema();
-    return configuration -> {
-      Map<String, String> merged = new HashMap<>();
-      merged.put("eventOutboxerSchema", schema);
-      // Existing placeholders win — do not clobber user overrides.
-      Map<String, String> existing = configuration.getPlaceholders();
-      if (existing != null) {
-        merged.putAll(existing);
-      }
-      configuration.placeholders(merged);
-    };
-  }
-
-  // ---------------------------------------------------------------------------------------------
-  // helpers
-  // ---------------------------------------------------------------------------------------------
-
-  /**
-   * {@link ConnectionSupplier} that leases connections via {@link
-   * DataSourceUtils#getConnection(DataSource)}; inside a Spring-managed transaction the pool
-   * connection is shared with the caller, outside it a fresh pool connection is obtained and closed
-   * on {@code release(...)}.
-   */
-  private static final class DataSourceConnectionSupplier implements ConnectionSupplier {
-
-    private final DataSource dataSource;
-
-    DataSourceConnectionSupplier(DataSource dataSource) {
-      this.dataSource = dataSource;
+    @Bean
+    @ConditionalOnMissingBean(OutboxAdmin.class)
+    public PostgresOutboxAdmin outboxAdmin(
+            ConnectionSupplier connections, PostgresStorageProperties properties) {
+        return new PostgresOutboxAdmin(connections, properties);
     }
 
-    @Override
-    public Connection get() throws SQLException {
-      return DataSourceUtils.getConnection(dataSource);
+    @Bean
+    @ConditionalOnMissingBean(ConnectionSupplier.class)
+    public ConnectionSupplier outboxConnectionSupplier(
+            @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+            ObjectProvider<DataSource> dataSources,
+            ListableBeanFactory beanFactory) {
+        DataSource dataSource =
+                OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory);
+        DataSource txAware =
+                dataSource instanceof TransactionAwareDataSourceProxy proxy
+                        ? proxy
+                        : new TransactionAwareDataSourceProxy(dataSource);
+        return new DataSourceConnectionSupplier(txAware);
     }
 
-    @Override
-    public void release(Connection connection) throws SQLException {
-      DataSourceUtils.releaseConnection(connection, dataSource);
+    @Bean
+    @ConditionalOnMissingBean
+    public PostgresStorageProperties outboxPostgresStorageProperties(OutboxProperties props) {
+        OutboxProperties.Storage s = props.getStorage();
+        return PostgresStorageProperties.builder()
+                .schema(s.getSchema())
+                .tablePrefix(s.getTablePrefix())
+                .archiveEnabled(s.isArchiveEnabled())
+                .metricsCacheTtl(s.getMetricsCacheTtl())
+                .build();
     }
-  }
+
+    @Bean
+    @ConditionalOnMissingBean(EventStore.class)
+    public PostgresEventStore outboxEventStore(
+            ConnectionSupplier connections,
+            PostgresStorageProperties properties,
+            Clock clock,
+            io.github.bams22.outboxer.spi.MetricsSnapshotCache metricsCache) {
+        return new PostgresEventStore(connections, properties, clock, metricsCache);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(WorkerRegistry.class)
+    public PostgresWorkerRegistry outboxWorkerRegistry(
+            ConnectionSupplier connections, PostgresStorageProperties properties) {
+        return new PostgresWorkerRegistry(connections, properties);
+    }
+
+    /**
+     * Feeds {@code event-outboxer.storage.schema} into Flyway as the {@code ${eventOutboxerSchema}}
+     * placeholder so the library's classpath migrations pick up the same schema name as the adapter
+     * at runtime.
+     *
+     * <p>Merges with any other placeholders the user has configured via {@code
+     * spring.flyway.placeholders.*} — existing keys win on conflict, so users can always override
+     * the schema name explicitly.
+     */
+    @Bean
+    @ConditionalOnClass(name = "org.flywaydb.core.Flyway")
+    public FlywayConfigurationCustomizer outboxFlywayPlaceholderCustomizer(
+            OutboxProperties properties) {
+        String schema = properties.getStorage().getSchema();
+        return configuration -> {
+            Map<String, String> merged = new HashMap<>();
+            merged.put("eventOutboxerSchema", schema);
+            // Existing placeholders win — do not clobber user overrides.
+            Map<String, String> existing = configuration.getPlaceholders();
+            if (existing != null) {
+                merged.putAll(existing);
+            }
+            configuration.placeholders(merged);
+        };
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // helpers
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * {@link ConnectionSupplier} that leases connections via {@link
+     * DataSourceUtils#getConnection(DataSource)}; inside a Spring-managed transaction the pool
+     * connection is shared with the caller, outside it a fresh pool connection is obtained and
+     * closed on {@code release(...)}.
+     */
+    private static final class DataSourceConnectionSupplier implements ConnectionSupplier {
+
+        private final DataSource dataSource;
+
+        DataSourceConnectionSupplier(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        @Override
+        public Connection get() throws SQLException {
+            return DataSourceUtils.getConnection(dataSource);
+        }
+
+        @Override
+        public void release(Connection connection) throws SQLException {
+            DataSourceUtils.releaseConnection(connection, dataSource);
+        }
+    }
 }

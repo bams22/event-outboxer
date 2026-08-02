@@ -19,13 +19,13 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class HandleException extends OutboxException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  protected HandleException(String message) {
-    super(message);
-  }
+    protected HandleException(String message) {
+        super(message);
+    }
 
-  protected HandleException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    protected HandleException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

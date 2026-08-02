@@ -31,53 +31,53 @@ import org.slf4j.LoggerFactory;
  */
 public final class OrphanRecoveryTask implements Runnable {
 
-  private static final Logger log = LoggerFactory.getLogger(OrphanRecoveryTask.class);
+    private static final Logger log = LoggerFactory.getLogger(OrphanRecoveryTask.class);
 
-  private final WorkerRegistry registry;
-  private final EventStore store;
-  private final Clock clock;
-  private final MaintenanceConfig config;
-  private final OutboxListener listener;
+    private final WorkerRegistry registry;
+    private final EventStore store;
+    private final Clock clock;
+    private final MaintenanceConfig config;
+    private final OutboxListener listener;
 
-  public OrphanRecoveryTask(
-      WorkerRegistry registry,
-      EventStore store,
-      Clock clock,
-      MaintenanceConfig config,
-      OutboxListener listener) {
-    this.registry = Objects.requireNonNull(registry);
-    this.store = Objects.requireNonNull(store);
-    this.clock = Objects.requireNonNull(clock);
-    this.config = Objects.requireNonNull(config);
-    this.listener = Objects.requireNonNull(listener);
-  }
-
-  @Override
-  public void run() {
-    try {
-      List<WorkerInfo> dead;
-      try {
-        dead = registry.findDead(config.deadThreshold(), config.reclaimBatchSize());
-      } catch (RuntimeException ex) {
-        log.warn("findDead failed: {}", ex.toString());
-        return;
-      }
-      if (dead.isEmpty()) {
-        return;
-      }
-      List<WorkerId> ids = dead.stream().map(WorkerInfo::id).toList();
-      int reclaimed = store.reclaimOrphans(ids, clock.now());
-      try {
-        registry.removeDead(ids);
-      } catch (RuntimeException ex) {
-        log.warn(
-            "removeDead failed after reclaiming {} events; will retry next pass: {}",
-            reclaimed,
-            ex.toString());
-      }
-      listener.onOrphansReclaimed(new OrphansReclaimedInfo(ids, reclaimed));
-    } catch (RuntimeException ex) {
-      log.warn("orphan recovery pass failed: {}", ex.toString(), ex);
+    public OrphanRecoveryTask(
+            WorkerRegistry registry,
+            EventStore store,
+            Clock clock,
+            MaintenanceConfig config,
+            OutboxListener listener) {
+        this.registry = Objects.requireNonNull(registry);
+        this.store = Objects.requireNonNull(store);
+        this.clock = Objects.requireNonNull(clock);
+        this.config = Objects.requireNonNull(config);
+        this.listener = Objects.requireNonNull(listener);
     }
-  }
+
+    @Override
+    public void run() {
+        try {
+            List<WorkerInfo> dead;
+            try {
+                dead = registry.findDead(config.deadThreshold(), config.reclaimBatchSize());
+            } catch (RuntimeException ex) {
+                log.warn("findDead failed: {}", ex.toString());
+                return;
+            }
+            if (dead.isEmpty()) {
+                return;
+            }
+            List<WorkerId> ids = dead.stream().map(WorkerInfo::id).toList();
+            int reclaimed = store.reclaimOrphans(ids, clock.now());
+            try {
+                registry.removeDead(ids);
+            } catch (RuntimeException ex) {
+                log.warn(
+                        "removeDead failed after reclaiming {} events; will retry next pass: {}",
+                        reclaimed,
+                        ex.toString());
+            }
+            listener.onOrphansReclaimed(new OrphansReclaimedInfo(ids, reclaimed));
+        } catch (RuntimeException ex) {
+            log.warn("orphan recovery pass failed: {}", ex.toString(), ex);
+        }
+    }
 }

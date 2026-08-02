@@ -17,16 +17,16 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PublishValidationException extends PublishException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-101";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-101";
 
-  public PublishValidationException(String message) {
-    super(CODE + ": " + message);
-  }
+    public PublishValidationException(String message) {
+        super(CODE + ": " + message);
+    }
 
-  public PublishValidationException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public PublishValidationException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

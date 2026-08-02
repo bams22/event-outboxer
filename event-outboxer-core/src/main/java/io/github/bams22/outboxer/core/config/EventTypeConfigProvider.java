@@ -22,32 +22,33 @@ import java.util.Objects;
  */
 public final class EventTypeConfigProvider {
 
-  private final EventTypeConfig defaults;
-  private final Map<String, EventTypeConfig> overrides;
+    private final EventTypeConfig defaults;
+    private final Map<String, EventTypeConfig> overrides;
 
-  public EventTypeConfigProvider(EventTypeConfig defaults, Map<String, EventTypeConfig> overrides) {
-    this.defaults = Objects.requireNonNull(defaults, "defaults must not be null");
-    Objects.requireNonNull(overrides, "overrides must not be null");
-    this.overrides = Map.copyOf(overrides);
-  }
+    public EventTypeConfigProvider(
+            EventTypeConfig defaults, Map<String, EventTypeConfig> overrides) {
+        this.defaults = Objects.requireNonNull(defaults, "defaults must not be null");
+        Objects.requireNonNull(overrides, "overrides must not be null");
+        this.overrides = Map.copyOf(overrides);
+    }
 
-  /** Provider with no overrides — every type gets the same {@code defaults}. */
-  public static EventTypeConfigProvider uniform(EventTypeConfig defaults) {
-    return new EventTypeConfigProvider(defaults, Map.of());
-  }
+    /** Provider with no overrides — every type gets the same {@code defaults}. */
+    public static EventTypeConfigProvider uniform(EventTypeConfig defaults) {
+        return new EventTypeConfigProvider(defaults, Map.of());
+    }
 
-  /** Resolve the effective config for {@code eventType}. */
-  public EventTypeConfig forType(String eventType) {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    EventTypeConfig override = overrides.get(eventType);
-    return override != null ? override : defaults;
-  }
+    /** Resolve the effective config for {@code eventType}. */
+    public EventTypeConfig forType(String eventType) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        EventTypeConfig override = overrides.get(eventType);
+        return override != null ? override : defaults;
+    }
 
-  public EventTypeConfig defaults() {
-    return defaults;
-  }
+    public EventTypeConfig defaults() {
+        return defaults;
+    }
 
-  public Map<String, EventTypeConfig> overrides() {
-    return overrides;
-  }
+    public Map<String, EventTypeConfig> overrides() {
+        return overrides;
+    }
 }

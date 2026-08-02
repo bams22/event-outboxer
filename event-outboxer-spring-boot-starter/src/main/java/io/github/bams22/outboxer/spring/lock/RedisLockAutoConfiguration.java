@@ -30,10 +30,10 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnProperty(prefix = "event-outboxer.lock", name = "type", havingValue = "redis")
 public class RedisLockAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(EntityLocker.class)
-  public EntityLocker outboxEntityLocker(
-      StatefulRedisConnection<String, String> connection, OutboxProperties properties) {
-    return new RedisEntityLocker(connection, properties.getLock().getKeyPrefix());
-  }
+    @Bean
+    @ConditionalOnMissingBean(EntityLocker.class)
+    public EntityLocker outboxEntityLocker(
+            StatefulRedisConnection<String, String> connection, OutboxProperties properties) {
+        return new RedisEntityLocker(connection, properties.getLock().getKeyPrefix());
+    }
 }

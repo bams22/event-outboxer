@@ -32,80 +32,81 @@ import java.util.function.DoubleSupplier;
  */
 public final class AdaptiveWaiter {
 
-  /** Relative jitter applied to every emitted wait: {@code current × (1 ± JITTER)}. */
-  static final double JITTER = 0.1;
+    /** Relative jitter applied to every emitted wait: {@code current × (1 ± JITTER)}. */
+    static final double JITTER = 0.1;
 
-  private final Duration min;
-  private final Duration max;
-  private final double multiplier;
-  private final DoubleSupplier random;
-  private Duration current;
+    private final Duration min;
+    private final Duration max;
+    private final double multiplier;
+    private final DoubleSupplier random;
+    private Duration current;
 
-  public AdaptiveWaiter(Duration min, Duration max, double multiplier) {
-    this(min, max, multiplier, () -> ThreadLocalRandom.current().nextDouble());
-  }
-
-  /**
-   * Test-visible constructor with an injectable randomness source producing values in {@code [0,
-   * 1)}; {@code 0.5} yields exactly the unjittered wait.
-   */
-  AdaptiveWaiter(Duration min, Duration max, double multiplier, DoubleSupplier random) {
-    this.min = Objects.requireNonNull(min, "min must not be null");
-    this.max = Objects.requireNonNull(max, "max must not be null");
-    this.random = Objects.requireNonNull(random, "random must not be null");
-    if (min.isNegative() || min.isZero()) {
-      throw new IllegalArgumentException("min must be positive, got " + min);
+    public AdaptiveWaiter(Duration min, Duration max, double multiplier) {
+        this(min, max, multiplier, () -> ThreadLocalRandom.current().nextDouble());
     }
-    if (max.compareTo(min) < 0) {
-      throw new IllegalArgumentException("max must be >= min, got min=" + min + ", max=" + max);
+
+    /**
+     * Test-visible constructor with an injectable randomness source producing values in {@code [0,
+     * 1)}; {@code 0.5} yields exactly the unjittered wait.
+     */
+    AdaptiveWaiter(Duration min, Duration max, double multiplier, DoubleSupplier random) {
+        this.min = Objects.requireNonNull(min, "min must not be null");
+        this.max = Objects.requireNonNull(max, "max must not be null");
+        this.random = Objects.requireNonNull(random, "random must not be null");
+        if (min.isNegative() || min.isZero()) {
+            throw new IllegalArgumentException("min must be positive, got " + min);
+        }
+        if (max.compareTo(min) < 0) {
+            throw new IllegalArgumentException(
+                    "max must be >= min, got min=" + min + ", max=" + max);
+        }
+        if (multiplier <= 1.0) {
+            throw new IllegalArgumentException("multiplier must be > 1.0, got " + multiplier);
+        }
+        this.multiplier = multiplier;
+        this.current = min;
     }
-    if (multiplier <= 1.0) {
-      throw new IllegalArgumentException("multiplier must be > 1.0, got " + multiplier);
+
+    /**
+     * Convenience factory with a {@code multiplier} of {@code 1.5}. Matches the default documented
+     * in CONFIGURATION.md §polling.
+     */
+    public static AdaptiveWaiter withDefaults(Duration min, Duration max) {
+        return new AdaptiveWaiter(min, max, 1.5);
     }
-    this.multiplier = multiplier;
-    this.current = min;
-  }
 
-  /**
-   * Convenience factory with a {@code multiplier} of {@code 1.5}. Matches the default documented in
-   * CONFIGURATION.md §polling.
-   */
-  public static AdaptiveWaiter withDefaults(Duration min, Duration max) {
-    return new AdaptiveWaiter(min, max, 1.5);
-  }
-
-  /**
-   * Report the size of the batch returned by the last claim call. Positive result resets the waiter
-   * to the minimum interval; empty result grows it toward the maximum.
-   */
-  public void record(int batchSize) {
-    if (batchSize > 0) {
-      current = min;
-    } else {
-      long nanos = Math.min(max.toNanos(), (long) (current.toNanos() * multiplier));
-      current = Duration.ofNanos(nanos);
+    /**
+     * Report the size of the batch returned by the last claim call. Positive result resets the
+     * waiter to the minimum interval; empty result grows it toward the maximum.
+     */
+    public void record(int batchSize) {
+        if (batchSize > 0) {
+            current = min;
+        } else {
+            long nanos = Math.min(max.toNanos(), (long) (current.toNanos() * multiplier));
+            current = Duration.ofNanos(nanos);
+        }
     }
-  }
 
-  /**
-   * Duration the poller should sleep before issuing its next claim: the current backoff value with
-   * ±10% uniform jitter applied.
-   */
-  public Duration nextWait() {
-    double factor = 1.0 + JITTER * (2.0 * random.getAsDouble() - 1.0);
-    return Duration.ofNanos((long) (current.toNanos() * factor));
-  }
+    /**
+     * Duration the poller should sleep before issuing its next claim: the current backoff value
+     * with ±10% uniform jitter applied.
+     */
+    public Duration nextWait() {
+        double factor = 1.0 + JITTER * (2.0 * random.getAsDouble() - 1.0);
+        return Duration.ofNanos((long) (current.toNanos() * factor));
+    }
 
-  /** Current {@code min} / {@code max} / {@code multiplier} exposed for diagnostics. */
-  public Duration min() {
-    return min;
-  }
+    /** Current {@code min} / {@code max} / {@code multiplier} exposed for diagnostics. */
+    public Duration min() {
+        return min;
+    }
 
-  public Duration max() {
-    return max;
-  }
+    public Duration max() {
+        return max;
+    }
 
-  public double multiplier() {
-    return multiplier;
-  }
+    public double multiplier() {
+        return multiplier;
+    }
 }

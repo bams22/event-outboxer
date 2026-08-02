@@ -16,17 +16,17 @@ package io.github.bams22.outboxer.domain.exception;
  */
 public final class DuplicateHandlerException extends ConfigurationException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  private final String eventType;
+    private final String eventType;
 
-  public DuplicateHandlerException(String eventType, String message) {
-    super(message);
-    this.eventType = eventType;
-  }
+    public DuplicateHandlerException(String eventType, String message) {
+        super(message);
+        this.eventType = eventType;
+    }
 
-  /** The event type that has multiple handlers registered for it. */
-  public String eventType() {
-    return eventType;
-  }
+    /** The event type that has multiple handlers registered for it. */
+    public String eventType() {
+        return eventType;
+    }
 }

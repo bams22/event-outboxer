@@ -29,42 +29,43 @@ import org.jspecify.annotations.Nullable;
  */
 @Builder
 public record RetentionConfig(
-    @Nullable Duration archiveOlderThan,
-    @Nullable Duration disabledOlderThan,
-    int batchSize,
-    Duration interval) {
+        @Nullable Duration archiveOlderThan,
+        @Nullable Duration disabledOlderThan,
+        int batchSize,
+        Duration interval) {
 
-  public RetentionConfig {
-    Objects.requireNonNull(interval, "interval must not be null");
-    if (batchSize <= 0) {
-      throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
+    public RetentionConfig {
+        Objects.requireNonNull(interval, "interval must not be null");
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
+        }
+        if (interval.isNegative() || interval.isZero()) {
+            throw new IllegalArgumentException("interval must be positive, got " + interval);
+        }
+        if (archiveOlderThan != null
+                && (archiveOlderThan.isNegative() || archiveOlderThan.isZero())) {
+            throw new IllegalArgumentException(
+                    "archiveOlderThan must be positive, got " + archiveOlderThan);
+        }
+        if (disabledOlderThan != null
+                && (disabledOlderThan.isNegative() || disabledOlderThan.isZero())) {
+            throw new IllegalArgumentException(
+                    "disabledOlderThan must be positive, got " + disabledOlderThan);
+        }
     }
-    if (interval.isNegative() || interval.isZero()) {
-      throw new IllegalArgumentException("interval must be positive, got " + interval);
-    }
-    if (archiveOlderThan != null && (archiveOlderThan.isNegative() || archiveOlderThan.isZero())) {
-      throw new IllegalArgumentException(
-          "archiveOlderThan must be positive, got " + archiveOlderThan);
-    }
-    if (disabledOlderThan != null
-        && (disabledOlderThan.isNegative() || disabledOlderThan.isZero())) {
-      throw new IllegalArgumentException(
-          "disabledOlderThan must be positive, got " + disabledOlderThan);
-    }
-  }
 
-  /** {@code true} when at least one retention dimension is switched on. */
-  public boolean enabled() {
-    return archiveOlderThan != null || disabledOlderThan != null;
-  }
+    /** {@code true} when at least one retention dimension is switched on. */
+    public boolean enabled() {
+        return archiveOlderThan != null || disabledOlderThan != null;
+    }
 
-  /** Retention fully off — the library default. */
-  public static RetentionConfig disabled() {
-    return RetentionConfig.builder()
-        .archiveOlderThan(null)
-        .disabledOlderThan(null)
-        .batchSize(1000)
-        .interval(Duration.ofHours(1))
-        .build();
-  }
+    /** Retention fully off — the library default. */
+    public static RetentionConfig disabled() {
+        return RetentionConfig.builder()
+                .archiveOlderThan(null)
+                .disabledOlderThan(null)
+                .batchSize(1000)
+                .interval(Duration.ofHours(1))
+                .build();
+    }
 }

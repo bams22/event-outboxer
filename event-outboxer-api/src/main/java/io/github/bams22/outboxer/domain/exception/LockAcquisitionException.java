@@ -18,12 +18,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class LockAcquisitionException extends LockException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-401";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-401";
 
-  public LockAcquisitionException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public LockAcquisitionException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

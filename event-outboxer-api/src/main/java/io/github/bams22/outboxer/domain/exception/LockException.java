@@ -23,13 +23,13 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class LockException extends OutboxException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  protected LockException(String message) {
-    super(message);
-  }
+    protected LockException(String message) {
+        super(message);
+    }
 
-  protected LockException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    protected LockException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

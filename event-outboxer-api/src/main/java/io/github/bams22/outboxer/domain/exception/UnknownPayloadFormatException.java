@@ -20,12 +20,12 @@ package io.github.bams22.outboxer.domain.exception;
  */
 public final class UnknownPayloadFormatException extends HandleException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-203";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-203";
 
-  public UnknownPayloadFormatException(String message) {
-    super(CODE + ": " + message);
-  }
+    public UnknownPayloadFormatException(String message) {
+        super(CODE + ": " + message);
+    }
 }

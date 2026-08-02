@@ -17,16 +17,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(OutboxExtension.class)
 class OutboxExtensionTest {
 
-  @Test
-  void injectsContextParameter(OutboxTestContext ctx) {
-    assertThat(ctx).isNotNull();
-    assertThat(ctx.publisher()).isNotNull();
-    assertThat(ctx.manualEngine()).isNotNull();
-    assertThat(ctx.eventStore()).isNotNull();
-  }
+    @Test
+    void injectsContextParameter(OutboxTestContext ctx) {
+        assertThat(ctx).isNotNull();
+        assertThat(ctx.publisher()).isNotNull();
+        assertThat(ctx.manualEngine()).isNotNull();
+        assertThat(ctx.eventStore()).isNotNull();
+    }
 
-  @Test
-  void eachTestReceivesSameContextWithinMethod(OutboxTestContext ctx) {
-    assertThat(ctx).isNotNull();
-  }
+    @Test
+    void eachTestReceivesSameContextWithinMethod(OutboxTestContext ctx) {
+        assertThat(ctx).isNotNull();
+    }
 }

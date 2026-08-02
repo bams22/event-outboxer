@@ -16,44 +16,44 @@ import org.junit.jupiter.api.Test;
 
 class WorkerIdTest {
 
-  @Test
-  void rejectsNullValue() {
-    assertThatThrownBy(() -> new WorkerId(null)).isInstanceOf(NullPointerException.class);
-  }
+    @Test
+    void rejectsNullValue() {
+        assertThatThrownBy(() -> new WorkerId(null)).isInstanceOf(NullPointerException.class);
+    }
 
-  @Test
-  void rejectsBlankValue() {
-    assertThatThrownBy(() -> new WorkerId("   "))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("blank");
-  }
+    @Test
+    void rejectsBlankValue() {
+        assertThatThrownBy(() -> new WorkerId("   "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("blank");
+    }
 
-  @Test
-  void rejectsOverlyLongValue() {
-    String tooLong = "x".repeat(WorkerId.MAX_LENGTH + 1);
-    assertThatThrownBy(() -> new WorkerId(tooLong))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("64");
-  }
+    @Test
+    void rejectsOverlyLongValue() {
+        String tooLong = "x".repeat(WorkerId.MAX_LENGTH + 1);
+        assertThatThrownBy(() -> new WorkerId(tooLong))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("64");
+    }
 
-  @Test
-  void acceptsBoundaryLength() {
-    String boundary = "x".repeat(WorkerId.MAX_LENGTH);
-    assertThat(new WorkerId(boundary).value()).hasSize(WorkerId.MAX_LENGTH);
-  }
+    @Test
+    void acceptsBoundaryLength() {
+        String boundary = "x".repeat(WorkerId.MAX_LENGTH);
+        assertThat(new WorkerId(boundary).value()).hasSize(WorkerId.MAX_LENGTH);
+    }
 
-  @Test
-  void generateDefaultProducesValidWorkerId() {
-    WorkerId id = WorkerId.generateDefault();
-    assertThat(id.value()).isNotBlank().hasSizeLessThanOrEqualTo(WorkerId.MAX_LENGTH);
-    // Hostname-PID-uuid8 → at least two dashes.
-    assertThat(id.value().chars().filter(c -> c == '-').count()).isGreaterThanOrEqualTo(2L);
-  }
+    @Test
+    void generateDefaultProducesValidWorkerId() {
+        WorkerId id = WorkerId.generateDefault();
+        assertThat(id.value()).isNotBlank().hasSizeLessThanOrEqualTo(WorkerId.MAX_LENGTH);
+        // Hostname-PID-uuid8 → at least two dashes.
+        assertThat(id.value().chars().filter(c -> c == '-').count()).isGreaterThanOrEqualTo(2L);
+    }
 
-  @Test
-  void twoGenerateDefaultsDifferByUuidComponent() {
-    WorkerId a = WorkerId.generateDefault();
-    WorkerId b = WorkerId.generateDefault();
-    assertThat(a).isNotEqualTo(b);
-  }
+    @Test
+    void twoGenerateDefaultsDifferByUuidComponent() {
+        WorkerId a = WorkerId.generateDefault();
+        WorkerId b = WorkerId.generateDefault();
+        assertThat(a).isNotEqualTo(b);
+    }
 }

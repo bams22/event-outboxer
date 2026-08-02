@@ -26,12 +26,12 @@ import java.util.UUID;
  * @param workerId worker that owned the stuck claim
  */
 public record StuckHandlerReclaimedInfo(
-    UUID eventId, String eventType, Duration elapsed, WorkerId workerId) {
+        UUID eventId, String eventType, Duration elapsed, WorkerId workerId) {
 
-  public StuckHandlerReclaimedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(elapsed, "elapsed must not be null");
-    Objects.requireNonNull(workerId, "workerId must not be null");
-  }
+    public StuckHandlerReclaimedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(elapsed, "elapsed must not be null");
+        Objects.requireNonNull(workerId, "workerId must not be null");
+    }
 }

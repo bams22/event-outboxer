@@ -16,17 +16,17 @@ import org.junit.jupiter.api.Test;
 
 class PollerWakeHubTest {
 
-  @Test
-  @DisplayName("waking an unknown event type is a silent no-op")
-  void unknownTypeIsNoOp() {
-    PollerWakeHub hub = new PollerWakeHub();
+    @Test
+    @DisplayName("waking an unknown event type is a silent no-op")
+    void unknownTypeIsNoOp() {
+        PollerWakeHub hub = new PollerWakeHub();
 
-    assertThatCode(() -> hub.wake("NOBODY_POLLS_THIS")).doesNotThrowAnyException();
-  }
+        assertThatCode(() -> hub.wake("NOBODY_POLLS_THIS")).doesNotThrowAnyException();
+    }
 
-  @Test
-  @DisplayName("NOOP waker never throws")
-  void noopWakerIsSafe() {
-    assertThatCode(() -> PollerWaker.NOOP.wake("ANY")).doesNotThrowAnyException();
-  }
+    @Test
+    @DisplayName("NOOP waker never throws")
+    void noopWakerIsSafe() {
+        assertThatCode(() -> PollerWaker.NOOP.wake("ANY")).doesNotThrowAnyException();
+    }
 }

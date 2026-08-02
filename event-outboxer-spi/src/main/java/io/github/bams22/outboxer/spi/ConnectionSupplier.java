@@ -29,25 +29,25 @@ import java.sql.SQLException;
  */
 public interface ConnectionSupplier {
 
-  /**
-   * Obtain a JDBC connection. In a transactional context the returned connection is bound to the
-   * current transaction and must NOT be committed or rolled back by the caller. In a non-
-   * transactional context the returned connection is a freshly leased one from the pool.
-   *
-   * @throws SQLException if the connection cannot be obtained from the underlying {@code
-   *     DataSource}
-   */
-  Connection get() throws SQLException;
+    /**
+     * Obtain a JDBC connection. In a transactional context the returned connection is bound to the
+     * current transaction and must NOT be committed or rolled back by the caller. In a non-
+     * transactional context the returned connection is a freshly leased one from the pool.
+     *
+     * @throws SQLException if the connection cannot be obtained from the underlying {@code
+     *     DataSource}
+     */
+    Connection get() throws SQLException;
 
-  /**
-   * Release a connection obtained via {@link #get()}. In a transactional context this is a no-op
-   * (Spring's transaction manager owns the connection lifecycle); in a non-transactional context
-   * this closes the connection and returns it to the pool.
-   *
-   * <p>Callers typically invoke this in a {@code finally} block after every query. Idempotent —
-   * releasing a connection twice must not throw.
-   *
-   * @throws SQLException if the connection cannot be returned to the pool
-   */
-  void release(Connection connection) throws SQLException;
+    /**
+     * Release a connection obtained via {@link #get()}. In a transactional context this is a no-op
+     * (Spring's transaction manager owns the connection lifecycle); in a non-transactional context
+     * this closes the connection and returns it to the pool.
+     *
+     * <p>Callers typically invoke this in a {@code finally} block after every query. Idempotent —
+     * releasing a connection twice must not throw.
+     *
+     * @throws SQLException if the connection cannot be returned to the pool
+     */
+    void release(Connection connection) throws SQLException;
 }

@@ -55,87 +55,89 @@ import org.springframework.context.annotation.Configuration;
  * handed in that way is unwrapped back to its raw target.
  */
 @AutoConfiguration(
-    after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+        after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgLeaseEntityLocker.class)
 @ConditionalOnBean(DataSource.class)
 @Conditional(OnPostgresLeaseLockCondition.class)
 @EnableConfigurationProperties(OutboxProperties.class)
 public class PostgresLeaseLockAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(EntityLocker.class)
-  public PgLeaseEntityLocker outboxEntityLocker(
-      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
-      ObjectProvider<DataSource> dataSources,
-      ListableBeanFactory beanFactory,
-      OutboxProperties properties) {
-    DataSource dataSource =
-        OutboxDataSourceResolver.unwrapTransactionAware(
-            OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory));
-    return new PgLeaseEntityLocker(
-        dataSource, properties.getStorage().getSchema(), properties.getWorker().getId());
-  }
+    @Bean
+    @ConditionalOnMissingBean(EntityLocker.class)
+    public PgLeaseEntityLocker outboxEntityLocker(
+            @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+            ObjectProvider<DataSource> dataSources,
+            ListableBeanFactory beanFactory,
+            OutboxProperties properties) {
+        DataSource dataSource =
+                OutboxDataSourceResolver.unwrapTransactionAware(
+                        OutboxDataSourceResolver.resolve(
+                                qualifiedDataSources, dataSources, beanFactory));
+        return new PgLeaseEntityLocker(
+                dataSource, properties.getStorage().getSchema(), properties.getWorker().getId());
+    }
 
-  /**
-   * Skipped silently when a user-defined {@code EntityLocker} displaced the lease locker — the
-   * probe (and the sweep below) belong to the lease table, not to the lock SPI. The DataSource is
-   * resolved only in that case, so a displaced locker plus ambiguous DataSources never fails an
-   * inert probe.
-   */
-  @Bean
-  @DependsOnDatabaseInitialization
-  public PgLeaseTableProbe pgLeaseTableProbe(
-      ObjectProvider<PgLeaseEntityLocker> lockerProvider,
-      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
-      ObjectProvider<DataSource> dataSources,
-      ListableBeanFactory beanFactory,
-      OutboxProperties properties) {
-    return new PgLeaseTableProbe(
-        lockerProvider.getIfAvailable() != null
-            ? OutboxDataSourceResolver.unwrapTransactionAware(
-                OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory))
-            : null,
-        properties.getStorage().getSchema());
-  }
-
-  @Bean
-  public PgLeaseSweepScheduler pgLeaseSweepScheduler(
-      ObjectProvider<PgLeaseEntityLocker> lockerProvider) {
-    return new PgLeaseSweepScheduler(lockerProvider.getIfAvailable());
-  }
-
-  /**
-   * Gauge for currently held leases ({@code <metrics.prefix>.entity_locks.held}). Registered as a
-   * {@link MeterBinder} so Boot applies it to every registry; reads {@code NaN} when the count
-   * query fails so a flaky database never breaks scrapes.
-   */
-  @Configuration(proxyBeanMethods = false)
-  @ConditionalOnClass({MeterRegistry.class, MeterBinder.class})
-  static class LeaseMetricsConfiguration {
+    /**
+     * Skipped silently when a user-defined {@code EntityLocker} displaced the lease locker — the
+     * probe (and the sweep below) belong to the lease table, not to the lock SPI. The DataSource is
+     * resolved only in that case, so a displaced locker plus ambiguous DataSources never fails an
+     * inert probe.
+     */
+    @Bean
+    @DependsOnDatabaseInitialization
+    public PgLeaseTableProbe pgLeaseTableProbe(
+            ObjectProvider<PgLeaseEntityLocker> lockerProvider,
+            @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+            ObjectProvider<DataSource> dataSources,
+            ListableBeanFactory beanFactory,
+            OutboxProperties properties) {
+        return new PgLeaseTableProbe(
+                lockerProvider.getIfAvailable() != null
+                        ? OutboxDataSourceResolver.unwrapTransactionAware(
+                                OutboxDataSourceResolver.resolve(
+                                        qualifiedDataSources, dataSources, beanFactory))
+                        : null,
+                properties.getStorage().getSchema());
+    }
 
     @Bean
-    @ConditionalOnMissingBean(name = "outboxEntityLockLeaseGauge")
-    public MeterBinder outboxEntityLockLeaseGauge(
-        ObjectProvider<PgLeaseEntityLocker> lockerProvider, OutboxProperties properties) {
-      String metricName = properties.getMetrics().getPrefix() + ".entity_locks.held";
-      return registry -> {
-        PgLeaseEntityLocker locker = lockerProvider.getIfAvailable();
-        if (locker == null) {
-          return;
-        }
-        Gauge.builder(
-                metricName,
-                locker,
-                l -> {
-                  try {
-                    return (double) l.countLiveLeases();
-                  } catch (RuntimeException ex) {
-                    return Double.NaN;
-                  }
-                })
-            .description("Currently held entity-lock leases (expires_at > now())")
-            .register(registry);
-      };
+    public PgLeaseSweepScheduler pgLeaseSweepScheduler(
+            ObjectProvider<PgLeaseEntityLocker> lockerProvider) {
+        return new PgLeaseSweepScheduler(lockerProvider.getIfAvailable());
     }
-  }
+
+    /**
+     * Gauge for currently held leases ({@code <metrics.prefix>.entity_locks.held}). Registered as a
+     * {@link MeterBinder} so Boot applies it to every registry; reads {@code NaN} when the count
+     * query fails so a flaky database never breaks scrapes.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass({MeterRegistry.class, MeterBinder.class})
+    static class LeaseMetricsConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(name = "outboxEntityLockLeaseGauge")
+        public MeterBinder outboxEntityLockLeaseGauge(
+                ObjectProvider<PgLeaseEntityLocker> lockerProvider, OutboxProperties properties) {
+            String metricName = properties.getMetrics().getPrefix() + ".entity_locks.held";
+            return registry -> {
+                PgLeaseEntityLocker locker = lockerProvider.getIfAvailable();
+                if (locker == null) {
+                    return;
+                }
+                Gauge.builder(
+                                metricName,
+                                locker,
+                                l -> {
+                                    try {
+                                        return (double) l.countLiveLeases();
+                                    } catch (RuntimeException ex) {
+                                        return Double.NaN;
+                                    }
+                                })
+                        .description("Currently held entity-lock leases (expires_at > now())")
+                        .register(registry);
+            };
+        }
+    }
 }

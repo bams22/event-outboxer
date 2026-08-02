@@ -22,12 +22,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PayloadDeserializationException extends HandleException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-202";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-202";
 
-  public PayloadDeserializationException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public PayloadDeserializationException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

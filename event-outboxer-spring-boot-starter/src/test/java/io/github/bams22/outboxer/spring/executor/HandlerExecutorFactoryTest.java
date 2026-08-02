@@ -24,47 +24,47 @@ import org.junit.jupiter.api.Test;
  */
 class HandlerExecutorFactoryTest {
 
-  @Test
-  void virtualRunsTasksOnVirtualThreads() throws Exception {
-    ExecutorService exec = HandlerExecutorFactory.virtual().apply(EventTypeConfig.defaults());
-    try {
-      AtomicBoolean virtual = new AtomicBoolean();
-      AtomicReference<String> threadName = new AtomicReference<>();
-      exec.submit(
-              () -> {
-                virtual.set(Thread.currentThread().isVirtual());
-                threadName.set(Thread.currentThread().getName());
-              })
-          .get(5, TimeUnit.SECONDS);
+    @Test
+    void virtualRunsTasksOnVirtualThreads() throws Exception {
+        ExecutorService exec = HandlerExecutorFactory.virtual().apply(EventTypeConfig.defaults());
+        try {
+            AtomicBoolean virtual = new AtomicBoolean();
+            AtomicReference<String> threadName = new AtomicReference<>();
+            exec.submit(
+                            () -> {
+                                virtual.set(Thread.currentThread().isVirtual());
+                                threadName.set(Thread.currentThread().getName());
+                            })
+                    .get(5, TimeUnit.SECONDS);
 
-      assertThat(virtual).isTrue();
-      assertThat(threadName.get()).startsWith("outbox-vt-");
-    } finally {
-      exec.shutdown();
-      assertThat(exec.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(virtual).isTrue();
+            assertThat(threadName.get()).startsWith("outbox-vt-");
+        } finally {
+            exec.shutdown();
+            assertThat(exec.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
-  }
 
-  @Test
-  void virtualAppliesTaskDecorator() throws Exception {
-    AtomicBoolean decorated = new AtomicBoolean();
-    ExecutorService exec =
-        HandlerExecutorFactory.virtual(
-                task ->
-                    () -> {
-                      decorated.set(true);
-                      task.run();
-                    })
-            .apply(EventTypeConfig.defaults());
-    try {
-      AtomicBoolean ran = new AtomicBoolean();
-      exec.submit(() -> ran.set(true)).get(5, TimeUnit.SECONDS);
+    @Test
+    void virtualAppliesTaskDecorator() throws Exception {
+        AtomicBoolean decorated = new AtomicBoolean();
+        ExecutorService exec =
+                HandlerExecutorFactory.virtual(
+                                task ->
+                                        () -> {
+                                            decorated.set(true);
+                                            task.run();
+                                        })
+                        .apply(EventTypeConfig.defaults());
+        try {
+            AtomicBoolean ran = new AtomicBoolean();
+            exec.submit(() -> ran.set(true)).get(5, TimeUnit.SECONDS);
 
-      assertThat(decorated).isTrue();
-      assertThat(ran).isTrue();
-    } finally {
-      exec.shutdown();
-      assertThat(exec.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(decorated).isTrue();
+            assertThat(ran).isTrue();
+        } finally {
+            exec.shutdown();
+            assertThat(exec.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
-  }
 }

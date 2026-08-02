@@ -21,15 +21,15 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @ConditionalOnProperty(
-    prefix = "event-outboxer.lock",
-    name = "type",
-    havingValue = "noop",
-    matchIfMissing = true)
+        prefix = "event-outboxer.lock",
+        name = "type",
+        havingValue = "noop",
+        matchIfMissing = true)
 public class NoOpLockAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(EntityLocker.class)
-  public EntityLocker outboxEntityLocker() {
-    return EntityLocker.NOOP;
-  }
+    @Bean
+    @ConditionalOnMissingBean(EntityLocker.class)
+    public EntityLocker outboxEntityLocker() {
+        return EntityLocker.NOOP;
+    }
 }

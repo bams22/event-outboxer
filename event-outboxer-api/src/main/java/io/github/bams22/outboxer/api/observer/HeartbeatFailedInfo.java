@@ -22,8 +22,8 @@ import java.util.Objects;
  */
 public record HeartbeatFailedInfo(WorkerId workerId, Throwable cause) {
 
-  public HeartbeatFailedInfo {
-    Objects.requireNonNull(workerId, "workerId must not be null");
-    Objects.requireNonNull(cause, "cause must not be null");
-  }
+    public HeartbeatFailedInfo {
+        Objects.requireNonNull(workerId, "workerId must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+    }
 }

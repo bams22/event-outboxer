@@ -41,9 +41,9 @@ package io.github.bams22.outboxer.api.handle;
 @FunctionalInterface
 public interface FailureHandler<T> {
 
-  /**
-   * Decide what should happen to the failed event. Called by the engine after {@code
-   * EventHandler.handle(...)} returned a non-success outcome or threw an exception.
-   */
-  FailureDecision onFailure(FailureContext<T> ctx);
+    /**
+     * Decide what should happen to the failed event. Called by the engine after {@code
+     * EventHandler.handle(...)} returned a non-success outcome or threw an exception.
+     */
+    FailureDecision onFailure(FailureContext<T> ctx);
 }

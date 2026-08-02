@@ -42,59 +42,60 @@ import org.springframework.util.ClassUtils;
 @EnableConfigurationProperties
 public class OutboxAdminRestAutoConfiguration {
 
-  private static final String SECURITY_MARKER_CLASS =
-      "org.springframework.security.core.context.SecurityContextHolder";
+    private static final String SECURITY_MARKER_CLASS =
+            "org.springframework.security.core.context.SecurityContextHolder";
 
-  /**
-   * Bean name registered by {@code @EnableMethodSecurity}'s {@code
-   * PrePostMethodSecurityConfiguration}. Detection is name-based on purpose: the bean is declared
-   * with the {@code MethodInterceptor} interface return type and a lazy wrapper instance, so
-   * type-based lookups cannot identify it.
-   */
-  private static final String PRE_AUTHORIZE_INTERCEPTOR_BEAN =
-      "preAuthorizeAuthorizationMethodInterceptor";
+    /**
+     * Bean name registered by {@code @EnableMethodSecurity}'s {@code
+     * PrePostMethodSecurityConfiguration}. Detection is name-based on purpose: the bean is declared
+     * with the {@code MethodInterceptor} interface return type and a lazy wrapper instance, so
+     * type-based lookups cannot identify it.
+     */
+    private static final String PRE_AUTHORIZE_INTERCEPTOR_BEAN =
+            "preAuthorizeAuthorizationMethodInterceptor";
 
-  /**
-   * Explicit {@code @Bean} instead of {@code @EnableConfigurationProperties} so the bean gets the
-   * stable name {@code outboxAdminRestProperties} that the controller's {@code @PreAuthorize} SpEL
-   * dereferences. Binding still happens through the standard {@code @ConfigurationProperties}
-   * post-processing.
-   */
-  @Bean
-  @ConditionalOnMissingBean
-  public OutboxAdminRestProperties outboxAdminRestProperties() {
-    return new OutboxAdminRestProperties();
-  }
+    /**
+     * Explicit {@code @Bean} instead of {@code @EnableConfigurationProperties} so the bean gets the
+     * stable name {@code outboxAdminRestProperties} that the controller's {@code @PreAuthorize}
+     * SpEL dereferences. Binding still happens through the standard
+     * {@code @ConfigurationProperties} post-processing.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public OutboxAdminRestProperties outboxAdminRestProperties() {
+        return new OutboxAdminRestProperties();
+    }
 
-  @Bean
-  @ConditionalOnMissingBean
-  @ConditionalOnBean({OutboxAdmin.class, EventStore.class})
-  public OutboxAdminController outboxAdminController(OutboxAdmin admin, EventStore store) {
-    return new OutboxAdminController(admin, store);
-  }
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({OutboxAdmin.class, EventStore.class})
+    public OutboxAdminController outboxAdminController(OutboxAdmin admin, EventStore store) {
+        return new OutboxAdminController(admin, store);
+    }
 
-  @Bean
-  public SmartInitializingSingleton outboxAdminRestSecurityCheck(
-      ListableBeanFactory beanFactory, OutboxAdminRestProperties properties) {
-    return () -> {
-      if (!properties.isEnforceAuthority()) {
-        return;
-      }
-      ClassLoader cl = OutboxAdminRestAutoConfiguration.class.getClassLoader();
-      if (!ClassUtils.isPresent(SECURITY_MARKER_CLASS, cl)) {
-        // No Spring Security at all: @PreAuthorize is inert and the API runs open — an
-        // accepted trade-off for security-less applications (ADR-0019).
-        return;
-      }
-      if (!beanFactory.containsBean(PRE_AUTHORIZE_INTERCEPTOR_BEAN)) {
-        throw new IllegalStateException(
-            "event-outboxer.admin.rest.enabled=true and Spring Security is on the classpath, "
-                + "but method security is not active — the controller's @PreAuthorize guard "
-                + "would be silently ignored and the admin API would run unprotected. "
-                + "Add @EnableMethodSecurity to your security configuration, or set "
-                + "event-outboxer.admin.rest.enforce-authority=false to explicitly accept an "
-                + "unprotected admin API.");
-      }
-    };
-  }
+    @Bean
+    public SmartInitializingSingleton outboxAdminRestSecurityCheck(
+            ListableBeanFactory beanFactory, OutboxAdminRestProperties properties) {
+        return () -> {
+            if (!properties.isEnforceAuthority()) {
+                return;
+            }
+            ClassLoader cl = OutboxAdminRestAutoConfiguration.class.getClassLoader();
+            if (!ClassUtils.isPresent(SECURITY_MARKER_CLASS, cl)) {
+                // No Spring Security at all: @PreAuthorize is inert and the API runs open — an
+                // accepted trade-off for security-less applications (ADR-0019).
+                return;
+            }
+            if (!beanFactory.containsBean(PRE_AUTHORIZE_INTERCEPTOR_BEAN)) {
+                throw new IllegalStateException(
+                        "event-outboxer.admin.rest.enabled=true and Spring Security is on the"
+                            + " classpath, but method security is not active — the controller's"
+                            + " @PreAuthorize guard would be silently ignored and the admin API"
+                            + " would run unprotected. Add @EnableMethodSecurity to your security"
+                            + " configuration, or set"
+                            + " event-outboxer.admin.rest.enforce-authority=false to explicitly"
+                            + " accept an unprotected admin API.");
+            }
+        };
+    }
 }

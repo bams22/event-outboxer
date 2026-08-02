@@ -30,91 +30,91 @@ import java.util.UUID;
  */
 public class ForwardingEventStore implements EventStore {
 
-  protected final EventStore delegate;
+    protected final EventStore delegate;
 
-  public ForwardingEventStore(EventStore delegate) {
-    this.delegate = delegate;
-  }
+    public ForwardingEventStore(EventStore delegate) {
+        this.delegate = delegate;
+    }
 
-  @Override
-  public boolean save(PendingEvent event) {
-    return delegate.save(event);
-  }
+    @Override
+    public boolean save(PendingEvent event) {
+        return delegate.save(event);
+    }
 
-  @Override
-  public void saveAll(List<PendingEvent> events) {
-    delegate.saveAll(events);
-  }
+    @Override
+    public void saveAll(List<PendingEvent> events) {
+        delegate.saveAll(events);
+    }
 
-  @Override
-  public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
-    return delegate.lockPendingByDedupKey(eventType, dedupKey);
-  }
+    @Override
+    public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
+        return delegate.lockPendingByDedupKey(eventType, dedupKey);
+    }
 
-  @Override
-  public List<ClaimedEvent> claim(ClaimRequest request) {
-    return delegate.claim(request);
-  }
+    @Override
+    public List<ClaimedEvent> claim(ClaimRequest request) {
+        return delegate.claim(request);
+    }
 
-  @Override
-  public boolean markProcessed(UUID id, WorkerId workerId, long claimedVersion) {
-    return delegate.markProcessed(id, workerId, claimedVersion);
-  }
+    @Override
+    public boolean markProcessed(UUID id, WorkerId workerId, long claimedVersion) {
+        return delegate.markProcessed(id, workerId, claimedVersion);
+    }
 
-  @Override
-  public boolean markForRetry(
-      UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt) {
-    return delegate.markForRetry(id, workerId, claimedVersion, reason, runAt);
-  }
+    @Override
+    public boolean markForRetry(
+            UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt) {
+        return delegate.markForRetry(id, workerId, claimedVersion, reason, runAt);
+    }
 
-  @Override
-  public Set<UUID> markProcessedAll(List<ProcessedMark> marks, WorkerId workerId) {
-    return delegate.markProcessedAll(marks, workerId);
-  }
+    @Override
+    public Set<UUID> markProcessedAll(List<ProcessedMark> marks, WorkerId workerId) {
+        return delegate.markProcessedAll(marks, workerId);
+    }
 
-  @Override
-  public Set<UUID> markForRetryAll(List<RetryMark> marks, WorkerId workerId) {
-    return delegate.markForRetryAll(marks, workerId);
-  }
+    @Override
+    public Set<UUID> markForRetryAll(List<RetryMark> marks, WorkerId workerId) {
+        return delegate.markForRetryAll(marks, workerId);
+    }
 
-  @Override
-  public boolean markDisabled(UUID id, WorkerId workerId, long claimedVersion, String reason) {
-    return delegate.markDisabled(id, workerId, claimedVersion, reason);
-  }
+    @Override
+    public boolean markDisabled(UUID id, WorkerId workerId, long claimedVersion, String reason) {
+        return delegate.markDisabled(id, workerId, claimedVersion, reason);
+    }
 
-  @Override
-  public boolean release(
-      UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt) {
-    return delegate.release(id, workerId, claimedVersion, reason, runAt);
-  }
+    @Override
+    public boolean release(
+            UUID id, WorkerId workerId, long claimedVersion, String reason, Instant runAt) {
+        return delegate.release(id, workerId, claimedVersion, reason, runAt);
+    }
 
-  @Override
-  public int releaseClaimed(WorkerId workerId, Instant now) {
-    return delegate.releaseClaimed(workerId, now);
-  }
+    @Override
+    public int releaseClaimed(WorkerId workerId, Instant now) {
+        return delegate.releaseClaimed(workerId, now);
+    }
 
-  @Override
-  public boolean forceReclaim(UUID id, WorkerId workerId, long claimedVersion, Instant runAt) {
-    return delegate.forceReclaim(id, workerId, claimedVersion, runAt);
-  }
+    @Override
+    public boolean forceReclaim(UUID id, WorkerId workerId, long claimedVersion, Instant runAt) {
+        return delegate.forceReclaim(id, workerId, claimedVersion, runAt);
+    }
 
-  @Override
-  public int sweepStale(Duration olderThan, int limit) {
-    return delegate.sweepStale(olderThan, limit);
-  }
+    @Override
+    public int sweepStale(Duration olderThan, int limit) {
+        return delegate.sweepStale(olderThan, limit);
+    }
 
-  @Override
-  public int reclaimOrphans(List<WorkerId> deadWorkers, Instant now) {
-    return delegate.reclaimOrphans(deadWorkers, now);
-  }
+    @Override
+    public int reclaimOrphans(List<WorkerId> deadWorkers, Instant now) {
+        return delegate.reclaimOrphans(deadWorkers, now);
+    }
 
-  @Override
-  public Optional<Event> findById(UUID id) {
-    return delegate.findById(id);
-  }
+    @Override
+    public Optional<Event> findById(UUID id) {
+        return delegate.findById(id);
+    }
 
-  @Override
-  public OutboxMetricsSnapshot metricsSnapshot() {
-    return delegate.metricsSnapshot();
-  }
+    @Override
+    public OutboxMetricsSnapshot metricsSnapshot() {
+        return delegate.metricsSnapshot();
+    }
 }

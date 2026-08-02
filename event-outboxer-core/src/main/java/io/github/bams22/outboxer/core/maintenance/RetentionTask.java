@@ -30,54 +30,54 @@ import org.slf4j.LoggerFactory;
  */
 public final class RetentionTask implements Runnable {
 
-  private static final Logger log = LoggerFactory.getLogger(RetentionTask.class);
+    private static final Logger log = LoggerFactory.getLogger(RetentionTask.class);
 
-  private final OutboxAdmin admin;
-  private final Clock clock;
-  private final RetentionConfig config;
+    private final OutboxAdmin admin;
+    private final Clock clock;
+    private final RetentionConfig config;
 
-  public RetentionTask(OutboxAdmin admin, Clock clock, RetentionConfig config) {
-    this.admin = Objects.requireNonNull(admin, "admin must not be null");
-    this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    this.config = Objects.requireNonNull(config, "config must not be null");
-  }
-
-  /** Interval between passes, exposed for the scheduler. */
-  public Duration interval() {
-    return config.interval();
-  }
-
-  @Override
-  public void run() {
-    Duration archiveAge = config.archiveOlderThan();
-    if (archiveAge != null) {
-      Instant threshold = clock.now().minus(archiveAge);
-      sweep("archive", () -> admin.purgeArchive(threshold, config.batchSize()));
+    public RetentionTask(OutboxAdmin admin, Clock clock, RetentionConfig config) {
+        this.admin = Objects.requireNonNull(admin, "admin must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.config = Objects.requireNonNull(config, "config must not be null");
     }
-    Duration disabledAge = config.disabledOlderThan();
-    if (disabledAge != null) {
-      Instant threshold = clock.now().minus(disabledAge);
-      sweep("disabled", () -> admin.purgeDisabled(null, threshold, config.batchSize()));
-    }
-  }
 
-  private void sweep(String what, IntSupplier purgeBatch) {
-    long total = 0;
-    try {
-      int purged;
-      do {
-        purged = purgeBatch.getAsInt();
-        total += purged;
-      } while (purged >= config.batchSize());
-      if (total > 0) {
-        log.info("retention: purged {} {} row(s)", total, what);
-      }
-    } catch (RuntimeException ex) {
-      log.warn(
-          "retention sweep of {} failed after {} row(s); will retry next pass: {}",
-          what,
-          total,
-          ex.toString());
+    /** Interval between passes, exposed for the scheduler. */
+    public Duration interval() {
+        return config.interval();
     }
-  }
+
+    @Override
+    public void run() {
+        Duration archiveAge = config.archiveOlderThan();
+        if (archiveAge != null) {
+            Instant threshold = clock.now().minus(archiveAge);
+            sweep("archive", () -> admin.purgeArchive(threshold, config.batchSize()));
+        }
+        Duration disabledAge = config.disabledOlderThan();
+        if (disabledAge != null) {
+            Instant threshold = clock.now().minus(disabledAge);
+            sweep("disabled", () -> admin.purgeDisabled(null, threshold, config.batchSize()));
+        }
+    }
+
+    private void sweep(String what, IntSupplier purgeBatch) {
+        long total = 0;
+        try {
+            int purged;
+            do {
+                purged = purgeBatch.getAsInt();
+                total += purged;
+            } while (purged >= config.batchSize());
+            if (total > 0) {
+                log.info("retention: purged {} {} row(s)", total, what);
+            }
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "retention sweep of {} failed after {} row(s); will retry next pass: {}",
+                    what,
+                    total,
+                    ex.toString());
+        }
+    }
 }

@@ -22,29 +22,29 @@ import org.slf4j.LoggerFactory;
  */
 public final class PollerWakeHub implements PollerWaker {
 
-  private static final Logger log = LoggerFactory.getLogger(PollerWakeHub.class);
+    private static final Logger log = LoggerFactory.getLogger(PollerWakeHub.class);
 
-  private final ConcurrentMap<String, Poller> targets = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Poller> targets = new ConcurrentHashMap<>();
 
-  /**
-   * Register the poller serving its event type. Called by the engine builder; the same hub may be
-   * reused across engine restarts because {@link Poller} instances survive stop/start.
-   */
-  public void register(Poller poller) {
-    targets.put(poller.eventType(), poller);
-  }
-
-  @Override
-  public void wake(String eventType) {
-    Poller poller = targets.get(eventType);
-    if (poller == null) {
-      return;
+    /**
+     * Register the poller serving its event type. Called by the engine builder; the same hub may be
+     * reused across engine restarts because {@link Poller} instances survive stop/start.
+     */
+    public void register(Poller poller) {
+        targets.put(poller.eventType(), poller);
     }
-    try {
-      poller.wake();
-    } catch (RuntimeException ex) {
-      // A wake must never propagate into the publisher's commit path.
-      log.debug("poller wake failed for type {}: {}", eventType, ex.toString());
+
+    @Override
+    public void wake(String eventType) {
+        Poller poller = targets.get(eventType);
+        if (poller == null) {
+            return;
+        }
+        try {
+            poller.wake();
+        } catch (RuntimeException ex) {
+            // A wake must never propagate into the publisher's commit path.
+            log.debug("poller wake failed for type {}: {}", eventType, ex.toString());
+        }
     }
-  }
 }

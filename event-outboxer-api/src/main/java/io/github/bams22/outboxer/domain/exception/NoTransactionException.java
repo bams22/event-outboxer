@@ -19,12 +19,12 @@ package io.github.bams22.outboxer.domain.exception;
  */
 public final class NoTransactionException extends PublishException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-103";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-103";
 
-  public NoTransactionException(String message) {
-    super(CODE + ": " + message);
-  }
+    public NoTransactionException(String message) {
+        super(CODE + ": " + message);
+    }
 }

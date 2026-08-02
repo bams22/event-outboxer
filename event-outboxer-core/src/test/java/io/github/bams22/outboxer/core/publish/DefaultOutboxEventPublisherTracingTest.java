@@ -38,156 +38,161 @@ import org.junit.jupiter.api.Test;
  */
 class DefaultOutboxEventPublisherTracingTest {
 
-  private static final OutboxListener NOOP_LISTENER = new OutboxListener() {};
+    private static final OutboxListener NOOP_LISTENER = new OutboxListener() {};
 
-  private static DefaultOutboxEventPublisher publisher(EventStore store, RecordingOutboxTracer t) {
-    return new DefaultOutboxEventPublisher(
-        store,
-        new StringEventSerializer(),
-        Clock.system(),
-        TransactionContext.alwaysActive(),
-        NoTransactionPolicy.FAIL,
-        NOOP_LISTENER,
-        PollerWaker.NOOP,
-        t);
-  }
+    private static DefaultOutboxEventPublisher publisher(
+            EventStore store, RecordingOutboxTracer t) {
+        return new DefaultOutboxEventPublisher(
+                store,
+                new StringEventSerializer(),
+                Clock.system(),
+                TransactionContext.alwaysActive(),
+                NoTransactionPolicy.FAIL,
+                NOOP_LISTENER,
+                PollerWaker.NOOP,
+                t);
+    }
 
-  @Test
-  void capturedSpanContextIsStoredOnTheEvent() {
-    InMemoryEventStore store = new InMemoryEventStore();
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+    @Test
+    void capturedSpanContextIsStoredOnTheEvent() {
+        InMemoryEventStore store = new InMemoryEventStore();
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-    UUID id = publisher(store, tracer).publish("T", "hello");
+        UUID id = publisher(store, tracer).publish("T", "hello");
 
-    assertThat(tracer.publishSpans).hasSize(1);
-    RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
-    assertThat(span.eventId).isEqualTo(id);
-    assertThat(span.eventType).isEqualTo("T");
-    assertThat(store.findById(id).orElseThrow().traceContext()).isEqualTo(span.context);
-    assertThat(span.closeCount).hasValue(1);
-    assertThat(span.error).isNull();
-  }
+        assertThat(tracer.publishSpans).hasSize(1);
+        RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
+        assertThat(span.eventId).isEqualTo(id);
+        assertThat(span.eventType).isEqualTo("T");
+        assertThat(store.findById(id).orElseThrow().traceContext()).isEqualTo(span.context);
+        assertThat(span.closeCount).hasValue(1);
+        assertThat(span.error).isNull();
+    }
 
-  @Test
-  void explicitTraceContextOverrideWins() {
-    InMemoryEventStore store = new InMemoryEventStore();
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
-    Map<String, String> explicit = Map.of("traceparent", "00-cafe-babe-01");
+    @Test
+    void explicitTraceContextOverrideWins() {
+        InMemoryEventStore store = new InMemoryEventStore();
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+        Map<String, String> explicit = Map.of("traceparent", "00-cafe-babe-01");
 
-    UUID id =
-        publisher(store, tracer)
-            .publish("T", "hello", PublishOptions.builder().traceContext(explicit).build());
+        UUID id =
+                publisher(store, tracer)
+                        .publish(
+                                "T",
+                                "hello",
+                                PublishOptions.builder().traceContext(explicit).build());
 
-    assertThat(store.findById(id).orElseThrow().traceContext()).isEqualTo(explicit);
-    // The producer span is still recorded in the caller's trace — only the stored map differs.
-    assertThat(tracer.publishSpans).hasSize(1);
-    assertThat(tracer.publishSpans.get(0).closeCount).hasValue(1);
-  }
+        assertThat(store.findById(id).orElseThrow().traceContext()).isEqualTo(explicit);
+        // The producer span is still recorded in the caller's trace — only the stored map differs.
+        assertThat(tracer.publishSpans).hasSize(1);
+        assertThat(tracer.publishSpans.get(0).closeCount).hasValue(1);
+    }
 
-  @Test
-  void storageFailureIsRecordedOnTheSpan() {
-    EventStore failing =
-        new ForwardingEventStore(new InMemoryEventStore()) {
-          @Override
-          public boolean save(PendingEvent event) {
-            throw new EventStoreException("insert failed");
-          }
-        };
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+    @Test
+    void storageFailureIsRecordedOnTheSpan() {
+        EventStore failing =
+                new ForwardingEventStore(new InMemoryEventStore()) {
+                    @Override
+                    public boolean save(PendingEvent event) {
+                        throw new EventStoreException("insert failed");
+                    }
+                };
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-    assertThatThrownBy(() -> publisher(failing, tracer).publish("T", "hello"))
-        .isInstanceOf(PublishFailedException.class);
+        assertThatThrownBy(() -> publisher(failing, tracer).publish("T", "hello"))
+                .isInstanceOf(PublishFailedException.class);
 
-    RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
-    assertThat(span.error).isInstanceOf(StorageException.class);
-    assertThat(span.closeCount).hasValue(1);
-  }
+        RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
+        assertThat(span.error).isInstanceOf(StorageException.class);
+        assertThat(span.closeCount).hasValue(1);
+    }
 
-  @Test
-  void coalescedPublishTagsSpanAndKeepsExistingContext() {
-    InMemoryEventStore store = new InMemoryEventStore();
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
-    DefaultOutboxEventPublisher publisher = publisher(store, tracer);
-    PublishOptions keyed = PublishOptions.builder().dedupKey("order-1").build();
+    @Test
+    void coalescedPublishTagsSpanAndKeepsExistingContext() {
+        InMemoryEventStore store = new InMemoryEventStore();
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+        DefaultOutboxEventPublisher publisher = publisher(store, tracer);
+        PublishOptions keyed = PublishOptions.builder().dedupKey("order-1").build();
 
-    UUID first = publisher.publish("SYNC", "v1", keyed);
-    UUID second = publisher.publish("SYNC", "v2", keyed);
+        UUID first = publisher.publish("SYNC", "v1", keyed);
+        UUID second = publisher.publish("SYNC", "v2", keyed);
 
-    assertThat(second).isEqualTo(first);
-    assertThat(tracer.publishSpans).hasSize(2);
-    RecordingOutboxTracer.RecordedPublishSpan coalescedSpan = tracer.publishSpans.get(1);
-    assertThat(coalescedSpan.coalescedInto).isEqualTo(first);
-    assertThat(coalescedSpan.error).isNull();
-    assertThat(coalescedSpan.closeCount).hasValue(1);
-    // The surviving row keeps the FIRST publish's context — the second capture is discarded.
-    assertThat(store.findById(first).orElseThrow().traceContext())
-        .isEqualTo(tracer.publishSpans.get(0).context);
-  }
+        assertThat(second).isEqualTo(first);
+        assertThat(tracer.publishSpans).hasSize(2);
+        RecordingOutboxTracer.RecordedPublishSpan coalescedSpan = tracer.publishSpans.get(1);
+        assertThat(coalescedSpan.coalescedInto).isEqualTo(first);
+        assertThat(coalescedSpan.error).isNull();
+        assertThat(coalescedSpan.closeCount).hasValue(1);
+        // The surviving row keeps the FIRST publish's context — the second capture is discarded.
+        assertThat(store.findById(first).orElseThrow().traceContext())
+                .isEqualTo(tracer.publishSpans.get(0).context);
+    }
 
-  @Test
-  void publishAllCreatesOneSpanPerRequestWithDistinctContexts() {
-    InMemoryEventStore store = new InMemoryEventStore();
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
-    PublishOptions keyed = PublishOptions.builder().dedupKey("k").build();
+    @Test
+    void publishAllCreatesOneSpanPerRequestWithDistinctContexts() {
+        InMemoryEventStore store = new InMemoryEventStore();
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+        PublishOptions keyed = PublishOptions.builder().dedupKey("k").build();
 
-    List<UUID> ids =
-        publisher(store, tracer)
-            .publishAll(
-                List.of(
-                    new PublishRequest("A", "a1", keyed),
-                    new PublishRequest("A", "plain1", null),
-                    new PublishRequest("B", "plain2", null)));
+        List<UUID> ids =
+                publisher(store, tracer)
+                        .publishAll(
+                                List.of(
+                                        new PublishRequest("A", "a1", keyed),
+                                        new PublishRequest("A", "plain1", null),
+                                        new PublishRequest("B", "plain2", null)));
 
-    assertThat(tracer.publishSpans).hasSize(3);
-    assertThat(tracer.publishSpans).allSatisfy(span -> assertThat(span.closeCount).hasValue(1));
-    // Each row stores its own span's context, including the batch-path rows saved via saveAll.
-    assertThat(store.findById(ids.get(0)).orElseThrow().traceContext())
-        .isEqualTo(tracer.publishSpans.get(0).context);
-    assertThat(store.findById(ids.get(1)).orElseThrow().traceContext())
-        .isEqualTo(tracer.publishSpans.get(1).context);
-    assertThat(store.findById(ids.get(2)).orElseThrow().traceContext())
-        .isEqualTo(tracer.publishSpans.get(2).context);
-    assertThat(tracer.publishSpans.get(0).context).isNotEqualTo(tracer.publishSpans.get(1).context);
-  }
+        assertThat(tracer.publishSpans).hasSize(3);
+        assertThat(tracer.publishSpans).allSatisfy(span -> assertThat(span.closeCount).hasValue(1));
+        // Each row stores its own span's context, including the batch-path rows saved via saveAll.
+        assertThat(store.findById(ids.get(0)).orElseThrow().traceContext())
+                .isEqualTo(tracer.publishSpans.get(0).context);
+        assertThat(store.findById(ids.get(1)).orElseThrow().traceContext())
+                .isEqualTo(tracer.publishSpans.get(1).context);
+        assertThat(store.findById(ids.get(2)).orElseThrow().traceContext())
+                .isEqualTo(tracer.publishSpans.get(2).context);
+        assertThat(tracer.publishSpans.get(0).context)
+                .isNotEqualTo(tracer.publishSpans.get(1).context);
+    }
 
-  @Test
-  void publishAllStorageFailureMarksOpenBatchSpans() {
-    EventStore failing =
-        new ForwardingEventStore(new InMemoryEventStore()) {
-          @Override
-          public void saveAll(List<PendingEvent> events) {
-            throw new EventStoreException("batch insert failed");
-          }
-        };
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+    @Test
+    void publishAllStorageFailureMarksOpenBatchSpans() {
+        EventStore failing =
+                new ForwardingEventStore(new InMemoryEventStore()) {
+                    @Override
+                    public void saveAll(List<PendingEvent> events) {
+                        throw new EventStoreException("batch insert failed");
+                    }
+                };
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-    assertThatThrownBy(
-            () ->
-                publisher(failing, tracer)
-                    .publishAll(
-                        List.of(
-                            new PublishRequest("A", "a1", null),
-                            new PublishRequest("B", "b1", null))))
-        .isInstanceOf(PublishFailedException.class);
+        assertThatThrownBy(
+                        () ->
+                                publisher(failing, tracer)
+                                        .publishAll(
+                                                List.of(
+                                                        new PublishRequest("A", "a1", null),
+                                                        new PublishRequest("B", "b1", null))))
+                .isInstanceOf(PublishFailedException.class);
 
-    assertThat(tracer.publishSpans).hasSize(2);
-    assertThat(tracer.publishSpans)
-        .allSatisfy(
-            span -> {
-              assertThat(span.error).isInstanceOf(StorageException.class);
-              assertThat(span.closeCount).hasValue(1);
-            });
-  }
+        assertThat(tracer.publishSpans).hasSize(2);
+        assertThat(tracer.publishSpans)
+                .allSatisfy(
+                        span -> {
+                            assertThat(span.error).isInstanceOf(StorageException.class);
+                            assertThat(span.closeCount).hasValue(1);
+                        });
+    }
 
-  @Test
-  void throwingTracerDoesNotBreakPublish() {
-    InMemoryEventStore store = new InMemoryEventStore();
-    RecordingOutboxTracer tracer = new RecordingOutboxTracer();
-    tracer.throwOnStart = true;
+    @Test
+    void throwingTracerDoesNotBreakPublish() {
+        InMemoryEventStore store = new InMemoryEventStore();
+        RecordingOutboxTracer tracer = new RecordingOutboxTracer();
+        tracer.throwOnStart = true;
 
-    UUID id = publisher(store, tracer).publish("T", "hello");
+        UUID id = publisher(store, tracer).publish("T", "hello");
 
-    assertThat(store.findById(id)).isPresent();
-    assertThat(store.findById(id).orElseThrow().traceContext()).isEmpty();
-  }
+        assertThat(store.findById(id)).isPresent();
+        assertThat(store.findById(id).orElseThrow().traceContext()).isEmpty();
+    }
 }

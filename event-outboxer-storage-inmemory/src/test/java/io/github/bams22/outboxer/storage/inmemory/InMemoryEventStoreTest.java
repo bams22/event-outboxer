@@ -16,22 +16,22 @@ import java.util.UUID;
 
 class InMemoryEventStoreTest extends AbstractEventStoreContractTest {
 
-  private InMemoryEventStore inMemoryStore;
+    private InMemoryEventStore inMemoryStore;
 
-  @Override
-  protected EventStore newStore() {
-    inMemoryStore = new InMemoryEventStore();
-    return inMemoryStore;
-  }
+    @Override
+    protected EventStore newStore() {
+        inMemoryStore = new InMemoryEventStore();
+        return inMemoryStore;
+    }
 
-  @Override
-  protected void backdateClaim(UUID id, Instant at) {
-    InMemoryEventStore.EventRow row = inMemoryStore.rows().get(id);
-    if (row == null) {
-      throw new AssertionError("no row for " + id);
+    @Override
+    protected void backdateClaim(UUID id, Instant at) {
+        InMemoryEventStore.EventRow row = inMemoryStore.rows().get(id);
+        if (row == null) {
+            throw new AssertionError("no row for " + id);
+        }
+        synchronized (row) {
+            row.claimedAt = at;
+        }
     }
-    synchronized (row) {
-      row.claimedAt = at;
-    }
-  }
 }

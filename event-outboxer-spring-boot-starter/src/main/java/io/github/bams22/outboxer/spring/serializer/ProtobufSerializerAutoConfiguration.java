@@ -34,11 +34,11 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnClass({ProtobufEventSerializer.class, Message.class})
 public class ProtobufSerializerAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(ProtobufEventSerializer.class)
-  public ProtobufEventSerializer outboxProtobufEventSerializer(
-      ObjectProvider<ExtensionRegistryLite> extensionRegistry) {
-    return new ProtobufEventSerializer(
-        extensionRegistry.getIfAvailable(ExtensionRegistryLite::getEmptyRegistry));
-  }
+    @Bean
+    @ConditionalOnMissingBean(ProtobufEventSerializer.class)
+    public ProtobufEventSerializer outboxProtobufEventSerializer(
+            ObjectProvider<ExtensionRegistryLite> extensionRegistry) {
+        return new ProtobufEventSerializer(
+                extensionRegistry.getIfAvailable(ExtensionRegistryLite::getEmptyRegistry));
+    }
 }

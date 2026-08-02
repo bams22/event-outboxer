@@ -30,23 +30,24 @@ import org.springframework.core.env.MapPropertySource;
  * user config is fully loaded before we read {@code event-outboxer.storage.schema}.
  */
 public class OutboxLiquibaseParameterEnvironmentPostProcessor
-    implements EnvironmentPostProcessor, Ordered {
+        implements EnvironmentPostProcessor, Ordered {
 
-  static final String PROPERTY_SOURCE_NAME = "event-outboxer-liquibase-parameters";
-  static final String SCHEMA_PROPERTY = "event-outboxer.storage.schema";
-  static final String DEFAULT_SCHEMA = "event_outboxer";
-  static final String LIQUIBASE_PARAMETER_KEY = "spring.liquibase.parameters.eventOutboxerSchema";
+    static final String PROPERTY_SOURCE_NAME = "event-outboxer-liquibase-parameters";
+    static final String SCHEMA_PROPERTY = "event-outboxer.storage.schema";
+    static final String DEFAULT_SCHEMA = "event_outboxer";
+    static final String LIQUIBASE_PARAMETER_KEY = "spring.liquibase.parameters.eventOutboxerSchema";
 
-  @Override
-  public int getOrder() {
-    return Ordered.LOWEST_PRECEDENCE;
-  }
+    @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
 
-  @Override
-  public void postProcessEnvironment(ConfigurableEnvironment env, SpringApplication application) {
-    String schema = env.getProperty(SCHEMA_PROPERTY, DEFAULT_SCHEMA);
-    env.getPropertySources()
-        .addLast(
-            new MapPropertySource(PROPERTY_SOURCE_NAME, Map.of(LIQUIBASE_PARAMETER_KEY, schema)));
-  }
+    @Override
+    public void postProcessEnvironment(ConfigurableEnvironment env, SpringApplication application) {
+        String schema = env.getProperty(SCHEMA_PROPERTY, DEFAULT_SCHEMA);
+        env.getPropertySources()
+                .addLast(
+                        new MapPropertySource(
+                                PROPERTY_SOURCE_NAME, Map.of(LIQUIBASE_PARAMETER_KEY, schema)));
+    }
 }

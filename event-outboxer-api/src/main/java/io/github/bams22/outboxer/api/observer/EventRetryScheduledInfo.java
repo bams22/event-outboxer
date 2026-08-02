@@ -26,17 +26,17 @@ import org.jspecify.annotations.Nullable;
  * @param cause the exception that triggered the retry, or null when retry was explicit
  */
 public record EventRetryScheduledInfo(
-    UUID eventId,
-    String eventType,
-    int attempts,
-    Instant nextRunAt,
-    String reason,
-    @Nullable Throwable cause) {
+        UUID eventId,
+        String eventType,
+        int attempts,
+        Instant nextRunAt,
+        String reason,
+        @Nullable Throwable cause) {
 
-  public EventRetryScheduledInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(nextRunAt, "nextRunAt must not be null");
-    Objects.requireNonNull(reason, "reason must not be null");
-  }
+    public EventRetryScheduledInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(nextRunAt, "nextRunAt must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+    }
 }

@@ -28,14 +28,14 @@ import java.util.Objects;
  */
 public record ClaimRequest(String eventType, WorkerId workerId, int limit) {
 
-  public ClaimRequest {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    if (eventType.isBlank()) {
-      throw new IllegalArgumentException("eventType must not be blank");
+    public ClaimRequest {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        if (eventType.isBlank()) {
+            throw new IllegalArgumentException("eventType must not be blank");
+        }
+        Objects.requireNonNull(workerId, "workerId must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive, got " + limit);
+        }
     }
-    Objects.requireNonNull(workerId, "workerId must not be null");
-    if (limit <= 0) {
-      throw new IllegalArgumentException("limit must be positive, got " + limit);
-    }
-  }
 }

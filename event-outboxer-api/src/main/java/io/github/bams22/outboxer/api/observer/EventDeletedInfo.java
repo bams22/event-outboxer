@@ -24,9 +24,9 @@ import java.util.UUID;
  */
 public record EventDeletedInfo(UUID eventId, String eventType, int attempts, String reason) {
 
-  public EventDeletedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(reason, "reason must not be null");
-  }
+    public EventDeletedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+    }
 }

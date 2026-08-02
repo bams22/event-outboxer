@@ -44,39 +44,39 @@ import org.jspecify.annotations.Nullable;
  * @param version optimistic-concurrency version of the row at the time of read
  */
 public record Event(
-    UUID id,
-    String eventType,
-    SerializedPayload payload,
-    String payloadFormat,
-    String payloadClass,
-    short priority,
-    int attempts,
-    EventStatus status,
-    Instant createdAt,
-    Instant runAt,
-    @Nullable WorkerId claimedBy,
-    @Nullable Instant claimedAt,
-    @Nullable String lastFailReason,
-    Map<String, String> traceContext,
-    long version,
-    @Nullable String dedupKey) {
+        UUID id,
+        String eventType,
+        SerializedPayload payload,
+        String payloadFormat,
+        String payloadClass,
+        short priority,
+        int attempts,
+        EventStatus status,
+        Instant createdAt,
+        Instant runAt,
+        @Nullable WorkerId claimedBy,
+        @Nullable Instant claimedAt,
+        @Nullable String lastFailReason,
+        Map<String, String> traceContext,
+        long version,
+        @Nullable String dedupKey) {
 
-  public Event {
-    Objects.requireNonNull(id, "id must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(payload, "payload must not be null");
-    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
-    Objects.requireNonNull(payloadClass, "payloadClass must not be null");
-    Objects.requireNonNull(status, "status must not be null");
-    Objects.requireNonNull(createdAt, "createdAt must not be null");
-    Objects.requireNonNull(runAt, "runAt must not be null");
-    if (attempts < 0) {
-      throw new IllegalArgumentException("attempts must not be negative, got " + attempts);
+    public Event {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(payload, "payload must not be null");
+        Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
+        Objects.requireNonNull(payloadClass, "payloadClass must not be null");
+        Objects.requireNonNull(status, "status must not be null");
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
+        Objects.requireNonNull(runAt, "runAt must not be null");
+        if (attempts < 0) {
+            throw new IllegalArgumentException("attempts must not be negative, got " + attempts);
+        }
+        if (version < 0) {
+            throw new IllegalArgumentException("version must not be negative, got " + version);
+        }
+        Objects.requireNonNull(traceContext, "traceContext must not be null");
+        traceContext = Map.copyOf(traceContext);
     }
-    if (version < 0) {
-      throw new IllegalArgumentException("version must not be negative, got " + version);
-    }
-    Objects.requireNonNull(traceContext, "traceContext must not be null");
-    traceContext = Map.copyOf(traceContext);
-  }
 }

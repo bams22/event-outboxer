@@ -21,40 +21,42 @@ import org.junit.jupiter.api.Test;
 
 class EventHandlerResolverTest {
 
-  @Test
-  void lookupByType() {
-    EventHandlerResolver r =
-        new EventHandlerResolver(List.of(stringHandler("A"), stringHandler("B")));
-    assertThat(r.find("A")).isPresent();
-    assertThat(r.find("B")).isPresent();
-    assertThat(r.find("C")).isEmpty();
-    assertThat(r.registeredTypes()).containsExactlyInAnyOrder("A", "B");
-  }
+    @Test
+    void lookupByType() {
+        EventHandlerResolver r =
+                new EventHandlerResolver(List.of(stringHandler("A"), stringHandler("B")));
+        assertThat(r.find("A")).isPresent();
+        assertThat(r.find("B")).isPresent();
+        assertThat(r.find("C")).isEmpty();
+        assertThat(r.registeredTypes()).containsExactlyInAnyOrder("A", "B");
+    }
 
-  @Test
-  void rejectsDuplicates() {
-    assertThatThrownBy(
-            () -> new EventHandlerResolver(List.of(stringHandler("DUP"), stringHandler("DUP"))))
-        .isInstanceOf(DuplicateHandlerException.class)
-        .hasMessageContaining("DUP");
-  }
+    @Test
+    void rejectsDuplicates() {
+        assertThatThrownBy(
+                        () ->
+                                new EventHandlerResolver(
+                                        List.of(stringHandler("DUP"), stringHandler("DUP"))))
+                .isInstanceOf(DuplicateHandlerException.class)
+                .hasMessageContaining("DUP");
+    }
 
-  private static EventHandler<String> stringHandler(String type) {
-    return new EventHandler<String>() {
-      @Override
-      public String eventType() {
-        return type;
-      }
+    private static EventHandler<String> stringHandler(String type) {
+        return new EventHandler<String>() {
+            @Override
+            public String eventType() {
+                return type;
+            }
 
-      @Override
-      public Class<String> payloadType() {
-        return String.class;
-      }
+            @Override
+            public Class<String> payloadType() {
+                return String.class;
+            }
 
-      @Override
-      public EventOutcome handle(EventContext ctx, String payload) {
-        return EventOutcome.Success.INSTANCE;
-      }
-    };
-  }
+            @Override
+            public EventOutcome handle(EventContext ctx, String payload) {
+                return EventOutcome.Success.INSTANCE;
+            }
+        };
+    }
 }

@@ -23,22 +23,22 @@ import io.github.bams22.outboxer.api.handle.FailureHandler;
  */
 public final class NoRetryFailureHandler<T> implements FailureHandler<T> {
 
-  @Override
-  public FailureDecision onFailure(FailureContext<T> ctx) {
-    String reason = reason(ctx);
-    return new FailureDecision.Disable(reason);
-  }
+    @Override
+    public FailureDecision onFailure(FailureContext<T> ctx) {
+        String reason = reason(ctx);
+        return new FailureDecision.Disable(reason);
+    }
 
-  private static String reason(FailureContext<?> ctx) {
-    EventOutcome outcome = ctx.outcome();
-    if (outcome != null) {
-      return outcome.toString();
+    private static String reason(FailureContext<?> ctx) {
+        EventOutcome outcome = ctx.outcome();
+        if (outcome != null) {
+            return outcome.toString();
+        }
+        Throwable cause = ctx.cause();
+        if (cause != null) {
+            String m = cause.getMessage();
+            return m == null ? cause.getClass().getSimpleName() : m;
+        }
+        return "no-retry policy";
     }
-    Throwable cause = ctx.cause();
-    if (cause != null) {
-      String m = cause.getMessage();
-      return m == null ? cause.getClass().getSimpleName() : m;
-    }
-    return "no-retry policy";
-  }
 }

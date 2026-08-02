@@ -31,74 +31,74 @@ import java.util.Optional;
  */
 public interface WorkerRegistry {
 
-  /**
-   * Register a new worker. Called once at engine startup. If a row with the same {@code WorkerId}
-   * already exists (for example because the previous JVM crashed without deregistering), the
-   * adapter must overwrite it and reset the heartbeat to the current clock.
-   *
-   * @throws WorkerRegistryException if the registry cannot persist the worker
-   */
-  void register(WorkerInfo info);
+    /**
+     * Register a new worker. Called once at engine startup. If a row with the same {@code WorkerId}
+     * already exists (for example because the previous JVM crashed without deregistering), the
+     * adapter must overwrite it and reset the heartbeat to the current clock.
+     *
+     * @throws WorkerRegistryException if the registry cannot persist the worker
+     */
+    void register(WorkerInfo info);
 
-  /**
-   * Update the heartbeat timestamp for the given worker to the supplied {@code at}. Called
-   * periodically by the engine's {@code HeartbeatTask}. The adapter returns {@code false} if no row
-   * exists for the given id (for example, the worker was already reaped by another instance's
-   * orphan-recovery pass).
-   *
-   * @return {@code true} if the heartbeat row was updated
-   * @throws WorkerRegistryException if the registry cannot perform the update
-   */
-  boolean heartbeat(WorkerId id, Instant at);
+    /**
+     * Update the heartbeat timestamp for the given worker to the supplied {@code at}. Called
+     * periodically by the engine's {@code HeartbeatTask}. The adapter returns {@code false} if no
+     * row exists for the given id (for example, the worker was already reaped by another instance's
+     * orphan-recovery pass).
+     *
+     * @return {@code true} if the heartbeat row was updated
+     * @throws WorkerRegistryException if the registry cannot perform the update
+     */
+    boolean heartbeat(WorkerId id, Instant at);
 
-  /**
-   * Mark a worker as gracefully shutting down. Used as a hint for other JVMs to prioritize orphan
-   * reclaim of this worker's events without waiting for the dead threshold. Implementations that do
-   * not support this hint may treat it as a no-op.
-   *
-   * @throws WorkerRegistryException if the registry cannot perform the update
-   */
-  void markGracefulStop(WorkerId id);
+    /**
+     * Mark a worker as gracefully shutting down. Used as a hint for other JVMs to prioritize orphan
+     * reclaim of this worker's events without waiting for the dead threshold. Implementations that
+     * do not support this hint may treat it as a no-op.
+     *
+     * @throws WorkerRegistryException if the registry cannot perform the update
+     */
+    void markGracefulStop(WorkerId id);
 
-  /**
-   * Remove a worker from the registry. Called at the end of a clean shutdown after in-flight
-   * handlers have completed.
-   *
-   * @throws WorkerRegistryException if the registry cannot perform the deletion
-   */
-  void deregister(WorkerId id);
+    /**
+     * Remove a worker from the registry. Called at the end of a clean shutdown after in-flight
+     * handlers have completed.
+     *
+     * @throws WorkerRegistryException if the registry cannot perform the deletion
+     */
+    void deregister(WorkerId id);
 
-  /**
-   * Return workers whose most recent heartbeat is older than {@code now - deadThreshold}. Capped by
-   * {@code limit} so that a single orphan-recovery pass over a catastrophically stale cluster does
-   * not take unbounded time.
-   *
-   * @param deadThreshold minimum age of the last heartbeat before a worker is considered dead
-   * @param limit maximum number of workers to return in one call; must be positive
-   * @throws WorkerRegistryException if the registry cannot be queried
-   */
-  List<WorkerInfo> findDead(Duration deadThreshold, int limit);
+    /**
+     * Return workers whose most recent heartbeat is older than {@code now - deadThreshold}. Capped
+     * by {@code limit} so that a single orphan-recovery pass over a catastrophically stale cluster
+     * does not take unbounded time.
+     *
+     * @param deadThreshold minimum age of the last heartbeat before a worker is considered dead
+     * @param limit maximum number of workers to return in one call; must be positive
+     * @throws WorkerRegistryException if the registry cannot be queried
+     */
+    List<WorkerInfo> findDead(Duration deadThreshold, int limit);
 
-  /**
-   * Hard-delete the given dead workers from the registry. Called by the orphan-recovery flow after
-   * all events owned by these workers have been reclaimed to {@code PENDING}.
-   *
-   * @throws WorkerRegistryException if the registry cannot perform the deletion
-   */
-  void removeDead(List<WorkerId> ids);
+    /**
+     * Hard-delete the given dead workers from the registry. Called by the orphan-recovery flow
+     * after all events owned by these workers have been reclaimed to {@code PENDING}.
+     *
+     * @throws WorkerRegistryException if the registry cannot perform the deletion
+     */
+    void removeDead(List<WorkerId> ids);
 
-  /**
-   * Look up a single worker by id. Returns {@link Optional#empty()} if no row exists.
-   *
-   * @throws WorkerRegistryException if the registry cannot be queried
-   */
-  Optional<WorkerInfo> findById(WorkerId id);
+    /**
+     * Look up a single worker by id. Returns {@link Optional#empty()} if no row exists.
+     *
+     * @throws WorkerRegistryException if the registry cannot be queried
+     */
+    Optional<WorkerInfo> findById(WorkerId id);
 
-  /**
-   * Return every currently registered worker. Intended for diagnostics / admin views rather than
-   * hot-path orphan recovery, so no batch-size cap is imposed by the SPI.
-   *
-   * @throws WorkerRegistryException if the registry cannot be queried
-   */
-  List<WorkerInfo> findAll();
+    /**
+     * Return every currently registered worker. Intended for diagnostics / admin views rather than
+     * hot-path orphan recovery, so no batch-size cap is imposed by the SPI.
+     *
+     * @throws WorkerRegistryException if the registry cannot be queried
+     */
+    List<WorkerInfo> findAll();
 }

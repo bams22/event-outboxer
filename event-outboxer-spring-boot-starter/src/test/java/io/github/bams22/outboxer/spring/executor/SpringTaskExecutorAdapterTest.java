@@ -23,115 +23,115 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 class SpringTaskExecutorAdapterTest {
 
-  private ThreadPoolTaskExecutor taskExecutor;
+    private ThreadPoolTaskExecutor taskExecutor;
 
-  @BeforeEach
-  void setUp() {
-    taskExecutor = new ThreadPoolTaskExecutor();
-    taskExecutor.setCorePoolSize(1);
-    taskExecutor.setMaxPoolSize(1);
-    taskExecutor.setQueueCapacity(10);
-    taskExecutor.setThreadNamePrefix("test-adapter-");
-  }
-
-  @AfterEach
-  void tearDown() {
-    if (taskExecutor != null) {
-      taskExecutor.shutdown();
+    @BeforeEach
+    void setUp() {
+        taskExecutor = new ThreadPoolTaskExecutor();
+        taskExecutor.setCorePoolSize(1);
+        taskExecutor.setMaxPoolSize(1);
+        taskExecutor.setQueueCapacity(10);
+        taskExecutor.setThreadNamePrefix("test-adapter-");
     }
-  }
 
-  @Test
-  void executeRoutesThroughTaskDecorator() throws Exception {
-    AtomicBoolean decoratorCalled = new AtomicBoolean(false);
-    taskExecutor.setTaskDecorator(
-        runnable -> {
-          decoratorCalled.set(true);
-          return runnable;
-        });
-    taskExecutor.initialize();
+    @AfterEach
+    void tearDown() {
+        if (taskExecutor != null) {
+            taskExecutor.shutdown();
+        }
+    }
 
-    ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
-    CountDownLatch latch = new CountDownLatch(1);
-    adapter.execute(latch::countDown);
+    @Test
+    void executeRoutesThroughTaskDecorator() throws Exception {
+        AtomicBoolean decoratorCalled = new AtomicBoolean(false);
+        taskExecutor.setTaskDecorator(
+                runnable -> {
+                    decoratorCalled.set(true);
+                    return runnable;
+                });
+        taskExecutor.initialize();
 
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    assertThat(decoratorCalled).isTrue();
-  }
+        ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+        CountDownLatch latch = new CountDownLatch(1);
+        adapter.execute(latch::countDown);
 
-  @Test
-  void submitRunnableRoutesThroughTaskDecorator() throws Exception {
-    AtomicBoolean decoratorCalled = new AtomicBoolean(false);
-    taskExecutor.setTaskDecorator(
-        runnable -> {
-          decoratorCalled.set(true);
-          return runnable;
-        });
-    taskExecutor.initialize();
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(decoratorCalled).isTrue();
+    }
 
-    ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
-    adapter.submit(() -> {}).get(5, TimeUnit.SECONDS);
+    @Test
+    void submitRunnableRoutesThroughTaskDecorator() throws Exception {
+        AtomicBoolean decoratorCalled = new AtomicBoolean(false);
+        taskExecutor.setTaskDecorator(
+                runnable -> {
+                    decoratorCalled.set(true);
+                    return runnable;
+                });
+        taskExecutor.initialize();
 
-    assertThat(decoratorCalled).isTrue();
-  }
+        ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+        adapter.submit(() -> {}).get(5, TimeUnit.SECONDS);
 
-  @Test
-  void submitCallableRoutesThroughTaskDecorator() throws Exception {
-    AtomicBoolean decoratorCalled = new AtomicBoolean(false);
-    taskExecutor.setTaskDecorator(
-        runnable -> {
-          decoratorCalled.set(true);
-          return runnable;
-        });
-    taskExecutor.initialize();
+        assertThat(decoratorCalled).isTrue();
+    }
 
-    ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
-    Integer result = adapter.submit(() -> 42).get(5, TimeUnit.SECONDS);
+    @Test
+    void submitCallableRoutesThroughTaskDecorator() throws Exception {
+        AtomicBoolean decoratorCalled = new AtomicBoolean(false);
+        taskExecutor.setTaskDecorator(
+                runnable -> {
+                    decoratorCalled.set(true);
+                    return runnable;
+                });
+        taskExecutor.initialize();
 
-    assertThat(result).isEqualTo(42);
-    assertThat(decoratorCalled).isTrue();
-  }
+        ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+        Integer result = adapter.submit(() -> 42).get(5, TimeUnit.SECONDS);
 
-  @Test
-  void decoratorSeesContextFromSubmittingThread() throws Exception {
-    AtomicReference<String> captured = new AtomicReference<>();
-    taskExecutor.setTaskDecorator(
-        runnable -> {
-          // Captured at submit time, stored in an AtomicReference, restored at run time.
-          String threadLocalSnapshot = Thread.currentThread().getName();
-          return () -> {
-            captured.set(threadLocalSnapshot);
-            runnable.run();
-          };
-        });
-    taskExecutor.initialize();
+        assertThat(result).isEqualTo(42);
+        assertThat(decoratorCalled).isTrue();
+    }
 
-    ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
-    CountDownLatch latch = new CountDownLatch(1);
-    adapter.execute(latch::countDown);
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    @Test
+    void decoratorSeesContextFromSubmittingThread() throws Exception {
+        AtomicReference<String> captured = new AtomicReference<>();
+        taskExecutor.setTaskDecorator(
+                runnable -> {
+                    // Captured at submit time, stored in an AtomicReference, restored at run time.
+                    String threadLocalSnapshot = Thread.currentThread().getName();
+                    return () -> {
+                        captured.set(threadLocalSnapshot);
+                        runnable.run();
+                    };
+                });
+        taskExecutor.initialize();
 
-    // The decorator ran on the TEST thread (not inside the pool).
-    assertThat(captured.get()).isEqualTo(Thread.currentThread().getName());
-  }
+        ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+        CountDownLatch latch = new CountDownLatch(1);
+        adapter.execute(latch::countDown);
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
-  @Test
-  void shutdownDelegatesToUnderlyingPool() {
-    taskExecutor.initialize();
-    ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+        // The decorator ran on the TEST thread (not inside the pool).
+        assertThat(captured.get()).isEqualTo(Thread.currentThread().getName());
+    }
 
-    assertThat(adapter.isShutdown()).isFalse();
-    adapter.shutdown();
-    assertThat(adapter.isShutdown()).isTrue();
-  }
+    @Test
+    void shutdownDelegatesToUnderlyingPool() {
+        taskExecutor.initialize();
+        ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
 
-  @Test
-  void awaitTerminationReturnsTrueAfterShutdown() throws InterruptedException {
-    taskExecutor.initialize();
-    ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+        assertThat(adapter.isShutdown()).isFalse();
+        adapter.shutdown();
+        assertThat(adapter.isShutdown()).isTrue();
+    }
 
-    adapter.shutdown();
-    assertThat(adapter.awaitTermination(1, TimeUnit.SECONDS)).isTrue();
-    assertThat(adapter.isTerminated()).isTrue();
-  }
+    @Test
+    void awaitTerminationReturnsTrueAfterShutdown() throws InterruptedException {
+        taskExecutor.initialize();
+        ExecutorService adapter = new SpringTaskExecutorAdapter(taskExecutor);
+
+        adapter.shutdown();
+        assertThat(adapter.awaitTermination(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(adapter.isTerminated()).isTrue();
+    }
 }

@@ -34,100 +34,102 @@ import org.springframework.mock.env.MockEnvironment;
  */
 class UnconfiguredStorageTest {
 
-  private final ApplicationContextRunner runner =
-      new ApplicationContextRunner()
-          .withConfiguration(
-              AutoConfigurations.of(
-                  JacksonSerializerAutoConfiguration.class,
-                  io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration.class,
-                  OutboxEngineAutoConfiguration.class))
-          .withUserConfiguration(HandlerOnly.class);
+    private final ApplicationContextRunner runner =
+            new ApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(
+                                    JacksonSerializerAutoConfiguration.class,
+                                    io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
+                                            .class,
+                                    OutboxEngineAutoConfiguration.class))
+                    .withUserConfiguration(HandlerOnly.class);
 
-  @Test
-  @DisplayName("no storage configured → context fails on the missing EventStore")
-  void unconfiguredStorageFailsStartup() {
-    runner.run(
-        ctx -> {
-          assertThat(ctx).hasFailed();
-          assertThat(ctx.getStartupFailure()).hasStackTraceContaining("EventStore");
-        });
-  }
-
-  @Test
-  @DisplayName("explicit @Import of the in-memory test configuration starts the engine")
-  void importedTestConfigurationStarts() {
-    runner
-        .withUserConfiguration(OutboxInMemoryTestConfiguration.class)
-        .run(
-            ctx -> {
-              assertThat(ctx).hasNotFailed();
-              assertThat(ctx).hasSingleBean(EventStore.class);
-              assertThat(ctx)
-                  .hasSingleBean(io.github.bams22.outboxer.core.engine.OutboxEngine.class);
-            });
-  }
-
-  @Test
-  @DisplayName("failure analyzer: type unset → points at storage.type and the test import")
-  void analyzerForUnsetType() {
-    OutboxStorageFailureAnalyzer analyzer = new OutboxStorageFailureAnalyzer();
-    analyzer.setEnvironment(new MockEnvironment());
-
-    FailureAnalysis analysis =
-        analyzer.analyze(new NoSuchBeanDefinitionException(EventStore.class));
-
-    assertThat(analysis).isNotNull();
-    assertThat(analysis.getDescription()).contains("event-outboxer.storage.type");
-    assertThat(analysis.getAction())
-        .contains("postgres")
-        .contains("OutboxInMemoryTestConfiguration");
-  }
-
-  @Test
-  @DisplayName("failure analyzer: type=postgres without DataSource → DataSource hint")
-  void analyzerForMissingDataSource() {
-    OutboxStorageFailureAnalyzer analyzer = new OutboxStorageFailureAnalyzer();
-    analyzer.setEnvironment(
-        new MockEnvironment().withProperty("event-outboxer.storage.type", "postgres"));
-
-    FailureAnalysis analysis =
-        analyzer.analyze(new NoSuchBeanDefinitionException(EventStore.class));
-
-    assertThat(analysis).isNotNull();
-    assertThat(analysis.getAction()).contains("DataSource");
-  }
-
-  @Test
-  @DisplayName("failure analyzer ignores unrelated failures")
-  void analyzerIgnoresOtherFailures() {
-    OutboxStorageFailureAnalyzer analyzer = new OutboxStorageFailureAnalyzer();
-    analyzer.setEnvironment(new MockEnvironment());
-
-    assertThat(analyzer.analyze(new NoSuchBeanDefinitionException(String.class))).isNull();
-    assertThat(analyzer.analyze(new IllegalStateException("boom"))).isNull();
-  }
-
-  @Configuration
-  static class HandlerOnly {
-
-    @Bean
-    EventHandler<String> handler() {
-      return new EventHandler<String>() {
-        @Override
-        public String eventType() {
-          return "T";
-        }
-
-        @Override
-        public Class<String> payloadType() {
-          return String.class;
-        }
-
-        @Override
-        public EventOutcome handle(EventContext ctx, String payload) {
-          return EventOutcome.Success.INSTANCE;
-        }
-      };
+    @Test
+    @DisplayName("no storage configured → context fails on the missing EventStore")
+    void unconfiguredStorageFailsStartup() {
+        runner.run(
+                ctx -> {
+                    assertThat(ctx).hasFailed();
+                    assertThat(ctx.getStartupFailure()).hasStackTraceContaining("EventStore");
+                });
     }
-  }
+
+    @Test
+    @DisplayName("explicit @Import of the in-memory test configuration starts the engine")
+    void importedTestConfigurationStarts() {
+        runner.withUserConfiguration(OutboxInMemoryTestConfiguration.class)
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            assertThat(ctx).hasSingleBean(EventStore.class);
+                            assertThat(ctx)
+                                    .hasSingleBean(
+                                            io.github.bams22.outboxer.core.engine.OutboxEngine
+                                                    .class);
+                        });
+    }
+
+    @Test
+    @DisplayName("failure analyzer: type unset → points at storage.type and the test import")
+    void analyzerForUnsetType() {
+        OutboxStorageFailureAnalyzer analyzer = new OutboxStorageFailureAnalyzer();
+        analyzer.setEnvironment(new MockEnvironment());
+
+        FailureAnalysis analysis =
+                analyzer.analyze(new NoSuchBeanDefinitionException(EventStore.class));
+
+        assertThat(analysis).isNotNull();
+        assertThat(analysis.getDescription()).contains("event-outboxer.storage.type");
+        assertThat(analysis.getAction())
+                .contains("postgres")
+                .contains("OutboxInMemoryTestConfiguration");
+    }
+
+    @Test
+    @DisplayName("failure analyzer: type=postgres without DataSource → DataSource hint")
+    void analyzerForMissingDataSource() {
+        OutboxStorageFailureAnalyzer analyzer = new OutboxStorageFailureAnalyzer();
+        analyzer.setEnvironment(
+                new MockEnvironment().withProperty("event-outboxer.storage.type", "postgres"));
+
+        FailureAnalysis analysis =
+                analyzer.analyze(new NoSuchBeanDefinitionException(EventStore.class));
+
+        assertThat(analysis).isNotNull();
+        assertThat(analysis.getAction()).contains("DataSource");
+    }
+
+    @Test
+    @DisplayName("failure analyzer ignores unrelated failures")
+    void analyzerIgnoresOtherFailures() {
+        OutboxStorageFailureAnalyzer analyzer = new OutboxStorageFailureAnalyzer();
+        analyzer.setEnvironment(new MockEnvironment());
+
+        assertThat(analyzer.analyze(new NoSuchBeanDefinitionException(String.class))).isNull();
+        assertThat(analyzer.analyze(new IllegalStateException("boom"))).isNull();
+    }
+
+    @Configuration
+    static class HandlerOnly {
+
+        @Bean
+        EventHandler<String> handler() {
+            return new EventHandler<String>() {
+                @Override
+                public String eventType() {
+                    return "T";
+                }
+
+                @Override
+                public Class<String> payloadType() {
+                    return String.class;
+                }
+
+                @Override
+                public EventOutcome handle(EventContext ctx, String payload) {
+                    return EventOutcome.Success.INSTANCE;
+                }
+            };
+        }
+    }
 }

@@ -30,22 +30,23 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
  */
 abstract class LockTypeCondition extends SpringBootCondition {
 
-  private final OutboxProperties.LockType expected;
+    private final OutboxProperties.LockType expected;
 
-  LockTypeCondition(OutboxProperties.LockType expected) {
-    this.expected = expected;
-  }
-
-  @Override
-  public final ConditionOutcome getMatchOutcome(
-      ConditionContext context, AnnotatedTypeMetadata metadata) {
-    OutboxProperties.LockType type =
-        Binder.get(context.getEnvironment())
-            .bind("event-outboxer.lock.type", OutboxProperties.LockType.class)
-            .orElse(OutboxProperties.LockType.noop);
-    if (type == expected) {
-      return ConditionOutcome.match("event-outboxer.lock.type=" + type);
+    LockTypeCondition(OutboxProperties.LockType expected) {
+        this.expected = expected;
     }
-    return ConditionOutcome.noMatch("event-outboxer.lock.type is " + type + ", not " + expected);
-  }
+
+    @Override
+    public final ConditionOutcome getMatchOutcome(
+            ConditionContext context, AnnotatedTypeMetadata metadata) {
+        OutboxProperties.LockType type =
+                Binder.get(context.getEnvironment())
+                        .bind("event-outboxer.lock.type", OutboxProperties.LockType.class)
+                        .orElse(OutboxProperties.LockType.noop);
+        if (type == expected) {
+            return ConditionOutcome.match("event-outboxer.lock.type=" + type);
+        }
+        return ConditionOutcome.noMatch(
+                "event-outboxer.lock.type is " + type + ", not " + expected);
+    }
 }

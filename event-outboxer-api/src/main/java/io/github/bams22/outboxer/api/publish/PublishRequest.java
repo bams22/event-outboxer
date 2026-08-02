@@ -26,11 +26,11 @@ import org.jspecify.annotations.Nullable;
 @Builder
 public record PublishRequest(String eventType, Object payload, @Nullable PublishOptions options) {
 
-  public PublishRequest {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    if (eventType.isBlank()) {
-      throw new IllegalArgumentException("eventType must not be blank");
+    public PublishRequest {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        if (eventType.isBlank()) {
+            throw new IllegalArgumentException("eventType must not be blank");
+        }
+        Objects.requireNonNull(payload, "payload must not be null");
     }
-    Objects.requireNonNull(payload, "payload must not be null");
-  }
 }

@@ -41,57 +41,57 @@ import org.jspecify.annotations.Nullable;
  */
 public interface OutboxAdmin {
 
-  /**
-   * Page of events in the given status, newest-first by {@code (created_at, id)} descending,
-   * optionally filtered by event type. Pass the last row of the previous page as {@code after} to
-   * fetch the next page.
-   *
-   * @param limit maximum rows to return; must be positive
-   * @throws EventStoreException if the query fails
-   */
-  List<Event> findByStatus(
-      EventStatus status, @Nullable String eventType, int limit, @Nullable AdminCursor after);
+    /**
+     * Page of events in the given status, newest-first by {@code (created_at, id)} descending,
+     * optionally filtered by event type. Pass the last row of the previous page as {@code after} to
+     * fetch the next page.
+     *
+     * @param limit maximum rows to return; must be positive
+     * @throws EventStoreException if the query fails
+     */
+    List<Event> findByStatus(
+            EventStatus status, @Nullable String eventType, int limit, @Nullable AdminCursor after);
 
-  /**
-   * Look up a successfully processed event in the archive table (ADR-0008). Empty when the archive
-   * feature is disabled, the adapter has no archive (in-memory), or no such row exists.
-   *
-   * @throws EventStoreException if the query fails
-   */
-  Optional<ArchivedEvent> findInArchive(UUID id);
+    /**
+     * Look up a successfully processed event in the archive table (ADR-0008). Empty when the
+     * archive feature is disabled, the adapter has no archive (in-memory), or no such row exists.
+     *
+     * @throws EventStoreException if the query fails
+     */
+    Optional<ArchivedEvent> findInArchive(UUID id);
 
-  /**
-   * Return a {@code DISABLED} event to {@code PENDING} with a fresh attempts budget.
-   *
-   * @return {@code true} if the row existed in {@code DISABLED} and was re-enabled
-   * @throws EventStoreException if the update fails
-   */
-  boolean reenable(UUID id);
+    /**
+     * Return a {@code DISABLED} event to {@code PENDING} with a fresh attempts budget.
+     *
+     * @return {@code true} if the row existed in {@code DISABLED} and was re-enabled
+     * @throws EventStoreException if the update fails
+     */
+    boolean reenable(UUID id);
 
-  /**
-   * Bulk {@link #reenable(UUID)} for every {@code DISABLED} event of the given type, optionally
-   * only those created before {@code createdBefore}, capped by {@code limit}.
-   *
-   * @return the number of rows re-enabled
-   * @throws EventStoreException if the update fails
-   */
-  int reenableAll(String eventType, @Nullable Instant createdBefore, int limit);
+    /**
+     * Bulk {@link #reenable(UUID)} for every {@code DISABLED} event of the given type, optionally
+     * only those created before {@code createdBefore}, capped by {@code limit}.
+     *
+     * @return the number of rows re-enabled
+     * @throws EventStoreException if the update fails
+     */
+    int reenableAll(String eventType, @Nullable Instant createdBefore, int limit);
 
-  /**
-   * Delete {@code DISABLED} events created before {@code olderThan}, optionally filtered by type,
-   * capped by {@code limit}.
-   *
-   * @return the number of rows deleted
-   * @throws EventStoreException if the delete fails
-   */
-  int purgeDisabled(@Nullable String eventType, Instant olderThan, int limit);
+    /**
+     * Delete {@code DISABLED} events created before {@code olderThan}, optionally filtered by type,
+     * capped by {@code limit}.
+     *
+     * @return the number of rows deleted
+     * @throws EventStoreException if the delete fails
+     */
+    int purgeDisabled(@Nullable String eventType, Instant olderThan, int limit);
 
-  /**
-   * Delete archive rows archived before {@code archivedBefore}, capped by {@code limit}. A no-op
-   * (returns zero) for adapters without an archive.
-   *
-   * @return the number of rows deleted
-   * @throws EventStoreException if the delete fails
-   */
-  int purgeArchive(Instant archivedBefore, int limit);
+    /**
+     * Delete archive rows archived before {@code archivedBefore}, capped by {@code limit}. A no-op
+     * (returns zero) for adapters without an archive.
+     *
+     * @return the number of rows deleted
+     * @throws EventStoreException if the delete fails
+     */
+    int purgeArchive(Instant archivedBefore, int limit);
 }

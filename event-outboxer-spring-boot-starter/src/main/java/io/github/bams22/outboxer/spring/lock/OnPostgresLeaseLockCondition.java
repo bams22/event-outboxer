@@ -18,7 +18,7 @@ import io.github.bams22.outboxer.spring.OutboxProperties;
  */
 final class OnPostgresLeaseLockCondition extends LockTypeCondition {
 
-  OnPostgresLeaseLockCondition() {
-    super(OutboxProperties.LockType.postgres_lease);
-  }
+    OnPostgresLeaseLockCondition() {
+        super(OutboxProperties.LockType.postgres_lease);
+    }
 }

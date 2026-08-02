@@ -20,19 +20,19 @@ import java.util.concurrent.Executor;
  */
 public interface HandlerExecutorGate extends Executor {
 
-  /**
-   * Number of tasks this executor can accept right now without rejecting. A soft signal: it may
-   * race with concurrent completions and submissions — under-reads cost one extra poll round,
-   * over-reads are caught by the {@code RejectedExecutionException} safety net. Returns zero while
-   * the engine is stopped.
-   */
-  int freeCapacity();
+    /**
+     * Number of tasks this executor can accept right now without rejecting. A soft signal: it may
+     * race with concurrent completions and submissions — under-reads cost one extra poll round,
+     * over-reads are caught by the {@code RejectedExecutionException} safety net. Returns zero
+     * while the engine is stopped.
+     */
+    int freeCapacity();
 
-  /**
-   * Register the single listener invoked when the executor transitions from saturated (zero free
-   * capacity) back to having room. Deliberately transition-edged — firing on every task completion
-   * would trigger one claim query per completion under load instead of letting free slots
-   * accumulate into a batch.
-   */
-  void onCapacityAvailable(Runnable callback);
+    /**
+     * Register the single listener invoked when the executor transitions from saturated (zero free
+     * capacity) back to having room. Deliberately transition-edged — firing on every task
+     * completion would trigger one claim query per completion under load instead of letting free
+     * slots accumulate into a batch.
+     */
+    void onCapacityAvailable(Runnable callback);
 }

@@ -21,33 +21,33 @@ package io.github.bams22.outboxer.core.publish;
 @FunctionalInterface
 public interface TransactionContext {
 
-  /** {@code true} when a transaction is active on the calling thread. */
-  boolean isActive();
+    /** {@code true} when a transaction is active on the calling thread. */
+    boolean isActive();
 
-  /**
-   * Run {@code action} after the surrounding transaction commits. Used by the publisher to wake the
-   * local poller of a just-published event type only once the inserted row is actually visible to a
-   * claim query.
-   *
-   * <p>Contract for implementations that are aware of a real transaction manager: defer the action
-   * until the transaction commits, and do NOT run it when the transaction rolls back.
-   *
-   * <p>The default runs the action immediately — best effort for plain-Java setups where no
-   * transaction manager is observable. If the caller is inside an externally managed transaction,
-   * an immediate wake merely triggers one empty poll (the row is not yet visible); that is a wasted
-   * query, never a correctness problem.
-   */
-  default void afterCommit(Runnable action) {
-    action.run();
-  }
+    /**
+     * Run {@code action} after the surrounding transaction commits. Used by the publisher to wake
+     * the local poller of a just-published event type only once the inserted row is actually
+     * visible to a claim query.
+     *
+     * <p>Contract for implementations that are aware of a real transaction manager: defer the
+     * action until the transaction commits, and do NOT run it when the transaction rolls back.
+     *
+     * <p>The default runs the action immediately — best effort for plain-Java setups where no
+     * transaction manager is observable. If the caller is inside an externally managed transaction,
+     * an immediate wake merely triggers one empty poll (the row is not yet visible); that is a
+     * wasted query, never a correctness problem.
+     */
+    default void afterCommit(Runnable action) {
+        action.run();
+    }
 
-  /** No-op implementation that always reports "active". Used in plain-Java setups and tests. */
-  static TransactionContext alwaysActive() {
-    return () -> true;
-  }
+    /** No-op implementation that always reports "active". Used in plain-Java setups and tests. */
+    static TransactionContext alwaysActive() {
+        return () -> true;
+    }
 
-  /** Implementation that always reports "no active transaction" — useful for negative tests. */
-  static TransactionContext neverActive() {
-    return () -> false;
-  }
+    /** Implementation that always reports "no active transaction" — useful for negative tests. */
+    static TransactionContext neverActive() {
+        return () -> false;
+    }
 }

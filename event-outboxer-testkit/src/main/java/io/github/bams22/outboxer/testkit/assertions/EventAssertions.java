@@ -14,9 +14,9 @@ import io.github.bams22.outboxer.spi.EventStore;
 /** Entry point for fluent {@link EventStore} assertions. Mirrors AssertJ's static-factory style. */
 public final class EventAssertions {
 
-  private EventAssertions() {}
+    private EventAssertions() {}
 
-  public static EventStoreAssert assertThatStore(EventStore store) {
-    return new EventStoreAssert(store);
-  }
+    public static EventStoreAssert assertThatStore(EventStore store) {
+        return new EventStoreAssert(store);
+    }
 }

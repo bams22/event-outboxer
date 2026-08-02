@@ -27,119 +27,121 @@ import org.slf4j.LoggerFactory;
  */
 public final class SafeOutboxTracer implements OutboxTracer {
 
-  private static final Logger log = LoggerFactory.getLogger(SafeOutboxTracer.class);
+    private static final Logger log = LoggerFactory.getLogger(SafeOutboxTracer.class);
 
-  private final OutboxTracer delegate;
+    private final OutboxTracer delegate;
 
-  private SafeOutboxTracer(OutboxTracer delegate) {
-    this.delegate = delegate;
-  }
-
-  /**
-   * Wraps {@code tracer} in a defensive decorator. Identity for {@link OutboxTracer#NOOP} (nothing
-   * to shield) and for tracers that are already wrapped.
-   */
-  public static OutboxTracer wrap(OutboxTracer tracer) {
-    Objects.requireNonNull(tracer, "tracer must not be null");
-    if (tracer == OutboxTracer.NOOP || tracer instanceof SafeOutboxTracer) {
-      return tracer;
+    private SafeOutboxTracer(OutboxTracer delegate) {
+        this.delegate = delegate;
     }
-    return new SafeOutboxTracer(tracer);
-  }
 
-  @Override
-  public PublishSpan startPublishSpan(UUID eventId, String eventType) {
-    try {
-      return new SafePublishSpan(delegate.startPublishSpan(eventId, eventType));
-    } catch (RuntimeException ex) {
-      log.debug("OutboxTracer.startPublishSpan failed: {}", ex.toString());
-      return NOOP.startPublishSpan(eventId, eventType);
-    }
-  }
-
-  @Override
-  public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
-    try {
-      return new SafeProcessSpan(delegate.startProcessSpan(info));
-    } catch (RuntimeException ex) {
-      log.debug("OutboxTracer.startProcessSpan failed: {}", ex.toString());
-      return NOOP.startProcessSpan(info);
-    }
-  }
-
-  private static final class SafePublishSpan implements PublishSpan {
-
-    private final PublishSpan delegate;
-
-    private SafePublishSpan(PublishSpan delegate) {
-      this.delegate = delegate;
+    /**
+     * Wraps {@code tracer} in a defensive decorator. Identity for {@link OutboxTracer#NOOP}
+     * (nothing to shield) and for tracers that are already wrapped.
+     */
+    public static OutboxTracer wrap(OutboxTracer tracer) {
+        Objects.requireNonNull(tracer, "tracer must not be null");
+        if (tracer == OutboxTracer.NOOP || tracer instanceof SafeOutboxTracer) {
+            return tracer;
+        }
+        return new SafeOutboxTracer(tracer);
     }
 
     @Override
-    public Map<String, String> contextToStore() {
-      try {
-        // contextToStore() is non-null by contract, but this wrapper's whole job is shielding
-        // the engine from misbehaving third-party tracer adapters — including a null return.
-        Map<String, String> context = delegate.contextToStore();
-        return context != null ? context : Map.of();
-      } catch (RuntimeException ex) {
-        log.debug("PublishSpan.contextToStore failed: {}", ex.toString());
-        return Map.of();
-      }
+    public PublishSpan startPublishSpan(UUID eventId, String eventType) {
+        try {
+            return new SafePublishSpan(delegate.startPublishSpan(eventId, eventType));
+        } catch (RuntimeException ex) {
+            log.debug("OutboxTracer.startPublishSpan failed: {}", ex.toString());
+            return NOOP.startPublishSpan(eventId, eventType);
+        }
     }
 
     @Override
-    public void coalesced(UUID existingEventId) {
-      try {
-        delegate.coalesced(existingEventId);
-      } catch (RuntimeException ex) {
-        log.debug("PublishSpan.coalesced failed: {}", ex.toString());
-      }
+    public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
+        try {
+            return new SafeProcessSpan(delegate.startProcessSpan(info));
+        } catch (RuntimeException ex) {
+            log.debug("OutboxTracer.startProcessSpan failed: {}", ex.toString());
+            return NOOP.startProcessSpan(info);
+        }
     }
 
-    @Override
-    public void error(Throwable error) {
-      try {
-        delegate.error(error);
-      } catch (RuntimeException ex) {
-        log.debug("PublishSpan.error failed: {}", ex.toString());
-      }
+    private static final class SafePublishSpan implements PublishSpan {
+
+        private final PublishSpan delegate;
+
+        private SafePublishSpan(PublishSpan delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Map<String, String> contextToStore() {
+            try {
+                // contextToStore() is non-null by contract, but this wrapper's whole job is
+                // shielding
+                // the engine from misbehaving third-party tracer adapters — including a null
+                // return.
+                Map<String, String> context = delegate.contextToStore();
+                return context != null ? context : Map.of();
+            } catch (RuntimeException ex) {
+                log.debug("PublishSpan.contextToStore failed: {}", ex.toString());
+                return Map.of();
+            }
+        }
+
+        @Override
+        public void coalesced(UUID existingEventId) {
+            try {
+                delegate.coalesced(existingEventId);
+            } catch (RuntimeException ex) {
+                log.debug("PublishSpan.coalesced failed: {}", ex.toString());
+            }
+        }
+
+        @Override
+        public void error(Throwable error) {
+            try {
+                delegate.error(error);
+            } catch (RuntimeException ex) {
+                log.debug("PublishSpan.error failed: {}", ex.toString());
+            }
+        }
+
+        @Override
+        public void close() {
+            try {
+                delegate.close();
+            } catch (RuntimeException ex) {
+                log.debug("PublishSpan.close failed: {}", ex.toString());
+            }
+        }
     }
 
-    @Override
-    public void close() {
-      try {
-        delegate.close();
-      } catch (RuntimeException ex) {
-        log.debug("PublishSpan.close failed: {}", ex.toString());
-      }
+    private static final class SafeProcessSpan implements ProcessSpan {
+
+        private final ProcessSpan delegate;
+
+        private SafeProcessSpan(ProcessSpan delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void error(Throwable error) {
+            try {
+                delegate.error(error);
+            } catch (RuntimeException ex) {
+                log.debug("ProcessSpan.error failed: {}", ex.toString());
+            }
+        }
+
+        @Override
+        public void close() {
+            try {
+                delegate.close();
+            } catch (RuntimeException ex) {
+                log.debug("ProcessSpan.close failed: {}", ex.toString());
+            }
+        }
     }
-  }
-
-  private static final class SafeProcessSpan implements ProcessSpan {
-
-    private final ProcessSpan delegate;
-
-    private SafeProcessSpan(ProcessSpan delegate) {
-      this.delegate = delegate;
-    }
-
-    @Override
-    public void error(Throwable error) {
-      try {
-        delegate.error(error);
-      } catch (RuntimeException ex) {
-        log.debug("ProcessSpan.error failed: {}", ex.toString());
-      }
-    }
-
-    @Override
-    public void close() {
-      try {
-        delegate.close();
-      } catch (RuntimeException ex) {
-        log.debug("ProcessSpan.close failed: {}", ex.toString());
-      }
-    }
-  }
 }

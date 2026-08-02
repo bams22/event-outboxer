@@ -24,38 +24,38 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class SettableClock implements Clock {
 
-  private final AtomicReference<Instant> current;
+    private final AtomicReference<Instant> current;
 
-  public SettableClock(Instant initial) {
-    this.current =
-        new AtomicReference<>(Objects.requireNonNull(initial, "initial must not be null"));
-  }
+    public SettableClock(Instant initial) {
+        this.current =
+                new AtomicReference<>(Objects.requireNonNull(initial, "initial must not be null"));
+    }
 
-  /** Fixed at the current system time. Equivalent to {@code new SettableClock(Instant.now())}. */
-  public static SettableClock atSystemNow() {
-    return new SettableClock(Instant.now());
-  }
+    /** Fixed at the current system time. Equivalent to {@code new SettableClock(Instant.now())}. */
+    public static SettableClock atSystemNow() {
+        return new SettableClock(Instant.now());
+    }
 
-  /** Fixed at {@link Instant#EPOCH}. Useful when tests want reproducible absolute times. */
-  public static SettableClock atEpoch() {
-    return new SettableClock(Instant.EPOCH);
-  }
+    /** Fixed at {@link Instant#EPOCH}. Useful when tests want reproducible absolute times. */
+    public static SettableClock atEpoch() {
+        return new SettableClock(Instant.EPOCH);
+    }
 
-  @Override
-  public Instant now() {
-    return current.get();
-  }
+    @Override
+    public Instant now() {
+        return current.get();
+    }
 
-  /** Move the clock forward by {@code duration}; negative values move it back. */
-  public Instant advance(Duration duration) {
-    Objects.requireNonNull(duration, "duration must not be null");
-    return current.updateAndGet(prev -> prev.plus(duration));
-  }
+    /** Move the clock forward by {@code duration}; negative values move it back. */
+    public Instant advance(Duration duration) {
+        Objects.requireNonNull(duration, "duration must not be null");
+        return current.updateAndGet(prev -> prev.plus(duration));
+    }
 
-  /** Reset the clock to {@code newNow}. */
-  public Instant set(Instant newNow) {
-    Objects.requireNonNull(newNow, "newNow must not be null");
-    current.set(newNow);
-    return newNow;
-  }
+    /** Reset the clock to {@code newNow}. */
+    public Instant set(Instant newNow) {
+        Objects.requireNonNull(newNow, "newNow must not be null");
+        current.set(newNow);
+        return newNow;
+    }
 }

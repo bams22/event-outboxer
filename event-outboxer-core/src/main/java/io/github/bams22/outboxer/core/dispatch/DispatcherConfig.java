@@ -35,45 +35,48 @@ import lombok.Builder;
  */
 @Builder
 public record DispatcherConfig(
-    UnknownHandlerPolicy unknownHandlerPolicy,
-    Duration unknownHandlerRetryDelay,
-    Duration lockBusyRetryDelay,
-    Duration dispatchRejectedRetryDelay,
-    boolean finalizeBatching,
-    int finalizeBatchMaxSize) {
+        UnknownHandlerPolicy unknownHandlerPolicy,
+        Duration unknownHandlerRetryDelay,
+        Duration lockBusyRetryDelay,
+        Duration dispatchRejectedRetryDelay,
+        boolean finalizeBatching,
+        int finalizeBatchMaxSize) {
 
-  public DispatcherConfig {
-    Objects.requireNonNull(unknownHandlerPolicy, "unknownHandlerPolicy must not be null");
-    Objects.requireNonNull(unknownHandlerRetryDelay, "unknownHandlerRetryDelay must not be null");
-    Objects.requireNonNull(lockBusyRetryDelay, "lockBusyRetryDelay must not be null");
-    Objects.requireNonNull(
-        dispatchRejectedRetryDelay, "dispatchRejectedRetryDelay must not be null");
-    if (unknownHandlerRetryDelay.isNegative()) {
-      throw new IllegalArgumentException(
-          "unknownHandlerRetryDelay must not be negative, got " + unknownHandlerRetryDelay);
+    public DispatcherConfig {
+        Objects.requireNonNull(unknownHandlerPolicy, "unknownHandlerPolicy must not be null");
+        Objects.requireNonNull(
+                unknownHandlerRetryDelay, "unknownHandlerRetryDelay must not be null");
+        Objects.requireNonNull(lockBusyRetryDelay, "lockBusyRetryDelay must not be null");
+        Objects.requireNonNull(
+                dispatchRejectedRetryDelay, "dispatchRejectedRetryDelay must not be null");
+        if (unknownHandlerRetryDelay.isNegative()) {
+            throw new IllegalArgumentException(
+                    "unknownHandlerRetryDelay must not be negative, got "
+                            + unknownHandlerRetryDelay);
+        }
+        if (lockBusyRetryDelay.isNegative()) {
+            throw new IllegalArgumentException(
+                    "lockBusyRetryDelay must not be negative, got " + lockBusyRetryDelay);
+        }
+        if (dispatchRejectedRetryDelay.isNegative()) {
+            throw new IllegalArgumentException(
+                    "dispatchRejectedRetryDelay must not be negative, got "
+                            + dispatchRejectedRetryDelay);
+        }
+        if (finalizeBatchMaxSize <= 0) {
+            throw new IllegalArgumentException(
+                    "finalizeBatchMaxSize must be > 0, got " + finalizeBatchMaxSize);
+        }
     }
-    if (lockBusyRetryDelay.isNegative()) {
-      throw new IllegalArgumentException(
-          "lockBusyRetryDelay must not be negative, got " + lockBusyRetryDelay);
-    }
-    if (dispatchRejectedRetryDelay.isNegative()) {
-      throw new IllegalArgumentException(
-          "dispatchRejectedRetryDelay must not be negative, got " + dispatchRejectedRetryDelay);
-    }
-    if (finalizeBatchMaxSize <= 0) {
-      throw new IllegalArgumentException(
-          "finalizeBatchMaxSize must be > 0, got " + finalizeBatchMaxSize);
-    }
-  }
 
-  public static DispatcherConfig defaults() {
-    return DispatcherConfig.builder()
-        .unknownHandlerPolicy(UnknownHandlerPolicy.SKIP)
-        .unknownHandlerRetryDelay(Duration.ofMinutes(1))
-        .lockBusyRetryDelay(Duration.ofSeconds(1))
-        .dispatchRejectedRetryDelay(Duration.ofSeconds(1))
-        .finalizeBatching(true)
-        .finalizeBatchMaxSize(128)
-        .build();
-  }
+    public static DispatcherConfig defaults() {
+        return DispatcherConfig.builder()
+                .unknownHandlerPolicy(UnknownHandlerPolicy.SKIP)
+                .unknownHandlerRetryDelay(Duration.ofMinutes(1))
+                .lockBusyRetryDelay(Duration.ofSeconds(1))
+                .dispatchRejectedRetryDelay(Duration.ofSeconds(1))
+                .finalizeBatching(true)
+                .finalizeBatchMaxSize(128)
+                .build();
+    }
 }

@@ -26,12 +26,12 @@ import java.util.UUID;
  * @param priority priority value
  */
 public record EventPublishedInfo(
-    UUID eventId, String eventType, Instant createdAt, Instant runAt, short priority) {
+        UUID eventId, String eventType, Instant createdAt, Instant runAt, short priority) {
 
-  public EventPublishedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(createdAt, "createdAt must not be null");
-    Objects.requireNonNull(runAt, "runAt must not be null");
-  }
+    public EventPublishedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
+        Objects.requireNonNull(runAt, "runAt must not be null");
+    }
 }

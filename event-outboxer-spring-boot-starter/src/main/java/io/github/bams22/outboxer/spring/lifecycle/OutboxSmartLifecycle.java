@@ -23,54 +23,55 @@ import org.springframework.context.SmartLifecycle;
  */
 public final class OutboxSmartLifecycle implements SmartLifecycle {
 
-  /** Started after infrastructure but before application controllers / message listeners. */
-  public static final int PHASE = 20_000;
+    /** Started after infrastructure but before application controllers / message listeners. */
+    public static final int PHASE = 20_000;
 
-  private final OutboxEngine engine;
+    private final OutboxEngine engine;
 
-  public OutboxSmartLifecycle(OutboxEngine engine) {
-    this.engine = engine;
-  }
-
-  @Override
-  public void start() {
-    // Use isLifecycleActive() rather than state() == STOPPED so a crashed engine (state() reports
-    // STOPPED, but isLifecycleActive() still true until stop() completes) does not get
-    // double-started.
-    if (!engine.isLifecycleActive()) {
-      engine.start();
+    public OutboxSmartLifecycle(OutboxEngine engine) {
+        this.engine = engine;
     }
-  }
 
-  @Override
-  public void stop() {
-    engine.stop();
-  }
-
-  @Override
-  public void stop(Runnable callback) {
-    try {
-      engine.stop();
-    } finally {
-      callback.run();
+    @Override
+    public void start() {
+        // Use isLifecycleActive() rather than state() == STOPPED so a crashed engine (state()
+        // reports
+        // STOPPED, but isLifecycleActive() still true until stop() completes) does not get
+        // double-started.
+        if (!engine.isLifecycleActive()) {
+            engine.start();
+        }
     }
-  }
 
-  @Override
-  public boolean isRunning() {
-    // Return true across the entire lifecycle window (start-to-stop), ignoring crashes. This
-    // guarantees Spring Boot still calls stop() on a crashed engine so the normal cleanup
-    // (worker deregister, handler drain, graceful_stop flag) runs.
-    return engine.isLifecycleActive();
-  }
+    @Override
+    public void stop() {
+        engine.stop();
+    }
 
-  @Override
-  public boolean isAutoStartup() {
-    return true;
-  }
+    @Override
+    public void stop(Runnable callback) {
+        try {
+            engine.stop();
+        } finally {
+            callback.run();
+        }
+    }
 
-  @Override
-  public int getPhase() {
-    return PHASE;
-  }
+    @Override
+    public boolean isRunning() {
+        // Return true across the entire lifecycle window (start-to-stop), ignoring crashes. This
+        // guarantees Spring Boot still calls stop() on a crashed engine so the normal cleanup
+        // (worker deregister, handler drain, graceful_stop flag) runs.
+        return engine.isLifecycleActive();
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
+    }
+
+    @Override
+    public int getPhase() {
+        return PHASE;
+    }
 }

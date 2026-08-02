@@ -14,8 +14,8 @@ import io.github.bams22.outboxer.spi.contracts.AbstractWorkerRegistryContractTes
 
 class InMemoryWorkerRegistryTest extends AbstractWorkerRegistryContractTest {
 
-  @Override
-  protected WorkerRegistry newRegistry() {
-    return new InMemoryWorkerRegistry();
-  }
+    @Override
+    protected WorkerRegistry newRegistry() {
+        return new InMemoryWorkerRegistry();
+    }
 }

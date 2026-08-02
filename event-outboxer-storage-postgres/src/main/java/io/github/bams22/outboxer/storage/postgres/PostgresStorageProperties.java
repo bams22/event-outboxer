@@ -32,28 +32,28 @@ import lombok.Builder;
  */
 @Builder
 public record PostgresStorageProperties(
-    String schema, String tablePrefix, boolean archiveEnabled, Duration metricsCacheTtl) {
+        String schema, String tablePrefix, boolean archiveEnabled, Duration metricsCacheTtl) {
 
-  public PostgresStorageProperties {
-    Objects.requireNonNull(schema, "schema must not be null");
-    if (schema.isBlank()) {
-      throw new IllegalArgumentException("schema must not be blank");
+    public PostgresStorageProperties {
+        Objects.requireNonNull(schema, "schema must not be null");
+        if (schema.isBlank()) {
+            throw new IllegalArgumentException("schema must not be blank");
+        }
+        Objects.requireNonNull(tablePrefix, "tablePrefix must not be null");
+        Objects.requireNonNull(metricsCacheTtl, "metricsCacheTtl must not be null");
+        if (metricsCacheTtl.isNegative()) {
+            throw new IllegalArgumentException(
+                    "metricsCacheTtl must not be negative, got " + metricsCacheTtl);
+        }
     }
-    Objects.requireNonNull(tablePrefix, "tablePrefix must not be null");
-    Objects.requireNonNull(metricsCacheTtl, "metricsCacheTtl must not be null");
-    if (metricsCacheTtl.isNegative()) {
-      throw new IllegalArgumentException(
-          "metricsCacheTtl must not be negative, got " + metricsCacheTtl);
-    }
-  }
 
-  /** Canonical defaults. */
-  public static PostgresStorageProperties defaults() {
-    return PostgresStorageProperties.builder()
-        .schema("event_outboxer")
-        .tablePrefix("")
-        .archiveEnabled(false)
-        .metricsCacheTtl(Duration.ofSeconds(30))
-        .build();
-  }
+    /** Canonical defaults. */
+    public static PostgresStorageProperties defaults() {
+        return PostgresStorageProperties.builder()
+                .schema("event_outboxer")
+                .tablePrefix("")
+                .archiveEnabled(false)
+                .metricsCacheTtl(Duration.ofSeconds(30))
+                .build();
+    }
 }

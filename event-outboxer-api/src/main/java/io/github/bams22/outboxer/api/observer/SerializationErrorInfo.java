@@ -31,19 +31,19 @@ import java.util.UUID;
  * @param cause underlying exception from the serializer or the registry lookup
  */
 public record SerializationErrorInfo(
-    UUID eventId,
-    String eventType,
-    String payloadFormat,
-    String storedPayloadClass,
-    String targetType,
-    Throwable cause) {
+        UUID eventId,
+        String eventType,
+        String payloadFormat,
+        String storedPayloadClass,
+        String targetType,
+        Throwable cause) {
 
-  public SerializationErrorInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
-    Objects.requireNonNull(storedPayloadClass, "storedPayloadClass must not be null");
-    Objects.requireNonNull(targetType, "targetType must not be null");
-    Objects.requireNonNull(cause, "cause must not be null");
-  }
+    public SerializationErrorInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
+        Objects.requireNonNull(storedPayloadClass, "storedPayloadClass must not be null");
+        Objects.requireNonNull(targetType, "targetType must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+    }
 }

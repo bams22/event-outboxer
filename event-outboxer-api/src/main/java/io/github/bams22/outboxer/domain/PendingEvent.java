@@ -48,35 +48,35 @@ import org.jspecify.annotations.Nullable;
  */
 @Builder
 public record PendingEvent(
-    UUID id,
-    String eventType,
-    SerializedPayload payload,
-    String payloadFormat,
-    String payloadClass,
-    short priority,
-    Instant runAt,
-    Map<String, String> traceContext,
-    @Nullable String dedupKey) {
+        UUID id,
+        String eventType,
+        SerializedPayload payload,
+        String payloadFormat,
+        String payloadClass,
+        short priority,
+        Instant runAt,
+        Map<String, String> traceContext,
+        @Nullable String dedupKey) {
 
-  public PendingEvent {
-    Objects.requireNonNull(id, "id must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    if (eventType.isBlank()) {
-      throw new IllegalArgumentException("eventType must not be blank");
+    public PendingEvent {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        if (eventType.isBlank()) {
+            throw new IllegalArgumentException("eventType must not be blank");
+        }
+        Objects.requireNonNull(payload, "payload must not be null");
+        Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
+        if (payloadFormat.isBlank() || payloadFormat.length() > 64) {
+            throw new IllegalArgumentException(
+                    "payloadFormat must be non-blank and at most 64 characters");
+        }
+        Objects.requireNonNull(payloadClass, "payloadClass must not be null");
+        Objects.requireNonNull(runAt, "runAt must not be null");
+        Objects.requireNonNull(traceContext, "traceContext must not be null");
+        traceContext = Map.copyOf(traceContext);
+        if (dedupKey != null && (dedupKey.isBlank() || dedupKey.length() > 256)) {
+            throw new IllegalArgumentException(
+                    "dedupKey must be non-blank and at most 256 characters when set");
+        }
     }
-    Objects.requireNonNull(payload, "payload must not be null");
-    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
-    if (payloadFormat.isBlank() || payloadFormat.length() > 64) {
-      throw new IllegalArgumentException(
-          "payloadFormat must be non-blank and at most 64 characters");
-    }
-    Objects.requireNonNull(payloadClass, "payloadClass must not be null");
-    Objects.requireNonNull(runAt, "runAt must not be null");
-    Objects.requireNonNull(traceContext, "traceContext must not be null");
-    traceContext = Map.copyOf(traceContext);
-    if (dedupKey != null && (dedupKey.isBlank() || dedupKey.length() > 256)) {
-      throw new IllegalArgumentException(
-          "dedupKey must be non-blank and at most 256 characters when set");
-    }
-  }
 }

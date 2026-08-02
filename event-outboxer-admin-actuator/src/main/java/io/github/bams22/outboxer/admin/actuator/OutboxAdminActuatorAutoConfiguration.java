@@ -26,10 +26,10 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnBean({OutboxAdmin.class, EventStore.class})
 public class OutboxAdminActuatorAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean
-  @ConditionalOnAvailableEndpoint(endpoint = OutboxAdminEndpoint.class)
-  public OutboxAdminEndpoint outboxAdminEndpoint(OutboxAdmin admin, EventStore store) {
-    return new OutboxAdminEndpoint(admin, store);
-  }
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnAvailableEndpoint(endpoint = OutboxAdminEndpoint.class)
+    public OutboxAdminEndpoint outboxAdminEndpoint(OutboxAdmin admin, EventStore store) {
+        return new OutboxAdminEndpoint(admin, store);
+    }
 }

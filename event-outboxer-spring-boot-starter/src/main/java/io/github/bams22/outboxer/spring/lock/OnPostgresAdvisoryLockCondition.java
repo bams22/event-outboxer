@@ -18,7 +18,7 @@ import io.github.bams22.outboxer.spring.OutboxProperties;
  */
 final class OnPostgresAdvisoryLockCondition extends LockTypeCondition {
 
-  OnPostgresAdvisoryLockCondition() {
-    super(OutboxProperties.LockType.postgres_advisory);
-  }
+    OnPostgresAdvisoryLockCondition() {
+        super(OutboxProperties.LockType.postgres_advisory);
+    }
 }

@@ -16,9 +16,9 @@ package io.github.bams22.outboxer.domain.exception;
  */
 public final class InvariantViolationException extends ConfigurationException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  public InvariantViolationException(String message) {
-    super(message);
-  }
+    public InvariantViolationException(String message) {
+        super(message);
+    }
 }

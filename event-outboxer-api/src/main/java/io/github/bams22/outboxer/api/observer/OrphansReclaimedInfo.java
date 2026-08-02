@@ -23,11 +23,11 @@ import java.util.Objects;
  */
 public record OrphansReclaimedInfo(Collection<WorkerId> deadWorkers, int eventCount) {
 
-  public OrphansReclaimedInfo {
-    Objects.requireNonNull(deadWorkers, "deadWorkers must not be null");
-    deadWorkers = List.copyOf(deadWorkers);
-    if (eventCount < 0) {
-      throw new IllegalArgumentException("eventCount must be >= 0, got " + eventCount);
+    public OrphansReclaimedInfo {
+        Objects.requireNonNull(deadWorkers, "deadWorkers must not be null");
+        deadWorkers = List.copyOf(deadWorkers);
+        if (eventCount < 0) {
+            throw new IllegalArgumentException("eventCount must be >= 0, got " + eventCount);
+        }
     }
-  }
 }

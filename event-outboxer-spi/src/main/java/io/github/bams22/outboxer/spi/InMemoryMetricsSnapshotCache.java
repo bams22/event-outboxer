@@ -23,37 +23,37 @@ import org.jspecify.annotations.Nullable;
  */
 final class InMemoryMetricsSnapshotCache implements MetricsSnapshotCache {
 
-  private final Clock clock;
-  private final Duration ttl;
-  private final AtomicReference<@Nullable Entry> ref = new AtomicReference<>();
+    private final Clock clock;
+    private final Duration ttl;
+    private final AtomicReference<@Nullable Entry> ref = new AtomicReference<>();
 
-  InMemoryMetricsSnapshotCache(Clock clock, Duration ttl) {
-    this.clock = clock;
-    this.ttl = ttl;
-  }
-
-  @Override
-  public Optional<OutboxMetricsSnapshot> get() {
-    Entry entry = ref.get();
-    if (entry == null) {
-      return Optional.empty();
+    InMemoryMetricsSnapshotCache(Clock clock, Duration ttl) {
+        this.clock = clock;
+        this.ttl = ttl;
     }
-    if (clock.now().isAfter(entry.takenAt.plus(ttl))) {
-      return Optional.empty();
+
+    @Override
+    public Optional<OutboxMetricsSnapshot> get() {
+        Entry entry = ref.get();
+        if (entry == null) {
+            return Optional.empty();
+        }
+        if (clock.now().isAfter(entry.takenAt.plus(ttl))) {
+            return Optional.empty();
+        }
+        return Optional.of(entry.snapshot);
     }
-    return Optional.of(entry.snapshot);
-  }
 
-  @Override
-  public void put(OutboxMetricsSnapshot snapshot) {
-    Objects.requireNonNull(snapshot, "snapshot must not be null");
-    ref.set(new Entry(snapshot, clock.now()));
-  }
+    @Override
+    public void put(OutboxMetricsSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        ref.set(new Entry(snapshot, clock.now()));
+    }
 
-  @Override
-  public void invalidate() {
-    ref.set(null);
-  }
+    @Override
+    public void invalidate() {
+        ref.set(null);
+    }
 
-  private record Entry(OutboxMetricsSnapshot snapshot, Instant takenAt) {}
+    private record Entry(OutboxMetricsSnapshot snapshot, Instant takenAt) {}
 }

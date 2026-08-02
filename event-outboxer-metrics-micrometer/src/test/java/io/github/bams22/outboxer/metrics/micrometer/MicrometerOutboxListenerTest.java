@@ -36,149 +36,170 @@ import org.junit.jupiter.api.Test;
 
 class MicrometerOutboxListenerTest {
 
-  private MeterRegistry registry;
-  private MicrometerOutboxListener listener;
+    private MeterRegistry registry;
+    private MicrometerOutboxListener listener;
 
-  @BeforeEach
-  void setup() {
-    registry = new SimpleMeterRegistry();
-    listener = new MicrometerOutboxListener(registry);
-  }
+    @BeforeEach
+    void setup() {
+        registry = new SimpleMeterRegistry();
+        listener = new MicrometerOutboxListener(registry);
+    }
 
-  @Test
-  void publishedIncrementsPerEventTypeCounter() {
-    listener.onEventPublished(published("ORDER"));
-    listener.onEventPublished(published("ORDER"));
-    listener.onEventPublished(published("EMAIL"));
+    @Test
+    void publishedIncrementsPerEventTypeCounter() {
+        listener.onEventPublished(published("ORDER"));
+        listener.onEventPublished(published("ORDER"));
+        listener.onEventPublished(published("EMAIL"));
 
-    assertThat(registry.counter("event_outboxer.events.published", "event_type", "ORDER").count())
-        .isEqualTo(2.0);
-    assertThat(registry.counter("event_outboxer.events.published", "event_type", "EMAIL").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(
+                        registry.counter("event_outboxer.events.published", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(2.0);
+        assertThat(
+                        registry.counter("event_outboxer.events.published", "event_type", "EMAIL")
+                                .count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void claimedIncrementsPerTypeCounter() {
-    listener.onEventClaimed(
-        new EventClaimedInfo(UUID.randomUUID(), "ORDER", 1, Instant.now(), new WorkerId("w-1")));
+    @Test
+    void claimedIncrementsPerTypeCounter() {
+        listener.onEventClaimed(
+                new EventClaimedInfo(
+                        UUID.randomUUID(), "ORDER", 1, Instant.now(), new WorkerId("w-1")));
 
-    assertThat(registry.counter("event_outboxer.events.claimed", "event_type", "ORDER").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(registry.counter("event_outboxer.events.claimed", "event_type", "ORDER").count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void processedIncrementsCounterAndRecordsTimer() {
-    listener.onEventProcessed(
-        new EventProcessedInfo(UUID.randomUUID(), "ORDER", 1, Duration.ofMillis(150)));
+    @Test
+    void processedIncrementsCounterAndRecordsTimer() {
+        listener.onEventProcessed(
+                new EventProcessedInfo(UUID.randomUUID(), "ORDER", 1, Duration.ofMillis(150)));
 
-    assertThat(registry.counter("event_outboxer.events.processed", "event_type", "ORDER").count())
-        .isEqualTo(1.0);
-    assertThat(
-            registry
-                .timer("event_outboxer.events.processing_time", "event_type", "ORDER")
-                .totalTime(java.util.concurrent.TimeUnit.MILLISECONDS))
-        .isEqualTo(150.0);
-    assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
-        .isEqualTo(1.0);
-  }
+        assertThat(
+                        registry.counter("event_outboxer.events.processed", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.timer(
+                                        "event_outboxer.events.processing_time",
+                                        "event_type",
+                                        "ORDER")
+                                .totalTime(java.util.concurrent.TimeUnit.MILLISECONDS))
+                .isEqualTo(150.0);
+        assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void retryScheduledIncrementsCounter() {
-    listener.onEventRetryScheduled(
-        new EventRetryScheduledInfo(
-            UUID.randomUUID(),
-            "ORDER",
-            2,
-            Instant.now().plusSeconds(60),
-            "transient",
-            new RuntimeException("boom")));
+    @Test
+    void retryScheduledIncrementsCounter() {
+        listener.onEventRetryScheduled(
+                new EventRetryScheduledInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        2,
+                        Instant.now().plusSeconds(60),
+                        "transient",
+                        new RuntimeException("boom")));
 
-    assertThat(
-            registry
-                .counter("event_outboxer.events.retry_scheduled", "event_type", "ORDER")
-                .count())
-        .isEqualTo(1.0);
-  }
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.events.retry_scheduled",
+                                        "event_type",
+                                        "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void disabledIncrementsCounter() {
-    listener.onEventDisabled(
-        new EventDisabledInfo(UUID.randomUUID(), "ORDER", 10, "max-attempts", null));
+    @Test
+    void disabledIncrementsCounter() {
+        listener.onEventDisabled(
+                new EventDisabledInfo(UUID.randomUUID(), "ORDER", 10, "max-attempts", null));
 
-    assertThat(registry.counter("event_outboxer.events.disabled", "event_type", "ORDER").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(
+                        registry.counter("event_outboxer.events.disabled", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void handlerErrorTagsByType() {
-    listener.onHandlerError(
-        new HandlerErrorInfo(UUID.randomUUID(), "ORDER", 1, new RuntimeException("x")));
+    @Test
+    void handlerErrorTagsByType() {
+        listener.onHandlerError(
+                new HandlerErrorInfo(UUID.randomUUID(), "ORDER", 1, new RuntimeException("x")));
 
-    assertThat(registry.counter("event_outboxer.handler.errors", "event_type", "ORDER").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(registry.counter("event_outboxer.handler.errors", "event_type", "ORDER").count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void workerRegisteredIncrementsGlobalCounter() {
-    WorkerInfo info =
-        WorkerInfo.builder()
-            .id(new WorkerId("w-1"))
-            .host("h-1")
-            .pid(100)
-            .metadata(Map.of())
-            .build();
-    listener.onWorkerRegistered(new WorkerRegisteredInfo(info));
+    @Test
+    void workerRegisteredIncrementsGlobalCounter() {
+        WorkerInfo info =
+                WorkerInfo.builder()
+                        .id(new WorkerId("w-1"))
+                        .host("h-1")
+                        .pid(100)
+                        .metadata(Map.of())
+                        .build();
+        listener.onWorkerRegistered(new WorkerRegisteredInfo(info));
 
-    assertThat(registry.counter("event_outboxer.workers.registered").count()).isEqualTo(1.0);
-  }
+        assertThat(registry.counter("event_outboxer.workers.registered").count()).isEqualTo(1.0);
+    }
 
-  @Test
-  void heartbeatFailedIncrementsCounter() {
-    listener.onHeartbeatFailed(
-        new HeartbeatFailedInfo(new WorkerId("w-1"), new RuntimeException("x")));
+    @Test
+    void heartbeatFailedIncrementsCounter() {
+        listener.onHeartbeatFailed(
+                new HeartbeatFailedInfo(new WorkerId("w-1"), new RuntimeException("x")));
 
-    assertThat(registry.counter("event_outboxer.heartbeat.failed").count()).isEqualTo(1.0);
-  }
+        assertThat(registry.counter("event_outboxer.heartbeat.failed").count()).isEqualTo(1.0);
+    }
 
-  @Test
-  void orphansReclaimedTracksBothCounters() {
-    listener.onOrphansReclaimed(
-        new OrphansReclaimedInfo(List.of(new WorkerId("dead-1"), new WorkerId("dead-2")), 7));
+    @Test
+    void orphansReclaimedTracksBothCounters() {
+        listener.onOrphansReclaimed(
+                new OrphansReclaimedInfo(
+                        List.of(new WorkerId("dead-1"), new WorkerId("dead-2")), 7));
 
-    assertThat(registry.counter("event_outboxer.orphans.reclaimed").count()).isEqualTo(7.0);
-    assertThat(registry.counter("event_outboxer.orphans.dead_workers").count()).isEqualTo(2.0);
-  }
+        assertThat(registry.counter("event_outboxer.orphans.reclaimed").count()).isEqualTo(7.0);
+        assertThat(registry.counter("event_outboxer.orphans.dead_workers").count()).isEqualTo(2.0);
+    }
 
-  @Test
-  void storageErrorTagsByOperation() {
-    listener.onStorageError(new StorageErrorInfo("claim[ORDER]", new RuntimeException("x")));
+    @Test
+    void storageErrorTagsByOperation() {
+        listener.onStorageError(new StorageErrorInfo("claim[ORDER]", new RuntimeException("x")));
 
-    assertThat(
-            registry.counter("event_outboxer.storage.errors", "operation", "claim[ORDER]").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.storage.errors",
+                                        "operation",
+                                        "claim[ORDER]")
+                                .count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void dispatchRejectedTagsByType() {
-    listener.onDispatchRejected(
-        new DispatchRejectedInfo(UUID.randomUUID(), "ORDER", new RuntimeException("saturated")));
+    @Test
+    void dispatchRejectedTagsByType() {
+        listener.onDispatchRejected(
+                new DispatchRejectedInfo(
+                        UUID.randomUUID(), "ORDER", new RuntimeException("saturated")));
 
-    assertThat(registry.counter("event_outboxer.dispatch.rejected", "event_type", "ORDER").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(
+                        registry.counter("event_outboxer.dispatch.rejected", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+    }
 
-  @Test
-  void customPrefixRespected() {
-    MicrometerOutboxListener prefixed = new MicrometerOutboxListener(registry, "my.prefix");
+    @Test
+    void customPrefixRespected() {
+        MicrometerOutboxListener prefixed = new MicrometerOutboxListener(registry, "my.prefix");
 
-    prefixed.onEventPublished(published("ORDER"));
+        prefixed.onEventPublished(published("ORDER"));
 
-    assertThat(registry.counter("my.prefix.events.published", "event_type", "ORDER").count())
-        .isEqualTo(1.0);
-  }
+        assertThat(registry.counter("my.prefix.events.published", "event_type", "ORDER").count())
+                .isEqualTo(1.0);
+    }
 
-  private static EventPublishedInfo published(String type) {
-    Instant now = Instant.now();
-    return new EventPublishedInfo(UUID.randomUUID(), type, now, now, (short) 0);
-  }
+    private static EventPublishedInfo published(String type) {
+        Instant now = Instant.now();
+        return new EventPublishedInfo(UUID.randomUUID(), type, now, now, (short) 0);
+    }
 }

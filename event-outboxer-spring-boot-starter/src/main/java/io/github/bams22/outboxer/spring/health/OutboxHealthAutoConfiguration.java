@@ -22,9 +22,9 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnClass(HealthIndicator.class)
 public class OutboxHealthAutoConfiguration {
 
-  @Bean("outboxHealthIndicator")
-  @ConditionalOnMissingBean(name = "outboxHealthIndicator")
-  public OutboxHealthIndicator outboxHealthIndicator(OutboxEngine engine, EventStore store) {
-    return new OutboxHealthIndicator(engine, store);
-  }
+    @Bean("outboxHealthIndicator")
+    @ConditionalOnMissingBean(name = "outboxHealthIndicator")
+    public OutboxHealthIndicator outboxHealthIndicator(OutboxEngine engine, EventStore store) {
+        return new OutboxHealthIndicator(engine, store);
+    }
 }

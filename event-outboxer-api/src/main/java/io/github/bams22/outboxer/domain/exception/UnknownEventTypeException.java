@@ -17,20 +17,20 @@ package io.github.bams22.outboxer.domain.exception;
  */
 public final class UnknownEventTypeException extends HandleException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-201";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-201";
 
-  private final String eventType;
+    private final String eventType;
 
-  public UnknownEventTypeException(String eventType) {
-    super(CODE + ": no handler registered for event type '" + eventType + "'");
-    this.eventType = eventType;
-  }
+    public UnknownEventTypeException(String eventType) {
+        super(CODE + ": no handler registered for event type '" + eventType + "'");
+        this.eventType = eventType;
+    }
 
-  /** The event type that no handler is registered for. */
-  public String eventType() {
-    return eventType;
-  }
+    /** The event type that no handler is registered for. */
+    public String eventType() {
+        return eventType;
+    }
 }

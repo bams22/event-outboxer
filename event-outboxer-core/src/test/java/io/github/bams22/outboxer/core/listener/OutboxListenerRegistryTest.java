@@ -20,58 +20,58 @@ import org.junit.jupiter.api.Test;
 
 class OutboxListenerRegistryTest {
 
-  @Test
-  void broadcastsToAllListeners() {
-    AtomicInteger a = new AtomicInteger();
-    AtomicInteger b = new AtomicInteger();
-    OutboxListenerRegistry registry = new OutboxListenerRegistry();
-    registry.add(
-        new OutboxListener() {
-          @Override
-          public void onEventPublished(EventPublishedInfo info) {
-            a.incrementAndGet();
-          }
-        });
-    registry.add(
-        new OutboxListener() {
-          @Override
-          public void onEventPublished(EventPublishedInfo info) {
-            b.incrementAndGet();
-          }
-        });
+    @Test
+    void broadcastsToAllListeners() {
+        AtomicInteger a = new AtomicInteger();
+        AtomicInteger b = new AtomicInteger();
+        OutboxListenerRegistry registry = new OutboxListenerRegistry();
+        registry.add(
+                new OutboxListener() {
+                    @Override
+                    public void onEventPublished(EventPublishedInfo info) {
+                        a.incrementAndGet();
+                    }
+                });
+        registry.add(
+                new OutboxListener() {
+                    @Override
+                    public void onEventPublished(EventPublishedInfo info) {
+                        b.incrementAndGet();
+                    }
+                });
 
-    registry.onEventPublished(somePublished());
+        registry.onEventPublished(somePublished());
 
-    assertThat(a).hasValue(1);
-    assertThat(b).hasValue(1);
-  }
+        assertThat(a).hasValue(1);
+        assertThat(b).hasValue(1);
+    }
 
-  @Test
-  void oneFailingListenerDoesNotBlockOthers() {
-    AtomicInteger a = new AtomicInteger();
-    OutboxListenerRegistry registry = new OutboxListenerRegistry();
-    registry.add(
-        new OutboxListener() {
-          @Override
-          public void onEventPublished(EventPublishedInfo info) {
-            throw new RuntimeException("boom");
-          }
-        });
-    registry.add(
-        new OutboxListener() {
-          @Override
-          public void onEventPublished(EventPublishedInfo info) {
-            a.incrementAndGet();
-          }
-        });
+    @Test
+    void oneFailingListenerDoesNotBlockOthers() {
+        AtomicInteger a = new AtomicInteger();
+        OutboxListenerRegistry registry = new OutboxListenerRegistry();
+        registry.add(
+                new OutboxListener() {
+                    @Override
+                    public void onEventPublished(EventPublishedInfo info) {
+                        throw new RuntimeException("boom");
+                    }
+                });
+        registry.add(
+                new OutboxListener() {
+                    @Override
+                    public void onEventPublished(EventPublishedInfo info) {
+                        a.incrementAndGet();
+                    }
+                });
 
-    registry.onEventPublished(somePublished());
+        registry.onEventPublished(somePublished());
 
-    assertThat(a).hasValue(1);
-  }
+        assertThat(a).hasValue(1);
+    }
 
-  private static EventPublishedInfo somePublished() {
-    Instant now = Instant.now();
-    return new EventPublishedInfo(UUID.randomUUID(), "T", now, now, (short) 0);
-  }
+    private static EventPublishedInfo somePublished() {
+        Instant now = Instant.now();
+        return new EventPublishedInfo(UUID.randomUUID(), "T", now, now, (short) 0);
+    }
 }

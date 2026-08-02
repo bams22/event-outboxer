@@ -30,19 +30,19 @@ import org.jspecify.annotations.Nullable;
  */
 @Builder
 public record WorkerInfo(
-    WorkerId id,
-    String host,
-    @Nullable Integer pid,
-    @Nullable Instant startedAt,
-    Map<String, String> metadata) {
+        WorkerId id,
+        String host,
+        @Nullable Integer pid,
+        @Nullable Instant startedAt,
+        Map<String, String> metadata) {
 
-  public WorkerInfo {
-    Objects.requireNonNull(id, "id must not be null");
-    Objects.requireNonNull(host, "host must not be null");
-    if (host.isBlank()) {
-      throw new IllegalArgumentException("host must not be blank");
+    public WorkerInfo {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(host, "host must not be null");
+        if (host.isBlank()) {
+            throw new IllegalArgumentException("host must not be blank");
+        }
+        Objects.requireNonNull(metadata, "metadata must not be null");
+        metadata = Map.copyOf(metadata);
     }
-    Objects.requireNonNull(metadata, "metadata must not be null");
-    metadata = Map.copyOf(metadata);
-  }
 }

@@ -20,32 +20,32 @@ import org.slf4j.LoggerFactory;
  */
 public final class NamedThreadFactory implements ThreadFactory {
 
-  private static final Logger log = LoggerFactory.getLogger(NamedThreadFactory.class);
+    private static final Logger log = LoggerFactory.getLogger(NamedThreadFactory.class);
 
-  private final ThreadFactory delegate;
+    private final ThreadFactory delegate;
 
-  public NamedThreadFactory(String prefix) {
-    this(prefix, true);
-  }
+    public NamedThreadFactory(String prefix) {
+        this(prefix, true);
+    }
 
-  public NamedThreadFactory(String prefix, boolean daemon) {
-    Objects.requireNonNull(prefix, "prefix must not be null");
-    this.delegate =
-        Thread.ofPlatform()
-            .name(prefix + "-", 1)
-            .daemon(daemon)
-            .uncaughtExceptionHandler(
-                (thread, throwable) ->
-                    log.error(
-                        "uncaught exception in {}: {}",
-                        thread.getName(),
-                        throwable.toString(),
-                        throwable))
-            .factory();
-  }
+    public NamedThreadFactory(String prefix, boolean daemon) {
+        Objects.requireNonNull(prefix, "prefix must not be null");
+        this.delegate =
+                Thread.ofPlatform()
+                        .name(prefix + "-", 1)
+                        .daemon(daemon)
+                        .uncaughtExceptionHandler(
+                                (thread, throwable) ->
+                                        log.error(
+                                                "uncaught exception in {}: {}",
+                                                thread.getName(),
+                                                throwable.toString(),
+                                                throwable))
+                        .factory();
+    }
 
-  @Override
-  public Thread newThread(Runnable r) {
-    return delegate.newThread(r);
-  }
+    @Override
+    public Thread newThread(Runnable r) {
+        return delegate.newThread(r);
+    }
 }

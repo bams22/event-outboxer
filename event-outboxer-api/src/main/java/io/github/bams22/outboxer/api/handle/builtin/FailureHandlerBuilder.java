@@ -37,61 +37,63 @@ import org.slf4j.event.Level;
  */
 public final class FailureHandlerBuilder<T> {
 
-  private @Nullable Level logLevel;
-  private @Nullable Integer maxAttempts;
-  private MaxRetriesFailureHandler.@Nullable ExhaustedAction exhaustedAction;
+    private @Nullable Level logLevel;
+    private @Nullable Integer maxAttempts;
+    private MaxRetriesFailureHandler.@Nullable ExhaustedAction exhaustedAction;
 
-  FailureHandlerBuilder() {}
+    FailureHandlerBuilder() {}
 
-  /** Adds a {@link LogFailureHandler} decorator at the given level. */
-  public FailureHandlerBuilder<T> withLogging(Level level) {
-    this.logLevel = Objects.requireNonNull(level, "level must not be null");
-    return this;
-  }
-
-  /** Adds a {@link MaxRetriesFailureHandler} decorator with the given attempt cap. */
-  public FailureHandlerBuilder<T> withMaxAttempts(
-      int max, MaxRetriesFailureHandler.ExhaustedAction onExhausted) {
-    if (max < 1) {
-      throw new IllegalArgumentException("max must be >= 1, got " + max);
+    /** Adds a {@link LogFailureHandler} decorator at the given level. */
+    public FailureHandlerBuilder<T> withLogging(Level level) {
+        this.logLevel = Objects.requireNonNull(level, "level must not be null");
+        return this;
     }
-    this.maxAttempts = max;
-    this.exhaustedAction = Objects.requireNonNull(onExhausted, "onExhausted must not be null");
-    return this;
-  }
 
-  /**
-   * Terminates the chain with an {@link ExponentialBackoffFailureHandler}. Call this last — the
-   * returned value is a ready-to-use {@link FailureHandler}.
-   */
-  public FailureHandler<T> withExponentialBackoff(
-      Duration base, double multiplier, Duration cap, double jitter) {
-    return wrap(new ExponentialBackoffFailureHandler<>(base, multiplier, cap, jitter));
-  }
-
-  /** Terminates the chain with a {@link FixedDelayFailureHandler}. */
-  public FailureHandler<T> withFixedDelay(Duration delay) {
-    return wrap(new FixedDelayFailureHandler<>(delay));
-  }
-
-  /** Terminates the chain with a {@link NoRetryFailureHandler} (every failure goes to DISABLED). */
-  public FailureHandler<T> withNoRetry() {
-    return wrap(new NoRetryFailureHandler<>());
-  }
-
-  private FailureHandler<T> wrap(FailureHandler<T> leaf) {
-    FailureHandler<T> chain = leaf;
-    // withMaxAttempts(...) sets both fields together; guarding on both keeps that invariant
-    // visible to the type system instead of relying on it implicitly.
-    Integer max = maxAttempts;
-    MaxRetriesFailureHandler.ExhaustedAction onExhausted = exhaustedAction;
-    if (max != null && onExhausted != null) {
-      chain = new MaxRetriesFailureHandler<>(max, onExhausted, chain);
+    /** Adds a {@link MaxRetriesFailureHandler} decorator with the given attempt cap. */
+    public FailureHandlerBuilder<T> withMaxAttempts(
+            int max, MaxRetriesFailureHandler.ExhaustedAction onExhausted) {
+        if (max < 1) {
+            throw new IllegalArgumentException("max must be >= 1, got " + max);
+        }
+        this.maxAttempts = max;
+        this.exhaustedAction = Objects.requireNonNull(onExhausted, "onExhausted must not be null");
+        return this;
     }
-    Level level = logLevel;
-    if (level != null) {
-      chain = new LogFailureHandler<>(level, chain);
+
+    /**
+     * Terminates the chain with an {@link ExponentialBackoffFailureHandler}. Call this last — the
+     * returned value is a ready-to-use {@link FailureHandler}.
+     */
+    public FailureHandler<T> withExponentialBackoff(
+            Duration base, double multiplier, Duration cap, double jitter) {
+        return wrap(new ExponentialBackoffFailureHandler<>(base, multiplier, cap, jitter));
     }
-    return chain;
-  }
+
+    /** Terminates the chain with a {@link FixedDelayFailureHandler}. */
+    public FailureHandler<T> withFixedDelay(Duration delay) {
+        return wrap(new FixedDelayFailureHandler<>(delay));
+    }
+
+    /**
+     * Terminates the chain with a {@link NoRetryFailureHandler} (every failure goes to DISABLED).
+     */
+    public FailureHandler<T> withNoRetry() {
+        return wrap(new NoRetryFailureHandler<>());
+    }
+
+    private FailureHandler<T> wrap(FailureHandler<T> leaf) {
+        FailureHandler<T> chain = leaf;
+        // withMaxAttempts(...) sets both fields together; guarding on both keeps that invariant
+        // visible to the type system instead of relying on it implicitly.
+        Integer max = maxAttempts;
+        MaxRetriesFailureHandler.ExhaustedAction onExhausted = exhaustedAction;
+        if (max != null && onExhausted != null) {
+            chain = new MaxRetriesFailureHandler<>(max, onExhausted, chain);
+        }
+        Level level = logLevel;
+        if (level != null) {
+            chain = new LogFailureHandler<>(level, chain);
+        }
+        return chain;
+    }
 }

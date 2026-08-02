@@ -50,71 +50,73 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasAuthority(@outboxAdminRestProperties.getRequiredAuthority())")
 public class OutboxAdminController {
 
-  private final OutboxAdmin admin;
-  private final EventStore store;
+    private final OutboxAdmin admin;
+    private final EventStore store;
 
-  public OutboxAdminController(OutboxAdmin admin, EventStore store) {
-    this.admin = Objects.requireNonNull(admin, "admin must not be null");
-    this.store = Objects.requireNonNull(store, "store must not be null");
-  }
-
-  /** Page of events; defaults to the DISABLED backlog, newest first. */
-  @GetMapping("/events")
-  public EventPageResponse events(
-      @RequestParam(defaultValue = "DISABLED") EventStatus status,
-      @RequestParam(required = false) @Nullable String type,
-      @RequestParam(defaultValue = "50") int limit,
-      @RequestParam(required = false) @Nullable String cursor) {
-    List<Event> page = admin.findByStatus(status, type, limit, AdminDtos.decodeCursor(cursor));
-    return EventPageResponse.of(page, limit);
-  }
-
-  /** Single event: the active table first, then the archive. */
-  @GetMapping("/events/{id}")
-  public ResponseEntity<Object> event(@PathVariable UUID id) {
-    Optional<Event> active = store.findById(id);
-    if (active.isPresent()) {
-      return ResponseEntity.ok(EventResponse.from(active.get()));
+    public OutboxAdminController(OutboxAdmin admin, EventStore store) {
+        this.admin = Objects.requireNonNull(admin, "admin must not be null");
+        this.store = Objects.requireNonNull(store, "store must not be null");
     }
-    return admin
-        .findInArchive(id)
-        .<Object>map(ArchivedEventResponse::from)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
-  }
 
-  /**
-   * Re-enable one DISABLED event: 200 on success, 404 for unknown ids, 409 when the event exists
-   * but is not DISABLED.
-   */
-  @PostMapping("/events/{id}/reenable")
-  public ResponseEntity<Object> reenable(@PathVariable UUID id) {
-    if (admin.reenable(id)) {
-      return ResponseEntity.ok(new CountResponse(1));
+    /** Page of events; defaults to the DISABLED backlog, newest first. */
+    @GetMapping("/events")
+    public EventPageResponse events(
+            @RequestParam(defaultValue = "DISABLED") EventStatus status,
+            @RequestParam(required = false) @Nullable String type,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(required = false) @Nullable String cursor) {
+        List<Event> page = admin.findByStatus(status, type, limit, AdminDtos.decodeCursor(cursor));
+        return EventPageResponse.of(page, limit);
     }
-    return store.findById(id).isPresent()
-        ? ResponseEntity.status(409).body(new AdminDtos.ErrorResponse("event is not DISABLED"))
-        : ResponseEntity.notFound().build();
-  }
 
-  /** Bulk re-enable for one event type. */
-  @PostMapping("/events/reenable-all")
-  public CountResponse reenableAll(@RequestBody ReenableAllRequest request) {
-    return new CountResponse(
-        admin.reenableAll(request.eventType(), request.createdBefore(), request.limitOrDefault()));
-  }
+    /** Single event: the active table first, then the archive. */
+    @GetMapping("/events/{id}")
+    public ResponseEntity<Object> event(@PathVariable UUID id) {
+        Optional<Event> active = store.findById(id);
+        if (active.isPresent()) {
+            return ResponseEntity.ok(EventResponse.from(active.get()));
+        }
+        return admin.findInArchive(id)
+                .<Object>map(ArchivedEventResponse::from)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 
-  /** Delete old DISABLED rows. */
-  @PostMapping("/purge/disabled")
-  public CountResponse purgeDisabled(@RequestBody PurgeDisabledRequest request) {
-    return new CountResponse(
-        admin.purgeDisabled(request.eventType(), request.olderThan(), request.limitOrDefault()));
-  }
+    /**
+     * Re-enable one DISABLED event: 200 on success, 404 for unknown ids, 409 when the event exists
+     * but is not DISABLED.
+     */
+    @PostMapping("/events/{id}/reenable")
+    public ResponseEntity<Object> reenable(@PathVariable UUID id) {
+        if (admin.reenable(id)) {
+            return ResponseEntity.ok(new CountResponse(1));
+        }
+        return store.findById(id).isPresent()
+                ? ResponseEntity.status(409)
+                        .body(new AdminDtos.ErrorResponse("event is not DISABLED"))
+                : ResponseEntity.notFound().build();
+    }
 
-  /** Delete old archive rows. */
-  @PostMapping("/purge/archive")
-  public CountResponse purgeArchive(@RequestBody PurgeArchiveRequest request) {
-    return new CountResponse(
-        admin.purgeArchive(request.archivedBefore(), request.limitOrDefault()));
-  }
+    /** Bulk re-enable for one event type. */
+    @PostMapping("/events/reenable-all")
+    public CountResponse reenableAll(@RequestBody ReenableAllRequest request) {
+        return new CountResponse(
+                admin.reenableAll(
+                        request.eventType(), request.createdBefore(), request.limitOrDefault()));
+    }
+
+    /** Delete old DISABLED rows. */
+    @PostMapping("/purge/disabled")
+    public CountResponse purgeDisabled(@RequestBody PurgeDisabledRequest request) {
+        return new CountResponse(
+                admin.purgeDisabled(
+                        request.eventType(), request.olderThan(), request.limitOrDefault()));
+    }
+
+    /** Delete old archive rows. */
+    @PostMapping("/purge/archive")
+    public CountResponse purgeArchive(@RequestBody PurgeArchiveRequest request) {
+        return new CountResponse(
+                admin.purgeArchive(request.archivedBefore(), request.limitOrDefault()));
+    }
 }

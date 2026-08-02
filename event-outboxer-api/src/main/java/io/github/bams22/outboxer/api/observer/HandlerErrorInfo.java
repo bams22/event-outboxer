@@ -24,9 +24,9 @@ import java.util.UUID;
  */
 public record HandlerErrorInfo(UUID eventId, String eventType, int attempts, Throwable cause) {
 
-  public HandlerErrorInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(cause, "cause must not be null");
-  }
+    public HandlerErrorInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+    }
 }

@@ -59,372 +59,400 @@ import org.slf4j.LoggerFactory;
  */
 public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
-  private static final Logger log = LoggerFactory.getLogger(DefaultOutboxEventPublisher.class);
+    private static final Logger log = LoggerFactory.getLogger(DefaultOutboxEventPublisher.class);
 
-  private final EventStore store;
-  private final EventSerializer serializer;
-  private final Map<String, EventSerializer> writeSerializerOverrides;
-  private final Clock clock;
-  private final TransactionContext txContext;
-  private final NoTransactionPolicy noTxPolicy;
-  private final OutboxListener listener;
-  private final PollerWaker waker;
-  private final OutboxTracer tracer;
+    private final EventStore store;
+    private final EventSerializer serializer;
+    private final Map<String, EventSerializer> writeSerializerOverrides;
+    private final Clock clock;
+    private final TransactionContext txContext;
+    private final NoTransactionPolicy noTxPolicy;
+    private final OutboxListener listener;
+    private final PollerWaker waker;
+    private final OutboxTracer tracer;
 
-  public DefaultOutboxEventPublisher(
-      EventStore store,
-      EventSerializer serializer,
-      Clock clock,
-      TransactionContext txContext,
-      NoTransactionPolicy noTxPolicy,
-      OutboxListener listener,
-      PollerWaker waker) {
-    this(store, serializer, clock, txContext, noTxPolicy, listener, waker, OutboxTracer.NOOP);
-  }
-
-  public DefaultOutboxEventPublisher(
-      EventStore store,
-      EventSerializer serializer,
-      Clock clock,
-      TransactionContext txContext,
-      NoTransactionPolicy noTxPolicy,
-      OutboxListener listener,
-      PollerWaker waker,
-      OutboxTracer tracer) {
-    this(store, serializer, Map.of(), clock, txContext, noTxPolicy, listener, waker, tracer);
-  }
-
-  /**
-   * Variant with per-event-type write serializer overrides (ADR-0025 amendment): events of a listed
-   * type are serialized with — and stamped with the {@code format()} of — the mapped serializer;
-   * every other type uses the default {@code serializer}. Deserialization is unaffected here: it
-   * routes by the stored {@code payload_format} in the dispatcher.
-   */
-  public DefaultOutboxEventPublisher(
-      EventStore store,
-      EventSerializer serializer,
-      Map<String, EventSerializer> writeSerializerOverrides,
-      Clock clock,
-      TransactionContext txContext,
-      NoTransactionPolicy noTxPolicy,
-      OutboxListener listener,
-      PollerWaker waker,
-      OutboxTracer tracer) {
-    this.store = Objects.requireNonNull(store, "store must not be null");
-    this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
-    this.writeSerializerOverrides =
-        Map.copyOf(
-            Objects.requireNonNull(
-                writeSerializerOverrides, "writeSerializerOverrides must not be null"));
-    this.clock = Objects.requireNonNull(clock, "clock must not be null");
-    this.txContext = Objects.requireNonNull(txContext, "txContext must not be null");
-    this.noTxPolicy = Objects.requireNonNull(noTxPolicy, "noTxPolicy must not be null");
-    this.listener = Objects.requireNonNull(listener, "listener must not be null");
-    this.waker = Objects.requireNonNull(waker, "waker must not be null");
-    this.tracer = SafeOutboxTracer.wrap(Objects.requireNonNull(tracer, "tracer must not be null"));
-  }
-
-  @Override
-  public UUID publish(String eventType, Object payload) {
-    return publish(eventType, payload, PublishOptions.defaults());
-  }
-
-  @Override
-  public UUID publish(String eventType, Object payload, Instant runAt) {
-    Objects.requireNonNull(runAt, "runAt must not be null");
-    return publish(eventType, payload, PublishOptions.builder().runAt(runAt).build());
-  }
-
-  /**
-   * Bounded retry for the coalescing race: the conditional insert conflicted, but the conflicting
-   * PENDING row got claimed or finalized before we could lock it — re-insert.
-   */
-  private static final int DEDUP_RACE_RETRIES = 3;
-
-  @Override
-  public UUID publish(String eventType, Object payload, @Nullable PublishOptions options) {
-    validate(eventType, payload);
-    PublishOptions resolved = options == null ? PublishOptions.defaults() : options;
-    enforceTransactionPolicy();
-
-    // Serialization stays outside the span: a serialization failure is a caller bug, not a
-    // messaging operation, and no event exists yet to trace.
-    SerializedPayload serialized = serialize(eventType, payload);
-    UUID id = UUID.randomUUID();
-    try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
-      PendingEvent pending =
-          buildPending(id, eventType, payload, serialized, resolved, traceContext(resolved, span));
-      try {
-        if (pending.dedupKey() != null) {
-          CoalescingResult result = saveCoalescing(pending);
-          if (!result.inserted()) {
-            // Coalesced into an existing PENDING event. No listener, no wake — nothing new was
-            // inserted, and the existing row is pinned (FOR UPDATE) inside this transaction, so
-            // claims skip it until we commit and its handler is guaranteed to see our changes.
-            UUID existingId =
-                Objects.requireNonNull(
-                    result.existingId(), "coalesced result must carry the existing event id");
-            span.coalesced(existingId);
-            return existingId;
-          }
-        } else {
-          store.save(pending);
-        }
-      } catch (StorageException ex) {
-        span.error(ex);
-        throw new PublishFailedException(
-            "storage rejected event " + pending.id() + " of type " + eventType, ex);
-      } catch (PublishFailedException ex) {
-        span.error(ex);
-        throw ex;
-      }
-      emitPublished(pending);
-      scheduleWake(Set.of(eventType));
-      return pending.id();
+    public DefaultOutboxEventPublisher(
+            EventStore store,
+            EventSerializer serializer,
+            Clock clock,
+            TransactionContext txContext,
+            NoTransactionPolicy noTxPolicy,
+            OutboxListener listener,
+            PollerWaker waker) {
+        this(store, serializer, clock, txContext, noTxPolicy, listener, waker, OutboxTracer.NOOP);
     }
-  }
 
-  private record CoalescingResult(boolean inserted, @Nullable UUID existingId) {}
-
-  /**
-   * ADR-0021 coalescing insert. Each loop iteration ends in exactly one of three outcomes:
-   *
-   * <ol>
-   *   <li><b>Inserted</b> — no PENDING event with this {@code (type, key)} existed; the partial
-   *       unique index arbitrated atomically ({@code ON CONFLICT}), which is why the insert goes
-   *       FIRST: the common case (first publish of a key) resolves in a single statement, and a
-   *       lock-first ordering would have the mirrored insert-after-check race anyway.
-   *   <li><b>Coalesced</b> — the conflicting PENDING row was found and locked ({@code SELECT ...
-   *       FOR UPDATE}) inside the caller's transaction. From this moment the claim query ({@code
-   *       FOR UPDATE SKIP LOCKED}) skips the row until our commit, so its handler is guaranteed to
-   *       observe this transaction's changes. If the lock lands on a DIFFERENT row than the one
-   *       that caused the conflict (old one finalized, another publisher inserted anew), that is
-   *       equally correct: any pinned PENDING event of this key carries the work and runs after our
-   *       commit.
-   *   <li><b>Vanished</b> — the row that conflicted with our insert is no longer PENDING by the
-   *       time we try to lock it (claimed, possibly already finalized). This is not a missed race
-   *       but the semantically REQUIRED branch: an event claimed before our commit may run against
-   *       a snapshot without our changes, so coalescing into it would lose our update — we must
-   *       loop and insert our own event (the old row no longer occupies the PENDING-scoped unique
-   *       index, so the retry succeeds unless yet another publisher got there first).
-   * </ol>
-   *
-   * <p>The lock probe cannot read stale state: if the row is being claimed concurrently, our {@code
-   * SELECT ... FOR UPDATE} blocks on the claim's row lock and PostgreSQL re-evaluates the {@code
-   * status = 'PENDING'} predicate against the committed row version afterwards (EvalPlanQual) — we
-   * either hold the lock on a genuinely PENDING row or see empty.
-   *
-   * <p>Reaching the retry bound requires a fresh PENDING row of the same key to appear AND
-   * disappear in the microsecond window between our conflict and our lock, {@code
-   * DEDUP_RACE_RETRIES} times in a row — a pathological churn that the bound converts from a
-   * theoretical livelock into a loud failure.
-   */
-  private CoalescingResult saveCoalescing(PendingEvent pending) {
-    String dedupKey =
-        Objects.requireNonNull(pending.dedupKey(), "saveCoalescing requires a dedupKey");
-    for (int attempt = 0; attempt < DEDUP_RACE_RETRIES; attempt++) {
-      if (store.save(pending)) {
-        return new CoalescingResult(true, null);
-      }
-      var existing = store.lockPendingByDedupKey(pending.eventType(), dedupKey);
-      if (existing.isPresent()) {
-        return new CoalescingResult(false, existing.get());
-      }
-      // The PENDING row vanished under us — loop and insert our own.
+    public DefaultOutboxEventPublisher(
+            EventStore store,
+            EventSerializer serializer,
+            Clock clock,
+            TransactionContext txContext,
+            NoTransactionPolicy noTxPolicy,
+            OutboxListener listener,
+            PollerWaker waker,
+            OutboxTracer tracer) {
+        this(store, serializer, Map.of(), clock, txContext, noTxPolicy, listener, waker, tracer);
     }
-    throw new PublishFailedException(
-        "could not publish event with dedupKey '"
-            + dedupKey
-            + "' of type "
-            + pending.eventType()
-            + " after "
-            + DEDUP_RACE_RETRIES
-            + " attempts (pathological claim/finalize churn on the key)",
-        null);
-  }
 
-  @Override
-  public List<UUID> publishAll(Collection<PublishRequest> requests) {
-    Objects.requireNonNull(requests, "requests must not be null");
-    if (requests.isEmpty()) {
-      return List.of();
+    /**
+     * Variant with per-event-type write serializer overrides (ADR-0025 amendment): events of a
+     * listed type are serialized with — and stamped with the {@code format()} of — the mapped
+     * serializer; every other type uses the default {@code serializer}. Deserialization is
+     * unaffected here: it routes by the stored {@code payload_format} in the dispatcher.
+     */
+    public DefaultOutboxEventPublisher(
+            EventStore store,
+            EventSerializer serializer,
+            Map<String, EventSerializer> writeSerializerOverrides,
+            Clock clock,
+            TransactionContext txContext,
+            NoTransactionPolicy noTxPolicy,
+            OutboxListener listener,
+            PollerWaker waker,
+            OutboxTracer tracer) {
+        this.store = Objects.requireNonNull(store, "store must not be null");
+        this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
+        this.writeSerializerOverrides =
+                Map.copyOf(
+                        Objects.requireNonNull(
+                                writeSerializerOverrides,
+                                "writeSerializerOverrides must not be null"));
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.txContext = Objects.requireNonNull(txContext, "txContext must not be null");
+        this.noTxPolicy = Objects.requireNonNull(noTxPolicy, "noTxPolicy must not be null");
+        this.listener = Objects.requireNonNull(listener, "listener must not be null");
+        this.waker = Objects.requireNonNull(waker, "waker must not be null");
+        this.tracer =
+                SafeOutboxTracer.wrap(Objects.requireNonNull(tracer, "tracer must not be null"));
     }
-    enforceTransactionPolicy();
 
-    // Requests with a dedup key need per-row coalescing feedback and go through save(...) one
-    // by one; the rest batch through saveAll. Returned ids stay aligned with request order.
-    List<PendingEvent> batch = new ArrayList<>(requests.size());
-    List<UUID> ids = new ArrayList<>(requests.size());
-    List<PendingEvent> inserted = new ArrayList<>(requests.size());
-    // PRODUCER spans of batch-path events stay open until saveAll below actually inserts them;
-    // dedup-path spans close per row inside the loop.
-    List<OutboxTracer.PublishSpan> batchSpans = new ArrayList<>(requests.size());
-    try {
-      for (PublishRequest r : requests) {
-        Objects.requireNonNull(r, "request element must not be null");
-        validate(r.eventType(), r.payload());
-        PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
-        SerializedPayload serialized = serialize(r.eventType(), r.payload());
+    @Override
+    public UUID publish(String eventType, Object payload) {
+        return publish(eventType, payload, PublishOptions.defaults());
+    }
+
+    @Override
+    public UUID publish(String eventType, Object payload, Instant runAt) {
+        Objects.requireNonNull(runAt, "runAt must not be null");
+        return publish(eventType, payload, PublishOptions.builder().runAt(runAt).build());
+    }
+
+    /**
+     * Bounded retry for the coalescing race: the conditional insert conflicted, but the conflicting
+     * PENDING row got claimed or finalized before we could lock it — re-insert.
+     */
+    private static final int DEDUP_RACE_RETRIES = 3;
+
+    @Override
+    public UUID publish(String eventType, Object payload, @Nullable PublishOptions options) {
+        validate(eventType, payload);
+        PublishOptions resolved = options == null ? PublishOptions.defaults() : options;
+        enforceTransactionPolicy();
+
+        // Serialization stays outside the span: a serialization failure is a caller bug, not a
+        // messaging operation, and no event exists yet to trace.
+        SerializedPayload serialized = serialize(eventType, payload);
         UUID id = UUID.randomUUID();
-        if (opts.dedupKey() != null) {
-          try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType())) {
-            PendingEvent pe =
-                buildPending(
-                    id, r.eventType(), r.payload(), serialized, opts, traceContext(opts, span));
+        try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
+            PendingEvent pending =
+                    buildPending(
+                            id,
+                            eventType,
+                            payload,
+                            serialized,
+                            resolved,
+                            traceContext(resolved, span));
             try {
-              CoalescingResult result = saveCoalescing(pe);
-              if (result.inserted()) {
-                inserted.add(pe);
-                ids.add(pe.id());
-              } else {
-                UUID existingId =
-                    Objects.requireNonNull(
-                        result.existingId(), "coalesced result must carry the existing event id");
-                span.coalesced(existingId);
-                ids.add(existingId);
-              }
-            } catch (StorageException | PublishFailedException ex) {
-              span.error(ex);
-              throw ex;
+                if (pending.dedupKey() != null) {
+                    CoalescingResult result = saveCoalescing(pending);
+                    if (!result.inserted()) {
+                        // Coalesced into an existing PENDING event. No listener, no wake — nothing
+                        // new was
+                        // inserted, and the existing row is pinned (FOR UPDATE) inside this
+                        // transaction, so
+                        // claims skip it until we commit and its handler is guaranteed to see our
+                        // changes.
+                        UUID existingId =
+                                Objects.requireNonNull(
+                                        result.existingId(),
+                                        "coalesced result must carry the existing event id");
+                        span.coalesced(existingId);
+                        return existingId;
+                    }
+                } else {
+                    store.save(pending);
+                }
+            } catch (StorageException ex) {
+                span.error(ex);
+                throw new PublishFailedException(
+                        "storage rejected event " + pending.id() + " of type " + eventType, ex);
+            } catch (PublishFailedException ex) {
+                span.error(ex);
+                throw ex;
             }
-          }
-        } else {
-          OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType());
-          batchSpans.add(span);
-          PendingEvent pe =
-              buildPending(
-                  id, r.eventType(), r.payload(), serialized, opts, traceContext(opts, span));
-          batch.add(pe);
-          ids.add(pe.id());
+            emitPublished(pending);
+            scheduleWake(Set.of(eventType));
+            return pending.id();
         }
-      }
-      store.saveAll(batch);
-      inserted.addAll(batch);
-    } catch (StorageException ex) {
-      for (OutboxTracer.PublishSpan span : batchSpans) {
-        span.error(ex);
-      }
-      throw new PublishFailedException("publishAll(" + requests.size() + ") failed", ex);
-    } finally {
-      for (OutboxTracer.PublishSpan span : batchSpans) {
-        span.close();
-      }
     }
-    for (PendingEvent pe : inserted) {
-      emitPublished(pe);
-    }
-    Set<String> types = new LinkedHashSet<>();
-    for (PendingEvent pe : inserted) {
-      types.add(pe.eventType());
-    }
-    scheduleWake(types);
-    return List.copyOf(ids);
-  }
 
-  // ---------------------------------------------------------------------------------------------
-  // helpers
-  // ---------------------------------------------------------------------------------------------
+    private record CoalescingResult(boolean inserted, @Nullable UUID existingId) {}
 
-  /**
-   * API-boundary validation: parameters are declared {@code @Nullable} on purpose — the public
-   * {@code publish} methods promise non-null inputs, but callers without JSpecify tooling can still
-   * pass null, and this check turns that into a {@link PublishValidationException} instead of an
-   * unexplained NPE.
-   */
-  private void validate(@Nullable String eventType, @Nullable Object payload) {
-    if (eventType == null) {
-      throw new PublishValidationException("eventType must not be null");
-    }
-    if (eventType.isBlank()) {
-      throw new PublishValidationException("eventType must not be blank");
-    }
-    if (payload == null) {
-      throw new PublishValidationException("payload must not be null");
-    }
-  }
-
-  private void enforceTransactionPolicy() {
-    if (txContext.isActive()) {
-      return;
-    }
-    if (noTxPolicy == NoTransactionPolicy.FAIL) {
-      throw new NoTransactionException(
-          "OutboxEventPublisher.publish must be invoked inside a transaction "
-              + "(configure noTransactionPolicy=IGNORE to opt out).");
-    }
-  }
-
-  private EventSerializer serializerFor(String eventType) {
-    return writeSerializerOverrides.getOrDefault(eventType, serializer);
-  }
-
-  private SerializedPayload serialize(String eventType, Object payload) {
-    try {
-      return serializerFor(eventType).serialize(payload);
-    } catch (PublishSerializationException ex) {
-      throw ex;
-    } catch (RuntimeException ex) {
-      throw new PublishSerializationException(
-          "failed to serialize payload of type " + payload.getClass().getName(), ex);
-    }
-  }
-
-  /**
-   * An explicit {@code PublishOptions.traceContext} override always wins over the ambient context
-   * captured by the producer span (ADR-0023).
-   */
-  private static Map<String, String> traceContext(
-      PublishOptions options, OutboxTracer.PublishSpan span) {
-    Map<String, String> explicit = options.traceContext();
-    return explicit != null ? explicit : span.contextToStore();
-  }
-
-  private PendingEvent buildPending(
-      UUID id,
-      String eventType,
-      Object payload,
-      SerializedPayload serialized,
-      PublishOptions options,
-      Map<String, String> traceContext) {
-    Instant runAt = options.runAt() != null ? options.runAt() : clock.now();
-    short priority = options.priority() != null ? options.priority() : (short) 0;
-    return PendingEvent.builder()
-        .id(id)
-        .eventType(eventType)
-        .payload(serialized)
-        .payloadFormat(serializerFor(eventType).format())
-        .payloadClass(payload.getClass().getName())
-        .priority(priority)
-        .runAt(runAt)
-        .traceContext(traceContext)
-        .dedupKey(options.dedupKey())
-        .build();
-  }
-
-  private void emitPublished(PendingEvent pe) {
-    listener.onEventPublished(
-        new EventPublishedInfo(pe.id(), pe.eventType(), clock.now(), pe.runAt(), pe.priority()));
-  }
-
-  /**
-   * Wake the local pollers of the published types once the surrounding transaction commits. Purely
-   * an optimization — every path is swallowed on failure so a wake can never break the caller's
-   * commit.
-   */
-  private void scheduleWake(Set<String> eventTypes) {
-    try {
-      txContext.afterCommit(
-          () -> {
-            for (String type : eventTypes) {
-              try {
-                waker.wake(type);
-              } catch (RuntimeException ex) {
-                log.debug("poller wake failed for type {}: {}", type, ex.toString());
-              }
+    /**
+     * ADR-0021 coalescing insert. Each loop iteration ends in exactly one of three outcomes:
+     *
+     * <ol>
+     *   <li><b>Inserted</b> — no PENDING event with this {@code (type, key)} existed; the partial
+     *       unique index arbitrated atomically ({@code ON CONFLICT}), which is why the insert goes
+     *       FIRST: the common case (first publish of a key) resolves in a single statement, and a
+     *       lock-first ordering would have the mirrored insert-after-check race anyway.
+     *   <li><b>Coalesced</b> — the conflicting PENDING row was found and locked ({@code SELECT ...
+     *       FOR UPDATE}) inside the caller's transaction. From this moment the claim query ({@code
+     *       FOR UPDATE SKIP LOCKED}) skips the row until our commit, so its handler is guaranteed
+     *       to observe this transaction's changes. If the lock lands on a DIFFERENT row than the
+     *       one that caused the conflict (old one finalized, another publisher inserted anew), that
+     *       is equally correct: any pinned PENDING event of this key carries the work and runs
+     *       after our commit.
+     *   <li><b>Vanished</b> — the row that conflicted with our insert is no longer PENDING by the
+     *       time we try to lock it (claimed, possibly already finalized). This is not a missed race
+     *       but the semantically REQUIRED branch: an event claimed before our commit may run
+     *       against a snapshot without our changes, so coalescing into it would lose our update —
+     *       we must loop and insert our own event (the old row no longer occupies the
+     *       PENDING-scoped unique index, so the retry succeeds unless yet another publisher got
+     *       there first).
+     * </ol>
+     *
+     * <p>The lock probe cannot read stale state: if the row is being claimed concurrently, our
+     * {@code SELECT ... FOR UPDATE} blocks on the claim's row lock and PostgreSQL re-evaluates the
+     * {@code status = 'PENDING'} predicate against the committed row version afterwards
+     * (EvalPlanQual) — we either hold the lock on a genuinely PENDING row or see empty.
+     *
+     * <p>Reaching the retry bound requires a fresh PENDING row of the same key to appear AND
+     * disappear in the microsecond window between our conflict and our lock, {@code
+     * DEDUP_RACE_RETRIES} times in a row — a pathological churn that the bound converts from a
+     * theoretical livelock into a loud failure.
+     */
+    private CoalescingResult saveCoalescing(PendingEvent pending) {
+        String dedupKey =
+                Objects.requireNonNull(pending.dedupKey(), "saveCoalescing requires a dedupKey");
+        for (int attempt = 0; attempt < DEDUP_RACE_RETRIES; attempt++) {
+            if (store.save(pending)) {
+                return new CoalescingResult(true, null);
             }
-          });
-    } catch (RuntimeException ex) {
-      log.debug("afterCommit registration failed: {}", ex.toString());
+            var existing = store.lockPendingByDedupKey(pending.eventType(), dedupKey);
+            if (existing.isPresent()) {
+                return new CoalescingResult(false, existing.get());
+            }
+            // The PENDING row vanished under us — loop and insert our own.
+        }
+        throw new PublishFailedException(
+                "could not publish event with dedupKey '"
+                        + dedupKey
+                        + "' of type "
+                        + pending.eventType()
+                        + " after "
+                        + DEDUP_RACE_RETRIES
+                        + " attempts (pathological claim/finalize churn on the key)",
+                null);
     }
-  }
+
+    @Override
+    public List<UUID> publishAll(Collection<PublishRequest> requests) {
+        Objects.requireNonNull(requests, "requests must not be null");
+        if (requests.isEmpty()) {
+            return List.of();
+        }
+        enforceTransactionPolicy();
+
+        // Requests with a dedup key need per-row coalescing feedback and go through save(...) one
+        // by one; the rest batch through saveAll. Returned ids stay aligned with request order.
+        List<PendingEvent> batch = new ArrayList<>(requests.size());
+        List<UUID> ids = new ArrayList<>(requests.size());
+        List<PendingEvent> inserted = new ArrayList<>(requests.size());
+        // PRODUCER spans of batch-path events stay open until saveAll below actually inserts them;
+        // dedup-path spans close per row inside the loop.
+        List<OutboxTracer.PublishSpan> batchSpans = new ArrayList<>(requests.size());
+        try {
+            for (PublishRequest r : requests) {
+                Objects.requireNonNull(r, "request element must not be null");
+                validate(r.eventType(), r.payload());
+                PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
+                SerializedPayload serialized = serialize(r.eventType(), r.payload());
+                UUID id = UUID.randomUUID();
+                if (opts.dedupKey() != null) {
+                    try (OutboxTracer.PublishSpan span =
+                            tracer.startPublishSpan(id, r.eventType())) {
+                        PendingEvent pe =
+                                buildPending(
+                                        id,
+                                        r.eventType(),
+                                        r.payload(),
+                                        serialized,
+                                        opts,
+                                        traceContext(opts, span));
+                        try {
+                            CoalescingResult result = saveCoalescing(pe);
+                            if (result.inserted()) {
+                                inserted.add(pe);
+                                ids.add(pe.id());
+                            } else {
+                                UUID existingId =
+                                        Objects.requireNonNull(
+                                                result.existingId(),
+                                                "coalesced result must carry the existing event"
+                                                        + " id");
+                                span.coalesced(existingId);
+                                ids.add(existingId);
+                            }
+                        } catch (StorageException | PublishFailedException ex) {
+                            span.error(ex);
+                            throw ex;
+                        }
+                    }
+                } else {
+                    OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType());
+                    batchSpans.add(span);
+                    PendingEvent pe =
+                            buildPending(
+                                    id,
+                                    r.eventType(),
+                                    r.payload(),
+                                    serialized,
+                                    opts,
+                                    traceContext(opts, span));
+                    batch.add(pe);
+                    ids.add(pe.id());
+                }
+            }
+            store.saveAll(batch);
+            inserted.addAll(batch);
+        } catch (StorageException ex) {
+            for (OutboxTracer.PublishSpan span : batchSpans) {
+                span.error(ex);
+            }
+            throw new PublishFailedException("publishAll(" + requests.size() + ") failed", ex);
+        } finally {
+            for (OutboxTracer.PublishSpan span : batchSpans) {
+                span.close();
+            }
+        }
+        for (PendingEvent pe : inserted) {
+            emitPublished(pe);
+        }
+        Set<String> types = new LinkedHashSet<>();
+        for (PendingEvent pe : inserted) {
+            types.add(pe.eventType());
+        }
+        scheduleWake(types);
+        return List.copyOf(ids);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // helpers
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * API-boundary validation: parameters are declared {@code @Nullable} on purpose — the public
+     * {@code publish} methods promise non-null inputs, but callers without JSpecify tooling can
+     * still pass null, and this check turns that into a {@link PublishValidationException} instead
+     * of an unexplained NPE.
+     */
+    private void validate(@Nullable String eventType, @Nullable Object payload) {
+        if (eventType == null) {
+            throw new PublishValidationException("eventType must not be null");
+        }
+        if (eventType.isBlank()) {
+            throw new PublishValidationException("eventType must not be blank");
+        }
+        if (payload == null) {
+            throw new PublishValidationException("payload must not be null");
+        }
+    }
+
+    private void enforceTransactionPolicy() {
+        if (txContext.isActive()) {
+            return;
+        }
+        if (noTxPolicy == NoTransactionPolicy.FAIL) {
+            throw new NoTransactionException(
+                    "OutboxEventPublisher.publish must be invoked inside a transaction "
+                            + "(configure noTransactionPolicy=IGNORE to opt out).");
+        }
+    }
+
+    private EventSerializer serializerFor(String eventType) {
+        return writeSerializerOverrides.getOrDefault(eventType, serializer);
+    }
+
+    private SerializedPayload serialize(String eventType, Object payload) {
+        try {
+            return serializerFor(eventType).serialize(payload);
+        } catch (PublishSerializationException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new PublishSerializationException(
+                    "failed to serialize payload of type " + payload.getClass().getName(), ex);
+        }
+    }
+
+    /**
+     * An explicit {@code PublishOptions.traceContext} override always wins over the ambient context
+     * captured by the producer span (ADR-0023).
+     */
+    private static Map<String, String> traceContext(
+            PublishOptions options, OutboxTracer.PublishSpan span) {
+        Map<String, String> explicit = options.traceContext();
+        return explicit != null ? explicit : span.contextToStore();
+    }
+
+    private PendingEvent buildPending(
+            UUID id,
+            String eventType,
+            Object payload,
+            SerializedPayload serialized,
+            PublishOptions options,
+            Map<String, String> traceContext) {
+        Instant runAt = options.runAt() != null ? options.runAt() : clock.now();
+        short priority = options.priority() != null ? options.priority() : (short) 0;
+        return PendingEvent.builder()
+                .id(id)
+                .eventType(eventType)
+                .payload(serialized)
+                .payloadFormat(serializerFor(eventType).format())
+                .payloadClass(payload.getClass().getName())
+                .priority(priority)
+                .runAt(runAt)
+                .traceContext(traceContext)
+                .dedupKey(options.dedupKey())
+                .build();
+    }
+
+    private void emitPublished(PendingEvent pe) {
+        listener.onEventPublished(
+                new EventPublishedInfo(
+                        pe.id(), pe.eventType(), clock.now(), pe.runAt(), pe.priority()));
+    }
+
+    /**
+     * Wake the local pollers of the published types once the surrounding transaction commits.
+     * Purely an optimization — every path is swallowed on failure so a wake can never break the
+     * caller's commit.
+     */
+    private void scheduleWake(Set<String> eventTypes) {
+        try {
+            txContext.afterCommit(
+                    () -> {
+                        for (String type : eventTypes) {
+                            try {
+                                waker.wake(type);
+                            } catch (RuntimeException ex) {
+                                log.debug(
+                                        "poller wake failed for type {}: {}", type, ex.toString());
+                            }
+                        }
+                    });
+        } catch (RuntimeException ex) {
+            log.debug("afterCommit registration failed: {}", ex.toString());
+        }
+    }
 }

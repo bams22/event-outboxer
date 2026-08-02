@@ -18,13 +18,13 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class EngineLifecycleException extends OutboxException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  protected EngineLifecycleException(String message) {
-    super(message);
-  }
+    protected EngineLifecycleException(String message) {
+        super(message);
+    }
 
-  protected EngineLifecycleException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    protected EngineLifecycleException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

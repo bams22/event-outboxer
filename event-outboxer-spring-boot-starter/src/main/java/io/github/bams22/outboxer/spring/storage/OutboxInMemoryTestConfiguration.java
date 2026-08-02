@@ -41,28 +41,28 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class OutboxInMemoryTestConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(EventStore.class)
-  public InMemoryEventStore outboxEventStore(ObjectProvider<Clock> clock) {
-    return new InMemoryEventStore(clock.getIfAvailable(Clock::system));
-  }
+    @Bean
+    @ConditionalOnMissingBean(EventStore.class)
+    public InMemoryEventStore outboxEventStore(ObjectProvider<Clock> clock) {
+        return new InMemoryEventStore(clock.getIfAvailable(Clock::system));
+    }
 
-  @Bean
-  @ConditionalOnMissingBean(WorkerRegistry.class)
-  public InMemoryWorkerRegistry outboxWorkerRegistry(ObjectProvider<Clock> clock) {
-    return new InMemoryWorkerRegistry(clock.getIfAvailable(Clock::system));
-  }
+    @Bean
+    @ConditionalOnMissingBean(WorkerRegistry.class)
+    public InMemoryWorkerRegistry outboxWorkerRegistry(ObjectProvider<Clock> clock) {
+        return new InMemoryWorkerRegistry(clock.getIfAvailable(Clock::system));
+    }
 
-  @Bean
-  @ConditionalOnMissingBean(ConnectionSupplier.class)
-  public InMemoryConnectionSupplier outboxConnectionSupplier() {
-    return new InMemoryConnectionSupplier();
-  }
+    @Bean
+    @ConditionalOnMissingBean(ConnectionSupplier.class)
+    public InMemoryConnectionSupplier outboxConnectionSupplier() {
+        return new InMemoryConnectionSupplier();
+    }
 
-  @Bean
-  @ConditionalOnMissingBean(OutboxAdmin.class)
-  @ConditionalOnBean(InMemoryEventStore.class)
-  public InMemoryOutboxAdmin outboxAdmin(InMemoryEventStore store) {
-    return new InMemoryOutboxAdmin(store);
-  }
+    @Bean
+    @ConditionalOnMissingBean(OutboxAdmin.class)
+    @ConditionalOnBean(InMemoryEventStore.class)
+    public InMemoryOutboxAdmin outboxAdmin(InMemoryEventStore store) {
+        return new InMemoryOutboxAdmin(store);
+    }
 }

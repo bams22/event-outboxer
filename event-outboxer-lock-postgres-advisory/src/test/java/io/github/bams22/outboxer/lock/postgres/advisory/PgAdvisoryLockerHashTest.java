@@ -15,21 +15,22 @@ import org.junit.jupiter.api.Test;
 
 class PgAdvisoryLockerHashTest {
 
-  @Test
-  void hashIsDeterministic() {
-    assertThat(PgAdvisoryLocker.hash("order:42")).isEqualTo(PgAdvisoryLocker.hash("order:42"));
-  }
+    @Test
+    void hashIsDeterministic() {
+        assertThat(PgAdvisoryLocker.hash("order:42")).isEqualTo(PgAdvisoryLocker.hash("order:42"));
+    }
 
-  @Test
-  void hashDiffersForDifferentKeys() {
-    assertThat(PgAdvisoryLocker.hash("order:42")).isNotEqualTo(PgAdvisoryLocker.hash("order:43"));
-  }
+    @Test
+    void hashDiffersForDifferentKeys() {
+        assertThat(PgAdvisoryLocker.hash("order:42"))
+                .isNotEqualTo(PgAdvisoryLocker.hash("order:43"));
+    }
 
-  @Test
-  void hashStableAcrossCalls() {
-    long first = PgAdvisoryLocker.hash("aggregate:abc");
-    long second = PgAdvisoryLocker.hash("aggregate:abc");
-    long third = PgAdvisoryLocker.hash("aggregate:abc");
-    assertThat(first).isEqualTo(second).isEqualTo(third);
-  }
+    @Test
+    void hashStableAcrossCalls() {
+        long first = PgAdvisoryLocker.hash("aggregate:abc");
+        long second = PgAdvisoryLocker.hash("aggregate:abc");
+        long third = PgAdvisoryLocker.hash("aggregate:abc");
+        assertThat(first).isEqualTo(second).isEqualTo(third);
+    }
 }

@@ -21,23 +21,23 @@ import org.junit.jupiter.api.Test;
 
 class InMemoryOutboxAdminTest extends AbstractOutboxAdminContractTest {
 
-  private InMemoryEventStore inMemoryStore;
+    private InMemoryEventStore inMemoryStore;
 
-  @Override
-  protected EventStore newStore() {
-    inMemoryStore = new InMemoryEventStore();
-    return inMemoryStore;
-  }
+    @Override
+    protected EventStore newStore() {
+        inMemoryStore = new InMemoryEventStore();
+        return inMemoryStore;
+    }
 
-  @Override
-  protected OutboxAdmin newAdmin() {
-    return new InMemoryOutboxAdmin(inMemoryStore);
-  }
+    @Override
+    protected OutboxAdmin newAdmin() {
+        return new InMemoryOutboxAdmin(inMemoryStore);
+    }
 
-  @Test
-  @DisplayName("no archive in the in-memory adapter: findInArchive empty, purgeArchive zero")
-  void archiveOperationsAreNoOps() {
-    assertThat(admin.findInArchive(UUID.randomUUID())).isEmpty();
-    assertThat(admin.purgeArchive(Instant.now().plusSeconds(3600), 100)).isZero();
-  }
+    @Test
+    @DisplayName("no archive in the in-memory adapter: findInArchive empty, purgeArchive zero")
+    void archiveOperationsAreNoOps() {
+        assertThat(admin.findInArchive(UUID.randomUUID())).isEmpty();
+        assertThat(admin.purgeArchive(Instant.now().plusSeconds(3600), 100)).isZero();
+    }
 }

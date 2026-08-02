@@ -23,9 +23,9 @@ import java.util.UUID;
  */
 public record DispatchRejectedInfo(UUID eventId, String eventType, Throwable cause) {
 
-  public DispatchRejectedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(cause, "cause must not be null");
-  }
+    public DispatchRejectedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+    }
 }

@@ -21,26 +21,27 @@ import org.springframework.core.Ordered;
  */
 public class OutboxDataSourceFailureAnalyzer implements FailureAnalyzer, Ordered {
 
-  @Override
-  public int getOrder() {
-    // Ahead of Boot's generic NoUniqueBeanDefinitionException analyzer.
-    return Ordered.HIGHEST_PRECEDENCE + 100;
-  }
-
-  @Override
-  public @Nullable FailureAnalysis analyze(Throwable failure) {
-    for (Throwable t = failure; t != null; t = t.getCause()) {
-      if (t instanceof AmbiguousOutboxDataSourceException ambiguous) {
-        return new FailureAnalysis(ambiguous.getMessage(), action(), failure);
-      }
+    @Override
+    public int getOrder() {
+        // Ahead of Boot's generic NoUniqueBeanDefinitionException analyzer.
+        return Ordered.HIGHEST_PRECEDENCE + 100;
     }
-    return null;
-  }
 
-  private static String action() {
-    return "Mark exactly one DataSource bean with "
-        + "@io.github.bams22.outboxer.spring.OutboxDataSource so the outbox knows which database "
-        + "holds its tables, or declare one DataSource @Primary. Defining your own "
-        + "ConnectionSupplier / EntityLocker beans also overrides the outbox JDBC wiring entirely.";
-  }
+    @Override
+    public @Nullable FailureAnalysis analyze(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof AmbiguousOutboxDataSourceException ambiguous) {
+                return new FailureAnalysis(ambiguous.getMessage(), action(), failure);
+            }
+        }
+        return null;
+    }
+
+    private static String action() {
+        return "Mark exactly one DataSource bean with"
+                + " @io.github.bams22.outboxer.spring.OutboxDataSource so the outbox knows which"
+                + " database holds its tables, or declare one DataSource @Primary. Defining your"
+                + " own ConnectionSupplier / EntityLocker beans also overrides the outbox JDBC"
+                + " wiring entirely.";
+    }
 }

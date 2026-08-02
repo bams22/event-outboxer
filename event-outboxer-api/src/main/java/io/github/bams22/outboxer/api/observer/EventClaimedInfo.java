@@ -25,12 +25,12 @@ import java.util.UUID;
  * @param workerId the worker that holds the claim
  */
 public record EventClaimedInfo(
-    UUID eventId, String eventType, int attempts, Instant claimedAt, WorkerId workerId) {
+        UUID eventId, String eventType, int attempts, Instant claimedAt, WorkerId workerId) {
 
-  public EventClaimedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(claimedAt, "claimedAt must not be null");
-    Objects.requireNonNull(workerId, "workerId must not be null");
-  }
+    public EventClaimedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(claimedAt, "claimedAt must not be null");
+        Objects.requireNonNull(workerId, "workerId must not be null");
+    }
 }

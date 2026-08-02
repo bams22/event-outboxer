@@ -16,19 +16,19 @@ package io.github.bams22.outboxer.core.config;
  */
 public enum UnknownHandlerPolicy {
 
-  /**
-   * Re-schedule the event with a short delay so that a peer instance — or a future deploy of this
-   * one — can pick it up later. Default.
-   */
-  SKIP,
+    /**
+     * Re-schedule the event with a short delay so that a peer instance — or a future deploy of this
+     * one — can pick it up later. Default.
+     */
+    SKIP,
 
-  /** Move the event to {@code DISABLED} immediately; an operator has to re-enable it. */
-  DISABLE,
+    /** Move the event to {@code DISABLED} immediately; an operator has to re-enable it. */
+    DISABLE,
 
-  /**
-   * Leave the event {@code PROCESSING} and raise an exception so the row falls back to orphan
-   * recovery. Reserved for strict environments that would rather fail loudly than route the event
-   * elsewhere.
-   */
-  FAIL
+    /**
+     * Leave the event {@code PROCESSING} and raise an exception so the row falls back to orphan
+     * recovery. Reserved for strict environments that would rather fail loudly than route the event
+     * elsewhere.
+     */
+    FAIL
 }

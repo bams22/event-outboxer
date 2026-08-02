@@ -19,13 +19,13 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class PublishException extends OutboxException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  protected PublishException(String message) {
-    super(message);
-  }
+    protected PublishException(String message) {
+        super(message);
+    }
 
-  protected PublishException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    protected PublishException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

@@ -32,20 +32,20 @@ import org.springframework.context.annotation.Bean;
  * bean beats both.
  */
 @AutoConfiguration(
-    afterName =
-        "org.springframework.boot.actuate.autoconfigure.tracing.MicrometerTracingAutoConfiguration")
+        afterName =
+                "org.springframework.boot.actuate.autoconfigure.tracing.MicrometerTracingAutoConfiguration")
 @ConditionalOnClass({Tracer.class, MicrometerOutboxTracer.class})
 @ConditionalOnBean({Tracer.class, Propagator.class})
 @ConditionalOnProperty(
-    prefix = "event-outboxer.tracing",
-    name = "enabled",
-    havingValue = "true",
-    matchIfMissing = true)
+        prefix = "event-outboxer.tracing",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class MicrometerTracingAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(OutboxTracer.class)
-  public OutboxTracer outboxMicrometerTracer(Tracer tracer, Propagator propagator) {
-    return new MicrometerOutboxTracer(tracer, propagator);
-  }
+    @Bean
+    @ConditionalOnMissingBean(OutboxTracer.class)
+    public OutboxTracer outboxMicrometerTracer(Tracer tracer, Propagator propagator) {
+        return new MicrometerOutboxTracer(tracer, propagator);
+    }
 }

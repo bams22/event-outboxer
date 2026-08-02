@@ -19,12 +19,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PublishFailedException extends PublishException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-104";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-104";
 
-  public PublishFailedException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public PublishFailedException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

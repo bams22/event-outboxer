@@ -35,82 +35,85 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ProtobufEventSerializer implements EventSerializer {
 
-  /**
-   * Stable format id persisted with every event written by this serializer (ADR-0026). Never
-   * renamed — stored events reference it forever.
-   */
-  public static final String FORMAT = "protobuf";
+    /**
+     * Stable format id persisted with every event written by this serializer (ADR-0026). Never
+     * renamed — stored events reference it forever.
+     */
+    public static final String FORMAT = "protobuf";
 
-  private final ExtensionRegistryLite extensionRegistry;
-  private final ConcurrentHashMap<Class<?>, Parser<?>> parsers = new ConcurrentHashMap<>();
+    private final ExtensionRegistryLite extensionRegistry;
+    private final ConcurrentHashMap<Class<?>, Parser<?>> parsers = new ConcurrentHashMap<>();
 
-  /**
-   * Zero-config variant using the empty {@link ExtensionRegistryLite} — sufficient for proto3
-   * messages, which have no extensions.
-   */
-  public ProtobufEventSerializer() {
-    this(ExtensionRegistryLite.getEmptyRegistry());
-  }
-
-  /**
-   * Variant for proto2 extension users: fields registered in the given registry are parsed as
-   * extensions instead of landing in the unknown-field set. Mirrors how the Jackson adapter takes a
-   * caller-supplied {@code ObjectMapper}.
-   */
-  public ProtobufEventSerializer(ExtensionRegistryLite extensionRegistry) {
-    this.extensionRegistry =
-        Objects.requireNonNull(extensionRegistry, "extensionRegistry must not be null");
-  }
-
-  @Override
-  public String format() {
-    return FORMAT;
-  }
-
-  @Override
-  public SerializedPayload serialize(Object payload) {
-    Objects.requireNonNull(payload, "payload must not be null");
-    if (!(payload instanceof Message message)) {
-      throw new PublishSerializationException(
-          "payload of type "
-              + payload.getClass().getName()
-              + " is not a com.google.protobuf.Message — the protobuf serializer is schema-first"
-              + " and accepts only protoc-generated classes (ADR-0026)",
-          null);
+    /**
+     * Zero-config variant using the empty {@link ExtensionRegistryLite} — sufficient for proto3
+     * messages, which have no extensions.
+     */
+    public ProtobufEventSerializer() {
+        this(ExtensionRegistryLite.getEmptyRegistry());
     }
-    return SerializedPayload.ofBytes(message.toByteArray());
-  }
 
-  @Override
-  public <T> T deserialize(SerializedPayload payload, Class<T> type) {
-    Objects.requireNonNull(payload, "payload must not be null");
-    Objects.requireNonNull(type, "type must not be null");
-    Parser<?> parser = parsers.computeIfAbsent(type, ProtobufEventSerializer::lookupParser);
-    // Outside the try: text-lane input surfaces as IllegalStateException, not as a parse failure.
-    byte[] bytes = payload.requireBytes();
-    try {
-      return type.cast(parser.parseFrom(bytes, extensionRegistry));
-    } catch (InvalidProtocolBufferException ex) {
-      throw new PayloadDeserializationException(
-          "failed to parse protobuf payload as " + type.getName(), ex);
+    /**
+     * Variant for proto2 extension users: fields registered in the given registry are parsed as
+     * extensions instead of landing in the unknown-field set. Mirrors how the Jackson adapter takes
+     * a caller-supplied {@code ObjectMapper}.
+     */
+    public ProtobufEventSerializer(ExtensionRegistryLite extensionRegistry) {
+        this.extensionRegistry =
+                Objects.requireNonNull(extensionRegistry, "extensionRegistry must not be null");
     }
-  }
 
-  private static Parser<?> lookupParser(Class<?> type) {
-    if (!Message.class.isAssignableFrom(type)) {
-      throw new PayloadDeserializationException(
-          "target type "
-              + type.getName()
-              + " is not a com.google.protobuf.Message — the protobuf serializer is schema-first"
-              + " and deserializes only protoc-generated classes (ADR-0026)",
-          null);
+    @Override
+    public String format() {
+        return FORMAT;
     }
-    try {
-      Method parserAccessor = type.getMethod("parser");
-      return (Parser<?>) parserAccessor.invoke(null);
-    } catch (ReflectiveOperationException | ClassCastException ex) {
-      throw new PayloadDeserializationException(
-          "failed to obtain a protobuf Parser via static " + type.getName() + ".parser()", ex);
+
+    @Override
+    public SerializedPayload serialize(Object payload) {
+        Objects.requireNonNull(payload, "payload must not be null");
+        if (!(payload instanceof Message message)) {
+            throw new PublishSerializationException(
+                    "payload of type "
+                            + payload.getClass().getName()
+                            + " is not a com.google.protobuf.Message — the protobuf serializer is"
+                            + " schema-first and accepts only protoc-generated classes (ADR-0026)",
+                    null);
+        }
+        return SerializedPayload.ofBytes(message.toByteArray());
     }
-  }
+
+    @Override
+    public <T> T deserialize(SerializedPayload payload, Class<T> type) {
+        Objects.requireNonNull(payload, "payload must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        Parser<?> parser = parsers.computeIfAbsent(type, ProtobufEventSerializer::lookupParser);
+        // Outside the try: text-lane input surfaces as IllegalStateException, not as a parse
+        // failure.
+        byte[] bytes = payload.requireBytes();
+        try {
+            return type.cast(parser.parseFrom(bytes, extensionRegistry));
+        } catch (InvalidProtocolBufferException ex) {
+            throw new PayloadDeserializationException(
+                    "failed to parse protobuf payload as " + type.getName(), ex);
+        }
+    }
+
+    private static Parser<?> lookupParser(Class<?> type) {
+        if (!Message.class.isAssignableFrom(type)) {
+            throw new PayloadDeserializationException(
+                    "target type "
+                            + type.getName()
+                            + " is not a com.google.protobuf.Message — the protobuf serializer is"
+                            + " schema-first and deserializes only protoc-generated classes"
+                            + " (ADR-0026)",
+                    null);
+        }
+        try {
+            Method parserAccessor = type.getMethod("parser");
+            return (Parser<?>) parserAccessor.invoke(null);
+        } catch (ReflectiveOperationException | ClassCastException ex) {
+            throw new PayloadDeserializationException(
+                    "failed to obtain a protobuf Parser via static " + type.getName() + ".parser()",
+                    ex);
+        }
+    }
 }

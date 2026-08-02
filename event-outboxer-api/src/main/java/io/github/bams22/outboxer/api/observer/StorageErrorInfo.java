@@ -23,8 +23,8 @@ import java.util.Objects;
  */
 public record StorageErrorInfo(String operation, Throwable cause) {
 
-  public StorageErrorInfo {
-    Objects.requireNonNull(operation, "operation must not be null");
-    Objects.requireNonNull(cause, "cause must not be null");
-  }
+    public StorageErrorInfo {
+        Objects.requireNonNull(operation, "operation must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+    }
 }

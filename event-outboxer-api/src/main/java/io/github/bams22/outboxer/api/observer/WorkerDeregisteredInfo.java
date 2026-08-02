@@ -20,7 +20,7 @@ import java.util.Objects;
  */
 public record WorkerDeregisteredInfo(WorkerId workerId) {
 
-  public WorkerDeregisteredInfo {
-    Objects.requireNonNull(workerId, "workerId must not be null");
-  }
+    public WorkerDeregisteredInfo {
+        Objects.requireNonNull(workerId, "workerId must not be null");
+    }
 }

@@ -23,9 +23,9 @@ import java.util.UUID;
  */
 public record EventSkippedInfo(UUID eventId, String eventType, String reason) {
 
-  public EventSkippedInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(reason, "reason must not be null");
-  }
+    public EventSkippedInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+    }
 }

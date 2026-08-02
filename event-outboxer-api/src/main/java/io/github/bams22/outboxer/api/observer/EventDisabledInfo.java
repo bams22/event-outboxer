@@ -25,11 +25,11 @@ import org.jspecify.annotations.Nullable;
  * @param cause the exception that triggered the disable, or null when disable was explicit
  */
 public record EventDisabledInfo(
-    UUID eventId, String eventType, int attempts, String reason, @Nullable Throwable cause) {
+        UUID eventId, String eventType, int attempts, String reason, @Nullable Throwable cause) {
 
-  public EventDisabledInfo {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    Objects.requireNonNull(reason, "reason must not be null");
-  }
+    public EventDisabledInfo {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+    }
 }

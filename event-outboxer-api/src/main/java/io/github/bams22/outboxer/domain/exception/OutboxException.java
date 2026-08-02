@@ -22,13 +22,13 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class OutboxException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  protected OutboxException(String message) {
-    super(message);
-  }
+    protected OutboxException(String message) {
+        super(message);
+    }
 
-  protected OutboxException(String message, @Nullable Throwable cause) {
-    super(message, cause);
-  }
+    protected OutboxException(String message, @Nullable Throwable cause) {
+        super(message, cause);
+    }
 }

@@ -32,36 +32,36 @@ import org.slf4j.LoggerFactory;
  */
 public final class HeartbeatTask implements Runnable {
 
-  private static final Logger log = LoggerFactory.getLogger(HeartbeatTask.class);
+    private static final Logger log = LoggerFactory.getLogger(HeartbeatTask.class);
 
-  private final WorkerRegistry registry;
-  private final WorkerInfo workerInfo;
-  private final Clock clock;
-  private final OutboxListener listener;
+    private final WorkerRegistry registry;
+    private final WorkerInfo workerInfo;
+    private final Clock clock;
+    private final OutboxListener listener;
 
-  public HeartbeatTask(
-      WorkerRegistry registry, WorkerInfo workerInfo, Clock clock, OutboxListener listener) {
-    this.registry = Objects.requireNonNull(registry);
-    this.workerInfo = Objects.requireNonNull(workerInfo);
-    this.clock = Objects.requireNonNull(clock);
-    this.listener = Objects.requireNonNull(listener);
-  }
-
-  @Override
-  public void run() {
-    try {
-      boolean updated = registry.heartbeat(workerInfo.id(), clock.now());
-      if (!updated) {
-        log.warn(
-            "heartbeat row not found for worker {} (reaped by peer orphan recovery?) — "
-                + "re-registering",
-            workerInfo.id());
-        registry.register(workerInfo);
-        listener.onWorkerRegistered(new WorkerRegisteredInfo(workerInfo));
-      }
-    } catch (RuntimeException ex) {
-      listener.onHeartbeatFailed(new HeartbeatFailedInfo(workerInfo.id(), ex));
-      log.warn("heartbeat failed for worker {}: {}", workerInfo.id(), ex.toString());
+    public HeartbeatTask(
+            WorkerRegistry registry, WorkerInfo workerInfo, Clock clock, OutboxListener listener) {
+        this.registry = Objects.requireNonNull(registry);
+        this.workerInfo = Objects.requireNonNull(workerInfo);
+        this.clock = Objects.requireNonNull(clock);
+        this.listener = Objects.requireNonNull(listener);
     }
-  }
+
+    @Override
+    public void run() {
+        try {
+            boolean updated = registry.heartbeat(workerInfo.id(), clock.now());
+            if (!updated) {
+                log.warn(
+                        "heartbeat row not found for worker {} (reaped by peer orphan recovery?) — "
+                                + "re-registering",
+                        workerInfo.id());
+                registry.register(workerInfo);
+                listener.onWorkerRegistered(new WorkerRegisteredInfo(workerInfo));
+            }
+        } catch (RuntimeException ex) {
+            listener.onHeartbeatFailed(new HeartbeatFailedInfo(workerInfo.id(), ex));
+            log.warn("heartbeat failed for worker {}: {}", workerInfo.id(), ex.toString());
+        }
+    }
 }

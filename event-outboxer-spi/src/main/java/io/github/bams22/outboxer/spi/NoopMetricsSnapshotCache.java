@@ -18,22 +18,22 @@ import java.util.Optional;
  */
 final class NoopMetricsSnapshotCache implements MetricsSnapshotCache {
 
-  static final NoopMetricsSnapshotCache INSTANCE = new NoopMetricsSnapshotCache();
+    static final NoopMetricsSnapshotCache INSTANCE = new NoopMetricsSnapshotCache();
 
-  private NoopMetricsSnapshotCache() {}
+    private NoopMetricsSnapshotCache() {}
 
-  @Override
-  public Optional<OutboxMetricsSnapshot> get() {
-    return Optional.empty();
-  }
+    @Override
+    public Optional<OutboxMetricsSnapshot> get() {
+        return Optional.empty();
+    }
 
-  @Override
-  public void put(OutboxMetricsSnapshot snapshot) {
-    Objects.requireNonNull(snapshot, "snapshot must not be null");
-  }
+    @Override
+    public void put(OutboxMetricsSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+    }
 
-  @Override
-  public void invalidate() {
-    // no-op
-  }
+    @Override
+    public void invalidate() {
+        // no-op
+    }
 }

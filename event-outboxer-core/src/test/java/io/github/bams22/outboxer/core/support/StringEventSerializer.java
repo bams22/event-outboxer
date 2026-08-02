@@ -21,33 +21,34 @@ import io.github.bams22.outboxer.spi.EventSerializer;
  */
 public final class StringEventSerializer implements EventSerializer {
 
-  /** Stable test format id. */
-  public static final String FORMAT = "test-string";
+    /** Stable test format id. */
+    public static final String FORMAT = "test-string";
 
-  @Override
-  public String format() {
-    return FORMAT;
-  }
-
-  @Override
-  public SerializedPayload serialize(Object payload) {
-    if (payload instanceof String s) {
-      return SerializedPayload.ofText(s);
+    @Override
+    public String format() {
+        return FORMAT;
     }
-    throw new PublishSerializationException(
-        "StringEventSerializer only supports String payloads, got " + payload.getClass().getName(),
-        new IllegalArgumentException());
-  }
 
-  @Override
-  public <T> T deserialize(SerializedPayload payload, Class<T> type) {
-    if (type == String.class) {
-      @SuppressWarnings("unchecked")
-      T cast = (T) payload.requireText();
-      return cast;
+    @Override
+    public SerializedPayload serialize(Object payload) {
+        if (payload instanceof String s) {
+            return SerializedPayload.ofText(s);
+        }
+        throw new PublishSerializationException(
+                "StringEventSerializer only supports String payloads, got "
+                        + payload.getClass().getName(),
+                new IllegalArgumentException());
     }
-    throw new PayloadDeserializationException(
-        "StringEventSerializer only supports String payloads, got " + type.getName(),
-        new IllegalArgumentException());
-  }
+
+    @Override
+    public <T> T deserialize(SerializedPayload payload, Class<T> type) {
+        if (type == String.class) {
+            @SuppressWarnings("unchecked")
+            T cast = (T) payload.requireText();
+            return cast;
+        }
+        throw new PayloadDeserializationException(
+                "StringEventSerializer only supports String payloads, got " + type.getName(),
+                new IllegalArgumentException());
+    }
 }

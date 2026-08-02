@@ -40,20 +40,21 @@ import org.springframework.context.annotation.Conditional;
  * (ADR-0024), and a transaction-aware proxy handed in that way is unwrapped back to its raw target.
  */
 @AutoConfiguration(
-    after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+        after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgAdvisoryLocker.class)
 @ConditionalOnBean(DataSource.class)
 @Conditional(OnPostgresAdvisoryLockCondition.class)
 public class PostgresAdvisoryLockAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(EntityLocker.class)
-  public EntityLocker outboxEntityLocker(
-      @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
-      ObjectProvider<DataSource> dataSources,
-      ListableBeanFactory beanFactory) {
-    return new PgAdvisoryLocker(
-        OutboxDataSourceResolver.unwrapTransactionAware(
-            OutboxDataSourceResolver.resolve(qualifiedDataSources, dataSources, beanFactory)));
-  }
+    @Bean
+    @ConditionalOnMissingBean(EntityLocker.class)
+    public EntityLocker outboxEntityLocker(
+            @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSources,
+            ObjectProvider<DataSource> dataSources,
+            ListableBeanFactory beanFactory) {
+        return new PgAdvisoryLocker(
+                OutboxDataSourceResolver.unwrapTransactionAware(
+                        OutboxDataSourceResolver.resolve(
+                                qualifiedDataSources, dataSources, beanFactory)));
+    }
 }

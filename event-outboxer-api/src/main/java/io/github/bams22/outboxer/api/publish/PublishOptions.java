@@ -38,27 +38,27 @@ import org.jspecify.annotations.Nullable;
  */
 @Builder
 public record PublishOptions(
-    @Nullable Instant runAt,
-    @Nullable Short priority,
-    @Nullable Map<String, String> traceContext,
-    @Nullable String dedupKey) {
+        @Nullable Instant runAt,
+        @Nullable Short priority,
+        @Nullable Map<String, String> traceContext,
+        @Nullable String dedupKey) {
 
-  public PublishOptions {
-    traceContext =
-        traceContext == null ? null : Collections.unmodifiableMap(Map.copyOf(traceContext));
-    if (dedupKey != null) {
-      if (dedupKey.isBlank()) {
-        throw new IllegalArgumentException("dedupKey must not be blank when set");
-      }
-      if (dedupKey.length() > 256) {
-        throw new IllegalArgumentException(
-            "dedupKey must be at most 256 characters, got " + dedupKey.length());
-      }
+    public PublishOptions {
+        traceContext =
+                traceContext == null ? null : Collections.unmodifiableMap(Map.copyOf(traceContext));
+        if (dedupKey != null) {
+            if (dedupKey.isBlank()) {
+                throw new IllegalArgumentException("dedupKey must not be blank when set");
+            }
+            if (dedupKey.length() > 256) {
+                throw new IllegalArgumentException(
+                        "dedupKey must be at most 256 characters, got " + dedupKey.length());
+            }
+        }
     }
-  }
 
-  /** Canonical empty instance — all defaults. */
-  public static PublishOptions defaults() {
-    return new PublishOptions(null, null, null, null);
-  }
+    /** Canonical empty instance — all defaults. */
+    public static PublishOptions defaults() {
+        return new PublishOptions(null, null, null, null);
+    }
 }

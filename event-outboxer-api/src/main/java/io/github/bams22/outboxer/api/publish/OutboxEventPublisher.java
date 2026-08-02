@@ -55,27 +55,27 @@ import org.jspecify.annotations.Nullable;
  */
 public interface OutboxEventPublisher {
 
-  /** Equivalent to {@code publish(eventType, payload, PublishOptions.defaults())}. */
-  UUID publish(String eventType, Object payload);
+    /** Equivalent to {@code publish(eventType, payload, PublishOptions.defaults())}. */
+    UUID publish(String eventType, Object payload);
 
-  /**
-   * Equivalent to {@code publish(eventType, payload,
-   * PublishOptions.builder().runAt(runAt).build())}.
-   */
-  UUID publish(String eventType, Object payload, Instant runAt);
+    /**
+     * Equivalent to {@code publish(eventType, payload,
+     * PublishOptions.builder().runAt(runAt).build())}.
+     */
+    UUID publish(String eventType, Object payload, Instant runAt);
 
-  /**
-   * Publishes a single event with explicit options.
-   *
-   * @param options publish options, or {@code null} to use {@code PublishOptions.defaults()}
-   * @return the id of the persisted event; the same value is visible through {@code Event.id()}
-   */
-  UUID publish(String eventType, Object payload, @Nullable PublishOptions options);
+    /**
+     * Publishes a single event with explicit options.
+     *
+     * @param options publish options, or {@code null} to use {@code PublishOptions.defaults()}
+     * @return the id of the persisted event; the same value is visible through {@code Event.id()}
+     */
+    UUID publish(String eventType, Object payload, @Nullable PublishOptions options);
 
-  /**
-   * Publishes a batch of events fail-fast. On success the returned list has the same size and order
-   * as {@code requests}; on any failure a {@code PublishFailedException} is raised and the caller's
-   * transaction is expected to roll back, leaving the outbox untouched.
-   */
-  List<UUID> publishAll(Collection<PublishRequest> requests);
+    /**
+     * Publishes a batch of events fail-fast. On success the returned list has the same size and
+     * order as {@code requests}; on any failure a {@code PublishFailedException} is raised and the
+     * caller's transaction is expected to roll back, leaving the outbox untouched.
+     */
+    List<UUID> publishAll(Collection<PublishRequest> requests);
 }

@@ -25,36 +25,36 @@ import org.slf4j.event.Level;
  */
 public final class LogFailureHandler<T> implements FailureHandler<T> {
 
-  private static final Logger LOG = LoggerFactory.getLogger(LogFailureHandler.class);
+    private static final Logger LOG = LoggerFactory.getLogger(LogFailureHandler.class);
 
-  private final Level level;
-  private final FailureHandler<T> delegate;
+    private final Level level;
+    private final FailureHandler<T> delegate;
 
-  /** Creates a decorator that logs at {@link Level#WARN}. */
-  public LogFailureHandler(FailureHandler<T> delegate) {
-    this(Level.WARN, delegate);
-  }
-
-  public LogFailureHandler(Level level, FailureHandler<T> delegate) {
-    this.level = Objects.requireNonNull(level, "level must not be null");
-    this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
-  }
-
-  public Level level() {
-    return level;
-  }
-
-  @Override
-  public FailureDecision onFailure(FailureContext<T> ctx) {
-    if (LOG.isEnabledForLevel(level)) {
-      LOG.atLevel(level)
-          .addArgument(ctx.event().id())
-          .addArgument(ctx.event().eventType())
-          .addArgument(ctx.attempt())
-          .addArgument(FailureUtil.reason(ctx))
-          .setCause(ctx.cause())
-          .log("Outbox handler failure: event={} type={} attempt={} reason={}");
+    /** Creates a decorator that logs at {@link Level#WARN}. */
+    public LogFailureHandler(FailureHandler<T> delegate) {
+        this(Level.WARN, delegate);
     }
-    return delegate.onFailure(ctx);
-  }
+
+    public LogFailureHandler(Level level, FailureHandler<T> delegate) {
+        this.level = Objects.requireNonNull(level, "level must not be null");
+        this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
+    }
+
+    public Level level() {
+        return level;
+    }
+
+    @Override
+    public FailureDecision onFailure(FailureContext<T> ctx) {
+        if (LOG.isEnabledForLevel(level)) {
+            LOG.atLevel(level)
+                    .addArgument(ctx.event().id())
+                    .addArgument(ctx.event().eventType())
+                    .addArgument(ctx.attempt())
+                    .addArgument(FailureUtil.reason(ctx))
+                    .setCause(ctx.cause())
+                    .log("Outbox handler failure: event={} type={} attempt={} reason={}");
+        }
+        return delegate.onFailure(ctx);
+    }
 }

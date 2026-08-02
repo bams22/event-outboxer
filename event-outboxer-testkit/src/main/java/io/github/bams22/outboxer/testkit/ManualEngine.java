@@ -31,85 +31,85 @@ import java.util.Objects;
  */
 public final class ManualEngine {
 
-  private final EventStore store;
-  private final WorkerId workerId;
-  private final HandlerDispatcher dispatcher;
-  private final HeartbeatTask heartbeat;
-  private final OrphanRecoveryTask orphanRecovery;
-  private final WatchdogTask watchdog;
-  private final List<String> eventTypes;
-  private final int defaultBatchSize;
+    private final EventStore store;
+    private final WorkerId workerId;
+    private final HandlerDispatcher dispatcher;
+    private final HeartbeatTask heartbeat;
+    private final OrphanRecoveryTask orphanRecovery;
+    private final WatchdogTask watchdog;
+    private final List<String> eventTypes;
+    private final int defaultBatchSize;
 
-  ManualEngine(
-      EventStore store,
-      WorkerId workerId,
-      HandlerDispatcher dispatcher,
-      HeartbeatTask heartbeat,
-      OrphanRecoveryTask orphanRecovery,
-      WatchdogTask watchdog,
-      List<String> eventTypes,
-      int defaultBatchSize) {
-    this.store = Objects.requireNonNull(store);
-    this.workerId = Objects.requireNonNull(workerId);
-    this.dispatcher = Objects.requireNonNull(dispatcher);
-    this.heartbeat = Objects.requireNonNull(heartbeat);
-    this.orphanRecovery = Objects.requireNonNull(orphanRecovery);
-    this.watchdog = Objects.requireNonNull(watchdog);
-    this.eventTypes = List.copyOf(eventTypes);
-    if (defaultBatchSize <= 0) {
-      throw new IllegalArgumentException(
-          "defaultBatchSize must be positive, got " + defaultBatchSize);
+    ManualEngine(
+            EventStore store,
+            WorkerId workerId,
+            HandlerDispatcher dispatcher,
+            HeartbeatTask heartbeat,
+            OrphanRecoveryTask orphanRecovery,
+            WatchdogTask watchdog,
+            List<String> eventTypes,
+            int defaultBatchSize) {
+        this.store = Objects.requireNonNull(store);
+        this.workerId = Objects.requireNonNull(workerId);
+        this.dispatcher = Objects.requireNonNull(dispatcher);
+        this.heartbeat = Objects.requireNonNull(heartbeat);
+        this.orphanRecovery = Objects.requireNonNull(orphanRecovery);
+        this.watchdog = Objects.requireNonNull(watchdog);
+        this.eventTypes = List.copyOf(eventTypes);
+        if (defaultBatchSize <= 0) {
+            throw new IllegalArgumentException(
+                    "defaultBatchSize must be positive, got " + defaultBatchSize);
+        }
+        this.defaultBatchSize = defaultBatchSize;
     }
-    this.defaultBatchSize = defaultBatchSize;
-  }
 
-  /**
-   * Claim + dispatch every currently-eligible event for every registered type, on the calling
-   * thread. Returns the total number of events dispatched.
-   */
-  public int tick() {
-    int total = 0;
-    for (String type : eventTypes) {
-      total += tick(type, defaultBatchSize);
+    /**
+     * Claim + dispatch every currently-eligible event for every registered type, on the calling
+     * thread. Returns the total number of events dispatched.
+     */
+    public int tick() {
+        int total = 0;
+        for (String type : eventTypes) {
+            total += tick(type, defaultBatchSize);
+        }
+        return total;
     }
-    return total;
-  }
 
-  /** Claim + dispatch up to {@code batchSize} events of {@code eventType}. */
-  public int tick(String eventType, int batchSize) {
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    if (batchSize <= 0) {
-      throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
+    /** Claim + dispatch up to {@code batchSize} events of {@code eventType}. */
+    public int tick(String eventType, int batchSize) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be positive, got " + batchSize);
+        }
+        List<ClaimedEvent> claimed = store.claim(new ClaimRequest(eventType, workerId, batchSize));
+        for (ClaimedEvent c : claimed) {
+            dispatcher.dispatch(c);
+        }
+        return claimed.size();
     }
-    List<ClaimedEvent> claimed = store.claim(new ClaimRequest(eventType, workerId, batchSize));
-    for (ClaimedEvent c : claimed) {
-      dispatcher.dispatch(c);
+
+    /** Run one heartbeat cycle. */
+    public void tickHeartbeat() {
+        heartbeat.run();
     }
-    return claimed.size();
-  }
 
-  /** Run one heartbeat cycle. */
-  public void tickHeartbeat() {
-    heartbeat.run();
-  }
+    /** Run one orphan-recovery cycle. */
+    public void tickOrphanRecovery() {
+        orphanRecovery.run();
+    }
 
-  /** Run one orphan-recovery cycle. */
-  public void tickOrphanRecovery() {
-    orphanRecovery.run();
-  }
+    /** Run one watchdog cycle. */
+    public void tickWatchdog() {
+        watchdog.run();
+    }
 
-  /** Run one watchdog cycle. */
-  public void tickWatchdog() {
-    watchdog.run();
-  }
+    /** Worker id the engine runs under. */
+    public WorkerId workerId() {
+        return workerId;
+    }
 
-  /** Worker id the engine runs under. */
-  public WorkerId workerId() {
-    return workerId;
-  }
-
-  /** Every event type with a registered handler. */
-  public List<String> eventTypes() {
-    return eventTypes;
-  }
+    /** Every event type with a registered handler. */
+    public List<String> eventTypes() {
+        return eventTypes;
+    }
 }

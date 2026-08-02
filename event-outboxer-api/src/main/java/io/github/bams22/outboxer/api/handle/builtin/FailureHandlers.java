@@ -18,28 +18,28 @@ import java.time.Duration;
  */
 public final class FailureHandlers {
 
-  private FailureHandlers() {}
+    private FailureHandlers() {}
 
-  /**
-   * Returns the default failure handler: {@code Log(WARN) → MaxRetries(10, DISABLE) →
-   * ExponentialBackoff(base=5s, multiplier=2, cap=1h, jitter=0.2)}.
-   *
-   * <p>No listener-forwarding decorator is included: the engine dispatcher emits {@code
-   * onEventRetryScheduled} / {@code onEventDisabled} / {@code onEventDeleted} directly after the
-   * decision is persisted, so wrapping the chain in a listener decorator would produce duplicate
-   * events. See ADR-0007 §Q25.
-   *
-   * @param <T> payload type inferred from the use site
-   */
-  public static <T> FailureHandler<T> defaults() {
-    return FailureHandlers.<T>builder()
-        .withLogging(org.slf4j.event.Level.WARN)
-        .withMaxAttempts(10, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
-        .withExponentialBackoff(Duration.ofSeconds(5), 2.0, Duration.ofHours(1), 0.2);
-  }
+    /**
+     * Returns the default failure handler: {@code Log(WARN) → MaxRetries(10, DISABLE) →
+     * ExponentialBackoff(base=5s, multiplier=2, cap=1h, jitter=0.2)}.
+     *
+     * <p>No listener-forwarding decorator is included: the engine dispatcher emits {@code
+     * onEventRetryScheduled} / {@code onEventDisabled} / {@code onEventDeleted} directly after the
+     * decision is persisted, so wrapping the chain in a listener decorator would produce duplicate
+     * events. See ADR-0007 §Q25.
+     *
+     * @param <T> payload type inferred from the use site
+     */
+    public static <T> FailureHandler<T> defaults() {
+        return FailureHandlers.<T>builder()
+                .withLogging(org.slf4j.event.Level.WARN)
+                .withMaxAttempts(10, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
+                .withExponentialBackoff(Duration.ofSeconds(5), 2.0, Duration.ofHours(1), 0.2);
+    }
 
-  /** Starts a new {@link FailureHandlerBuilder}. */
-  public static <T> FailureHandlerBuilder<T> builder() {
-    return new FailureHandlerBuilder<>();
-  }
+    /** Starts a new {@link FailureHandlerBuilder}. */
+    public static <T> FailureHandlerBuilder<T> builder() {
+        return new FailureHandlerBuilder<>();
+    }
 }

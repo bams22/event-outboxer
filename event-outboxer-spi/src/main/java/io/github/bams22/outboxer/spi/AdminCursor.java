@@ -20,8 +20,8 @@ import java.util.UUID;
  */
 public record AdminCursor(Instant createdAt, UUID id) {
 
-  public AdminCursor {
-    Objects.requireNonNull(createdAt, "createdAt must not be null");
-    Objects.requireNonNull(id, "id must not be null");
-  }
+    public AdminCursor {
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+    }
 }

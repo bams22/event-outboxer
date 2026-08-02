@@ -17,12 +17,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class WorkerRegistryException extends StorageException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-303";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-303";
 
-  public WorkerRegistryException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public WorkerRegistryException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

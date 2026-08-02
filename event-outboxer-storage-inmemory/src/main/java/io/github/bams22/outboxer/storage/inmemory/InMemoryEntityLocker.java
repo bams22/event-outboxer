@@ -31,60 +31,60 @@ import java.util.concurrent.ConcurrentMap;
  */
 public final class InMemoryEntityLocker implements EntityLocker {
 
-  private final ConcurrentMap<String, Slot> slots = new ConcurrentHashMap<>();
-  private final Clock clock;
+    private final ConcurrentMap<String, Slot> slots = new ConcurrentHashMap<>();
+    private final Clock clock;
 
-  public InMemoryEntityLocker() {
-    this(Clock.system());
-  }
-
-  public InMemoryEntityLocker(Clock clock) {
-    this.clock = Objects.requireNonNull(clock, "clock must not be null");
-  }
-
-  @Override
-  public Optional<LockHandle> tryLock(String key, Duration ttl) {
-    Objects.requireNonNull(key, "key must not be null");
-    Objects.requireNonNull(ttl, "ttl must not be null");
-    Instant now = clock.now();
-    Instant expiry = now.plus(ttl);
-    String token = UUID.randomUUID().toString();
-    Slot candidate = new Slot(token, expiry);
-
-    Slot existing = slots.putIfAbsent(key, candidate);
-    if (existing == null) {
-      return Optional.of(new Handle(key, token));
+    public InMemoryEntityLocker() {
+        this(Clock.system());
     }
-    if (existing.expiry.isBefore(now) && slots.replace(key, existing, candidate)) {
-      return Optional.of(new Handle(key, token));
-    }
-    return Optional.empty();
-  }
 
-  private void releaseIfOwned(String key, String token) {
-    slots.computeIfPresent(key, (k, cur) -> cur.token.equals(token) ? null : cur);
-  }
-
-  private record Slot(String token, Instant expiry) {}
-
-  private final class Handle implements LockHandle {
-
-    private final String key;
-    private final String token;
-    private volatile boolean closed;
-
-    Handle(String key, String token) {
-      this.key = key;
-      this.token = token;
+    public InMemoryEntityLocker(Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     @Override
-    public void close() {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      releaseIfOwned(key, token);
+    public Optional<LockHandle> tryLock(String key, Duration ttl) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        Instant now = clock.now();
+        Instant expiry = now.plus(ttl);
+        String token = UUID.randomUUID().toString();
+        Slot candidate = new Slot(token, expiry);
+
+        Slot existing = slots.putIfAbsent(key, candidate);
+        if (existing == null) {
+            return Optional.of(new Handle(key, token));
+        }
+        if (existing.expiry.isBefore(now) && slots.replace(key, existing, candidate)) {
+            return Optional.of(new Handle(key, token));
+        }
+        return Optional.empty();
     }
-  }
+
+    private void releaseIfOwned(String key, String token) {
+        slots.computeIfPresent(key, (k, cur) -> cur.token.equals(token) ? null : cur);
+    }
+
+    private record Slot(String token, Instant expiry) {}
+
+    private final class Handle implements LockHandle {
+
+        private final String key;
+        private final String token;
+        private volatile boolean closed;
+
+        Handle(String key, String token) {
+            this.key = key;
+            this.token = token;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            releaseIfOwned(key, token);
+        }
+    }
 }

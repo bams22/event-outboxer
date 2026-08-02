@@ -14,8 +14,8 @@ import io.github.bams22.outboxer.spi.contracts.AbstractEntityLockerContractTest;
 
 class InMemoryEntityLockerTest extends AbstractEntityLockerContractTest {
 
-  @Override
-  protected EntityLocker newLocker() {
-    return new InMemoryEntityLocker();
-  }
+    @Override
+    protected EntityLocker newLocker() {
+        return new InMemoryEntityLocker();
+    }
 }

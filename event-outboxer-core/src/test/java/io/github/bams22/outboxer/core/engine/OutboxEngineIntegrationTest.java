@@ -37,352 +37,366 @@ import org.junit.jupiter.api.Test;
 
 class OutboxEngineIntegrationTest {
 
-  private InMemoryEventStore store;
-  private InMemoryWorkerRegistry registry;
-  private OutboxEngine engine;
+    private InMemoryEventStore store;
+    private InMemoryWorkerRegistry registry;
+    private OutboxEngine engine;
 
-  @BeforeEach
-  void setup() {
-    store = new InMemoryEventStore();
-    registry = new InMemoryWorkerRegistry();
-  }
-
-  @AfterEach
-  void teardown() {
-    // isLifecycleActive() stays true across a crash (state() would report STOPPED). We still
-    // want to run stop() to clean up maintenance scheduler + handler pools in both cases.
-    if (engine != null && engine.isLifecycleActive()) {
-      engine.stop(Duration.ofSeconds(2));
+    @BeforeEach
+    void setup() {
+        store = new InMemoryEventStore();
+        registry = new InMemoryWorkerRegistry();
     }
-  }
 
-  @Test
-  @DisplayName("publish → claim → handle=Success → row deleted")
-  void happyPath() {
-    AtomicInteger invoked = new AtomicInteger();
-    Set<String> seen = ConcurrentHashMap.newKeySet();
-    engine =
-        fastEngine()
-            .handler(
-                recordingHandler(
-                    "ORDER",
-                    (ctx, payload) -> {
-                      invoked.incrementAndGet();
-                      seen.add(payload);
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .build();
-    engine.start();
+    @AfterEach
+    void teardown() {
+        // isLifecycleActive() stays true across a crash (state() would report STOPPED). We still
+        // want to run stop() to clean up maintenance scheduler + handler pools in both cases.
+        if (engine != null && engine.isLifecycleActive()) {
+            engine.stop(Duration.ofSeconds(2));
+        }
+    }
 
-    UUID id = engine.publisher().publish("ORDER", "order-1");
+    @Test
+    @DisplayName("publish → claim → handle=Success → row deleted")
+    void happyPath() {
+        AtomicInteger invoked = new AtomicInteger();
+        Set<String> seen = ConcurrentHashMap.newKeySet();
+        engine =
+                fastEngine()
+                        .handler(
+                                recordingHandler(
+                                        "ORDER",
+                                        (ctx, payload) -> {
+                                            invoked.incrementAndGet();
+                                            seen.add(payload);
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
 
-    await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(id).isEmpty());
-    assertThat(invoked).hasValueGreaterThanOrEqualTo(1);
-    assertThat(seen).contains("order-1");
-  }
+        UUID id = engine.publisher().publish("ORDER", "order-1");
 
-  @Test
-  @DisplayName("per-type isolation: slow type-A does not block fast type-B")
-  void perTypeIsolation() {
-    AtomicInteger slowDone = new AtomicInteger();
-    AtomicInteger fastDone = new AtomicInteger();
-    engine =
-        fastEngine()
-            .handler(
-                recordingHandler(
-                    "SLOW",
-                    (ctx, payload) -> {
-                      sleepQuietly(500);
-                      slowDone.incrementAndGet();
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .handler(
-                recordingHandler(
-                    "FAST",
-                    (ctx, payload) -> {
-                      fastDone.incrementAndGet();
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .build();
-    engine.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(id).isEmpty());
+        assertThat(invoked).hasValueGreaterThanOrEqualTo(1);
+        assertThat(seen).contains("order-1");
+    }
 
-    // Saturate the slow type with one event, then publish a fast one.
-    engine.publisher().publish("SLOW", "slow-1");
-    UUID fastId = engine.publisher().publish("FAST", "fast-1");
+    @Test
+    @DisplayName("per-type isolation: slow type-A does not block fast type-B")
+    void perTypeIsolation() {
+        AtomicInteger slowDone = new AtomicInteger();
+        AtomicInteger fastDone = new AtomicInteger();
+        engine =
+                fastEngine()
+                        .handler(
+                                recordingHandler(
+                                        "SLOW",
+                                        (ctx, payload) -> {
+                                            sleepQuietly(500);
+                                            slowDone.incrementAndGet();
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .handler(
+                                recordingHandler(
+                                        "FAST",
+                                        (ctx, payload) -> {
+                                            fastDone.incrementAndGet();
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
 
-    await()
-        .atMost(Duration.ofSeconds(2))
-        .until(() -> fastDone.get() >= 1 && store.findById(fastId).isEmpty());
-  }
+        // Saturate the slow type with one event, then publish a fast one.
+        engine.publisher().publish("SLOW", "slow-1");
+        UUID fastId = engine.publisher().publish("FAST", "fast-1");
 
-  @Test
-  @DisplayName("handler exception → failure chain → retry scheduled")
-  void retryOnException() {
-    AtomicInteger attempts = new AtomicInteger();
-    engine =
-        fastEngine()
-            .handler(
-                recordingHandler(
-                    "FLAKY",
-                    (ctx, payload) -> {
-                      int n = attempts.incrementAndGet();
-                      if (n < 2) {
-                        throw new RuntimeException("transient failure #" + n);
-                      }
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .build();
-    engine.start();
+        await().atMost(Duration.ofSeconds(2))
+                .until(() -> fastDone.get() >= 1 && store.findById(fastId).isEmpty());
+    }
 
-    UUID id = engine.publisher().publish("FLAKY", "payload");
+    @Test
+    @DisplayName("handler exception → failure chain → retry scheduled")
+    void retryOnException() {
+        AtomicInteger attempts = new AtomicInteger();
+        engine =
+                fastEngine()
+                        .handler(
+                                recordingHandler(
+                                        "FLAKY",
+                                        (ctx, payload) -> {
+                                            int n = attempts.incrementAndGet();
+                                            if (n < 2) {
+                                                throw new RuntimeException(
+                                                        "transient failure #" + n);
+                                            }
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
 
-    await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
-    assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
-  }
+        UUID id = engine.publisher().publish("FLAKY", "payload");
 
-  @Test
-  @DisplayName("poller thread death → health check flips engine state to STOPPED")
-  void crashDetectionFlipsStateOnPollerDeath() {
-    AtomicReference<EngineCrashedInfo> captured = new AtomicReference<>();
-    OutboxListener crashListener =
-        new OutboxListener() {
-          @Override
-          public void onEngineCrashed(EngineCrashedInfo info) {
-            captured.set(info);
-          }
-        };
+        await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
+        assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
+    }
 
-    engine =
-        fastEngine()
-            .handler(recordingHandler("BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
-            .pollStrategy(
-                (eventType, workerId, batchSize) -> {
-                  // Uncaught Error — bypasses Poller.tick()'s RuntimeException catch, kills
-                  // thread. Plain java.lang.Error on purpose: VirtualMachineError subclasses
-                  // like OutOfMemoryError / StackOverflowError are interpreted by some JVM
-                  // tooling (surefire fork, ByteBuddy agent, certain JDK 25 builds) as fatal
-                  // for the whole JVM, even when thrown synthetically. Plain Error keeps the
-                  // crash-detection semantics (non-RuntimeException, kills the thread) without
-                  // triggering JVM-critical handling.
-                  throw new Error("simulated");
-                })
-            .listener(crashListener)
-            .build();
-    engine.start();
-
-    // Watchdog/health-check cadence in fastEngine is 200ms; allow time for at least one pass.
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .pollInterval(Duration.ofMillis(50))
-        .until(() -> engine.state() == OutboxEngine.State.STOPPED);
-
-    assertThat(engine.isLifecycleActive()).isTrue(); // stop() not yet called; cleanup pending
-    assertThat(captured.get()).isNotNull();
-    assertThat(captured.get().reason()).contains("BOOM");
-    assertThat(captured.get().workerId()).isEqualTo(engine.workerId());
-  }
-
-  @Test
-  @DisplayName("after-commit wake: publish is handled fast even with a long poll interval")
-  void publishWakesPollerBypassingPollInterval() {
-    AtomicInteger handled = new AtomicInteger();
-    // Poll intervals deliberately long: without the wake the first claim after publish would
-    // take >= 2s (and >= 8s from deep backoff). With the wake the event must be handled almost
-    // immediately: alwaysActive() runs the afterCommit hook right away.
-    EventTypeConfig slowPolling =
-        EventTypeConfig.defaults().toBuilder()
-            .pollMinInterval(Duration.ofSeconds(2))
-            .pollMaxInterval(Duration.ofSeconds(8))
-            .build();
-    engine =
-        fastEngine()
-            .defaultEventTypeConfig(slowPolling)
-            .handler(
-                recordingHandler(
-                    "WAKE",
-                    (ctx, payload) -> {
-                      handled.incrementAndGet();
-                      return EventOutcome.Success.INSTANCE;
-                    }))
-            .build();
-    engine.start();
-
-    // Let the poller run its first tick (empty) and settle into a multi-second park.
-    sleepQuietly(300);
-
-    long publishedAt = System.nanoTime();
-    UUID id = engine.publisher().publish("WAKE", "payload");
-
-    await().atMost(Duration.ofMillis(1500)).until(() -> store.findById(id).isEmpty());
-    long tookMillis = (System.nanoTime() - publishedAt) / 1_000_000;
-    assertThat(handled).hasValueGreaterThanOrEqualTo(1);
-    // Far below pollMinInterval=2s: proves the park was cut short by the wake, not by polling.
-    assertThat(tookMillis).isLessThan(1500);
-  }
-
-  @Test
-  @DisplayName("unknown handler (policy=SKIP) reschedules the event back to PENDING")
-  void unknownHandlerReschedules() {
-    engine =
-        fastEngine()
-            .handler(recordingHandler("KNOWN", (ctx, payload) -> EventOutcome.Success.INSTANCE))
-            .build();
-    engine.start();
-
-    UUID unknownId = UUID.randomUUID();
-    store.save(
-        io.github.bams22.outboxer.domain.PendingEvent.builder()
-            .id(unknownId)
-            .eventType("UNKNOWN")
-            .payload(io.github.bams22.outboxer.domain.SerializedPayload.ofText("x"))
-            .payloadFormat(io.github.bams22.outboxer.core.support.StringEventSerializer.FORMAT)
-            .payloadClass("java.lang.String")
-            .priority((short) 0)
-            .runAt(java.time.Instant.now().minusSeconds(1))
-            .traceContext(java.util.Map.of())
-            .build());
-
-    // Should be picked by a poller eventually... but we only poll KNOWN, so no poller sees it.
-    // The test validates that no KNOWN poller errors; the UNKNOWN row stays PENDING.
-    sleepQuietly(500);
-    assertThat(store.findById(unknownId)).isPresent();
-  }
-
-  @Test
-  @DisplayName(
-      "group-commit finalize: a burst yields fewer finalize statements than events, "
-          + "with per-event listener callbacks intact")
-  void finalizeBatchingCoalescesStatements() {
-    CountingBatchStore counting = new CountingBatchStore(store);
-    AtomicInteger processedCallbacks = new AtomicInteger();
-    int events = 30;
-    engine =
-        fastEngine()
-            .eventStore(counting)
-            .defaultEventTypeConfig(
-                EventTypeConfig.defaults().toBuilder()
-                    .pollMinInterval(Duration.ofMillis(10))
-                    .pollMaxInterval(Duration.ofMillis(50))
-                    .pollMultiplier(1.1)
-                    .handlerPoolSize(8)
-                    .handlerMaxRuntime(Duration.ofSeconds(30))
-                    .build())
-            .listener(
+    @Test
+    @DisplayName("poller thread death → health check flips engine state to STOPPED")
+    void crashDetectionFlipsStateOnPollerDeath() {
+        AtomicReference<EngineCrashedInfo> captured = new AtomicReference<>();
+        OutboxListener crashListener =
                 new OutboxListener() {
-                  @Override
-                  public void onEventProcessed(
-                      io.github.bams22.outboxer.api.observer.EventProcessedInfo info) {
-                    processedCallbacks.incrementAndGet();
-                  }
-                })
-            .handler(recordingHandler("BATCHY", (ctx, p) -> EventOutcome.Success.INSTANCE))
-            .build();
-    engine.start();
+                    @Override
+                    public void onEngineCrashed(EngineCrashedInfo info) {
+                        captured.set(info);
+                    }
+                };
 
-    for (int i = 0; i < events; i++) {
-      engine.publisher().publish("BATCHY", "e-" + i);
+        engine =
+                fastEngine()
+                        .handler(
+                                recordingHandler(
+                                        "BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+                        .pollStrategy(
+                                (eventType, workerId, batchSize) -> {
+                                    // Uncaught Error — bypasses Poller.tick()'s RuntimeException
+                                    // catch, kills
+                                    // thread. Plain java.lang.Error on purpose: VirtualMachineError
+                                    // subclasses
+                                    // like OutOfMemoryError / StackOverflowError are interpreted by
+                                    // some JVM
+                                    // tooling (surefire fork, ByteBuddy agent, certain JDK 25
+                                    // builds) as fatal
+                                    // for the whole JVM, even when thrown synthetically. Plain
+                                    // Error keeps the
+                                    // crash-detection semantics (non-RuntimeException, kills the
+                                    // thread) without
+                                    // triggering JVM-critical handling.
+                                    throw new Error("simulated");
+                                })
+                        .listener(crashListener)
+                        .build();
+        engine.start();
+
+        // Watchdog/health-check cadence in fastEngine is 200ms; allow time for at least one pass.
+        await().atMost(Duration.ofSeconds(5))
+                .pollInterval(Duration.ofMillis(50))
+                .until(() -> engine.state() == OutboxEngine.State.STOPPED);
+
+        assertThat(engine.isLifecycleActive()).isTrue(); // stop() not yet called; cleanup pending
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().reason()).contains("BOOM");
+        assertThat(captured.get().workerId()).isEqualTo(engine.workerId());
     }
 
-    await().atMost(Duration.ofSeconds(10)).until(() -> processedCallbacks.get() == events);
-    assertThat(counting.totalMarksFlushed.get()).isEqualTo(events);
-    assertThat(counting.batchCalls.get())
-        .as("group commit must coalesce finalizes into fewer statements than events")
-        .isLessThan(events);
-  }
+    @Test
+    @DisplayName("after-commit wake: publish is handled fast even with a long poll interval")
+    void publishWakesPollerBypassingPollInterval() {
+        AtomicInteger handled = new AtomicInteger();
+        // Poll intervals deliberately long: without the wake the first claim after publish would
+        // take >= 2s (and >= 8s from deep backoff). With the wake the event must be handled almost
+        // immediately: alwaysActive() runs the afterCommit hook right away.
+        EventTypeConfig slowPolling =
+                EventTypeConfig.defaults().toBuilder()
+                        .pollMinInterval(Duration.ofSeconds(2))
+                        .pollMaxInterval(Duration.ofSeconds(8))
+                        .build();
+        engine =
+                fastEngine()
+                        .defaultEventTypeConfig(slowPolling)
+                        .handler(
+                                recordingHandler(
+                                        "WAKE",
+                                        (ctx, payload) -> {
+                                            handled.incrementAndGet();
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
 
-  // ---------------------------------------------------------------------------------------------
-  // helpers
-  // ---------------------------------------------------------------------------------------------
+        // Let the poller run its first tick (empty) and settle into a multi-second park.
+        sleepQuietly(300);
 
-  /**
-   * Counts finalize batch statements. The artificial flush latency widens the group-commit window
-   * so the coalescing assertion is deterministic rather than a scheduling coincidence.
-   */
-  private static final class CountingBatchStore
-      extends io.github.bams22.outboxer.core.support.ForwardingEventStore {
+        long publishedAt = System.nanoTime();
+        UUID id = engine.publisher().publish("WAKE", "payload");
 
-    final AtomicInteger batchCalls = new AtomicInteger();
-    final AtomicInteger totalMarksFlushed = new AtomicInteger();
-
-    CountingBatchStore(InMemoryEventStore delegate) {
-      super(delegate);
+        await().atMost(Duration.ofMillis(1500)).until(() -> store.findById(id).isEmpty());
+        long tookMillis = (System.nanoTime() - publishedAt) / 1_000_000;
+        assertThat(handled).hasValueGreaterThanOrEqualTo(1);
+        // Far below pollMinInterval=2s: proves the park was cut short by the wake, not by polling.
+        assertThat(tookMillis).isLessThan(1500);
     }
 
-    @Override
-    public Set<UUID> markProcessedAll(
-        List<io.github.bams22.outboxer.spi.EventStore.ProcessedMark> marks,
-        io.github.bams22.outboxer.domain.WorkerId workerId) {
-      batchCalls.incrementAndGet();
-      totalMarksFlushed.addAndGet(marks.size());
-      sleepQuietly(20);
-      return delegate.markProcessedAll(marks, workerId);
+    @Test
+    @DisplayName("unknown handler (policy=SKIP) reschedules the event back to PENDING")
+    void unknownHandlerReschedules() {
+        engine =
+                fastEngine()
+                        .handler(
+                                recordingHandler(
+                                        "KNOWN", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+                        .build();
+        engine.start();
+
+        UUID unknownId = UUID.randomUUID();
+        store.save(
+                io.github.bams22.outboxer.domain.PendingEvent.builder()
+                        .id(unknownId)
+                        .eventType("UNKNOWN")
+                        .payload(io.github.bams22.outboxer.domain.SerializedPayload.ofText("x"))
+                        .payloadFormat(
+                                io.github.bams22.outboxer.core.support.StringEventSerializer.FORMAT)
+                        .payloadClass("java.lang.String")
+                        .priority((short) 0)
+                        .runAt(java.time.Instant.now().minusSeconds(1))
+                        .traceContext(java.util.Map.of())
+                        .build());
+
+        // Should be picked by a poller eventually... but we only poll KNOWN, so no poller sees it.
+        // The test validates that no KNOWN poller errors; the UNKNOWN row stays PENDING.
+        sleepQuietly(500);
+        assertThat(store.findById(unknownId)).isPresent();
     }
-  }
 
-  private OutboxEngineBuilder fastEngine() {
-    EventTypeConfig fast =
-        EventTypeConfig.defaults().toBuilder()
-            .pollMinInterval(Duration.ofMillis(10))
-            .pollMaxInterval(Duration.ofMillis(50))
-            .pollMultiplier(1.1)
-            .handlerPoolSize(2)
-            .handlerMaxRuntime(Duration.ofSeconds(30))
-            .build();
-    MaintenanceConfig maintenance =
-        MaintenanceConfig.builder()
-            .heartbeatInterval(Duration.ofMillis(100))
-            .deadThreshold(Duration.ofSeconds(1))
-            .orphanRecoveryInterval(Duration.ofMillis(500))
-            .watchdogInterval(Duration.ofMillis(200))
-            .reclaimBatchSize(10)
-            .shutdownTimeout(Duration.ofSeconds(2))
-            .staleClaimSweepInterval(Duration.ofMinutes(5))
-            .build();
-    return new OutboxEngineBuilder()
-        .eventStore(store)
-        .workerRegistry(registry)
-        .eventSerializer(new StringEventSerializer())
-        .defaultEventTypeConfig(fast)
-        .maintenance(maintenance)
-        .noTransactionPolicy(NoTransactionPolicy.IGNORE)
-        .includeLoggingListener(false)
-        .listener(new OutboxListener() {});
-  }
+    @Test
+    @DisplayName(
+            "group-commit finalize: a burst yields fewer finalize statements than events, "
+                    + "with per-event listener callbacks intact")
+    void finalizeBatchingCoalescesStatements() {
+        CountingBatchStore counting = new CountingBatchStore(store);
+        AtomicInteger processedCallbacks = new AtomicInteger();
+        int events = 30;
+        engine =
+                fastEngine()
+                        .eventStore(counting)
+                        .defaultEventTypeConfig(
+                                EventTypeConfig.defaults().toBuilder()
+                                        .pollMinInterval(Duration.ofMillis(10))
+                                        .pollMaxInterval(Duration.ofMillis(50))
+                                        .pollMultiplier(1.1)
+                                        .handlerPoolSize(8)
+                                        .handlerMaxRuntime(Duration.ofSeconds(30))
+                                        .build())
+                        .listener(
+                                new OutboxListener() {
+                                    @Override
+                                    public void onEventProcessed(
+                                            io.github.bams22.outboxer.api.observer
+                                                            .EventProcessedInfo
+                                                    info) {
+                                        processedCallbacks.incrementAndGet();
+                                    }
+                                })
+                        .handler(
+                                recordingHandler(
+                                        "BATCHY", (ctx, p) -> EventOutcome.Success.INSTANCE))
+                        .build();
+        engine.start();
 
-  @FunctionalInterface
-  private interface HandleFn {
-    EventOutcome apply(EventContext ctx, String payload);
-  }
+        for (int i = 0; i < events; i++) {
+            engine.publisher().publish("BATCHY", "e-" + i);
+        }
 
-  private static EventHandler<String> recordingHandler(String type, HandleFn fn) {
-    return new EventHandler<String>() {
-      @Override
-      public String eventType() {
-        return type;
-      }
-
-      @Override
-      public Class<String> payloadType() {
-        return String.class;
-      }
-
-      @Override
-      public EventOutcome handle(EventContext ctx, String payload) {
-        return fn.apply(ctx, payload);
-      }
-    };
-  }
-
-  private static void sleepQuietly(long ms) {
-    try {
-      Thread.sleep(ms);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+        await().atMost(Duration.ofSeconds(10)).until(() -> processedCallbacks.get() == events);
+        assertThat(counting.totalMarksFlushed.get()).isEqualTo(events);
+        assertThat(counting.batchCalls.get())
+                .as("group commit must coalesce finalizes into fewer statements than events")
+                .isLessThan(events);
     }
-  }
 
-  @SuppressWarnings("unused")
-  private static List<String> ignore() {
-    return List.of();
-  }
+    // ---------------------------------------------------------------------------------------------
+    // helpers
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Counts finalize batch statements. The artificial flush latency widens the group-commit window
+     * so the coalescing assertion is deterministic rather than a scheduling coincidence.
+     */
+    private static final class CountingBatchStore
+            extends io.github.bams22.outboxer.core.support.ForwardingEventStore {
+
+        final AtomicInteger batchCalls = new AtomicInteger();
+        final AtomicInteger totalMarksFlushed = new AtomicInteger();
+
+        CountingBatchStore(InMemoryEventStore delegate) {
+            super(delegate);
+        }
+
+        @Override
+        public Set<UUID> markProcessedAll(
+                List<io.github.bams22.outboxer.spi.EventStore.ProcessedMark> marks,
+                io.github.bams22.outboxer.domain.WorkerId workerId) {
+            batchCalls.incrementAndGet();
+            totalMarksFlushed.addAndGet(marks.size());
+            sleepQuietly(20);
+            return delegate.markProcessedAll(marks, workerId);
+        }
+    }
+
+    private OutboxEngineBuilder fastEngine() {
+        EventTypeConfig fast =
+                EventTypeConfig.defaults().toBuilder()
+                        .pollMinInterval(Duration.ofMillis(10))
+                        .pollMaxInterval(Duration.ofMillis(50))
+                        .pollMultiplier(1.1)
+                        .handlerPoolSize(2)
+                        .handlerMaxRuntime(Duration.ofSeconds(30))
+                        .build();
+        MaintenanceConfig maintenance =
+                MaintenanceConfig.builder()
+                        .heartbeatInterval(Duration.ofMillis(100))
+                        .deadThreshold(Duration.ofSeconds(1))
+                        .orphanRecoveryInterval(Duration.ofMillis(500))
+                        .watchdogInterval(Duration.ofMillis(200))
+                        .reclaimBatchSize(10)
+                        .shutdownTimeout(Duration.ofSeconds(2))
+                        .staleClaimSweepInterval(Duration.ofMinutes(5))
+                        .build();
+        return new OutboxEngineBuilder()
+                .eventStore(store)
+                .workerRegistry(registry)
+                .eventSerializer(new StringEventSerializer())
+                .defaultEventTypeConfig(fast)
+                .maintenance(maintenance)
+                .noTransactionPolicy(NoTransactionPolicy.IGNORE)
+                .includeLoggingListener(false)
+                .listener(new OutboxListener() {});
+    }
+
+    @FunctionalInterface
+    private interface HandleFn {
+        EventOutcome apply(EventContext ctx, String payload);
+    }
+
+    private static EventHandler<String> recordingHandler(String type, HandleFn fn) {
+        return new EventHandler<String>() {
+            @Override
+            public String eventType() {
+                return type;
+            }
+
+            @Override
+            public Class<String> payloadType() {
+                return String.class;
+            }
+
+            @Override
+            public EventOutcome handle(EventContext ctx, String payload) {
+                return fn.apply(ctx, payload);
+            }
+        };
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static List<String> ignore() {
+        return List.of();
+    }
 }

@@ -19,77 +19,77 @@ import org.junit.jupiter.api.Test;
 
 class PendingEventTest {
 
-  private static PendingEvent.PendingEventBuilder validBuilder() {
-    return PendingEvent.builder()
-        .id(UUID.randomUUID())
-        .eventType("TEST_EVENT")
-        .payload(SerializedPayload.ofText("{}"))
-        .payloadFormat("test-json")
-        .payloadClass("com.example.TestPayload")
-        .priority((short) 0)
-        .runAt(Instant.now())
-        .traceContext(Map.of());
-  }
+    private static PendingEvent.PendingEventBuilder validBuilder() {
+        return PendingEvent.builder()
+                .id(UUID.randomUUID())
+                .eventType("TEST_EVENT")
+                .payload(SerializedPayload.ofText("{}"))
+                .payloadFormat("test-json")
+                .payloadClass("com.example.TestPayload")
+                .priority((short) 0)
+                .runAt(Instant.now())
+                .traceContext(Map.of());
+    }
 
-  @Test
-  void builderProducesExpectedRecord() {
-    UUID id = UUID.randomUUID();
-    Instant now = Instant.parse("2026-01-01T00:00:00Z");
-    PendingEvent e =
-        PendingEvent.builder()
-            .id(id)
-            .eventType("T")
-            .payload(SerializedPayload.ofText("{\"x\":1}"))
-            .payloadFormat("test-json")
-            .payloadClass("com.example.X")
-            .priority((short) 3)
-            .runAt(now)
-            .traceContext(Map.of("traceparent", "00-x-y-z"))
-            .build();
-    assertThat(e.id()).isEqualTo(id);
-    assertThat(e.priority()).isEqualTo((short) 3);
-    assertThat(e.payloadFormat()).isEqualTo("test-json");
-    assertThat(e.traceContext()).containsEntry("traceparent", "00-x-y-z");
-  }
+    @Test
+    void builderProducesExpectedRecord() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.parse("2026-01-01T00:00:00Z");
+        PendingEvent e =
+                PendingEvent.builder()
+                        .id(id)
+                        .eventType("T")
+                        .payload(SerializedPayload.ofText("{\"x\":1}"))
+                        .payloadFormat("test-json")
+                        .payloadClass("com.example.X")
+                        .priority((short) 3)
+                        .runAt(now)
+                        .traceContext(Map.of("traceparent", "00-x-y-z"))
+                        .build();
+        assertThat(e.id()).isEqualTo(id);
+        assertThat(e.priority()).isEqualTo((short) 3);
+        assertThat(e.payloadFormat()).isEqualTo("test-json");
+        assertThat(e.traceContext()).containsEntry("traceparent", "00-x-y-z");
+    }
 
-  @Test
-  void rejectsBlankPayloadFormat() {
-    assertThatThrownBy(() -> validBuilder().payloadFormat(" ").build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("payloadFormat");
-  }
+    @Test
+    void rejectsBlankPayloadFormat() {
+        assertThatThrownBy(() -> validBuilder().payloadFormat(" ").build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("payloadFormat");
+    }
 
-  @Test
-  void rejectsOversizedPayloadFormat() {
-    assertThatThrownBy(() -> validBuilder().payloadFormat("x".repeat(65)).build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("payloadFormat");
-  }
+    @Test
+    void rejectsOversizedPayloadFormat() {
+        assertThatThrownBy(() -> validBuilder().payloadFormat("x".repeat(65)).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("payloadFormat");
+    }
 
-  @Test
-  void rejectsBlankEventType() {
-    assertThatThrownBy(() -> validBuilder().eventType("").build())
-        .isInstanceOf(IllegalArgumentException.class);
-  }
+    @Test
+    void rejectsBlankEventType() {
+        assertThatThrownBy(() -> validBuilder().eventType("").build())
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 
-  @Test
-  void rejectsNullPayload() {
-    assertThatThrownBy(() -> validBuilder().payload(null).build())
-        .isInstanceOf(NullPointerException.class);
-  }
+    @Test
+    void rejectsNullPayload() {
+        assertThatThrownBy(() -> validBuilder().payload(null).build())
+                .isInstanceOf(NullPointerException.class);
+    }
 
-  @Test
-  void rejectsNullTraceContext() {
-    assertThatThrownBy(() -> validBuilder().traceContext(null).build())
-        .isInstanceOf(NullPointerException.class)
-        .hasMessageContaining("traceContext");
-  }
+    @Test
+    void rejectsNullTraceContext() {
+        assertThatThrownBy(() -> validBuilder().traceContext(null).build())
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("traceContext");
+    }
 
-  @Test
-  void traceContextIsCopiedIntoAnImmutableMap() {
-    PendingEvent e = validBuilder().build();
-    assertThat(e.traceContext()).isEmpty();
-    assertThatThrownBy(() -> e.traceContext().put("x", "y"))
-        .isInstanceOf(UnsupportedOperationException.class);
-  }
+    @Test
+    void traceContextIsCopiedIntoAnImmutableMap() {
+        PendingEvent e = validBuilder().build();
+        assertThat(e.traceContext()).isEmpty();
+        assertThatThrownBy(() -> e.traceContext().put("x", "y"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

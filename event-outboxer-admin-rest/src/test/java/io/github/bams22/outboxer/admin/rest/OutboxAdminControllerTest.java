@@ -39,108 +39,113 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  */
 class OutboxAdminControllerTest {
 
-  private static final WorkerId WORKER = new WorkerId("rest-test");
+    private static final WorkerId WORKER = new WorkerId("rest-test");
 
-  private InMemoryEventStore store;
-  private MockMvc mvc;
+    private InMemoryEventStore store;
+    private MockMvc mvc;
 
-  @BeforeEach
-  void setUp() {
-    store = new InMemoryEventStore();
-    mvc =
-        MockMvcBuilders.standaloneSetup(
-                new OutboxAdminController(new InMemoryOutboxAdmin(store), store))
-            .build();
-  }
-
-  @Test
-  @DisplayName("GET /events lists the DISABLED backlog with a cursor on full pages")
-  void listsDisabled() throws Exception {
-    for (int i = 0; i < 3; i++) {
-      disableOne("T", "p-" + i);
+    @BeforeEach
+    void setUp() {
+        store = new InMemoryEventStore();
+        mvc =
+                MockMvcBuilders.standaloneSetup(
+                                new OutboxAdminController(new InMemoryOutboxAdmin(store), store))
+                        .build();
     }
 
-    mvc.perform(get("/outbox-admin/events").param("limit", "3"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.events", hasSize(3)))
-        .andExpect(jsonPath("$.nextCursor", notNullValue()));
-    mvc.perform(get("/outbox-admin/events").param("limit", "10"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.events", hasSize(3)))
-        .andExpect(jsonPath("$.nextCursor", nullValue()));
-  }
+    @Test
+    @DisplayName("GET /events lists the DISABLED backlog with a cursor on full pages")
+    void listsDisabled() throws Exception {
+        for (int i = 0; i < 3; i++) {
+            disableOne("T", "p-" + i);
+        }
 
-  @Test
-  @DisplayName("GET /events/{id}: 200 for active, 404 for unknown")
-  void readsSingle() throws Exception {
-    UUID id = disableOne("T", "single");
+        mvc.perform(get("/outbox-admin/events").param("limit", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.events", hasSize(3)))
+                .andExpect(jsonPath("$.nextCursor", notNullValue()));
+        mvc.perform(get("/outbox-admin/events").param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.events", hasSize(3)))
+                .andExpect(jsonPath("$.nextCursor", nullValue()));
+    }
 
-    mvc.perform(get("/outbox-admin/events/{id}", id))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("DISABLED"));
-    mvc.perform(get("/outbox-admin/events/{id}", UUID.randomUUID()))
-        .andExpect(status().isNotFound());
-  }
+    @Test
+    @DisplayName("GET /events/{id}: 200 for active, 404 for unknown")
+    void readsSingle() throws Exception {
+        UUID id = disableOne("T", "single");
 
-  @Test
-  @DisplayName("POST /events/{id}/reenable: 200 / 409 / 404")
-  void reenableStatusCodes() throws Exception {
-    UUID disabled = disableOne("T", "revive");
-    PendingEvent pendingEvent = pendingEvent("T", "still-pending");
-    store.save(pendingEvent);
+        mvc.perform(get("/outbox-admin/events/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"));
+        mvc.perform(get("/outbox-admin/events/{id}", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+    }
 
-    mvc.perform(post("/outbox-admin/events/{id}/reenable", disabled))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.count").value(1));
-    mvc.perform(post("/outbox-admin/events/{id}/reenable", pendingEvent.id()))
-        .andExpect(status().isConflict());
-    mvc.perform(post("/outbox-admin/events/{id}/reenable", UUID.randomUUID()))
-        .andExpect(status().isNotFound());
-  }
+    @Test
+    @DisplayName("POST /events/{id}/reenable: 200 / 409 / 404")
+    void reenableStatusCodes() throws Exception {
+        UUID disabled = disableOne("T", "revive");
+        PendingEvent pendingEvent = pendingEvent("T", "still-pending");
+        store.save(pendingEvent);
 
-  @Test
-  @DisplayName("bulk endpoints: reenable-all and purge/disabled return counts")
-  void bulkEndpoints() throws Exception {
-    disableOne("A", "a1");
-    disableOne("A", "a2");
-    disableOne("B", "b1");
+        mvc.perform(post("/outbox-admin/events/{id}/reenable", disabled))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1));
+        mvc.perform(post("/outbox-admin/events/{id}/reenable", pendingEvent.id()))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/outbox-admin/events/{id}/reenable", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+    }
 
-    mvc.perform(
-            post("/outbox-admin/events/reenable-all")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"eventType\": \"A\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.count").value(2));
-    mvc.perform(
-            post("/outbox-admin/purge/disabled")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"olderThan\": \"" + Instant.now().plusSeconds(3600) + "\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.count").value(1));
-  }
+    @Test
+    @DisplayName("bulk endpoints: reenable-all and purge/disabled return counts")
+    void bulkEndpoints() throws Exception {
+        disableOne("A", "a1");
+        disableOne("A", "a2");
+        disableOne("B", "b1");
 
-  private UUID disableOne(String type, String payload) {
-    PendingEvent p = pendingEvent(type, payload);
-    store.save(p);
-    ClaimedEvent claimed =
-        store.claim(new ClaimRequest(type, WORKER, 100)).stream()
-            .filter(ce -> ce.id().equals(p.id()))
-            .findFirst()
-            .orElseThrow();
-    store.markDisabled(claimed.id(), WORKER, claimed.claimedVersion(), "test");
-    return p.id();
-  }
+        mvc.perform(
+                        post("/outbox-admin/events/reenable-all")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"eventType\": \"A\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(2));
+        mvc.perform(
+                        post("/outbox-admin/purge/disabled")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"olderThan\": \""
+                                                + Instant.now().plusSeconds(3600)
+                                                + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1));
+    }
 
-  private static PendingEvent pendingEvent(String type, String payload) {
-    return PendingEvent.builder()
-        .id(UUID.randomUUID())
-        .eventType(type)
-        .payload(io.github.bams22.outboxer.domain.SerializedPayload.ofText("\"" + payload + "\""))
-        .payloadFormat("test-json")
-        .payloadClass("java.lang.String")
-        .priority((short) 0)
-        .runAt(Instant.now().minusSeconds(1))
-        .traceContext(Map.of())
-        .build();
-  }
+    private UUID disableOne(String type, String payload) {
+        PendingEvent p = pendingEvent(type, payload);
+        store.save(p);
+        ClaimedEvent claimed =
+                store.claim(new ClaimRequest(type, WORKER, 100)).stream()
+                        .filter(ce -> ce.id().equals(p.id()))
+                        .findFirst()
+                        .orElseThrow();
+        store.markDisabled(claimed.id(), WORKER, claimed.claimedVersion(), "test");
+        return p.id();
+    }
+
+    private static PendingEvent pendingEvent(String type, String payload) {
+        return PendingEvent.builder()
+                .id(UUID.randomUUID())
+                .eventType(type)
+                .payload(
+                        io.github.bams22.outboxer.domain.SerializedPayload.ofText(
+                                "\"" + payload + "\""))
+                .payloadFormat("test-json")
+                .payloadClass("java.lang.String")
+                .priority((short) 0)
+                .runAt(Instant.now().minusSeconds(1))
+                .traceContext(Map.of())
+                .build();
+    }
 }

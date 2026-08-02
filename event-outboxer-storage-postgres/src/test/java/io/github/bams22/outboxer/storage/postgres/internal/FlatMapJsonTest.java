@@ -18,43 +18,43 @@ import org.junit.jupiter.api.Test;
 
 class FlatMapJsonTest {
 
-  @Test
-  void emptyRoundTrip() {
-    assertThat(FlatMapJson.serialize(Map.of())).isEqualTo("{}");
-    assertThat(FlatMapJson.parse("{}")).isEmpty();
-  }
+    @Test
+    void emptyRoundTrip() {
+        assertThat(FlatMapJson.serialize(Map.of())).isEqualTo("{}");
+        assertThat(FlatMapJson.parse("{}")).isEmpty();
+    }
 
-  @Test
-  void singleEntryRoundTrip() {
-    Map<String, String> in = Map.of("traceparent", "00-abc-xyz-01");
-    String json = FlatMapJson.serialize(in);
-    assertThat(json).isEqualTo("{\"traceparent\":\"00-abc-xyz-01\"}");
-    assertThat(FlatMapJson.parse(json)).isEqualTo(in);
-  }
+    @Test
+    void singleEntryRoundTrip() {
+        Map<String, String> in = Map.of("traceparent", "00-abc-xyz-01");
+        String json = FlatMapJson.serialize(in);
+        assertThat(json).isEqualTo("{\"traceparent\":\"00-abc-xyz-01\"}");
+        assertThat(FlatMapJson.parse(json)).isEqualTo(in);
+    }
 
-  @Test
-  void escapesSpecialCharacters() {
-    Map<String, String> in = new LinkedHashMap<>();
-    in.put("k", "a\"b\\c\nd");
-    String json = FlatMapJson.serialize(in);
-    assertThat(json).isEqualTo("{\"k\":\"a\\\"b\\\\c\\nd\"}");
-    assertThat(FlatMapJson.parse(json)).isEqualTo(in);
-  }
+    @Test
+    void escapesSpecialCharacters() {
+        Map<String, String> in = new LinkedHashMap<>();
+        in.put("k", "a\"b\\c\nd");
+        String json = FlatMapJson.serialize(in);
+        assertThat(json).isEqualTo("{\"k\":\"a\\\"b\\\\c\\nd\"}");
+        assertThat(FlatMapJson.parse(json)).isEqualTo(in);
+    }
 
-  @Test
-  void rejectsNonObjectInput() {
-    assertThatThrownBy(() -> FlatMapJson.parse("[1, 2]"))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
+    @Test
+    void rejectsNonObjectInput() {
+        assertThatThrownBy(() -> FlatMapJson.parse("[1, 2]"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 
-  @Test
-  void rejectsNonStringValues() {
-    assertThatThrownBy(() -> FlatMapJson.parse("{\"k\":42}"))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
+    @Test
+    void rejectsNonStringValues() {
+        assertThatThrownBy(() -> FlatMapJson.parse("{\"k\":42}"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 
-  @Test
-  void parsesNullLiteralAsEmpty() {
-    assertThat(FlatMapJson.parse("null")).isEmpty();
-  }
+    @Test
+    void parsesNullLiteralAsEmpty() {
+        assertThat(FlatMapJson.parse("null")).isEmpty();
+    }
 }

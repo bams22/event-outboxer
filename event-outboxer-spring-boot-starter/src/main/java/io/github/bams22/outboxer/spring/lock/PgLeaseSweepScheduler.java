@@ -31,52 +31,52 @@ import org.springframework.beans.factory.InitializingBean;
  */
 final class PgLeaseSweepScheduler implements InitializingBean, DisposableBean {
 
-  private static final Logger log = LoggerFactory.getLogger(PgLeaseSweepScheduler.class);
+    private static final Logger log = LoggerFactory.getLogger(PgLeaseSweepScheduler.class);
 
-  private static final Duration CADENCE = Duration.ofMinutes(10);
+    private static final Duration CADENCE = Duration.ofMinutes(10);
 
-  private final @Nullable PgLeaseEntityLocker locker;
-  private @Nullable ScheduledExecutorService executor;
+    private final @Nullable PgLeaseEntityLocker locker;
+    private @Nullable ScheduledExecutorService executor;
 
-  /**
-   * A {@code null} locker disables the sweep — used when a user-defined {@code EntityLocker}
-   * displaced the lease locker.
-   */
-  PgLeaseSweepScheduler(@Nullable PgLeaseEntityLocker locker) {
-    this.locker = locker;
-  }
-
-  @Override
-  public void afterPropertiesSet() {
-    PgLeaseEntityLocker sweepTarget = locker;
-    if (sweepTarget == null) {
-      return;
+    /**
+     * A {@code null} locker disables the sweep — used when a user-defined {@code EntityLocker}
+     * displaced the lease locker.
+     */
+    PgLeaseSweepScheduler(@Nullable PgLeaseEntityLocker locker) {
+        this.locker = locker;
     }
-    executor =
-        Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().name("outbox-entity-locks-sweep").daemon().factory());
-    executor.scheduleWithFixedDelay(
-        () -> sweepQuietly(sweepTarget),
-        CADENCE.toMillis(),
-        CADENCE.toMillis(),
-        TimeUnit.MILLISECONDS);
-  }
 
-  private static void sweepQuietly(PgLeaseEntityLocker locker) {
-    try {
-      int removed = locker.sweepExpired();
-      if (removed > 0) {
-        log.debug("entity_locks sweep removed {} expired lease(s)", removed);
-      }
-    } catch (RuntimeException ex) {
-      log.warn("entity_locks sweep failed (will retry next cycle): {}", ex.toString());
+    @Override
+    public void afterPropertiesSet() {
+        PgLeaseEntityLocker sweepTarget = locker;
+        if (sweepTarget == null) {
+            return;
+        }
+        executor =
+                Executors.newSingleThreadScheduledExecutor(
+                        Thread.ofPlatform().name("outbox-entity-locks-sweep").daemon().factory());
+        executor.scheduleWithFixedDelay(
+                () -> sweepQuietly(sweepTarget),
+                CADENCE.toMillis(),
+                CADENCE.toMillis(),
+                TimeUnit.MILLISECONDS);
     }
-  }
 
-  @Override
-  public void destroy() {
-    if (executor != null) {
-      executor.shutdownNow();
+    private static void sweepQuietly(PgLeaseEntityLocker locker) {
+        try {
+            int removed = locker.sweepExpired();
+            if (removed > 0) {
+                log.debug("entity_locks sweep removed {} expired lease(s)", removed);
+            }
+        } catch (RuntimeException ex) {
+            log.warn("entity_locks sweep failed (will retry next cycle): {}", ex.toString());
+        }
     }
-  }
+
+    @Override
+    public void destroy() {
+        if (executor != null) {
+            executor.shutdownNow();
+        }
+    }
 }

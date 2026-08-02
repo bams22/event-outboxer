@@ -36,14 +36,14 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnProperty(prefix = "event-outboxer.cache", name = "type", havingValue = "redis")
 public class RedisCacheAutoConfiguration {
 
-  @Bean
-  @ConditionalOnMissingBean(MetricsSnapshotCache.class)
-  public MetricsSnapshotCache outboxRedisMetricsSnapshotCache(
-      StatefulRedisConnection<String, String> connection, OutboxProperties properties) {
-    return new LettuceMetricsSnapshotCache(
-        connection,
-        properties.getStorage().getMetricsCacheTtl(),
-        properties.getCache().getRedis().getKeyPrefix(),
-        JsonMapper.builder().addModule(new JavaTimeModule()).build());
-  }
+    @Bean
+    @ConditionalOnMissingBean(MetricsSnapshotCache.class)
+    public MetricsSnapshotCache outboxRedisMetricsSnapshotCache(
+            StatefulRedisConnection<String, String> connection, OutboxProperties properties) {
+        return new LettuceMetricsSnapshotCache(
+                connection,
+                properties.getStorage().getMetricsCacheTtl(),
+                properties.getCache().getRedis().getKeyPrefix(),
+                JsonMapper.builder().addModule(new JavaTimeModule()).build());
+    }
 }

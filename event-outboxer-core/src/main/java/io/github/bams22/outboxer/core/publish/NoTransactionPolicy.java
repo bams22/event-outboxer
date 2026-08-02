@@ -15,12 +15,12 @@ package io.github.bams22.outboxer.core.publish;
  */
 public enum NoTransactionPolicy {
 
-  /** Throw {@code NoTransactionException}. Default — matches the transactional-outbox pattern. */
-  FAIL,
+    /** Throw {@code NoTransactionException}. Default — matches the transactional-outbox pattern. */
+    FAIL,
 
-  /**
-   * Proceed without a surrounding transaction. Loses atomicity with the caller's state. Useful for
-   * maintenance scripts.
-   */
-  IGNORE
+    /**
+     * Proceed without a surrounding transaction. Loses atomicity with the caller's state. Useful
+     * for maintenance scripts.
+     */
+    IGNORE
 }

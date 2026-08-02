@@ -29,86 +29,88 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
  */
 public final class OutboxDataSourceResolver {
 
-  private static final org.slf4j.Logger log =
-      org.slf4j.LoggerFactory.getLogger(OutboxDataSourceResolver.class);
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(OutboxDataSourceResolver.class);
 
-  private OutboxDataSourceResolver() {}
+    private OutboxDataSourceResolver() {}
 
-  /**
-   * Strict resolution for wiring that cannot proceed without a {@code DataSource}: the
-   * {@code @OutboxDataSource}-qualified bean, else the unique or {@code @Primary} bean, else {@link
-   * AmbiguousOutboxDataSourceException} naming the candidates.
-   *
-   * @param qualified provider injected with {@code @OutboxDataSource ObjectProvider<DataSource>}
-   * @param all provider injected without a qualifier (all {@code DataSource} beans)
-   * @param beanFactory used only to name the candidates in the failure message
-   */
-  public static DataSource resolve(
-      ObjectProvider<DataSource> qualified,
-      ObjectProvider<DataSource> all,
-      ListableBeanFactory beanFactory) {
-    DataSource qualifiedBean;
-    try {
-      qualifiedBean = qualified.getIfAvailable();
-    } catch (NoUniqueBeanDefinitionException ex) {
-      throw AmbiguousOutboxDataSourceException.multipleQualified(namesFrom(ex));
+    /**
+     * Strict resolution for wiring that cannot proceed without a {@code DataSource}: the
+     * {@code @OutboxDataSource}-qualified bean, else the unique or {@code @Primary} bean, else
+     * {@link AmbiguousOutboxDataSourceException} naming the candidates.
+     *
+     * @param qualified provider injected with {@code @OutboxDataSource ObjectProvider<DataSource>}
+     * @param all provider injected without a qualifier (all {@code DataSource} beans)
+     * @param beanFactory used only to name the candidates in the failure message
+     */
+    public static DataSource resolve(
+            ObjectProvider<DataSource> qualified,
+            ObjectProvider<DataSource> all,
+            ListableBeanFactory beanFactory) {
+        DataSource qualifiedBean;
+        try {
+            qualifiedBean = qualified.getIfAvailable();
+        } catch (NoUniqueBeanDefinitionException ex) {
+            throw AmbiguousOutboxDataSourceException.multipleQualified(namesFrom(ex));
+        }
+        if (qualifiedBean != null) {
+            return qualifiedBean;
+        }
+        DataSource unique = all.getIfUnique();
+        if (unique != null) {
+            return unique;
+        }
+        List<String> candidates =
+                List.of(beanFactory.getBeanNamesForType(DataSource.class, true, false));
+        if (candidates.size() < 2) {
+            // Unreachable behind @ConditionalOnBean(DataSource.class) — getIfUnique() returns null
+            // only for zero or 2+ candidates.
+            throw new IllegalStateException("No DataSource bean available for the outbox.");
+        }
+        throw AmbiguousOutboxDataSourceException.noneQualified(candidates);
     }
-    if (qualifiedBean != null) {
-      return qualifiedBean;
-    }
-    DataSource unique = all.getIfUnique();
-    if (unique != null) {
-      return unique;
-    }
-    List<String> candidates =
-        List.of(beanFactory.getBeanNamesForType(DataSource.class, true, false));
-    if (candidates.size() < 2) {
-      // Unreachable behind @ConditionalOnBean(DataSource.class) — getIfUnique() returns null
-      // only for zero or 2+ candidates.
-      throw new IllegalStateException("No DataSource bean available for the outbox.");
-    }
-    throw AmbiguousOutboxDataSourceException.noneQualified(candidates);
-  }
 
-  /**
-   * Lenient resolution for best-effort diagnostics (the HikariCP pool-size warning): same order as
-   * {@link #resolve}, but any ambiguity yields {@code null} instead of failing startup.
-   */
-  public static @Nullable DataSource resolveIfUnambiguous(
-      ObjectProvider<DataSource> qualified, ObjectProvider<DataSource> all) {
-    try {
-      DataSource qualifiedBean = qualified.getIfAvailable();
-      if (qualifiedBean != null) {
-        return qualifiedBean;
-      }
-    } catch (NoUniqueBeanDefinitionException ex) {
-      return null;
+    /**
+     * Lenient resolution for best-effort diagnostics (the HikariCP pool-size warning): same order
+     * as {@link #resolve}, but any ambiguity yields {@code null} instead of failing startup.
+     */
+    public static @Nullable DataSource resolveIfUnambiguous(
+            ObjectProvider<DataSource> qualified, ObjectProvider<DataSource> all) {
+        try {
+            DataSource qualifiedBean = qualified.getIfAvailable();
+            if (qualifiedBean != null) {
+                return qualifiedBean;
+            }
+        } catch (NoUniqueBeanDefinitionException ex) {
+            return null;
+        }
+        return all.getIfUnique();
     }
-    return all.getIfUnique();
-  }
 
-  /**
-   * Strips {@link TransactionAwareDataSourceProxy} layers for the PostgreSQL entity lockers, whose
-   * acquire/release statements must run as their own autocommit transactions on raw connections —
-   * never bound to the caller's transaction (ADR-0022 §JDBC contract). Other {@code
-   * DelegatingDataSource} wrappers pass through untouched.
-   */
-  public static DataSource unwrapTransactionAware(DataSource dataSource) {
-    DataSource ds = dataSource;
-    while (ds instanceof TransactionAwareDataSourceProxy proxy) {
-      DataSource target = proxy.getTargetDataSource();
-      if (target == null) {
-        throw new IllegalStateException(
-            "TransactionAwareDataSourceProxy has no target DataSource to unwrap.");
-      }
-      log.debug("Unwrapping TransactionAwareDataSourceProxy — outbox locks need raw connections");
-      ds = target;
+    /**
+     * Strips {@link TransactionAwareDataSourceProxy} layers for the PostgreSQL entity lockers,
+     * whose acquire/release statements must run as their own autocommit transactions on raw
+     * connections — never bound to the caller's transaction (ADR-0022 §JDBC contract). Other {@code
+     * DelegatingDataSource} wrappers pass through untouched.
+     */
+    public static DataSource unwrapTransactionAware(DataSource dataSource) {
+        DataSource ds = dataSource;
+        while (ds instanceof TransactionAwareDataSourceProxy proxy) {
+            DataSource target = proxy.getTargetDataSource();
+            if (target == null) {
+                throw new IllegalStateException(
+                        "TransactionAwareDataSourceProxy has no target DataSource to unwrap.");
+            }
+            log.debug(
+                    "Unwrapping TransactionAwareDataSourceProxy — outbox locks need raw"
+                            + " connections");
+            ds = target;
+        }
+        return ds;
     }
-    return ds;
-  }
 
-  private static Collection<String> namesFrom(NoUniqueBeanDefinitionException ex) {
-    Collection<String> names = ex.getBeanNamesFound();
-    return names != null ? names : List.of();
-  }
+    private static Collection<String> namesFrom(NoUniqueBeanDefinitionException ex) {
+        Collection<String> names = ex.getBeanNamesFound();
+        return names != null ? names : List.of();
+    }
 }

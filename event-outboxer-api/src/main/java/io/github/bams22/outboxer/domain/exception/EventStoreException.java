@@ -17,16 +17,16 @@ import org.jspecify.annotations.Nullable;
  */
 public final class EventStoreException extends StorageException {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  /** Message code used as a prefix in error text: {@value}. */
-  public static final String CODE = "OUTBOX-302";
+    /** Message code used as a prefix in error text: {@value}. */
+    public static final String CODE = "OUTBOX-302";
 
-  public EventStoreException(String message) {
-    super(CODE + ": " + message);
-  }
+    public EventStoreException(String message) {
+        super(CODE + ": " + message);
+    }
 
-  public EventStoreException(String message, @Nullable Throwable cause) {
-    super(CODE + ": " + message, cause);
-  }
+    public EventStoreException(String message, @Nullable Throwable cause) {
+        super(CODE + ": " + message, cause);
+    }
 }

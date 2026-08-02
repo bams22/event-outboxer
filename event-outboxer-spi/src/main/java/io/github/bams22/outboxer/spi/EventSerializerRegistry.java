@@ -32,75 +32,75 @@ import java.util.Set;
  */
 public final class EventSerializerRegistry {
 
-  private final Map<String, EventSerializer> byFormat;
+    private final Map<String, EventSerializer> byFormat;
 
-  private EventSerializerRegistry(Map<String, EventSerializer> byFormat) {
-    this.byFormat = byFormat;
-  }
-
-  /**
-   * Build a registry from the given serializers.
-   *
-   * @throws InvariantViolationException if two serializers declare the same format id, or a format
-   *     id is blank or longer than 64 characters
-   */
-  public static EventSerializerRegistry of(Collection<? extends EventSerializer> serializers) {
-    Objects.requireNonNull(serializers, "serializers must not be null");
-    Map<String, EventSerializer> byFormat = new LinkedHashMap<>();
-    for (EventSerializer serializer : serializers) {
-      Objects.requireNonNull(serializer, "serializer must not be null");
-      String format = serializer.format();
-      if (format == null || format.isBlank() || format.length() > 64) {
-        throw new InvariantViolationException(
-            "serializer format id must be non-blank and at most 64 characters, got '"
-                + format
-                + "' from "
-                + serializer.getClass().getName());
-      }
-      EventSerializer previous = byFormat.putIfAbsent(format, serializer);
-      if (previous != null && previous != serializer) {
-        throw new InvariantViolationException(
-            "duplicate serializer format '"
-                + format
-                + "': "
-                + previous.getClass().getName()
-                + " and "
-                + serializer.getClass().getName());
-      }
+    private EventSerializerRegistry(Map<String, EventSerializer> byFormat) {
+        this.byFormat = byFormat;
     }
-    if (byFormat.isEmpty()) {
-      throw new InvariantViolationException("at least one EventSerializer is required");
+
+    /**
+     * Build a registry from the given serializers.
+     *
+     * @throws InvariantViolationException if two serializers declare the same format id, or a
+     *     format id is blank or longer than 64 characters
+     */
+    public static EventSerializerRegistry of(Collection<? extends EventSerializer> serializers) {
+        Objects.requireNonNull(serializers, "serializers must not be null");
+        Map<String, EventSerializer> byFormat = new LinkedHashMap<>();
+        for (EventSerializer serializer : serializers) {
+            Objects.requireNonNull(serializer, "serializer must not be null");
+            String format = serializer.format();
+            if (format == null || format.isBlank() || format.length() > 64) {
+                throw new InvariantViolationException(
+                        "serializer format id must be non-blank and at most 64 characters, got '"
+                                + format
+                                + "' from "
+                                + serializer.getClass().getName());
+            }
+            EventSerializer previous = byFormat.putIfAbsent(format, serializer);
+            if (previous != null && previous != serializer) {
+                throw new InvariantViolationException(
+                        "duplicate serializer format '"
+                                + format
+                                + "': "
+                                + previous.getClass().getName()
+                                + " and "
+                                + serializer.getClass().getName());
+            }
+        }
+        if (byFormat.isEmpty()) {
+            throw new InvariantViolationException("at least one EventSerializer is required");
+        }
+        // Not Map.copyOf: registration order must survive into formats() (documented contract).
+        return new EventSerializerRegistry(Collections.unmodifiableMap(byFormat));
     }
-    // Not Map.copyOf: registration order must survive into formats() (documented contract).
-    return new EventSerializerRegistry(Collections.unmodifiableMap(byFormat));
-  }
 
-  /** Look up a serializer by format id, empty if none is registered. */
-  public Optional<EventSerializer> find(String format) {
-    Objects.requireNonNull(format, "format must not be null");
-    return Optional.ofNullable(byFormat.get(format));
-  }
-
-  /**
-   * Look up a serializer by format id.
-   *
-   * @throws UnknownPayloadFormatException if no serializer is registered for {@code format}
-   */
-  public EventSerializer require(String format) {
-    Objects.requireNonNull(format, "format must not be null");
-    EventSerializer serializer = byFormat.get(format);
-    if (serializer == null) {
-      throw new UnknownPayloadFormatException(
-          "no EventSerializer registered for payload format '"
-              + format
-              + "'; registered formats: "
-              + byFormat.keySet());
+    /** Look up a serializer by format id, empty if none is registered. */
+    public Optional<EventSerializer> find(String format) {
+        Objects.requireNonNull(format, "format must not be null");
+        return Optional.ofNullable(byFormat.get(format));
     }
-    return serializer;
-  }
 
-  /** The registered format ids, in registration order. */
-  public Set<String> formats() {
-    return byFormat.keySet();
-  }
+    /**
+     * Look up a serializer by format id.
+     *
+     * @throws UnknownPayloadFormatException if no serializer is registered for {@code format}
+     */
+    public EventSerializer require(String format) {
+        Objects.requireNonNull(format, "format must not be null");
+        EventSerializer serializer = byFormat.get(format);
+        if (serializer == null) {
+            throw new UnknownPayloadFormatException(
+                    "no EventSerializer registered for payload format '"
+                            + format
+                            + "'; registered formats: "
+                            + byFormat.keySet());
+        }
+        return serializer;
+    }
+
+    /** The registered format ids, in registration order. */
+    public Set<String> formats() {
+        return byFormat.keySet();
+    }
 }

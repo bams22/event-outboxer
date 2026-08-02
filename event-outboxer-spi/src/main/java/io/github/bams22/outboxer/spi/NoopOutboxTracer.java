@@ -21,42 +21,42 @@ import java.util.UUID;
  */
 final class NoopOutboxTracer implements OutboxTracer {
 
-  private static final PublishSpan PUBLISH_SPAN =
-      new PublishSpan() {
-        @Override
-        public Map<String, String> contextToStore() {
-          return Map.of();
-        }
+    private static final PublishSpan PUBLISH_SPAN =
+            new PublishSpan() {
+                @Override
+                public Map<String, String> contextToStore() {
+                    return Map.of();
+                }
 
-        @Override
-        public void coalesced(UUID existingEventId) {}
+                @Override
+                public void coalesced(UUID existingEventId) {}
 
-        @Override
-        public void error(Throwable error) {}
+                @Override
+                public void error(Throwable error) {}
 
-        @Override
-        public void close() {}
-      };
+                @Override
+                public void close() {}
+            };
 
-  private static final ProcessSpan PROCESS_SPAN =
-      new ProcessSpan() {
-        @Override
-        public void error(Throwable error) {}
+    private static final ProcessSpan PROCESS_SPAN =
+            new ProcessSpan() {
+                @Override
+                public void error(Throwable error) {}
 
-        @Override
-        public void close() {}
-      };
+                @Override
+                public void close() {}
+            };
 
-  @Override
-  public PublishSpan startPublishSpan(UUID eventId, String eventType) {
-    Objects.requireNonNull(eventId, "eventId must not be null");
-    Objects.requireNonNull(eventType, "eventType must not be null");
-    return PUBLISH_SPAN;
-  }
+    @Override
+    public PublishSpan startPublishSpan(UUID eventId, String eventType) {
+        Objects.requireNonNull(eventId, "eventId must not be null");
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        return PUBLISH_SPAN;
+    }
 
-  @Override
-  public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
-    Objects.requireNonNull(info, "info must not be null");
-    return PROCESS_SPAN;
-  }
+    @Override
+    public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
+        Objects.requireNonNull(info, "info must not be null");
+        return PROCESS_SPAN;
+    }
 }
