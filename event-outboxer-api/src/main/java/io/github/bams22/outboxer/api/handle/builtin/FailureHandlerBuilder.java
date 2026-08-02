@@ -81,11 +81,16 @@ public final class FailureHandlerBuilder<T> {
 
   private FailureHandler<T> wrap(FailureHandler<T> leaf) {
     FailureHandler<T> chain = leaf;
-    if (maxAttempts != null) {
-      chain = new MaxRetriesFailureHandler<>(maxAttempts, exhaustedAction, chain);
+    // withMaxAttempts(...) sets both fields together; guarding on both keeps that invariant
+    // visible to the type system instead of relying on it implicitly.
+    Integer max = maxAttempts;
+    MaxRetriesFailureHandler.ExhaustedAction onExhausted = exhaustedAction;
+    if (max != null && onExhausted != null) {
+      chain = new MaxRetriesFailureHandler<>(max, onExhausted, chain);
     }
-    if (logLevel != null) {
-      chain = new LogFailureHandler<>(logLevel, chain);
+    Level level = logLevel;
+    if (level != null) {
+      chain = new LogFailureHandler<>(level, chain);
     }
     return chain;
   }

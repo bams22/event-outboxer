@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * An {@code EventStore} operation failed for a technical reason: connection dropped, SQL error,
  * transactional deadlock, constraint violation, or similar. Wraps the adapter-specific cause.
@@ -24,7 +26,7 @@ public final class EventStoreException extends StorageException {
     super(CODE + ": " + message);
   }
 
-  public EventStoreException(String message, Throwable cause) {
+  public EventStoreException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

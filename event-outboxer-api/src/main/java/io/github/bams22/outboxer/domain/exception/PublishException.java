@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Base class for every failure that happens while publishing an event from the client side. Thrown
  * synchronously from {@code OutboxEventPublisher.publish(...)} or {@code publishAll(...)}. Catching
@@ -23,7 +25,7 @@ public abstract class PublishException extends OutboxException {
     super(message);
   }
 
-  protected PublishException(String message, Throwable cause) {
+  protected PublishException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

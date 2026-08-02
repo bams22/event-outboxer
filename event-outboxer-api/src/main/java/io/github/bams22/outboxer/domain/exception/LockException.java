@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Base class for technical failures in the {@code EntityLocker} port. The normal "lock is currently
  * held by someone else" scenario is <strong>not</strong> an exception — it is represented by an
@@ -27,7 +29,7 @@ public abstract class LockException extends OutboxException {
     super(message);
   }
 
-  protected LockException(String message, Throwable cause) {
+  protected LockException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

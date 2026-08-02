@@ -26,7 +26,8 @@ class PendingEventTest {
         .payload("{}")
         .payloadClass("com.example.TestPayload")
         .priority((short) 0)
-        .runAt(Instant.now());
+        .runAt(Instant.now())
+        .traceContext(Map.of());
   }
 
   @Test
@@ -61,7 +62,14 @@ class PendingEventTest {
   }
 
   @Test
-  void traceContextDefaultsToEmptyImmutableMap() {
+  void rejectsNullTraceContext() {
+    assertThatThrownBy(() -> validBuilder().traceContext(null).build())
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("traceContext");
+  }
+
+  @Test
+  void traceContextIsCopiedIntoAnImmutableMap() {
     PendingEvent e = validBuilder().build();
     assertThat(e.traceContext()).isEmpty();
     assertThatThrownBy(() -> e.traceContext().put("x", "y"))

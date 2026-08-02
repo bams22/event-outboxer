@@ -346,7 +346,8 @@ public final class OutboxEngineBuilder {
     List<Poller> pollers = new ArrayList<>(handlers.size());
     for (EventHandler<?> h : handlers) {
       String type = h.eventType();
-      EventTypeConfig cfg = executorConfigs.get(type);
+      EventTypeConfig cfg =
+          Objects.requireNonNull(executorConfigs.get(type), "no executor config for type " + type);
       io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate = executors.executorFor(type);
       Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
       // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the

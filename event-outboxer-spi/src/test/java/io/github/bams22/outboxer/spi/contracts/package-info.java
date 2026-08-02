@@ -14,4 +14,7 @@
  * storage-postgres, lock-postgres, lock-redis) can extend them in their own test sources and
  * inherit the full behavioural specification for free.
  */
+@NullMarked
 package io.github.bams22.outboxer.spi.contracts;
+
+import org.jspecify.annotations.NullMarked;

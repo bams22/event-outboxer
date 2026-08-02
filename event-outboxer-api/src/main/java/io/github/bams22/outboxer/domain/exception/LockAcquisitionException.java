@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The locker failed to acquire or even attempt a lock for a technical reason (Redis unreachable,
  * advisory-lock SQL error, connection problem). This is distinct from the ordinary "lock is busy"
@@ -21,7 +23,7 @@ public final class LockAcquisitionException extends LockException {
   /** Message code used as a prefix in error text: {@value}. */
   public static final String CODE = "OUTBOX-401";
 
-  public LockAcquisitionException(String message, Throwable cause) {
+  public LockAcquisitionException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

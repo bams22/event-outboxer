@@ -10,11 +10,11 @@
 package io.github.bams22.outboxer.domain;
 
 import java.time.Instant;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An event prepared for insertion into the outbox by {@code OutboxEventPublisher}. The publisher
@@ -52,7 +52,7 @@ public record PendingEvent(
     short priority,
     Instant runAt,
     Map<String, String> traceContext,
-    @org.jspecify.annotations.Nullable String dedupKey) {
+    @Nullable String dedupKey) {
 
   public PendingEvent {
     Objects.requireNonNull(id, "id must not be null");
@@ -63,8 +63,8 @@ public record PendingEvent(
     Objects.requireNonNull(payload, "payload must not be null");
     Objects.requireNonNull(payloadClass, "payloadClass must not be null");
     Objects.requireNonNull(runAt, "runAt must not be null");
-    traceContext =
-        traceContext == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(traceContext));
+    Objects.requireNonNull(traceContext, "traceContext must not be null");
+    traceContext = Map.copyOf(traceContext);
     if (dedupKey != null && (dedupKey.isBlank() || dedupKey.length() > 256)) {
       throw new IllegalArgumentException(
           "dedupKey must be non-blank and at most 256 characters when set");

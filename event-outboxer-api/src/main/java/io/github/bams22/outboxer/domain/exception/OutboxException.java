@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Root of every exception thrown by the event-outboxer library. Always unchecked ({@link
  * RuntimeException}) — we avoid checked exceptions in public contracts because they tend to leak
@@ -26,7 +28,7 @@ public abstract class OutboxException extends RuntimeException {
     super(message);
   }
 
-  protected OutboxException(String message, Throwable cause) {
+  protected OutboxException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

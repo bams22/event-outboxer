@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.handle.builtin;
 
+import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.FailureContext;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
@@ -29,12 +30,14 @@ public final class NoRetryFailureHandler<T> implements FailureHandler<T> {
   }
 
   private static String reason(FailureContext<?> ctx) {
-    if (ctx.outcome() != null) {
-      return ctx.outcome().toString();
+    EventOutcome outcome = ctx.outcome();
+    if (outcome != null) {
+      return outcome.toString();
     }
-    if (ctx.cause() != null) {
-      String m = ctx.cause().getMessage();
-      return m == null ? ctx.cause().getClass().getSimpleName() : m;
+    Throwable cause = ctx.cause();
+    if (cause != null) {
+      String m = cause.getMessage();
+      return m == null ? cause.getClass().getSimpleName() : m;
     }
     return "no-retry policy";
   }

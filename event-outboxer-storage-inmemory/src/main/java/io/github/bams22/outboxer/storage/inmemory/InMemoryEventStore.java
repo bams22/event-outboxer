@@ -66,13 +66,14 @@ public final class InMemoryEventStore implements EventStore {
   @Override
   public boolean save(PendingEvent event) {
     Objects.requireNonNull(event, "event must not be null");
-    if (event.dedupKey() == null) {
+    String dedupKey = event.dedupKey();
+    if (dedupKey == null) {
       return insert(event);
     }
     // Coarse but correct for test infrastructure: one monitor makes the exists-check and the
     // insert atomic, mirroring the PG partial unique index over PENDING rows (ADR-0021).
     synchronized (dedupInsertMonitor) {
-      if (findPendingByDedupKey(event.eventType(), event.dedupKey()).isPresent()) {
+      if (findPendingByDedupKey(event.eventType(), dedupKey).isPresent()) {
         return false;
       }
       return insert(event);

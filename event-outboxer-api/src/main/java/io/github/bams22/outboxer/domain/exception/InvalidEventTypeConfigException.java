@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Startup-time failure: a per-event-type configuration block is invalid. Examples: non-positive
  * {@code handler-pool-size} or {@code claim-batch-size}, negative {@code handler-queue-capacity},
@@ -23,7 +25,7 @@ public final class InvalidEventTypeConfigException extends ConfigurationExceptio
     super(message);
   }
 
-  public InvalidEventTypeConfigException(String message, Throwable cause) {
+  public InvalidEventTypeConfigException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

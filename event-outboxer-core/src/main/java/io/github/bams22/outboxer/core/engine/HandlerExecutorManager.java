@@ -86,7 +86,9 @@ public final class HandlerExecutorManager {
    */
   public synchronized void start() {
     for (Map.Entry<String, Slot> e : slots.entrySet()) {
-      e.getValue().install(factory.apply(configs.get(e.getKey())));
+      EventTypeConfig cfg =
+          Objects.requireNonNull(configs.get(e.getKey()), "no config for event type " + e.getKey());
+      e.getValue().install(factory.apply(cfg));
     }
   }
 

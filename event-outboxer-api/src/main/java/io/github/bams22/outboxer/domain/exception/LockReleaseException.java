@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The locker could not release a previously acquired lock. The library swallows this exception
  * inside {@code LockHandle.close()} (ADR Q5: {@code close()} is declared without {@code throws})
@@ -22,7 +24,7 @@ public final class LockReleaseException extends LockException {
   /** Message code used as a prefix in error text: {@value}. */
   public static final String CODE = "OUTBOX-402";
 
-  public LockReleaseException(String message, Throwable cause) {
+  public LockReleaseException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

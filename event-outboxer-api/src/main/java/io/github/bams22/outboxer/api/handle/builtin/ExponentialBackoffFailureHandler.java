@@ -83,12 +83,8 @@ public final class ExponentialBackoffFailureHandler<T> implements FailureHandler
 
   @Override
   public FailureDecision onFailure(FailureContext<T> ctx) {
-    Duration effective;
-    if (ctx.outcome() instanceof EventOutcome.Retry r && r.delayOverride() != null) {
-      effective = r.delayOverride();
-    } else {
-      effective = computeBackoff(ctx.attempt());
-    }
+    Duration override = ctx.outcome() instanceof EventOutcome.Retry r ? r.delayOverride() : null;
+    Duration effective = override != null ? override : computeBackoff(ctx.attempt());
     return new FailureDecision.RetryAt(ctx.now().plus(effective), FailureUtil.reason(ctx));
   }
 

@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A {@code WorkerRegistry} operation (register, heartbeat, findDead, deregister, ...) failed for a
  * technical reason. Wraps the adapter-specific cause.
@@ -20,7 +22,7 @@ public final class WorkerRegistryException extends StorageException {
   /** Message code used as a prefix in error text: {@value}. */
   public static final String CODE = "OUTBOX-303";
 
-  public WorkerRegistryException(String message, Throwable cause) {
+  public WorkerRegistryException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

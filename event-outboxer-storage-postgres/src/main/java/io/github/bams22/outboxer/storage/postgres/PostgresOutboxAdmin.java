@@ -200,7 +200,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
       case String s -> ps.setString(index, s);
       case Timestamp t -> ps.setTimestamp(index, t);
       case Integer n -> ps.setInt(index, n);
-      case null, default -> ps.setObject(index, value);
+      default -> ps.setObject(index, value);
     }
   }
 

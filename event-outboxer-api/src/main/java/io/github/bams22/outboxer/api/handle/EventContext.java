@@ -11,7 +11,6 @@ package io.github.bams22.outboxer.api.handle;
 
 import io.github.bams22.outboxer.domain.WorkerId;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -47,7 +46,7 @@ public record EventContext(
     if (attempt < 1) {
       throw new IllegalArgumentException("attempt must be >= 1, got " + attempt);
     }
-    traceContext =
-        traceContext == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(traceContext));
+    Objects.requireNonNull(traceContext, "traceContext must not be null");
+    traceContext = Map.copyOf(traceContext);
   }
 }

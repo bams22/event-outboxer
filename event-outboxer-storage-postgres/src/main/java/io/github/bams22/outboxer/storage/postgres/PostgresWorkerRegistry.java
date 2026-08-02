@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import org.jspecify.annotations.Nullable;
 
 /**
  * PostgreSQL implementation of {@link WorkerRegistry}. Heartbeat lives in {@code outbox.workers}
@@ -223,8 +222,8 @@ public final class PostgresWorkerRegistry implements WorkerRegistry {
 
   private static WorkerInfo readWorkerInfo(ResultSet rs) throws SQLException {
     WorkerId id = new WorkerId(rs.getString("worker_id"));
-    @Nullable Integer pid = (Integer) rs.getObject("pid");
-    @Nullable String metadataJson = rs.getString("metadata");
+    Integer pid = (Integer) rs.getObject("pid");
+    String metadataJson = rs.getString("metadata");
     Map<String, String> metadata =
         metadataJson == null ? Map.of() : FlatMapJson.parse(metadataJson);
     return WorkerInfo.builder()

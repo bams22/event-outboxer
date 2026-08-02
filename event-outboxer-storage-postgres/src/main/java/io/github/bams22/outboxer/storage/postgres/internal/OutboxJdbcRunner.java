@@ -50,7 +50,7 @@ public final class OutboxJdbcRunner {
         if (!rs.next()) {
           return Optional.empty();
         }
-        return Optional.ofNullable(mapper.map(rs));
+        return Optional.of(mapper.map(rs));
       }
     } finally {
       connections.release(conn);
@@ -150,7 +150,7 @@ public final class OutboxJdbcRunner {
         restoreAutoCommit = true;
       }
       try {
-        @Nullable T result = callback.run(conn);
+        T result = callback.run(conn);
         if (owned) {
           conn.commit();
         }
@@ -196,6 +196,6 @@ public final class OutboxJdbcRunner {
   /** Maps a {@link ResultSet} row to a domain object. */
   @FunctionalInterface
   public interface ResultSetMapper<T> {
-    @Nullable T map(ResultSet rs) throws SQLException;
+    T map(ResultSet rs) throws SQLException;
   }
 }

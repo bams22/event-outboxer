@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Raised by {@code publishAll(...)} when at least one event in the batch could not be persisted.
  * The fail-fast contract (ADR Q3) guarantees that either every event in the batch is saved or none
@@ -22,7 +24,7 @@ public final class PublishFailedException extends PublishException {
   /** Message code used as a prefix in error text: {@value}. */
   public static final String CODE = "OUTBOX-104";
 
-  public PublishFailedException(String message, Throwable cause) {
+  public PublishFailedException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

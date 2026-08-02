@@ -231,7 +231,8 @@ class StaleClaimSweeperTest {
                     .orphanRecoveryInterval(Duration.ofSeconds(60))
                     .watchdogInterval(Duration.ofSeconds(1))
                     .reclaimBatchSize(10)
-                    .shutdownTimeout(Duration.ofSeconds(2)))
+                    .shutdownTimeout(Duration.ofSeconds(2))
+                    .staleClaimSweepInterval(Duration.ofMinutes(5)))
             .build();
     return new OutboxEngineBuilder()
         .eventStore(store)

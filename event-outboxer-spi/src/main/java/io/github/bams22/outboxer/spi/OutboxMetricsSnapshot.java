@@ -10,7 +10,6 @@
 package io.github.bams22.outboxer.spi;
 
 import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import lombok.Builder;
@@ -62,7 +61,8 @@ public record OutboxMetricsSnapshot(
           "totalDisabled must not be negative, got " + totalDisabled);
     }
     Objects.requireNonNull(takenAt, "takenAt must not be null");
-    perType = perType == null ? List.of() : Collections.unmodifiableList(List.copyOf(perType));
+    Objects.requireNonNull(perType, "perType must not be null");
+    perType = List.copyOf(perType);
   }
 
   /**

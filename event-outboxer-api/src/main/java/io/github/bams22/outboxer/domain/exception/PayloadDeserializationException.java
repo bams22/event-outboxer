@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The engine could not reconstruct the payload of a claimed event — typically the stored shape is
  * incompatible with the current {@code EventHandler.payloadType()}. This surfaces most often during
@@ -25,7 +27,7 @@ public final class PayloadDeserializationException extends HandleException {
   /** Message code used as a prefix in error text: {@value}. */
   public static final String CODE = "OUTBOX-202";
 
-  public PayloadDeserializationException(String message, Throwable cause) {
+  public PayloadDeserializationException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

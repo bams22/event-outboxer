@@ -10,7 +10,6 @@
 package io.github.bams22.outboxer.domain;
 
 import java.time.Instant;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import lombok.Builder;
@@ -43,6 +42,7 @@ public record WorkerInfo(
     if (host.isBlank()) {
       throw new IllegalArgumentException("host must not be blank");
     }
-    metadata = metadata == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(metadata));
+    Objects.requireNonNull(metadata, "metadata must not be null");
+    metadata = Map.copyOf(metadata);
   }
 }

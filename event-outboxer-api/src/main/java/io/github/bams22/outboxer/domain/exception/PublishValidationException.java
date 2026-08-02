@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Publish call was rejected because of invalid input — for example a blank {@code eventType}, a
  * {@code null} payload, or a {@code runAt} in the past when the configuration forbids it.
@@ -24,7 +26,7 @@ public final class PublishValidationException extends PublishException {
     super(CODE + ": " + message);
   }
 
-  public PublishValidationException(String message, Throwable cause) {
+  public PublishValidationException(String message, @Nullable Throwable cause) {
     super(CODE + ": " + message, cause);
   }
 }

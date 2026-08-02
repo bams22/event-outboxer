@@ -27,6 +27,7 @@ class MaintenanceConfigTest {
                     .watchdogInterval(Duration.ofSeconds(10))
                     .reclaimBatchSize(10)
                     .shutdownTimeout(Duration.ofSeconds(10))
+                    .staleClaimSweepInterval(Duration.ofMinutes(5))
                     .build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("deadThreshold must be >= 3 * heartbeatInterval");

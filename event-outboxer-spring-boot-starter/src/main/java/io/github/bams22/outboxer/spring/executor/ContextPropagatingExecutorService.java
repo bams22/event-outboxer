@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.jspecify.annotations.Nullable;
 import org.springframework.core.task.TaskDecorator;
 
 /**
@@ -112,7 +113,7 @@ final class ContextPropagatingExecutorService implements ExecutorService {
   // / Observation / security context), then unwrap the result via a holder on the worker
   // thread. Preserves exceptions and results.
   private <T> Callable<T> decorateCallable(Callable<T> task) {
-    Object[] box = new Object[2]; // [result, exception]
+    @Nullable Object[] box = new @Nullable Object[2]; // [result, exception]
     Runnable work =
         () -> {
           try {

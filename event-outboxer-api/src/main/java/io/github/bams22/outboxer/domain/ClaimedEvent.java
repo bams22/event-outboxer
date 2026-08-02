@@ -10,7 +10,6 @@
 package io.github.bams22.outboxer.domain;
 
 import java.time.Instant;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -64,7 +63,7 @@ public record ClaimedEvent(
       throw new IllegalArgumentException(
           "claimedVersion must not be negative, got " + claimedVersion);
     }
-    traceContext =
-        traceContext == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(traceContext));
+    Objects.requireNonNull(traceContext, "traceContext must not be null");
+    traceContext = Map.copyOf(traceContext);
   }
 }

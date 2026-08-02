@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Base class for engine-side failures while turning a claimed event into a handler invocation:
  * unknown event type, payload deserialization errors, and similar dispatch-time problems. Not
@@ -23,7 +25,7 @@ public abstract class HandleException extends OutboxException {
     super(message);
   }
 
-  protected HandleException(String message, Throwable cause) {
+  protected HandleException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

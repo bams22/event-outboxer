@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +51,7 @@ public final class Poller {
   private final AdaptiveWaiter waiter;
 
   private volatile boolean running;
-  private @org.jspecify.annotations.Nullable Thread thread;
+  private @Nullable Thread thread;
   private final AtomicBoolean wakeRequested = new AtomicBoolean();
 
   public Poller(

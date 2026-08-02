@@ -48,17 +48,21 @@ final class PgLeaseSweepScheduler implements InitializingBean, DisposableBean {
 
   @Override
   public void afterPropertiesSet() {
-    if (locker == null) {
+    PgLeaseEntityLocker sweepTarget = locker;
+    if (sweepTarget == null) {
       return;
     }
     executor =
         Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().name("outbox-entity-locks-sweep").daemon().factory());
     executor.scheduleWithFixedDelay(
-        this::sweepQuietly, CADENCE.toMillis(), CADENCE.toMillis(), TimeUnit.MILLISECONDS);
+        () -> sweepQuietly(sweepTarget),
+        CADENCE.toMillis(),
+        CADENCE.toMillis(),
+        TimeUnit.MILLISECONDS);
   }
 
-  private void sweepQuietly() {
+  private static void sweepQuietly(PgLeaseEntityLocker locker) {
     try {
       int removed = locker.sweepExpired();
       if (removed > 0) {

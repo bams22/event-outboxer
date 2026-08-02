@@ -57,19 +57,26 @@ public class OutboxAdminEndpoint {
     this.store = Objects.requireNonNull(store, "store must not be null");
   }
 
-  /** Page of events; defaults to the DISABLED backlog, newest first. */
+  /**
+   * Page of events; defaults to the DISABLED backlog, newest first.
+   *
+   * <p>Optional parameters carry {@code org.springframework.lang.Nullable} in addition to the
+   * JSpecify annotation: Actuator's {@code OperationMethodParameter.isMandatory()} only recognizes
+   * the Spring (and JSR-305) annotations, so without it every parameter would be treated as
+   * mandatory and requests omitting one would fail with HTTP 400.
+   */
   @ReadOperation
-  public Map<String, Object> events(
-      @Nullable String status,
-      @Nullable String eventType,
-      @Nullable Integer limit,
-      @Nullable String cursor) {
+  public Map<String, @Nullable Object> events(
+      @org.springframework.lang.Nullable @Nullable String status,
+      @org.springframework.lang.Nullable @Nullable String eventType,
+      @org.springframework.lang.Nullable @Nullable Integer limit,
+      @org.springframework.lang.Nullable @Nullable String cursor) {
     EventStatus resolvedStatus =
         status == null ? EventStatus.DISABLED : EventStatus.valueOf(status.toUpperCase());
     int resolvedLimit = limit == null ? 50 : limit;
     List<Event> page =
         admin.findByStatus(resolvedStatus, eventType, resolvedLimit, CursorCodec.decode(cursor));
-    Map<String, Object> body = new LinkedHashMap<>();
+    Map<String, @Nullable Object> body = new LinkedHashMap<>();
     body.put("events", page.stream().map(OutboxAdminEndpoint::toMap).toList());
     body.put("nextCursor", page.size() < resolvedLimit ? null : CursorCodec.encode(page.getLast()));
     return body;
@@ -77,7 +84,7 @@ public class OutboxAdminEndpoint {
 
   /** Single event by id: the active table first, then the archive. */
   @ReadOperation
-  public @Nullable Map<String, Object> event(@Selector String id) {
+  public @Nullable Map<String, @Nullable Object> event(@Selector String id) {
     UUID uuid = UUID.fromString(id);
     Optional<Event> active = store.findById(uuid);
     if (active.isPresent()) {
@@ -95,7 +102,8 @@ public class OutboxAdminEndpoint {
 
   /** Bulk re-enable for one event type. */
   @WriteOperation
-  public Map<String, Object> reenableAll(String eventType, @Nullable Integer limit) {
+  public Map<String, Object> reenableAll(
+      String eventType, @org.springframework.lang.Nullable @Nullable Integer limit) {
     int count = admin.reenableAll(eventType, null, limit == null ? 100 : limit);
     return Map.of("reenabled", count);
   }
@@ -103,7 +111,10 @@ public class OutboxAdminEndpoint {
   /** Purge old DISABLED rows ({@code target=disabled}) or archive rows ({@code target=archive}). */
   @DeleteOperation
   public Map<String, Object> purge(
-      String target, long olderThanDays, @Nullable String eventType, @Nullable Integer limit) {
+      String target,
+      long olderThanDays,
+      @org.springframework.lang.Nullable @Nullable String eventType,
+      @org.springframework.lang.Nullable @Nullable Integer limit) {
     Instant threshold = Instant.now().minus(Duration.ofDays(olderThanDays));
     int resolvedLimit = limit == null ? 1000 : limit;
     int purged =
@@ -121,8 +132,8 @@ public class OutboxAdminEndpoint {
   // mapping
   // ---------------------------------------------------------------------------------------------
 
-  private static Map<String, Object> toMap(Event e) {
-    Map<String, Object> m = new LinkedHashMap<>();
+  private static Map<String, @Nullable Object> toMap(Event e) {
+    Map<String, @Nullable Object> m = new LinkedHashMap<>();
     m.put("id", e.id().toString());
     m.put("eventType", e.eventType());
     m.put("status", e.status().name());
@@ -135,8 +146,8 @@ public class OutboxAdminEndpoint {
     return m;
   }
 
-  private static Map<String, Object> toArchivedMap(ArchivedEvent e) {
-    Map<String, Object> m = new LinkedHashMap<>();
+  private static Map<String, @Nullable Object> toArchivedMap(ArchivedEvent e) {
+    Map<String, @Nullable Object> m = new LinkedHashMap<>();
     m.put("id", e.id().toString());
     m.put("eventType", e.eventType());
     m.put("status", "ARCHIVED");

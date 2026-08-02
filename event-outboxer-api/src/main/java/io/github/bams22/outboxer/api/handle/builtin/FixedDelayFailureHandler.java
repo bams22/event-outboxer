@@ -44,10 +44,8 @@ public final class FixedDelayFailureHandler<T> implements FailureHandler<T> {
 
   @Override
   public FailureDecision onFailure(FailureContext<T> ctx) {
-    Duration effective = delay;
-    if (ctx.outcome() instanceof EventOutcome.Retry r && r.delayOverride() != null) {
-      effective = r.delayOverride();
-    }
+    Duration override = ctx.outcome() instanceof EventOutcome.Retry r ? r.delayOverride() : null;
+    Duration effective = override != null ? override : delay;
     return new FailureDecision.RetryAt(ctx.now().plus(effective), FailureUtil.reason(ctx));
   }
 }

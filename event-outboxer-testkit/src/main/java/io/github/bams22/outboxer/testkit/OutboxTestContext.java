@@ -429,6 +429,7 @@ public final class OutboxTestContext {
           .watchdogInterval(Duration.ofMillis(500))
           .reclaimBatchSize(50)
           .shutdownTimeout(Duration.ofSeconds(1))
+          .staleClaimSweepInterval(Duration.ofMinutes(5))
           .build();
     }
   }

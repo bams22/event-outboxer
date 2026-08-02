@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Base class for storage-adapter failures: SQL errors, connection problems, deadlocks, constraint
  * violations, and anything else surfaced by the underlying {@code EventStore} or {@code
@@ -27,7 +29,7 @@ public abstract class StorageException extends OutboxException {
     super(message);
   }
 
-  protected StorageException(String message, Throwable cause) {
+  protected StorageException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

@@ -78,6 +78,8 @@ public final class SafeOutboxTracer implements OutboxTracer {
     @Override
     public Map<String, String> contextToStore() {
       try {
+        // contextToStore() is non-null by contract, but this wrapper's whole job is shielding
+        // the engine from misbehaving third-party tracer adapters — including a null return.
         Map<String, String> context = delegate.contextToStore();
         return context != null ? context : Map.of();
       } catch (RuntimeException ex) {

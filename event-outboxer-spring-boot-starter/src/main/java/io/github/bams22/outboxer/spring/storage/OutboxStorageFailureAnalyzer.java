@@ -91,7 +91,6 @@ public class OutboxStorageFailureAnalyzer implements FailureAnalyzer, Environmen
   private static @Nullable NoSuchBeanDefinitionException findEventStoreFailure(Throwable failure) {
     for (Throwable t = failure; t != null; t = t.getCause()) {
       if (t instanceof NoSuchBeanDefinitionException noBean
-          && noBean.getBeanType() != null
           && EventStore.class.equals(noBean.getBeanType())) {
         return noBean;
       }

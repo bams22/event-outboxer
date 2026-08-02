@@ -10,7 +10,6 @@
 package io.github.bams22.outboxer.spi;
 
 import io.github.bams22.outboxer.domain.WorkerId;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -120,8 +119,8 @@ public interface OutboxTracer {
       Objects.requireNonNull(eventId, "eventId must not be null");
       Objects.requireNonNull(eventType, "eventType must not be null");
       Objects.requireNonNull(workerId, "workerId must not be null");
-      storedContext =
-          storedContext == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(storedContext));
+      Objects.requireNonNull(storedContext, "storedContext must not be null");
+      storedContext = Map.copyOf(storedContext);
     }
   }
 }

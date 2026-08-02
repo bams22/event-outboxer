@@ -192,8 +192,8 @@ public final class HandlerDispatcher {
     }
 
     EventTypeConfig cfg = typeConfig.forType(claimed.eventType());
-    @Nullable String lockKey = extractLockKey(handler, payload);
-    @Nullable LockHandle lock = null;
+    String lockKey = extractLockKey(handler, payload);
+    LockHandle lock = null;
     try {
       if (lockKey != null) {
         lock = tryAcquireLock(claimed, lockKey, cfg.lockTtl());
@@ -485,8 +485,9 @@ public final class HandlerDispatcher {
 
   private void handleRetryOutcome(
       ClaimedEvent claimed, EventHandler<?> handler, Object payload, EventOutcome.Retry retry) {
-    if (retry.delayOverride() != null) {
-      Instant when = clock.now().plus(retry.delayOverride());
+    Duration delayOverride = retry.delayOverride();
+    if (delayOverride != null) {
+      Instant when = clock.now().plus(delayOverride);
       applyRetry(claimed, when, retry.reason(), retry.cause());
       return;
     }

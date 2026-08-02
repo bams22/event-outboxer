@@ -25,15 +25,17 @@ final class FailureUtil {
    * outcome reason (if any), then the exception message, then a generic fallback.
    */
   static String reason(FailureContext<?> ctx) {
-    if (ctx.outcome() instanceof EventOutcome.Retry r) {
+    EventOutcome outcome = ctx.outcome();
+    if (outcome instanceof EventOutcome.Retry r) {
       return r.reason();
     }
-    if (ctx.outcome() instanceof EventOutcome.Fail f) {
+    if (outcome instanceof EventOutcome.Fail f) {
       return f.reason();
     }
-    if (ctx.cause() != null) {
-      String m = ctx.cause().getMessage();
-      return m == null ? ctx.cause().getClass().getSimpleName() : m;
+    Throwable cause = ctx.cause();
+    if (cause != null) {
+      String m = cause.getMessage();
+      return m == null ? cause.getClass().getSimpleName() : m;
     }
     return "handler returned a non-success outcome";
   }

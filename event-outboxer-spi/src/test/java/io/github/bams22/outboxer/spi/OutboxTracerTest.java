@@ -74,10 +74,11 @@ class OutboxTracerTest {
   class ProcessSpanInfoContract {
 
     @Test
-    void normalizesNullStoredContextToEmptyMap() {
-      var info = new OutboxTracer.ProcessSpanInfo(UUID.randomUUID(), "T", 1, WORKER, null);
-
-      assertThat(info.storedContext()).isNotNull().isEmpty();
+    void rejectsNullStoredContext() {
+      assertThatThrownBy(
+              () -> new OutboxTracer.ProcessSpanInfo(UUID.randomUUID(), "T", 1, WORKER, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("storedContext");
     }
 
     @Test

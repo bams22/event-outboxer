@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.domain.exception;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Base class for startup-time configuration errors. Raised by the Spring Boot starter's property
  * validator and by core engine initialization when invariants (for example {@code deadThreshold >=
@@ -26,7 +28,7 @@ public abstract class ConfigurationException extends OutboxException {
     super(message);
   }
 
-  protected ConfigurationException(String message, Throwable cause) {
+  protected ConfigurationException(String message, @Nullable Throwable cause) {
     super(message, cause);
   }
 }

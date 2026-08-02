@@ -593,19 +593,23 @@ public final class PostgresEventStore implements EventStore {
     }
     String[] ids = deadWorkers.stream().map(WorkerId::value).toArray(String[]::new);
     try {
-      return jdbc.doWork(
-          conn -> {
-            try (PreparedStatement ps = conn.prepareStatement(sqlReclaimOrphans)) {
-              Array arr = conn.createArrayOf("varchar", ids);
-              try {
-                ps.setTimestamp(1, Timestamp.from(now));
-                ps.setArray(2, arr);
-                return ps.executeUpdate();
-              } finally {
-                arr.free();
-              }
-            }
-          });
+      // doWork's return is @Nullable only because generic callbacks may return null; this
+      // callback always returns an update count.
+      Integer reclaimed =
+          jdbc.doWork(
+              conn -> {
+                try (PreparedStatement ps = conn.prepareStatement(sqlReclaimOrphans)) {
+                  Array arr = conn.createArrayOf("varchar", ids);
+                  try {
+                    ps.setTimestamp(1, Timestamp.from(now));
+                    ps.setArray(2, arr);
+                    return ps.executeUpdate();
+                  } finally {
+                    arr.free();
+                  }
+                }
+              });
+      return reclaimed == null ? 0 : reclaimed;
     } catch (SQLException ex) {
       throw new EventStoreException("reclaimOrphans failed", ex);
     }
@@ -642,8 +646,8 @@ public final class PostgresEventStore implements EventStore {
       long totalPending = 0;
       long totalProcessing = 0;
       long totalDisabled = 0;
-      @Nullable Instant oldestPending = null;
-      @Nullable Instant oldestClaimed = null;
+      Instant oldestPending = null;
+      Instant oldestClaimed = null;
       Map<String, long[]> perTypeCounts = new HashMap<>();
       Map<String, Instant> perTypeOldestPending = new HashMap<>();
       for (MetricsRow row : rows) {
@@ -656,7 +660,7 @@ public final class PostgresEventStore implements EventStore {
               if (oldestPending == null || row.oldestPending.isBefore(oldestPending)) {
                 oldestPending = row.oldestPending;
               }
-              @Nullable Instant cur = perTypeOldestPending.get(row.eventType);
+              Instant cur = perTypeOldestPending.get(row.eventType);
               if (cur == null || row.oldestPending.isBefore(cur)) {
                 perTypeOldestPending.put(row.eventType, row.oldestPending);
               }
@@ -746,8 +750,8 @@ public final class PostgresEventStore implements EventStore {
   /** Package-private: reused by {@link PostgresOutboxAdmin}. */
   static Event readEvent(ResultSet rs) throws SQLException {
     String statusStr = rs.getString("status");
-    @Nullable String claimedByStr = rs.getString("claimed_by");
-    @Nullable Timestamp claimedAt = rs.getTimestamp("claimed_at");
+    String claimedByStr = rs.getString("claimed_by");
+    Timestamp claimedAt = rs.getTimestamp("claimed_at");
     return new Event(
         (UUID) rs.getObject("id"),
         rs.getString("event_type"),

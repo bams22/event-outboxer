@@ -136,8 +136,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
             // Coalesced into an existing PENDING event. No listener, no wake — nothing new was
             // inserted, and the existing row is pinned (FOR UPDATE) inside this transaction, so
             // claims skip it until we commit and its handler is guaranteed to see our changes.
-            span.coalesced(result.existingId());
-            return result.existingId();
+            UUID existingId =
+                Objects.requireNonNull(
+                    result.existingId(), "coalesced result must carry the existing event id");
+            span.coalesced(existingId);
+            return existingId;
           }
         } else {
           store.save(pending);
@@ -192,11 +195,13 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
    * theoretical livelock into a loud failure.
    */
   private CoalescingResult saveCoalescing(PendingEvent pending) {
+    String dedupKey =
+        Objects.requireNonNull(pending.dedupKey(), "saveCoalescing requires a dedupKey");
     for (int attempt = 0; attempt < DEDUP_RACE_RETRIES; attempt++) {
       if (store.save(pending)) {
         return new CoalescingResult(true, null);
       }
-      var existing = store.lockPendingByDedupKey(pending.eventType(), pending.dedupKey());
+      var existing = store.lockPendingByDedupKey(pending.eventType(), dedupKey);
       if (existing.isPresent()) {
         return new CoalescingResult(false, existing.get());
       }
@@ -204,7 +209,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
     throw new PublishFailedException(
         "could not publish event with dedupKey '"
-            + pending.dedupKey()
+            + dedupKey
             + "' of type "
             + pending.eventType()
             + " after "
@@ -247,8 +252,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                 inserted.add(pe);
                 ids.add(pe.id());
               } else {
-                span.coalesced(result.existingId());
-                ids.add(result.existingId());
+                UUID existingId =
+                    Objects.requireNonNull(
+                        result.existingId(), "coalesced result must carry the existing event id");
+                span.coalesced(existingId);
+                ids.add(existingId);
               }
             } catch (StorageException | PublishFailedException ex) {
               span.error(ex);
@@ -292,7 +300,13 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
   // helpers
   // ---------------------------------------------------------------------------------------------
 
-  private void validate(String eventType, Object payload) {
+  /**
+   * API-boundary validation: parameters are declared {@code @Nullable} on purpose — the public
+   * {@code publish} methods promise non-null inputs, but callers without JSpecify tooling can still
+   * pass null, and this check turns that into a {@link PublishValidationException} instead of an
+   * unexplained NPE.
+   */
+  private void validate(@Nullable String eventType, @Nullable Object payload) {
     if (eventType == null) {
       throw new PublishValidationException("eventType must not be null");
     }

@@ -13,7 +13,6 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
 import java.util.Map;
 import java.util.Objects;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves the effective {@link FailureHandler} for a failed attempt, using the priority order from
@@ -44,7 +43,7 @@ public final class FailureHandlerResolver {
    */
   public FailureHandler<?> resolve(EventHandler<?> handler) {
     Objects.requireNonNull(handler, "handler must not be null");
-    @Nullable FailureHandler<?> onHandler = handler.failureHandler();
+    FailureHandler<?> onHandler = handler.failureHandler();
     if (onHandler != null) {
       return onHandler;
     }

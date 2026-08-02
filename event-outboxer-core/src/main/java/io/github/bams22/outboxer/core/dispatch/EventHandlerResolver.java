@@ -33,6 +33,8 @@ public final class EventHandlerResolver {
     for (EventHandler<?> h : handlers) {
       Objects.requireNonNull(h, "handler element must not be null");
       String type = h.eventType();
+      // eventType() is non-null by contract, but user-supplied handlers built without JSpecify
+      // tooling can still return null — validate loudly instead of failing later with an NPE.
       if (type == null || type.isBlank()) {
         throw new IllegalArgumentException(
             "handler " + h.getClass().getName() + " returned null/blank eventType");

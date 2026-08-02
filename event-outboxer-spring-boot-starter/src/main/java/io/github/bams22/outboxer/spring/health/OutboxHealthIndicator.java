@@ -50,7 +50,9 @@ public final class OutboxHealthIndicator implements HealthIndicator {
           .withDetail("totalDisabled", snapshot.totalDisabled())
           .withDetail("takenAt", snapshot.takenAt().toString());
     } catch (RuntimeException ex) {
-      builder.down().withDetail("metricsError", ex.getMessage());
+      // ex.toString(), not ex.getMessage(): withDetail rejects null values, and getMessage() can
+      // legitimately be null (e.g. bare NullPointerException).
+      builder.down().withDetail("metricsError", ex.toString());
     }
     builder.withDetail("workerId", engine.workerId().value());
     return builder.build();
