@@ -32,9 +32,9 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * PostgreSQL implementation of {@link WorkerRegistry}. Heartbeat lives in {@code outbox.workers}
- * (ADR-0005); a {@code PRIMARY KEY} on {@code worker_id} makes both heartbeat UPDATEs and {@code ON
- * CONFLICT} upserts O(1).
+ * PostgreSQL implementation of {@link WorkerRegistry}. Heartbeat lives in {@code
+ * event_outboxer.workers} (ADR-0005); a {@code PRIMARY KEY} on {@code worker_id} makes both
+ * heartbeat UPDATEs and {@code ON CONFLICT} upserts O(1).
  */
 public final class PostgresWorkerRegistry implements WorkerRegistry {
 

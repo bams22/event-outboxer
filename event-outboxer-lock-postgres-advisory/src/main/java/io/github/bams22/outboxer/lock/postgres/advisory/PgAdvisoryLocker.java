@@ -56,9 +56,11 @@ import org.slf4j.LoggerFactory;
  * <h2>TTL</h2>
  *
  * The {@code ttl} parameter is documented but unused — PostgreSQL advisory locks have no built-in
- * timeout. The engine's {@code handlerMaxRuntime} + watchdog force-reclaim provides the safety net;
- * if the handler is truly stuck forever, the connection is eventually recycled by the pool which
- * releases the lock.
+ * timeout. The engine's {@code handlerMaxRuntime} + watchdog force-reclaim lets the <em>event</em>
+ * move on, but the lock itself (and the pooled connection pinned inside its {@link LockHandle})
+ * stays held until {@code close()} runs or the connection dies — the pool never recycles a
+ * checked-out connection. After a hard crash (power loss, network partition) the backend holds the
+ * lock until TCP keepalive reaps it. See ADR-0022 §Guarantee table.
  */
 public final class PgAdvisoryLocker implements EntityLocker {
 

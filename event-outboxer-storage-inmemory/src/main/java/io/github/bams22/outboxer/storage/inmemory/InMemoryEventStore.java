@@ -42,7 +42,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Per ADR-0008 this adapter does <em>not</em> archive successful events — {@link
  * #markProcessed(UUID, WorkerId, long)} removes the row from the active store. Applications that
- * need an archive table should use the PostgreSQL adapter with {@code outbox.archive.enabled}.
+ * need an archive table should use the PostgreSQL adapter with {@code
+ * event-outboxer.storage.archive-enabled}.
  */
 public final class InMemoryEventStore implements EventStore {
 

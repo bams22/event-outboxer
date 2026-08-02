@@ -48,8 +48,8 @@ public final class MicrometerOutboxListener implements OutboxListener {
   /**
    * Prefix applied to every metric name. Default: {@code event_outboxer} — a specific name chosen
    * to avoid clashing with other libraries that publish {@code outbox.*} metrics. Configurable via
-   * the two-argument constructor; the Spring Boot starter binds {@code outbox.metrics.prefix} into
-   * the same slot.
+   * the two-argument constructor; the Spring Boot starter binds {@code
+   * event-outboxer.metrics.prefix} into the same slot.
    */
   public static final String DEFAULT_PREFIX = "event_outboxer";
 

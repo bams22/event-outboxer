@@ -48,6 +48,8 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-lock-redis` | Redis/KeyDB `EntityLocker` with fencing-token unlock. | Lettuce 6. | Multi-region or cross-DB deployments. |
 | `event-outboxer-cache-redis` | Redis/KeyDB `MetricsSnapshotCache` — shares the metrics snapshot across replicas. | Lettuce 6. | Fleets where per-JVM snapshot queries would hammer the DB. |
 | `event-outboxer-metrics-micrometer` | `OutboxListener` publishing to a Micrometer `MeterRegistry`. | `micrometer-core`. | Any Boot app with Micrometer/Observation; the starter auto-wires it if present. |
+| `event-outboxer-tracing-otel` | OpenTelemetry `OutboxTracer` — publish→handle trace continuity (ADR-0023); works with the OTel Java agent. | `opentelemetry-api`. | OTel-instrumented apps without Boot's Micrometer Tracing bridge; auto-detected by the starter. |
+| `event-outboxer-tracing-micrometer` | Micrometer Tracing `OutboxTracer` (ADR-0023) — propagation follows `management.tracing.*`. | `micrometer-tracing`. | Boot Actuator tracing setups; wins over the OTel adapter when both are present. |
 | `event-outboxer-admin-actuator` | Actuator endpoint (`outboxadmin`) over the `OutboxAdmin` SPI. | Spring Boot Actuator. | Ops surface via the management port (ADR-0019). |
 | `event-outboxer-admin-rest` | Opt-in REST controller over `OutboxAdmin` with configurable `@PreAuthorize` authority. | Spring Web (+ optional Spring Security). | Ops surface on the app port when Actuator is not exposed (ADR-0019). |
 | `event-outboxer-testkit` | `SettableClock`, `ManualEngine`, `OutboxTestContext`, `RecordingOutboxListener`, fluent assertions, JUnit 5 extension. | `event-outboxer-core`, in-memory adapter, Jackson serializer. | Test-scope dependency for handler tests. |
@@ -102,6 +104,8 @@ io.github.bams22:event-outboxer-lock-postgres-advisory:0.3.0  (0.2.0 shipped as 
 io.github.bams22:event-outboxer-lock-redis:0.2.0
 io.github.bams22:event-outboxer-cache-redis:0.3.0          (ships in 0.3.0)
 io.github.bams22:event-outboxer-metrics-micrometer:0.2.0
+io.github.bams22:event-outboxer-tracing-otel:0.3.0         (ships in 0.3.0)
+io.github.bams22:event-outboxer-tracing-micrometer:0.3.0   (ships in 0.3.0)
 io.github.bams22:event-outboxer-admin-actuator:0.3.0       (ships in 0.3.0)
 io.github.bams22:event-outboxer-admin-rest:0.3.0           (ships in 0.3.0)
 io.github.bams22:event-outboxer-testkit:0.2.0

@@ -11,7 +11,7 @@ package io.github.bams22.outboxer.domain.exception;
 
 /**
  * {@code publish(...)} was called outside an active transaction and the configuration requires one
- * ({@code outbox.publisher.no-transaction-policy=FAIL}, the default).
+ * ({@code event-outboxer.publisher.no-transaction-policy=FAIL}, the default).
  *
  * <p>This exception guards the core outbox guarantee: a published event must commit or roll back
  * atomically with the caller's business data. Publishing outside a transaction would break that

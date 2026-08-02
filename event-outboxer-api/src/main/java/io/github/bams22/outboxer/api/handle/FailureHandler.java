@@ -21,8 +21,9 @@ package io.github.bams22.outboxer.api.handle;
  *
  * <ol>
  *   <li>{@code EventHandler.failureHandler()} if non-null.
- *   <li>The per-type failure handler configured in {@code EventTypeConfig} (Spring starter binds
- *       this from {@code outbox.handlers.types.<type>.failure.*} properties).
+ *   <li>The per-type failure handler registered for the event type (plain Java: {@code
+ *       OutboxEngineBuilder.failureHandlerFor(type, handler)}; Spring starter: the map bean named
+ *       {@code outboxPerTypeFailureHandlers}).
  *   <li>{@code FailureHandlers.defaults()} — the library-wide default chain ({@code Log →
  *       MaxRetries(10, DISABLE) → ExponentialBackoff(5s, 2x, cap 1h, jitter 20%)}).
  * </ol>

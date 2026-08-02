@@ -19,7 +19,7 @@ import java.util.Optional;
 
 /**
  * Registry of live worker JVMs that are currently serving the outbox. Backed by the {@code
- * outbox.workers} table in the PostgreSQL adapter (see ADR-0005 and STORAGE.md §Tables).
+ * event_outboxer.workers} table in the PostgreSQL adapter (see ADR-0005 and STORAGE.md §Tables).
  *
  * <p>Having the heartbeat live in a dedicated table — rather than on every in-flight event row —
  * keeps heartbeat writes O(1) per JVM regardless of concurrent event load. Orphan recovery uses

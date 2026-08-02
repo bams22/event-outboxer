@@ -21,8 +21,8 @@ import java.util.UUID;
  *
  * <p>The default format is {@code {hostname}-{pid}-{uuid8}} (for example {@code
  * api-srv-01-4817-a3f2b1c9}). Custom identifiers may be supplied as long as they are unique across
- * the cluster and fit within 64 characters — the {@code outbox.workers.worker_id} column in the
- * PostgreSQL adapter declares {@code VARCHAR(64)}.
+ * the cluster and fit within 64 characters — the {@code event_outboxer.workers.worker_id} column in
+ * the PostgreSQL adapter declares {@code VARCHAR(64)}.
  *
  * @param value non-blank, at most 64 characters
  */

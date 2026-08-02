@@ -14,7 +14,7 @@ import java.util.Objects;
 
 /**
  * Payload of {@link OutboxListener#onWorkerDeregistered(WorkerDeregisteredInfo)} — fired at the end
- * of graceful shutdown, after the worker row has been removed from {@code outbox.workers}.
+ * of graceful shutdown, after the worker row has been removed from {@code event_outboxer.workers}.
  *
  * @param workerId id of the worker that just deregistered
  */

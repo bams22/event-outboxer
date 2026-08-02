@@ -23,12 +23,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 
 /**
- * Registers {@link LettuceMetricsSnapshotCache} when {@code outbox.cache.type=redis}, the {@code
- * event-outboxer-cache-redis} module is on the classpath, and a {@link StatefulRedisConnection}
- * bean is available (users create one via Lettuce's {@code RedisClient}).
+ * Registers {@link LettuceMetricsSnapshotCache} when {@code event-outboxer.cache.type=redis}, the
+ * {@code event-outboxer-cache-redis} module is on the classpath, and a {@link
+ * StatefulRedisConnection} bean is available (users create one via Lettuce's {@code RedisClient}).
  *
- * <p>TTL comes from {@code outbox.storage.metrics-cache-ttl}; the key prefix from {@code
- * outbox.cache.redis.key-prefix} (default {@code outbox:metrics:}).
+ * <p>TTL comes from {@code event-outboxer.storage.metrics-cache-ttl}; the key prefix from {@code
+ * event-outboxer.cache.redis.key-prefix} (default {@code outbox:metrics:}).
  */
 @AutoConfiguration
 @ConditionalOnClass(LettuceMetricsSnapshotCache.class)

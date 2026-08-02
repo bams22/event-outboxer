@@ -21,11 +21,11 @@ import org.springframework.context.annotation.Bean;
  * Auto-configuration for the {@link MetricsSnapshotCache} SPI that backs {@code
  * EventStore.metricsSnapshot()} caching.
  *
- * <p>Selected via {@code outbox.cache.type}:
+ * <p>Selected via {@code event-outboxer.cache.type}:
  *
  * <ul>
  *   <li>{@code memory} (default) — per-JVM TTL cache, driven by {@code
- *       outbox.storage.metrics-cache-ttl}.
+ *       event-outboxer.storage.metrics-cache-ttl}.
  *   <li>{@code noop} — caching disabled; every call recomputes from the database.
  *   <li>{@code redis} — shared Redis-backed cache; wired by {@code RedisCacheAutoConfiguration}
  *       when {@code event-outboxer-cache-redis} is on the classpath and a {@code

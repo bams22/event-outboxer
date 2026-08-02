@@ -176,7 +176,7 @@ public interface OutboxListener {
    * longer alive — typically, a per-type poller thread died from an uncaught {@code Error}. After
    * this callback {@code OutboxEngine.state()} reports {@code STOPPED}; the Actuator health
    * indicator flips DOWN, the {@code event_outboxer.engine.state} gauge flips to {@code stopped=1},
-   * and (with {@code outbox.health.probe-groups} configured) the readiness / liveness probe
+   * and (with {@code event-outboxer.health.probe-groups} configured) the readiness / liveness probe
    * follows.
    */
   default void onEngineCrashed(EngineCrashedInfo info) {

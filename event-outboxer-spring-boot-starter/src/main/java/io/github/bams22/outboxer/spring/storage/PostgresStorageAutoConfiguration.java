@@ -40,8 +40,8 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 
 /**
  * Autoconfiguration for the PostgreSQL storage adapter. Kicks in when {@code
- * outbox.storage.type=postgres}, the adapter classes are on the classpath, and a {@link DataSource}
- * bean is available.
+ * event-outboxer.storage.type=postgres}, the adapter classes are on the classpath, and a {@link
+ * DataSource} bean is available.
  *
  * <h2>ADR-0002 — participate in the caller's transaction</h2>
  *
@@ -116,7 +116,7 @@ public class PostgresStorageAutoConfiguration {
   }
 
   /**
-   * Feeds {@code outbox.storage.schema} into Flyway as the {@code ${eventOutboxerSchema}}
+   * Feeds {@code event-outboxer.storage.schema} into Flyway as the {@code ${eventOutboxerSchema}}
    * placeholder so the library's classpath migrations pick up the same schema name as the adapter
    * at runtime.
    *

@@ -36,7 +36,8 @@ import org.springframework.context.annotation.Bean;
 /**
  * Registers a {@link MicrometerOutboxListener} when both the metrics adapter and a Micrometer
  * {@link MeterRegistry} are on the classpath, plus per-state gauges for the engine lifecycle. The
- * metric-name prefix is bound from {@code outbox.metrics.prefix} (default: {@code event_outboxer}).
+ * metric-name prefix is bound from {@code event-outboxer.metrics.prefix} (default: {@code
+ * event_outboxer}).
  */
 @AutoConfiguration
 @ConditionalOnClass({MeterRegistry.class, MicrometerOutboxListener.class})
@@ -82,8 +83,9 @@ public class MicrometerAutoConfiguration {
   /**
    * Publishes backlog gauges driven by {@link EventStore#metricsSnapshot()}. Every Prometheus
    * scrape reads the snapshot through the {@code MetricsSnapshotCache} SPI, so the cost per scrape
-   * is amortised across the cache TTL (default 30 s) and — when {@code outbox.cache.type=redis} —
-   * shared across pods so dashboards see the same aggregate on every replica.
+   * is amortised across the cache TTL (default 30 s) and — when {@code
+   * event-outboxer.cache.type=redis} — shared across pods so dashboards see the same aggregate on
+   * every replica.
    *
    * <p>Per-event-type (one row per registered {@link EventHandler}):
    *

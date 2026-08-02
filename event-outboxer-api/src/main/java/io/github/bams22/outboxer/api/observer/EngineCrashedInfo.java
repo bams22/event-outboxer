@@ -22,8 +22,9 @@ import org.jspecify.annotations.Nullable;
  * signal flip to the DOWN / stopped branch.
  *
  * <p>Listeners must treat this event as a fatal condition for the current worker: the engine does
- * not attempt to self-recover. In a Spring Boot deployment with {@code outbox.health.probe-groups:
- * [readiness, liveness]} Kubernetes will drain and restart the pod automatically.
+ * not attempt to self-recover. In a Spring Boot deployment with {@code
+ * event-outboxer.health.probe-groups: [readiness, liveness]} Kubernetes will drain and restart the
+ * pod automatically.
  *
  * @param reason human-readable description of what the health check detected
  * @param cause the underlying throwable that killed the component, if known. Usually {@code null} —

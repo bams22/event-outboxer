@@ -26,7 +26,7 @@ import org.springframework.core.env.MapPropertySource;
 
 /**
  * Appends the {@code outbox} indicator into every Actuator health group listed in {@code
- * outbox.health.probe-groups}. Intended for k8s deployments whose probes hit only {@code
+ * event-outboxer.health.probe-groups}. Intended for k8s deployments whose probes hit only {@code
  * /actuator/health/liveness} and {@code /actuator/health/readiness}: opt in and the outbox's {@code
  * UP}/{@code DOWN} state automatically propagates into the probe response.
  *
@@ -72,8 +72,8 @@ public class OutboxProbeGroupsEnvironmentPostProcessor
   }
 
   /**
-   * Reads {@code outbox.health.probe-groups} as a list. Supports both YAML list form and the
-   * comma-separated scalar form.
+   * Reads {@code event-outboxer.health.probe-groups} as a list. Supports both YAML list form and
+   * the comma-separated scalar form.
    */
   private static List<String> readProbeGroups(ConfigurableEnvironment env) {
     List<String> fromBinder =

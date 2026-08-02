@@ -40,8 +40,8 @@ import org.springframework.context.annotation.Import;
  * Verifies end-to-end that a poller thread dying from an uncaught {@code Error} is detected by the
  * maintenance scheduler's health-check task, flips {@code OutboxEngine.state()} to STOPPED, flips
  * the engine-state metric to {@code state="stopped"=1}, and makes the Actuator health indicator
- * DOWN — so both k8s probes (via {@code outbox.health.probe-groups}) and Prometheus alerts pick it
- * up.
+ * DOWN — so both k8s probes (via {@code event-outboxer.health.probe-groups}) and Prometheus alerts
+ * pick it up.
  *
  * <p>In its own test class because a crashed engine cannot be reused across further tests.
  */
@@ -94,7 +94,7 @@ class InMemoryStarterCrashTest {
     assertThat(meterRegistry.get("event_outboxer.engine.crashed").counter().count())
         .isGreaterThanOrEqualTo(1.0);
 
-    // Health indicator DOWN, which (with outbox.health.probe-groups: [readiness]) would
+    // Health indicator DOWN, which (with event-outboxer.health.probe-groups: [readiness]) would
     // propagate into the Actuator readiness probe.
     assertThat(healthIndicator.health().getStatus()).isEqualTo(Status.DOWN);
 

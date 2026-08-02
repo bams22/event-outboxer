@@ -544,8 +544,10 @@ a fresh orphan-recovery cycle on restart — is correct but wastes work).
 
 All configuration lives under `event-outboxer.*` in application.yml — see
 [docs/CONFIGURATION.md](CONFIGURATION.md). Invariant validation
-(`deadThreshold >= 3 × heartbeatInterval`, etc.) runs in
-`OutboxPropertiesValidator` at startup.
+(`deadThreshold >= 3 × heartbeatInterval`, etc.) runs in the
+constructors of the core config records (`MaintenanceConfig`,
+`EventTypeConfig`, `DispatcherConfig`) when the starter maps the bound
+properties, so a bad value aborts context refresh.
 
 ### 6. HealthIndicator
 
@@ -593,7 +595,7 @@ other) has been a real source of bugs.
 | Serializer | `EventSerializer` SPI — caller wires write serializer via `eventSerializer(...)`, read-only formats via `additionalSerializers(...)` | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last) + additive `ProtobufSerializerAutoConfiguration` (ADR-0026); write serializer resolved per `event-outboxer.serializer.write-format` (ADR-0025) |
 | Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
 | Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
-| Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("outbox")` → `OutboxPropertiesValidator` → builder |
+| Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("event-outboxer")` (`OutboxProperties`) → thin merge → core config records (invariants validated in their constructors) |
 | Metrics-snapshot cache | `MetricsSnapshotCache` SPI with `noop()` / `inMemory(Clock, ttl)` static factories; caller passes the one they want into `PostgresEventStore` | `CacheAutoConfiguration` picks `memory` (default) / `noop` per `event-outboxer.cache.type`; `RedisCacheAutoConfiguration` selects the Lettuce-backed variant from `event-outboxer-cache-redis` when `type=redis` and a `StatefulRedisConnection` bean exists; user `@Bean MetricsSnapshotCache` overrides everything |
 
 **Invariant.** If you are tempted to ship something only in the starter

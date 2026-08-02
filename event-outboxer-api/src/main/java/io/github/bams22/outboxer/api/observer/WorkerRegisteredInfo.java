@@ -14,7 +14,7 @@ import java.util.Objects;
 
 /**
  * Payload of {@link OutboxListener#onWorkerRegistered(WorkerRegisteredInfo)} — fired once at engine
- * startup, after the worker has been inserted into the {@code outbox.workers} table.
+ * startup, after the worker has been inserted into the {@code event_outboxer.workers} table.
  *
  * @param info full registration metadata
  */
