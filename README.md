@@ -152,6 +152,8 @@ five troubleshooting recipes.
 
 - [Architecture](docs/ARCHITECTURE.md) — overview, module layout,
   key components and data flows.
+- [Module reference](docs/modules/README.md) — one page per Maven
+  module: purpose, when to use it, how to configure it.
 - [Configuration](docs/CONFIGURATION.md) — full `application.yml`
   reference.
 - [Storage: PostgreSQL](docs/STORAGE.md) — database schema, key queries,

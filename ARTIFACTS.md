@@ -1,6 +1,8 @@
 # Artifacts
 
 All artifacts publish to Maven Central under `groupId = io.github.bams22`.
+Detailed per-module documentation (purpose, when to use, configuration)
+lives in [docs/modules/](docs/modules/README.md).
 
 ## Pick-list
 

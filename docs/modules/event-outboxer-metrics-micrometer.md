@@ -1,0 +1,99 @@
+# event-outboxer-metrics-micrometer
+
+An `OutboxListener` that publishes every engine signal to a Micrometer
+`MeterRegistry` — counters, timers and distribution summaries prefixed
+`event_outboxer.*`, with an `event_type` tag on every per-event signal.
+
+| | |
+|---|---|
+| Coordinates | `io.github.bams22:event-outboxer-metrics-micrometer` |
+| Java package | `io.github.bams22.outboxer.metrics.micrometer` |
+| Depends on | [`event-outboxer-api`](event-outboxer-api.md) only (+ `micrometer-core`) |
+| Enable with | module on the classpath + a `MeterRegistry` bean — no flag |
+
+## Why it exists
+
+The engine reports everything through the `OutboxListener` port
+([ADR-0013](../adr/0013-outbox-listener-for-observability.md)); this
+module is the standard bridge from those callbacks to Micrometer, so
+any Spring Boot Actuator app gets outbox metrics in Prometheus /
+Datadog / OTLP with zero glue code.
+
+## What it does
+
+**`MicrometerOutboxListener`** implements all 21 callbacks; each is an
+O(1) meter update, safe on the dispatcher hot path. Highlights (full
+catalogue in [OBSERVABILITY.md §Micrometer metrics reference](../OBSERVABILITY.md#micrometer-metrics-reference)):
+
+| Meter (default prefix) | Type | Tag |
+|---|---|---|
+| `event_outboxer.events.published` / `.claimed` / `.processed` / `.retry_scheduled` / `.disabled` / `.deleted` / `.skipped` | counter | `event_type` |
+| `event_outboxer.events.processing_time` | timer | `event_type` |
+| `event_outboxer.events.attempts` | distribution summary | `event_type` |
+| `event_outboxer.handler.errors`, `.handler.stuck_reclaimed` | counter | `event_type` |
+| `event_outboxer.events.unknown_type`, `.events.serialization_errors` | counter | `event_type` |
+| `event_outboxer.lock.acquisition_failed`, `.lock.release_failed` | counter | `event_type` |
+| `event_outboxer.dispatch.rejected` | counter | `event_type` |
+| `event_outboxer.storage.errors` | counter | `operation` |
+| `event_outboxer.workers.registered` / `.graceful_stops` / `.deregistered`, `.heartbeat.failed`, `.orphans.reclaimed`, `.orphans.dead_workers`, `.engine.crashed` | counter | — |
+
+**Gauges live in the starter, not here.** When both this module and
+the engine are present, the starter's `MicrometerAutoConfiguration`
+additionally registers `event_outboxer.engine.state{state=…}` (0/1
+per lifecycle state — the alerting signal for a crashed engine) and
+the backlog gauges `event_outboxer.events.pending` / `.processing` /
+`.disabled` / `.oldest_pending_age_seconds` per handler type plus a
+global `.oldest_claimed_age_seconds`, all read through the
+`MetricsSnapshotCache` (see
+[event-outboxer-cache-redis](event-outboxer-cache-redis.md) for
+fleet-consistent readings).
+
+## When to use it
+
+Any Spring Boot app with Micrometer — effectively always in
+production; ARTIFACTS.md lists it in the typical production set.
+Plain-Java (non-Spring) apps can use it too: it depends only on the
+API and `micrometer-core`.
+
+## How to configure it
+
+### With Spring Boot
+
+```xml
+<dependency>
+    <groupId>io.github.bams22</groupId>
+    <artifactId>event-outboxer-metrics-micrometer</artifactId>
+</dependency>
+```
+
+That is all: the starter auto-registers the listener when the class
+and a `MeterRegistry` bean are present. One property:
+
+```yaml
+event-outboxer:
+  metrics:
+    prefix: event_outboxer   # default; chosen to avoid clashing with other libraries' outbox.* metrics
+```
+
+Override the prefix when several outbox instances share one registry
+or your organisation mandates a namespace. Declaring your own
+`MicrometerOutboxListener` bean replaces the auto-configured one; the
+gauges can be replaced individually by defining beans named
+`outboxEngineStateGauges` / `outboxBacklogGauges`.
+
+### Without Spring
+
+```java
+new OutboxEngineBuilder()
+    .listener(new MicrometerOutboxListener(meterRegistry))          // default prefix
+    // or: new MicrometerOutboxListener(meterRegistry, "my_prefix")
+    .build();
+```
+
+Backlog gauges are not included — register your own `Gauge.builder`
+readings off `EventStore.metricsSnapshot()` if you need them.
+
+## Related
+
+- [OBSERVABILITY.md](../OBSERVABILITY.md) — the full metric table, alerting recipes and the troubleshooting playbook.
+- [event-outboxer-tracing-otel](event-outboxer-tracing-otel.md) / [-micrometer](event-outboxer-tracing-micrometer.md) — the tracing side of observability.
