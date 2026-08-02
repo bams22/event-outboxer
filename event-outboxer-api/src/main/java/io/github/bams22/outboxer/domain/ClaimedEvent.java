@@ -28,7 +28,10 @@ import java.util.UUID;
  * @param id event identifier
  * @param eventType event type string
  * @param payload serialized payload body (same form as {@code PendingEvent.payload})
- * @param payloadClass fully-qualified Java class for deserialization
+ * @param payloadFormat stable id of the serializer that produced {@code payload}; the dispatcher
+ *     selects the deserializer by this value (ADR-0025)
+ * @param payloadClass publish-time payload class FQCN, recorded for diagnostics and auditing; never
+ *     used to select the deserialization target — that is always {@code EventHandler.payloadType()}
  * @param priority priority value as stored
  * @param attempts number of processing attempts, including the current one
  * @param createdAt time the event was originally published
@@ -40,7 +43,8 @@ import java.util.UUID;
 public record ClaimedEvent(
     UUID id,
     String eventType,
-    String payload,
+    SerializedPayload payload,
+    String payloadFormat,
     String payloadClass,
     short priority,
     int attempts,
@@ -53,6 +57,7 @@ public record ClaimedEvent(
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(eventType, "eventType must not be null");
     Objects.requireNonNull(payload, "payload must not be null");
+    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
     Objects.requireNonNull(payloadClass, "payloadClass must not be null");
     Objects.requireNonNull(createdAt, "createdAt must not be null");
     Objects.requireNonNull(claimedAt, "claimedAt must not be null");

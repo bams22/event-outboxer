@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import java.time.Instant;
@@ -28,11 +29,25 @@ class JacksonEventSerializerTest {
       new JacksonEventSerializer(JacksonObjectMapperFactory.defaults());
 
   @Test
+  void declaresStableJacksonJsonFormat() {
+    assertThat(serializer.format()).isEqualTo("jackson-json");
+    assertThat(JacksonEventSerializer.FORMAT).isEqualTo("jackson-json");
+  }
+
+  @Test
+  void serializesIntoTheTextLane() {
+    SerializedPayload payload =
+        serializer.serialize(new OrderCreated("ord-1", 1, Instant.parse("2026-04-21T12:00:00Z")));
+
+    assertThat(payload.isText()).isTrue();
+  }
+
+  @Test
   void roundTripsSimpleRecord() {
     OrderCreated original = new OrderCreated("ord-1", 42, Instant.parse("2026-04-21T12:00:00Z"));
 
-    String json = serializer.serialize(original);
-    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+    SerializedPayload payload = serializer.serialize(original);
+    OrderCreated parsed = serializer.deserialize(payload, OrderCreated.class);
 
     assertThat(parsed).isEqualTo(original);
   }
@@ -41,7 +56,7 @@ class JacksonEventSerializerTest {
   void writesInstantsAsIsoStringsNotEpochMillis() {
     OrderCreated original = new OrderCreated("ord-1", 1, Instant.parse("2026-04-21T12:00:00Z"));
 
-    String json = serializer.serialize(original);
+    String json = serializer.serialize(original).requireText();
 
     assertThat(json).contains("2026-04-21T12:00:00Z");
     assertThat(json).doesNotContain("1745");
@@ -55,8 +70,8 @@ class JacksonEventSerializerTest {
             List.of("inbox", "important"),
             Map.of("priority", "normal", "source", "api"));
 
-    String json = serializer.serialize(email);
-    Email parsed = serializer.deserialize(json, Email.class);
+    SerializedPayload payload = serializer.serialize(email);
+    Email parsed = serializer.deserialize(payload, Email.class);
 
     assertThat(parsed).isEqualTo(email);
   }
@@ -65,8 +80,8 @@ class JacksonEventSerializerTest {
   void roundTripsPolymorphicDto() {
     Shape shape = new Circle(3.0);
 
-    String json = serializer.serialize(shape);
-    Shape parsed = serializer.deserialize(json, Shape.class);
+    SerializedPayload payload = serializer.serialize(shape);
+    Shape parsed = serializer.deserialize(payload, Shape.class);
 
     assertThat(parsed).isEqualTo(shape);
     assertThat(parsed).isInstanceOf(Circle.class);
@@ -79,7 +94,8 @@ class JacksonEventSerializerTest {
     String json =
         "{\"orderId\":\"ord-1\",\"count\":1,\"occurredAt\":\"2026-04-21T12:00:00Z\",\"ghostField\":true}";
 
-    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+    OrderCreated parsed =
+        serializer.deserialize(SerializedPayload.ofText(json), OrderCreated.class);
 
     assertThat(parsed)
         .isEqualTo(new OrderCreated("ord-1", 1, Instant.parse("2026-04-21T12:00:00Z")));
@@ -91,7 +107,8 @@ class JacksonEventSerializerTest {
     // newer replica: absent primitive → default value.
     String json = "{\"orderId\":\"ord-1\",\"occurredAt\":\"2026-04-21T12:00:00Z\"}";
 
-    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+    OrderCreated parsed =
+        serializer.deserialize(SerializedPayload.ofText(json), OrderCreated.class);
 
     assertThat(parsed.count()).isZero();
   }
@@ -103,7 +120,8 @@ class JacksonEventSerializerTest {
     // feature would break the add-a-primitive-field evolution case. Both resolve to the default.
     String json = "{\"orderId\":\"ord-1\",\"count\":null,\"occurredAt\":\"2026-04-21T12:00:00Z\"}";
 
-    OrderCreated parsed = serializer.deserialize(json, OrderCreated.class);
+    OrderCreated parsed =
+        serializer.deserialize(SerializedPayload.ofText(json), OrderCreated.class);
 
     assertThat(parsed.count()).isZero();
   }
@@ -117,6 +135,15 @@ class JacksonEventSerializerTest {
 
     assertThatThrownBy(() -> noSelfRef.serialize(bad))
         .isInstanceOf(PublishSerializationException.class);
+  }
+
+  @Test
+  void rejectsBinaryLaneInput() {
+    assertThatThrownBy(
+            () ->
+                serializer.deserialize(
+                    SerializedPayload.ofBytes(new byte[] {0x00, (byte) 0xFF}), OrderCreated.class))
+        .isInstanceOf(IllegalStateException.class);
   }
 
   // --- fixtures ---

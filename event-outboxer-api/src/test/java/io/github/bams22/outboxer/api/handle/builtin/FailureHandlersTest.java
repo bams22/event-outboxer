@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.FailureContext;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -32,7 +33,8 @@ class FailureHandlersTest {
         new ClaimedEvent(
             UUID.randomUUID(),
             "TEST",
-            "{}",
+            SerializedPayload.ofText("{}"),
+            "test-json",
             "java.lang.String",
             (short) 0,
             attempt,

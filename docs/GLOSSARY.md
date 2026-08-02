@@ -59,8 +59,18 @@ up automatically by the core engine via `eventType()`.
 `Retry(reason, delayOverride, cause)` | `Fail(reason, cause)` |
 `Skip(reason)`.
 
-**EventSerializer** — SPI port for payload serialization. In MVP — Jackson
-JSON only. See [ADR-0011](adr/0011-jackson-json-only-in-mvp.md).
+**EventSerializer** — SPI port for payload serialization. Declares a
+stable `format()` id and works over `SerializedPayload` (text or bytes
+lane), so binary formats plug in without SPI changes; the only shipped
+implementation is Jackson JSON. See
+[ADR-0011](adr/0011-jackson-json-only-in-mvp.md) and
+[ADR-0025](adr/0025-binary-capable-serializer-spi-and-payload-format.md).
+
+**EventSerializerRegistry** — immutable lookup of serializers by format
+id. The dispatcher uses it to deserialize each claimed event with the
+serializer that wrote it (`payload_format`), which keeps rolling deploys
+and format migrations safe. See
+[ADR-0025](adr/0025-binary-capable-serializer-spi-and-payload-format.md).
 
 **EventStore** — SPI port for persistent event storage. Methods: `save`,
 `claim`, `markProcessed`, `markForRetry`, `markDisabled`, `forceReclaim`,
@@ -175,9 +185,16 @@ Implementations: `LoggingOutboxListener` (default),
 
 ## P
 
-**payload** — event business data serialized to JSON (Jackson). Stored in
-`event_outboxer.events.payload JSONB`. Payload type is an explicit DTO, not a
-lambda. See [ADR-0003](adr/0003-explicit-dto-payload.md).
+**payload** — event business data in serialized form (`SerializedPayload`).
+Textual formats (Jackson JSON) live in `event_outboxer.events.payload
+JSONB`; binary formats in `payload_binary BYTEA` — exactly one of the two
+per row (ADR-0025). Payload type is an explicit DTO, not a lambda. See
+[ADR-0003](adr/0003-explicit-dto-payload.md).
+
+**payload_format** — stable `EventSerializer.format()` id (for example
+`jackson-json`) recorded with every event at publish time. The dispatcher
+selects the deserializer by this value. See
+[ADR-0025](adr/0025-binary-capable-serializer-spi-and-payload-format.md).
 
 **PENDING** — the initial status of an event after publish. Ready to be
 claimed once `run_at <= now()`.

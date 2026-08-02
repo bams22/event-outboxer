@@ -23,7 +23,9 @@ import org.jspecify.annotations.Nullable;
  * @param id original event id
  * @param eventType event type
  * @param payload serialized payload as stored
- * @param payloadClass FQCN recorded at publish time
+ * @param payloadFormat stable id of the serializer that produced {@code payload} (ADR-0025)
+ * @param payloadClass publish-time payload class FQCN, recorded for diagnostics and auditing; never
+ *     used to select a deserialization target
  * @param priority publish-time priority
  * @param attempts attempts consumed before the successful run
  * @param createdAt original publish time
@@ -36,7 +38,8 @@ import org.jspecify.annotations.Nullable;
 public record ArchivedEvent(
     UUID id,
     String eventType,
-    String payload,
+    SerializedPayload payload,
+    String payloadFormat,
     String payloadClass,
     short priority,
     int attempts,
@@ -51,6 +54,7 @@ public record ArchivedEvent(
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(eventType, "eventType must not be null");
     Objects.requireNonNull(payload, "payload must not be null");
+    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
     Objects.requireNonNull(payloadClass, "payloadClass must not be null");
     Objects.requireNonNull(createdAt, "createdAt must not be null");
     Objects.requireNonNull(runAt, "runAt must not be null");

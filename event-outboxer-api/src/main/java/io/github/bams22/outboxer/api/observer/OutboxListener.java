@@ -94,7 +94,10 @@ public interface OutboxListener {
     // no-op
   }
 
-  /** Called when the engine could not deserialize the payload of a claimed event. */
+  /**
+   * Called when the engine could not deserialize the payload of a claimed event — including the
+   * case where no serializer is registered for the event's stored payload format (ADR-0025).
+   */
   default void onEventSerializationError(SerializationErrorInfo info) {
     // no-op
   }

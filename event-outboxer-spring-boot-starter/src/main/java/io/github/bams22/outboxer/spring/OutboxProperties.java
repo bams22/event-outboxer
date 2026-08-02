@@ -38,6 +38,7 @@ public class OutboxProperties {
   private final Storage storage = new Storage();
   private final Lock lock = new Lock();
   private final Publisher publisher = new Publisher();
+  private final Serializer serializer = new Serializer();
   private final Maintenance maintenance = new Maintenance();
   private final Dispatcher dispatcher = new Dispatcher();
   private final EventTypes eventTypes = new EventTypes();
@@ -149,6 +150,23 @@ public class OutboxProperties {
   public enum NoTxPolicy {
     FAIL,
     IGNORE
+  }
+
+  /**
+   * Serialization (ADR-0025). All registered {@code EventSerializer} beans are available for
+   * deserialization (routed by the {@code payload_format} stored per event); exactly one of them
+   * writes new events.
+   */
+  @Getter
+  @Setter
+  public static class Serializer {
+    /**
+     * Format id of the serializer that writes new events, e.g. {@code jackson-json}. Only needed
+     * when more than one {@code EventSerializer} bean is registered and none of them is the
+     * documented {@code outboxEventSerializer} override; with a single bean it is redundant. {@code
+     * null} (default): resolve automatically.
+     */
+    private @Nullable String writeFormat;
   }
 
   /**

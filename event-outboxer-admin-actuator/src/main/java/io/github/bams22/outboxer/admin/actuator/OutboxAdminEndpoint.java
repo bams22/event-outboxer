@@ -12,11 +12,13 @@ package io.github.bams22.outboxer.admin.actuator;
 import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.spi.AdminCursor;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -141,8 +143,9 @@ public class OutboxAdminEndpoint {
     m.put("createdAt", e.createdAt().toString());
     m.put("runAt", e.runAt().toString());
     m.put("lastFailReason", e.lastFailReason());
+    m.put("payloadFormat", e.payloadFormat());
     m.put("payloadClass", e.payloadClass());
-    m.put("payload", e.payload());
+    putPayload(m, e.payload());
     return m;
   }
 
@@ -155,9 +158,20 @@ public class OutboxAdminEndpoint {
     m.put("createdAt", e.createdAt().toString());
     m.put("archivedAt", e.archivedAt().toString());
     m.put("archivedBy", e.archivedBy());
+    m.put("payloadFormat", e.payloadFormat());
     m.put("payloadClass", e.payloadClass());
-    m.put("payload", e.payload());
+    putPayload(m, e.payload());
     return m;
+  }
+
+  /**
+   * Dual payload lane (ADR-0025): the text lane goes out verbatim as {@code payload}, the binary
+   * lane as Base64 under {@code payloadBase64} — exactly one of the two keys is non-null.
+   */
+  private static void putPayload(Map<String, @Nullable Object> m, SerializedPayload payload) {
+    m.put("payload", payload.text());
+    byte[] bytes = payload.bytes();
+    m.put("payloadBase64", bytes != null ? Base64.getEncoder().encodeToString(bytes) : null);
   }
 
   /**

@@ -21,10 +21,12 @@ import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
+import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import java.time.Duration;
@@ -77,7 +79,7 @@ class HandlerDispatcherTracingTest {
     return new HandlerDispatcher(
         store,
         EntityLocker.NOOP,
-        new StringEventSerializer(),
+        EventSerializerRegistry.of(List.of(new StringEventSerializer())),
         new EventHandlerResolver(List.of(handler)),
         new FailureHandlerResolver(Map.of(), FailureHandlers.defaults()),
         new InFlightRegistry(),
@@ -94,7 +96,8 @@ class HandlerDispatcherTracingTest {
         PendingEvent.builder()
             .id(UUID.randomUUID())
             .eventType("T")
-            .payload("p")
+            .payload(SerializedPayload.ofText("p"))
+            .payloadFormat(StringEventSerializer.FORMAT)
             .payloadClass("java.lang.String")
             .priority((short) 0)
             .runAt(Instant.now().minusSeconds(1))

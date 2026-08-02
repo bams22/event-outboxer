@@ -48,6 +48,7 @@ import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
+import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.OutboxTracer;
@@ -85,6 +86,7 @@ public final class OutboxEngineBuilder {
   private @Nullable EventStore store;
   private @Nullable WorkerRegistry registry;
   private @Nullable EventSerializer serializer;
+  private final List<EventSerializer> additionalSerializers = new ArrayList<>();
   private EntityLocker locker = EntityLocker.NOOP;
   private Clock clock = Clock.system();
   private TransactionContext txContext = TransactionContext.alwaysActive();
@@ -122,8 +124,24 @@ public final class OutboxEngineBuilder {
     return this;
   }
 
+  /**
+   * The write serializer: every published event is serialized with it and stamped with its {@code
+   * format()}. It is also registered for reads automatically.
+   */
   public OutboxEngineBuilder eventSerializer(EventSerializer serializer) {
     this.serializer = Objects.requireNonNull(serializer);
+    return this;
+  }
+
+  /**
+   * Read-only serializers for formats other than the write serializer's (ADR-0025). During a format
+   * migration, register yesterday's serializer here so in-flight events written in the old format
+   * keep deserializing until they drain.
+   */
+  public OutboxEngineBuilder additionalSerializers(EventSerializer... more) {
+    for (EventSerializer s : more) {
+      additionalSerializers.add(Objects.requireNonNull(s, "serializer must not be null"));
+    }
     return this;
   }
 
@@ -281,6 +299,11 @@ public final class OutboxEngineBuilder {
       throw new IllegalStateException("at least one EventHandler must be registered");
     }
 
+    List<EventSerializer> allSerializers = new ArrayList<>();
+    allSerializers.add(eventSerializer);
+    allSerializers.addAll(additionalSerializers);
+    EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
+
     OutboxListenerRegistry listener = new OutboxListenerRegistry(listeners);
     if (includeLoggingListener) {
       listener.add(new LoggingOutboxListener());
@@ -320,7 +343,7 @@ public final class OutboxEngineBuilder {
         new HandlerDispatcher(
             dispatcherStore,
             locker,
-            eventSerializer,
+            serializerRegistry,
             handlerResolver,
             failureResolver,
             inFlight,

@@ -28,4 +28,13 @@
             stripComments="false"
             endDelimiter=";"/>
     </changeSet>
+
+    <changeSet id="outbox-archive-007-payload-format" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="db/migration/outbox/archive/V007__outbox_archive_payload_format.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
 </databaseChangeLog>

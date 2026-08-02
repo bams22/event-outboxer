@@ -56,4 +56,13 @@
             stripComments="false"
             endDelimiter=";"/>
     </changeSet>
+
+    <changeSet id="outbox-core-006-payload-format" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="db/migration/outbox/core/V006__outbox_payload_format.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
 </databaseChangeLog>

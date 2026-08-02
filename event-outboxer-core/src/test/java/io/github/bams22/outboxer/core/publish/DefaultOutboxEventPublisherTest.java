@@ -54,7 +54,9 @@ class DefaultOutboxEventPublisherTest {
 
     Optional<Event> saved = store.findById(id);
     assertThat(saved).isPresent();
-    assertThat(saved.orElseThrow().payload()).isEqualTo("hello");
+    assertThat(saved.orElseThrow().payload())
+        .isEqualTo(io.github.bams22.outboxer.domain.SerializedPayload.ofText("hello"));
+    assertThat(saved.orElseThrow().payloadFormat()).isEqualTo(StringEventSerializer.FORMAT);
     assertThat(saved.orElseThrow().status()).isEqualTo(EventStatus.PENDING);
     assertThat(captured.get()).isNotNull();
     assertThat(captured.get().eventId()).isEqualTo(id);

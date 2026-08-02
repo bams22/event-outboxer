@@ -82,8 +82,9 @@ public interface EntityLocker {
 }
 
 public interface EventSerializer {
-    String serialize(Object payload);
-    <T> T deserialize(String payload, Class<T> type);
+    String format();  // stable id persisted per event (ADR-0025)
+    SerializedPayload serialize(Object payload);
+    <T> T deserialize(SerializedPayload payload, Class<T> type);
 }
 
 public interface Clock {
@@ -101,6 +102,9 @@ module and following the same rules:
   transaction, see ADR-0002.
 - `MetricsSnapshotCache` — TTL cache for `metricsSnapshot()` (in-memory
   and Redis implementations).
+- `EventSerializerRegistry` — immutable format-id → serializer lookup;
+  the dispatcher deserializes each event with the serializer that wrote
+  it, see ADR-0025.
 - Supporting types: `ClaimRequest`, `OutboxMetricsSnapshot`,
   `ArchivedEvent`, `LockHandle`.
 

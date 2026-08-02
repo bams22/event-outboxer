@@ -35,7 +35,7 @@ import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EntityLocker.LockHandle;
-import io.github.bams22.outboxer.spi.EventSerializer;
+import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
@@ -67,7 +67,7 @@ public final class HandlerDispatcher {
 
   private final EventStore store;
   private final EntityLocker locker;
-  private final EventSerializer serializer;
+  private final EventSerializerRegistry serializers;
   private final EventHandlerResolver handlers;
   private final FailureHandlerResolver failureHandlers;
   private final InFlightRegistry inFlight;
@@ -81,7 +81,7 @@ public final class HandlerDispatcher {
   public HandlerDispatcher(
       EventStore store,
       EntityLocker locker,
-      EventSerializer serializer,
+      EventSerializerRegistry serializers,
       EventHandlerResolver handlers,
       FailureHandlerResolver failureHandlers,
       InFlightRegistry inFlight,
@@ -93,7 +93,7 @@ public final class HandlerDispatcher {
     this(
         store,
         locker,
-        serializer,
+        serializers,
         handlers,
         failureHandlers,
         inFlight,
@@ -108,7 +108,7 @@ public final class HandlerDispatcher {
   public HandlerDispatcher(
       EventStore store,
       EntityLocker locker,
-      EventSerializer serializer,
+      EventSerializerRegistry serializers,
       EventHandlerResolver handlers,
       FailureHandlerResolver failureHandlers,
       InFlightRegistry inFlight,
@@ -120,7 +120,7 @@ public final class HandlerDispatcher {
       OutboxTracer tracer) {
     this.store = Objects.requireNonNull(store);
     this.locker = Objects.requireNonNull(locker);
-    this.serializer = Objects.requireNonNull(serializer);
+    this.serializers = Objects.requireNonNull(serializers);
     this.handlers = Objects.requireNonNull(handlers);
     this.failureHandlers = Objects.requireNonNull(failureHandlers);
     this.inFlight = Objects.requireNonNull(inFlight);
@@ -171,11 +171,17 @@ public final class HandlerDispatcher {
     } catch (RuntimeException ex) {
       listener.onEventSerializationError(
           new SerializationErrorInfo(
-              claimed.id(), claimed.eventType(), claimed.payloadClass(), ex));
+              claimed.id(),
+              claimed.eventType(),
+              claimed.payloadFormat(),
+              claimed.payloadClass(),
+              handler.payloadType().getName(),
+              ex));
       // Route through the FailureHandler chain instead of insta-disabling: a deserialization
       // failure is often transient (mixed-version replicas during a rolling deploy reading each
-      // other's payload format) and heals on a retry picked up by an updated instance. A truly
-      // poisoned payload still ends up DISABLED once the chain's attempt budget is exhausted.
+      // other's payload format, or an unknown payload format only newer replicas know) and heals
+      // on a retry picked up by an updated instance. A truly poisoned payload still ends up
+      // DISABLED once the chain's attempt budget is exhausted.
       try {
         applyFailureDecision(claimed, handler, null, null, ex);
       } catch (RuntimeException finalizeEx) {
@@ -330,7 +336,10 @@ public final class HandlerDispatcher {
 
   private Object deserialise(EventHandler<?> handler, ClaimedEvent claimed) {
     Class<?> payloadType = handler.payloadType();
-    return serializer.deserialize(claimed.payload(), payloadType);
+    // Route by the format stored at publish time, not by the write serializer — during a format
+    // migration in-flight events must keep deserializing with the serializer that wrote them
+    // (ADR-0025). An unknown format throws OUTBOX-203 into the failure chain below.
+    return serializers.require(claimed.payloadFormat()).deserialize(claimed.payload(), payloadType);
   }
 
   private @Nullable String extractLockKey(EventHandler<?> handler, Object payload) {

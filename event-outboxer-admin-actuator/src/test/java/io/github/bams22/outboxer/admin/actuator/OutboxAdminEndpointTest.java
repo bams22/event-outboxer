@@ -101,7 +101,9 @@ class OutboxAdminEndpointTest {
         PendingEvent.builder()
             .id(UUID.randomUUID())
             .eventType(type)
-            .payload("\"" + payload + "\"")
+            .payload(
+                io.github.bams22.outboxer.domain.SerializedPayload.ofText("\"" + payload + "\""))
+            .payloadFormat("test-json")
             .payloadClass("java.lang.String")
             .priority((short) 0)
             .runAt(Instant.now().minusSeconds(1))

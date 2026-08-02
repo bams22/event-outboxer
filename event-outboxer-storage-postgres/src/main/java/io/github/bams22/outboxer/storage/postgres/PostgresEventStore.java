@@ -13,6 +13,7 @@ import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.spi.ClaimRequest;
@@ -93,10 +94,10 @@ public final class PostgresEventStore implements EventStore {
     this.sqlInsert =
         "INSERT INTO "
             + tables.events()
-            + " (id, event_type, payload, payload_class, priority, status, created_at, run_at,"
-            + " trace_context, dedup_key) VALUES (?, ?, ?::jsonb, ?, ?, 'PENDING', now(), ?,"
-            + " ?::jsonb, ?) ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND"
-            + " dedup_key IS NOT NULL DO NOTHING";
+            + " (id, event_type, payload, payload_binary, payload_format, payload_class, priority,"
+            + " status, created_at, run_at, trace_context, dedup_key) VALUES (?, ?, ?::jsonb, ?, ?,"
+            + " ?, ?, 'PENDING', now(), ?, ?::jsonb, ?) ON CONFLICT (event_type, dedup_key) WHERE"
+            + " status = 'PENDING' AND dedup_key IS NOT NULL DO NOTHING";
 
     this.sqlLockPendingByDedupKey =
         "SELECT id FROM "
@@ -117,8 +118,8 @@ public final class PostgresEventStore implements EventStore {
             + tables.events()
             + " e SET status = 'PROCESSING', claimed_by = ?, claimed_at = now(), version = version"
             + " + 1 FROM picked WHERE e.id = picked.id RETURNING e.id, e.event_type, e.payload,"
-            + " e.payload_class, e.priority, e.attempts, e.created_at, e.claimed_at,"
-            + " e.trace_context, e.version";
+            + " e.payload_binary, e.payload_format, e.payload_class, e.priority, e.attempts,"
+            + " e.created_at, e.claimed_at, e.trace_context, e.version";
 
     this.sqlMarkProcessedNoArchive =
         "DELETE FROM "
@@ -134,15 +135,16 @@ public final class PostgresEventStore implements EventStore {
             + "  DELETE FROM "
             + tables.events()
             + "  WHERE id = ? AND version = ? AND claimed_by = ? AND status = 'PROCESSING'"
-            + "  RETURNING id, event_type, payload, payload_class, priority, attempts, "
-            + "created_at, run_at, last_fail_reason, trace_context"
+            + "  RETURNING id, event_type, payload, payload_binary, payload_format, payload_class,"
+            + " priority, attempts, created_at, run_at, last_fail_reason, trace_context"
             + ") "
             + "INSERT INTO "
             + tables.archive()
-            + " (id, event_type, payload, payload_class, priority, attempts, created_at, run_at, "
-            + "last_fail_reason, trace_context, archived_at, archived_by) "
-            + "SELECT id, event_type, payload, payload_class, priority, attempts, created_at, "
-            + "run_at, last_fail_reason, trace_context, now(), ? FROM del";
+            + " (id, event_type, payload, payload_binary, payload_format, payload_class, priority,"
+            + " attempts, created_at, run_at, last_fail_reason, trace_context, archived_at,"
+            + " archived_by) SELECT id, event_type, payload, payload_binary, payload_format,"
+            + " payload_class, priority, attempts, created_at, run_at, last_fail_reason,"
+            + " trace_context, now(), ? FROM del";
 
     this.sqlMarkForRetry =
         "UPDATE "
@@ -202,9 +204,9 @@ public final class PostgresEventStore implements EventStore {
             + "WHERE e.claimed_by = ANY(?) AND e.status = 'PROCESSING'";
 
     this.sqlFindById =
-        "SELECT id, event_type, payload, payload_class, priority, attempts, status, created_at,"
-            + " run_at, claimed_by, claimed_at, last_fail_reason, trace_context, version, dedup_key"
-            + " FROM "
+        "SELECT id, event_type, payload, payload_binary, payload_format, payload_class, priority,"
+            + " attempts, status, created_at, run_at, claimed_by, claimed_at, last_fail_reason,"
+            + " trace_context, version, dedup_key FROM "
             + tables.events()
             + " WHERE id = ?";
 
@@ -463,16 +465,17 @@ public final class PostgresEventStore implements EventStore {
         + ") AS k(id, ver) "
         + "  WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = ? "
         + "AND e.status = 'PROCESSING'"
-        + "  RETURNING e.id, e.event_type, e.payload, e.payload_class, e.priority, e.attempts, "
-        + "e.created_at, e.run_at, e.last_fail_reason, e.trace_context"
+        + "  RETURNING e.id, e.event_type, e.payload, e.payload_binary, e.payload_format, "
+        + "e.payload_class, e.priority, e.attempts, e.created_at, e.run_at, e.last_fail_reason, "
+        + "e.trace_context"
         + ") "
         + "INSERT INTO "
         + tables.archive()
-        + " (id, event_type, payload, payload_class, priority, attempts, created_at, run_at, "
-        + "last_fail_reason, trace_context, archived_at, archived_by) "
-        + "SELECT id, event_type, payload, payload_class, priority, attempts, created_at, "
-        + "run_at, last_fail_reason, trace_context, now(), ? FROM del "
-        + "RETURNING id";
+        + " (id, event_type, payload, payload_binary, payload_format, payload_class, priority,"
+        + " attempts, created_at, run_at, last_fail_reason, trace_context, archived_at,"
+        + " archived_by) SELECT id, event_type, payload, payload_binary, payload_format,"
+        + " payload_class, priority, attempts, created_at, run_at, last_fail_reason, trace_context,"
+        + " now(), ? FROM del RETURNING id";
   }
 
   /**
@@ -723,21 +726,43 @@ public final class PostgresEventStore implements EventStore {
   }
 
   private static void bindPending(PreparedStatement ps, PendingEvent event) throws SQLException {
+    SerializedPayload payload = event.payload();
     ps.setObject(1, event.id());
     ps.setString(2, event.eventType());
-    ps.setObject(3, JsonbHandler.jsonb(event.payload()));
-    ps.setString(4, event.payloadClass());
-    ps.setShort(5, event.priority());
-    ps.setTimestamp(6, Timestamp.from(event.runAt()));
-    ps.setObject(7, JsonbHandler.jsonb(FlatMapJson.serialize(event.traceContext())));
-    ps.setString(8, event.dedupKey());
+    // Dual payload lane (ADR-0025): exactly one of payload/payload_binary is non-null, mirroring
+    // the events_payload_exactly_one CHECK. The ?::jsonb cast tolerates a Types.OTHER NULL.
+    if (payload.isText()) {
+      ps.setObject(3, JsonbHandler.jsonb(payload.requireText()));
+      ps.setNull(4, Types.BINARY);
+    } else {
+      ps.setNull(3, Types.OTHER);
+      ps.setBytes(4, payload.requireBytes());
+    }
+    ps.setString(5, event.payloadFormat());
+    ps.setString(6, event.payloadClass());
+    ps.setShort(7, event.priority());
+    ps.setTimestamp(8, Timestamp.from(event.runAt()));
+    ps.setObject(9, JsonbHandler.jsonb(FlatMapJson.serialize(event.traceContext())));
+    ps.setString(10, event.dedupKey());
+  }
+
+  /**
+   * Package-private: reused by {@link PostgresOutboxAdmin}. Reassembles the dual payload lane — the
+   * CHECK constraint guarantees exactly one column is non-null.
+   */
+  static SerializedPayload readPayload(ResultSet rs) throws SQLException {
+    byte[] binary = rs.getBytes("payload_binary");
+    return binary != null
+        ? SerializedPayload.ofBytes(binary)
+        : SerializedPayload.ofText(rs.getString("payload"));
   }
 
   private static ClaimedEvent readClaimed(ResultSet rs) throws SQLException {
     return new ClaimedEvent(
         (UUID) rs.getObject("id"),
         rs.getString("event_type"),
-        rs.getString("payload"),
+        readPayload(rs),
+        rs.getString("payload_format"),
         rs.getString("payload_class"),
         rs.getShort("priority"),
         rs.getInt("attempts"),
@@ -755,7 +780,8 @@ public final class PostgresEventStore implements EventStore {
     return new Event(
         (UUID) rs.getObject("id"),
         rs.getString("event_type"),
-        rs.getString("payload"),
+        readPayload(rs),
+        rs.getString("payload_format"),
         rs.getString("payload_class"),
         rs.getShort("priority"),
         rs.getInt("attempts"),
@@ -797,13 +823,6 @@ public final class PostgresEventStore implements EventStore {
       long cnt,
       @Nullable Instant oldestPending,
       @Nullable Instant oldestClaimed) {}
-
-  // suppress unused import warning (Types is referenced by the adapter's future work on JSONB
-  // nulls)
-  @SuppressWarnings("unused")
-  private static int sqlTypeOther() {
-    return Types.OTHER;
-  }
 
   @SuppressWarnings("unused")
   private static Collection<WorkerId> unused() {

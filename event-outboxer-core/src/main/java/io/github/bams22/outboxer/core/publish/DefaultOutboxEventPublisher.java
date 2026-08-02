@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
 import io.github.bams22.outboxer.domain.exception.PublishFailedException;
 import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
@@ -124,7 +125,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
     // Serialization stays outside the span: a serialization failure is a caller bug, not a
     // messaging operation, and no event exists yet to trace.
-    String serialized = serialize(payload);
+    SerializedPayload serialized = serialize(payload);
     UUID id = UUID.randomUUID();
     try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
       PendingEvent pending =
@@ -239,7 +240,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         Objects.requireNonNull(r, "request element must not be null");
         validate(r.eventType(), r.payload());
         PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
-        String serialized = serialize(r.payload());
+        SerializedPayload serialized = serialize(r.payload());
         UUID id = UUID.randomUUID();
         if (opts.dedupKey() != null) {
           try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType())) {
@@ -329,7 +330,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
   }
 
-  private String serialize(Object payload) {
+  private SerializedPayload serialize(Object payload) {
     try {
       return serializer.serialize(payload);
     } catch (PublishSerializationException ex) {
@@ -354,7 +355,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
       UUID id,
       String eventType,
       Object payload,
-      String serialized,
+      SerializedPayload serialized,
       PublishOptions options,
       Map<String, String> traceContext) {
     Instant runAt = options.runAt() != null ? options.runAt() : clock.now();
@@ -363,6 +364,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         .id(id)
         .eventType(eventType)
         .payload(serialized)
+        .payloadFormat(serializer.format())
         .payloadClass(payload.getClass().getName())
         .priority(priority)
         .runAt(runAt)

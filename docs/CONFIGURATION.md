@@ -531,12 +531,48 @@ For plain-Java (non-Spring) tests use the testkit's
 
 ### Serialization
 
-The MVP ships Jackson only (see ADR-0011); it activates automatically
-when Jackson is on the classpath. There are no
-`event-outboxer.serializer.*` properties — customise serialization by
-providing an `ObjectMapper` bean named `outboxObjectMapper` (falls back
-to the primary `ObjectMapper`, then to library defaults) or by
-registering your own `@Bean EventSerializer`.
+The library ships Jackson only (ADR-0011); it activates automatically
+when Jackson is on the classpath. Customise serialization by providing
+an `ObjectMapper` bean named `outboxObjectMapper` (falls back to the
+primary `ObjectMapper`, then to library defaults) or by registering
+your own `@Bean EventSerializer`.
+
+The serialization seam itself is format-flexible (ADR-0025): every
+registered `EventSerializer` bean is available for **deserialization**
+— the dispatcher routes by the `payload_format` recorded on each event
+at publish time — while exactly one serializer **writes** new events.
+The write serializer resolves as:
+
+1. `event-outboxer.serializer.write-format`, when set (startup fails if
+   it matches no registered format);
+2. the only registered bean — the zero-config default;
+3. the bean named `outboxEventSerializer` — the documented override
+   wins even next to extra read-only serializers;
+4. otherwise startup fails listing the registered formats.
+
+```yaml
+event-outboxer:
+  serializer:
+    write-format: jackson-json   # only needed with several serializer beans
+```
+
+#### Migrating between payload formats
+
+Because reads route by the stored format, a format migration needs no
+data rewrite:
+
+1. Register the new serializer bean alongside the old one; keep the old
+   format writing (or set `write-format` to the old id).
+2. Deploy everywhere — every replica can now read both formats.
+3. Switch `write-format` to the new id and deploy again. In-flight
+   events written in the old format keep deserializing with the old
+   serializer until they drain.
+4. Once no old-format events remain (check `payload_format` in the
+   events/archive tables), drop the old serializer bean.
+
+An event whose stored format has no registered serializer is not lost:
+`OUTBOX-203` routes through the `FailureHandler` chain (retry with
+backoff), so a replica that knows the format can pick it up later.
 
 #### DTO evolution and rolling deploys
 

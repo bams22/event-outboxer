@@ -36,6 +36,7 @@ import io.github.bams22.outboxer.serializer.jackson.JacksonEventSerializer;
 import io.github.bams22.outboxer.serializer.jackson.JacksonObjectMapperFactory;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
+import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
@@ -163,6 +164,7 @@ public final class OutboxTestContext {
     private @Nullable WorkerRegistry workerRegistry;
     private @Nullable EntityLocker entityLocker;
     private @Nullable EventSerializer serializer;
+    private final List<EventSerializer> additionalSerializers = new ArrayList<>();
     private @Nullable SettableClock clock;
     private @Nullable TransactionContext txContext;
     private @Nullable ObjectMapper objectMapper;
@@ -199,6 +201,17 @@ public final class OutboxTestContext {
 
     public Builder eventSerializer(EventSerializer s) {
       this.serializer = Objects.requireNonNull(s);
+      return this;
+    }
+
+    /**
+     * Read-only serializers for formats other than the write serializer's (ADR-0025) — mirrors
+     * {@code OutboxEngineBuilder.additionalSerializers} for format-migration tests.
+     */
+    public Builder additionalSerializers(EventSerializer... more) {
+      for (EventSerializer s : more) {
+        additionalSerializers.add(Objects.requireNonNull(s, "serializer must not be null"));
+      }
       return this;
     }
 
@@ -330,11 +343,16 @@ public final class OutboxTestContext {
           new FailureHandlerResolver(perTypeFailureHandlers, resolvedDefaultFailure);
       InFlightRegistry inFlight = new InFlightRegistry();
 
+      List<EventSerializer> allSerializers = new ArrayList<>();
+      allSerializers.add(resolvedSerializer);
+      allSerializers.addAll(additionalSerializers);
+      EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
+
       HandlerDispatcher dispatcher =
           new HandlerDispatcher(
               resolvedStore,
               resolvedLocker,
-              resolvedSerializer,
+              serializerRegistry,
               handlerResolver,
               failureResolver,
               inFlight,

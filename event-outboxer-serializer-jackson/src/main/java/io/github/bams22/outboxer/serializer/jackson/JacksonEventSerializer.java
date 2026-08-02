@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.serializer.jackson;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.PayloadDeserializationException;
 import io.github.bams22.outboxer.domain.exception.PublishSerializationException;
 import io.github.bams22.outboxer.spi.EventSerializer;
@@ -21,10 +22,19 @@ import java.util.Objects;
  * caller — it never builds one internally so that callers in Spring setups can share Boot's primary
  * {@code ObjectMapper} and customizations applied there.
  *
+ * <p>Payloads travel in the text lane of {@link SerializedPayload}: valid JSON that storage
+ * adapters may persist in a structured column such as PostgreSQL {@code JSONB} (ADR-0025).
+ *
  * <p>See {@link JacksonObjectMapperFactory} for the factory the starter falls back to when neither
  * a qualified nor a primary {@code ObjectMapper} bean is available.
  */
 public final class JacksonEventSerializer implements EventSerializer {
+
+  /**
+   * Stable format id persisted with every event written by this serializer (ADR-0025). Never
+   * renamed — stored events reference it forever.
+   */
+  public static final String FORMAT = "jackson-json";
 
   private final ObjectMapper mapper;
 
@@ -33,10 +43,15 @@ public final class JacksonEventSerializer implements EventSerializer {
   }
 
   @Override
-  public String serialize(Object payload) {
+  public String format() {
+    return FORMAT;
+  }
+
+  @Override
+  public SerializedPayload serialize(Object payload) {
     Objects.requireNonNull(payload, "payload must not be null");
     try {
-      return mapper.writeValueAsString(payload);
+      return SerializedPayload.ofText(mapper.writeValueAsString(payload));
     } catch (JsonProcessingException ex) {
       throw new PublishSerializationException(
           "failed to serialize payload of type " + payload.getClass().getName(), ex);
@@ -44,11 +59,11 @@ public final class JacksonEventSerializer implements EventSerializer {
   }
 
   @Override
-  public <T> T deserialize(String payload, Class<T> type) {
+  public <T> T deserialize(SerializedPayload payload, Class<T> type) {
     Objects.requireNonNull(payload, "payload must not be null");
     Objects.requireNonNull(type, "type must not be null");
     try {
-      return mapper.readValue(payload, type);
+      return mapper.readValue(payload.requireText(), type);
     } catch (JsonProcessingException ex) {
       throw new PayloadDeserializationException(
           "failed to deserialize payload as " + type.getName(), ex);

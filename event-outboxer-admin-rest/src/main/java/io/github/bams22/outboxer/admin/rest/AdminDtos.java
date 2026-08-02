@@ -11,8 +11,10 @@ package io.github.bams22.outboxer.admin.rest;
 
 import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.Event;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.spi.AdminCursor;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -25,7 +27,11 @@ public final class AdminDtos {
 
   private AdminDtos() {}
 
-  /** One event of the active table. */
+  /**
+   * One event of the active table. The dual payload lane (ADR-0025) maps to exactly one non-null
+   * field: text payloads go out verbatim as {@code payload}, binary payloads as Base64 under {@code
+   * payloadBase64}.
+   */
   public record EventResponse(
       UUID id,
       String eventType,
@@ -34,8 +40,10 @@ public final class AdminDtos {
       Instant createdAt,
       Instant runAt,
       @Nullable String lastFailReason,
+      String payloadFormat,
       String payloadClass,
-      String payload) {
+      @Nullable String payload,
+      @Nullable String payloadBase64) {
 
     static EventResponse from(Event e) {
       return new EventResponse(
@@ -46,12 +54,14 @@ public final class AdminDtos {
           e.createdAt(),
           e.runAt(),
           e.lastFailReason(),
+          e.payloadFormat(),
           e.payloadClass(),
-          e.payload());
+          e.payload().text(),
+          base64(e.payload()));
     }
   }
 
-  /** One archived event. */
+  /** One archived event; payload lanes as in {@link EventResponse}. */
   public record ArchivedEventResponse(
       UUID id,
       String eventType,
@@ -60,8 +70,10 @@ public final class AdminDtos {
       Instant createdAt,
       Instant archivedAt,
       String archivedBy,
+      String payloadFormat,
       String payloadClass,
-      String payload) {
+      @Nullable String payload,
+      @Nullable String payloadBase64) {
 
     static ArchivedEventResponse from(ArchivedEvent e) {
       return new ArchivedEventResponse(
@@ -72,9 +84,16 @@ public final class AdminDtos {
           e.createdAt(),
           e.archivedAt(),
           e.archivedBy(),
+          e.payloadFormat(),
           e.payloadClass(),
-          e.payload());
+          e.payload().text(),
+          base64(e.payload()));
     }
+  }
+
+  private static @Nullable String base64(SerializedPayload payload) {
+    byte[] bytes = payload.bytes();
+    return bytes != null ? Base64.getEncoder().encodeToString(bytes) : null;
   }
 
   /** Keyset page; {@code nextCursor} is null on the last page. */

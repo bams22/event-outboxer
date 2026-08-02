@@ -13,6 +13,7 @@ import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.spi.ClaimRequest;
@@ -476,7 +477,8 @@ public final class InMemoryEventStore implements EventStore {
 
     final UUID id;
     final String eventType;
-    final String payload;
+    final SerializedPayload payload;
+    final String payloadFormat;
     final String payloadClass;
     final short priority;
     final Instant createdAt;
@@ -495,6 +497,7 @@ public final class InMemoryEventStore implements EventStore {
       this.id = source.id();
       this.eventType = source.eventType();
       this.payload = source.payload();
+      this.payloadFormat = source.payloadFormat();
       this.payloadClass = source.payloadClass();
       this.priority = source.priority();
       this.createdAt = createdAt;
@@ -518,6 +521,7 @@ public final class InMemoryEventStore implements EventStore {
           id,
           eventType,
           payload,
+          payloadFormat,
           payloadClass,
           priority,
           attempts,
@@ -538,6 +542,7 @@ public final class InMemoryEventStore implements EventStore {
           id,
           eventType,
           payload,
+          payloadFormat,
           payloadClass,
           priority,
           attempts,

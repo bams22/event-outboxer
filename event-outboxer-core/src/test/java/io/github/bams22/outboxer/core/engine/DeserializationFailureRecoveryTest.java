@@ -24,6 +24,7 @@ import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.PayloadDeserializationException;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -73,17 +74,22 @@ class DeserializationFailureRecoveryTest {
     EventSerializer flaky =
         new EventSerializer() {
           @Override
-          public String serialize(Object payload) {
-            return String.valueOf(payload);
+          public String format() {
+            return "test-string";
+          }
+
+          @Override
+          public SerializedPayload serialize(Object payload) {
+            return SerializedPayload.ofText(String.valueOf(payload));
           }
 
           @Override
           @SuppressWarnings("unchecked")
-          public <T> T deserialize(String payload, Class<T> type) {
+          public <T> T deserialize(SerializedPayload payload, Class<T> type) {
             if (deserializeCalls.incrementAndGet() <= 2) {
               throw new PayloadDeserializationException("unknown property (simulated)", null);
             }
-            return (T) payload;
+            return (T) payload.requireText();
           }
         };
     OutboxListener errorCounter =
@@ -126,12 +132,17 @@ class DeserializationFailureRecoveryTest {
     EventSerializer alwaysBroken =
         new EventSerializer() {
           @Override
-          public String serialize(Object payload) {
-            return String.valueOf(payload);
+          public String format() {
+            return "test-string";
           }
 
           @Override
-          public <T> T deserialize(String payload, Class<T> type) {
+          public SerializedPayload serialize(Object payload) {
+            return SerializedPayload.ofText(String.valueOf(payload));
+          }
+
+          @Override
+          public <T> T deserialize(SerializedPayload payload, Class<T> type) {
             deserializeCalls.incrementAndGet();
             throw new PayloadDeserializationException("corrupt payload (simulated)", null);
           }
@@ -166,17 +177,22 @@ class DeserializationFailureRecoveryTest {
     EventSerializer flaky =
         new EventSerializer() {
           @Override
-          public String serialize(Object payload) {
-            return String.valueOf(payload);
+          public String format() {
+            return "test-string";
+          }
+
+          @Override
+          public SerializedPayload serialize(Object payload) {
+            return SerializedPayload.ofText(String.valueOf(payload));
           }
 
           @Override
           @SuppressWarnings("unchecked")
-          public <T> T deserialize(String payload, Class<T> type) {
+          public <T> T deserialize(SerializedPayload payload, Class<T> type) {
             if (deserializeCalls.incrementAndGet() == 1) {
               throw new PayloadDeserializationException("bad payload (simulated)", null);
             }
-            return (T) payload;
+            return (T) payload.requireText();
           }
         };
     // The chain's markForRetry throws once: the protective catch must release the row instead

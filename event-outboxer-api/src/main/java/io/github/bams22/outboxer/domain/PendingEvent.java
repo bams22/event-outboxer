@@ -24,8 +24,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Notes:
  *
  * <ul>
- *   <li>{@code payload} is already serialized to a string at this point — serialization happens in
- *       the publisher, not in the storage adapter (see ADR-0011).
+ *   <li>{@code payload} is already serialized at this point — serialization happens in the
+ *       publisher, not in the storage adapter (see ADR-0011, ADR-0025).
  *   <li>There is no {@code lockKey} field: lock keys are derived at handle time by {@code
  *       EventHandler.extractLockKey(payload)} and are not persisted (see ADR-0012).
  *   <li>The {@code traceContext} carries W3C {@code traceparent}, optional {@code tracestate}, and
@@ -36,7 +36,10 @@ import org.jspecify.annotations.Nullable;
  * @param id stable event identifier (the publisher must generate it, not the storage)
  * @param eventType string that binds the event to a registered {@code EventHandler}
  * @param payload serialized payload body
- * @param payloadClass fully-qualified Java class name for strict deserialization on the worker
+ * @param payloadFormat stable id of the serializer that produced {@code payload} (for example
+ *     {@code "jackson-json"}); the dispatcher selects the deserializer by this value (ADR-0025)
+ * @param payloadClass publish-time payload class FQCN, recorded for diagnostics and auditing; never
+ *     used to select the deserialization target — that is always {@code EventHandler.payloadType()}
  * @param priority higher values are picked first; zero by default
  * @param runAt earliest wall-clock time the event is eligible for claim
  * @param traceContext optional W3C trace/baggage context; never null (empty map allowed)
@@ -47,7 +50,8 @@ import org.jspecify.annotations.Nullable;
 public record PendingEvent(
     UUID id,
     String eventType,
-    String payload,
+    SerializedPayload payload,
+    String payloadFormat,
     String payloadClass,
     short priority,
     Instant runAt,
@@ -61,6 +65,11 @@ public record PendingEvent(
       throw new IllegalArgumentException("eventType must not be blank");
     }
     Objects.requireNonNull(payload, "payload must not be null");
+    Objects.requireNonNull(payloadFormat, "payloadFormat must not be null");
+    if (payloadFormat.isBlank() || payloadFormat.length() > 64) {
+      throw new IllegalArgumentException(
+          "payloadFormat must be non-blank and at most 64 characters");
+    }
     Objects.requireNonNull(payloadClass, "payloadClass must not be null");
     Objects.requireNonNull(runAt, "runAt must not be null");
     Objects.requireNonNull(traceContext, "traceContext must not be null");

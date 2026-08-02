@@ -16,6 +16,7 @@ import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.EventStore;
@@ -54,6 +55,7 @@ public abstract class AbstractEventStoreContractTest {
   protected static final String EVENT_TYPE_B = "TYPE_B";
   protected static final WorkerId WORKER_1 = new WorkerId("worker-1");
   protected static final WorkerId WORKER_2 = new WorkerId("worker-2");
+  protected static final String TEST_FORMAT = "test-json";
 
   protected EventStore store;
 
@@ -88,13 +90,44 @@ public abstract class AbstractEventStoreContractTest {
     Event event = found.orElseThrow();
     assertThat(event.id()).isEqualTo(pending.id());
     assertThat(event.eventType()).isEqualTo(EVENT_TYPE_A);
-    assertThat(event.payload()).isEqualTo(jsonString("hello"));
+    assertThat(event.payload()).isEqualTo(SerializedPayload.ofText(jsonString("hello")));
+    assertThat(event.payloadFormat()).isEqualTo(TEST_FORMAT);
     assertThat(event.status()).isEqualTo(EventStatus.PENDING);
     assertThat(event.attempts()).isZero();
     assertThat(event.version()).isGreaterThanOrEqualTo(0L);
     assertThat(event.claimedBy()).isNull();
     assertThat(event.claimedAt()).isNull();
     assertThat(event.lastFailReason()).isNull();
+  }
+
+  @Test
+  @DisplayName("save() round-trips a binary payload byte-exact through claim and findById")
+  void save_binaryPayload_roundTripsByteExact() {
+    byte[] raw = binaryPayloadFixture();
+    PendingEvent pending = pendingBinary(EVENT_TYPE_A, raw, Instant.now().minusSeconds(1));
+
+    store.save(pending);
+
+    Event event = store.findById(pending.id()).orElseThrow();
+    assertThat(event.payload().isText()).isFalse();
+    assertThat(event.payload().requireBytes()).isEqualTo(raw);
+    assertThat(event.payloadFormat()).isEqualTo("test-binary");
+
+    ClaimedEvent claimed = claimOneById(EVENT_TYPE_A, pending.id());
+    assertThat(claimed.payload().requireBytes()).isEqualTo(raw);
+    assertThat(claimed.payloadFormat()).isEqualTo("test-binary");
+  }
+
+  @Test
+  @DisplayName("claim() preserves the payload format written at publish time")
+  void save_textPayload_preservesFormat() {
+    PendingEvent pending = pending(EVENT_TYPE_A, "keep-format", Instant.now().minusSeconds(1));
+
+    store.save(pending);
+
+    ClaimedEvent claimed = claimOneById(EVENT_TYPE_A, pending.id());
+    assertThat(claimed.payloadFormat()).isEqualTo(TEST_FORMAT);
+    assertThat(claimed.payload()).isEqualTo(SerializedPayload.ofText(jsonString("keep-format")));
   }
 
   @Test
@@ -137,7 +170,10 @@ public abstract class AbstractEventStoreContractTest {
 
     assertThat(claimed)
         .extracting(ClaimedEvent::payload)
-        .containsExactly(jsonString("hi-old"), jsonString("hi-new"), jsonString("lo-old"));
+        .containsExactly(
+            SerializedPayload.ofText(jsonString("hi-old")),
+            SerializedPayload.ofText(jsonString("hi-new")),
+            SerializedPayload.ofText(jsonString("lo-old")));
   }
 
   @Test
@@ -781,9 +817,28 @@ public abstract class AbstractEventStoreContractTest {
     return PendingEvent.builder()
         .id(UUID.randomUUID())
         .eventType(type)
-        .payload(jsonString(rawPayload))
+        .payload(SerializedPayload.ofText(jsonString(rawPayload)))
+        .payloadFormat(TEST_FORMAT)
         .payloadClass("java.lang.String")
         .priority(priority)
+        .runAt(runAt)
+        .traceContext(Map.of())
+        .build();
+  }
+
+  /**
+   * A pending event whose payload travels in the binary lane (ADR-0025). The bytes deliberately
+   * start with {@code 0x00 0xFF} — an invalid UTF-8 sequence — so any adapter that squeezes the
+   * binary lane through a text codepath fails loudly.
+   */
+  protected PendingEvent pendingBinary(String type, byte[] payload, Instant runAt) {
+    return PendingEvent.builder()
+        .id(UUID.randomUUID())
+        .eventType(type)
+        .payload(SerializedPayload.ofBytes(payload))
+        .payloadFormat("test-binary")
+        .payloadClass("java.lang.String")
+        .priority((short) 0)
         .runAt(runAt)
         .traceContext(Map.of())
         .build();
@@ -798,11 +853,27 @@ public abstract class AbstractEventStoreContractTest {
     return "\"" + raw.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
   }
 
+  /**
+   * Bytes that are provably not UTF-8 text and not JSON: an invalid UTF-8 prefix followed by the
+   * full unsigned byte range. Byte-exact round-trips of this fixture prove the adapter stores the
+   * binary lane verbatim.
+   */
+  protected static byte[] binaryPayloadFixture() {
+    byte[] raw = new byte[258];
+    raw[0] = 0x00;
+    raw[1] = (byte) 0xFF;
+    for (int i = 0; i < 256; i++) {
+      raw[i + 2] = (byte) i;
+    }
+    return raw;
+  }
+
   protected PendingEvent pendingWithKey(String type, String rawPayload, String dedupKey) {
     return PendingEvent.builder()
         .id(UUID.randomUUID())
         .eventType(type)
-        .payload(jsonString(rawPayload))
+        .payload(SerializedPayload.ofText(jsonString(rawPayload)))
+        .payloadFormat(TEST_FORMAT)
         .payloadClass("java.lang.String")
         .priority((short) 0)
         .runAt(Instant.now().minusSeconds(1))

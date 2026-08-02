@@ -61,9 +61,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
     requirePositive(limit);
     StringBuilder sql =
         new StringBuilder(
-            "SELECT id, event_type, payload, payload_class, priority, attempts, status, "
-                + "created_at, run_at, claimed_by, claimed_at, last_fail_reason, trace_context, "
-                + "version, dedup_key FROM ");
+            "SELECT id, event_type, payload, payload_binary, payload_format, payload_class, "
+                + "priority, attempts, status, created_at, run_at, claimed_by, claimed_at, "
+                + "last_fail_reason, trace_context, version, dedup_key FROM ");
     sql.append(tables.events()).append(" WHERE status = ?");
     List<Object> params = new ArrayList<>();
     params.add(status.name());
@@ -90,8 +90,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
   public Optional<ArchivedEvent> findInArchive(UUID id) {
     Objects.requireNonNull(id, "id must not be null");
     String sql =
-        "SELECT id, event_type, payload, payload_class, priority, attempts, created_at, run_at, "
-            + "last_fail_reason, trace_context, archived_at, archived_by FROM "
+        "SELECT id, event_type, payload, payload_binary, payload_format, payload_class, priority, "
+            + "attempts, created_at, run_at, last_fail_reason, trace_context, archived_at, "
+            + "archived_by FROM "
             + tables.archive()
             + " WHERE id = ?";
     try {
@@ -211,7 +212,8 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
     return new ArchivedEvent(
         (UUID) rs.getObject("id"),
         rs.getString("event_type"),
-        rs.getString("payload"),
+        PostgresEventStore.readPayload(rs),
+        rs.getString("payload_format"),
         rs.getString("payload_class"),
         rs.getShort("priority"),
         rs.getInt("attempts"),

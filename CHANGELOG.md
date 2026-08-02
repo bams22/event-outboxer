@@ -7,7 +7,58 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Breaking
+- **Binary-capable serializer SPI and per-event payload format
+  (ADR-0025).** Pre-1.0 breaking change preparing the serialization
+  seam for binary formats (Protobuf, Smile, Fury) without shipping any
+  — Jackson remains the only implementation:
+  - `EventSerializer` now declares `String format()` and works over the
+    new two-lane `SerializedPayload` value type
+    (`ofText`/`ofBytes`, exactly one lane set) instead of `String`.
+    Custom serializer implementations must adapt; text-lane migration
+    is mechanical (`SerializedPayload.ofText(...)` /
+    `payload.requireText()`).
+  - `PendingEvent` / `ClaimedEvent` / `Event` / `ArchivedEvent` carry
+    `SerializedPayload payload` plus a new `String payloadFormat`
+    component. `payloadClass` stays — re-documented as publish-time
+    diagnostics; it never selected the deserialization target (that is
+    always `EventHandler.payloadType()`), so DTO renames keep being
+    safe for stored events.
+  - `SerializationErrorInfo` reshaped to
+    `(eventId, eventType, payloadFormat, storedPayloadClass,
+    targetType, cause)` — fixing a bug where the "class the engine
+    tried to deserialize into" was actually the publish-time class.
+  - `HandlerDispatcher` construction takes an
+    `EventSerializerRegistry` instead of a single `EventSerializer`
+    (relevant to plain-Java wiring only; `OutboxEngineBuilder`'s
+    `eventSerializer(...)` is source-compatible).
+  - Admin surfaces (actuator + REST): `payload` is now nullable (text
+    lane) next to new `payloadBase64` (binary lane) and
+    `payloadFormat` fields.
+
 ### Added
+- **Format-flexible serialization seam (ADR-0025).** New
+  `EventSerializerRegistry` in `-spi`: one configured serializer writes
+  every new event and stamps its `format()` into the new
+  `payload_format` column; deserialization routes by the format stored
+  on each event, so format migrations and mixed-version rolling
+  deploys need no data rewrite. An unknown stored format raises the
+  new `UnknownPayloadFormatException` (`OUTBOX-203`) through the
+  FailureHandler chain (retry, never insta-DISABLE).
+  `OutboxEngineBuilder.additionalSerializers(...)` (and the testkit
+  equivalent) register read-only formats; the starter resolves the
+  write serializer via the new
+  `event-outboxer.serializer.write-format` property → single bean →
+  the `outboxEventSerializer`-named bean, else fails fast listing the
+  registered formats. PostgreSQL migrations
+  `V006__outbox_payload_format.sql` /
+  `V007__outbox_archive_payload_format.sql` (+ Liquibase changeSets)
+  add the nullable-`payload` + `payload_binary BYTEA` dual lane with a
+  CHECK (exactly one set) and backfill `payload_format` to
+  `jackson-json`. The binary path is proven by a deliberately
+  non-UTF-8 `BinaryTestEventSerializer` in the SPI test-jar: byte-exact
+  round-trips through both stores, engine E2E dispatch, and
+  stored-format routing tests.
 - **Outbox DataSource selection in multi-DataSource applications
   (ADR-0024) — new `@OutboxDataSource` qualifier in the starter.**
   All outbox JDBC (the PostgreSQL storage adapter, both PostgreSQL

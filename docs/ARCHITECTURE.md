@@ -162,7 +162,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | `EventStore` | PostgreSQL, InMemory | CRUD + claim + finalize + reclaim |
 | `WorkerRegistry` | PostgreSQL, InMemory | register / heartbeat / findDead / deregister |
 | `EntityLocker` | PostgreSQL (lease table; advisory opt-out), Redis, NoOp | Lock by lockKey |
-| `EventSerializer` | Jackson | Serialize/deserialize payload |
+| `EventSerializer` | Jackson | Serialize/deserialize payload; `format()` id persisted per event, reads routed via `EventSerializerRegistry` (ADR-0025) |
 | `Clock` | SystemClock, SettableClock | Time source (testability) |
 | `OutboxTracer` | OpenTelemetry, Micrometer Tracing, NoOp | Trace continuity publish → handle (ADR-0023) |
 
@@ -195,7 +195,8 @@ Client code
     ▼
 DefaultOutboxEventPublisher
     │
-    ├─▶ EventSerializer.serialize(payload) → String JSON
+    ├─▶ EventSerializer.serialize(payload) → SerializedPayload (text | bytes)
+    │     + format id stamped into payload_format (ADR-0025)
     │
     ├─▶ PendingEvent.builder()...build()
     │
@@ -245,7 +246,9 @@ For each claimedEvent:
         │
         │   runHandlerTask:
         │       1. EventHandlerResolver.resolve(eventType) → handler
-        │       2. serializer.deserialize(payload, handler.payloadType())
+        │       2. serializerRegistry.require(event.payloadFormat())
+        │            .deserialize(payload, handler.payloadType())
+        │          (routed by the format stored at publish time, ADR-0025)
         │       3. lockKey = handler.extractLockKey(payload)
         │       4. if lockKey != null: locker.tryLock(lockKey, ttl)
         │          if busy: release(lockBusyDelay) — attempts not consumed; return
@@ -585,7 +588,7 @@ other) has been a real source of bugs.
 | Crash detection | `EngineHealthCheckTask` in the maintenance scheduler; flips `state()` → `STOPPED`, fires `onEngineCrashed` | inherited — starter only surfaces the result via the health indicator |
 | Flyway migrations | classpath `db/migration/outbox/{core,archive}` with `${eventOutboxerSchema}` placeholder | `FlywayConfigurationCustomizer` auto-feeds `event-outboxer.storage.schema` into the placeholder |
 | Liquibase changelog | classpath `db/changelog/outbox/{core,archive}/changelog.xml` with the same parameter name | `OutboxLiquibaseParameterEnvironmentPostProcessor` auto-feeds `spring.liquibase.parameters.eventOutboxerSchema` |
-| Serializer | `EventSerializer` SPI — caller wires | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last) |
+| Serializer | `EventSerializer` SPI — caller wires write serializer via `eventSerializer(...)`, read-only formats via `additionalSerializers(...)` | `JacksonSerializerAutoConfiguration` with configurable `ObjectMapper` (qualified `outboxObjectMapper` wins, primary next, defaults last); write serializer resolved per `event-outboxer.serializer.write-format` (ADR-0025) |
 | Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
 | Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
 | Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("outbox")` → `OutboxPropertiesValidator` → builder |

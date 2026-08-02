@@ -3,7 +3,9 @@
 ## Status
 
 Accepted — amended 2026-07-26 (shipped Jackson defaults reconciled
-with this ADR; see the Amendment section at the bottom)
+with this ADR) and 2026-08-02 (SPI shape and schema clauses superseded
+by [ADR-0025](0025-binary-capable-serializer-spi-and-payload-format.md);
+see the Amendment sections at the bottom)
 
 ## Date
 
@@ -232,6 +234,32 @@ The code is now reconciled with this ADR:
 
 Applications wanting strict deserialization opt in with their own
 mapper (`@Bean("outboxObjectMapper")` in the starter).
+
+## Amendment (2026-08-02): post-MVP paths implemented by ADR-0025
+
+[ADR-0025](0025-binary-capable-serializer-spi-and-payload-format.md)
+implements post-MVP paths 1–3 and 5 of this ADR while the library is
+still pre-1.0 (the cheapest moment for the breaking SPI/schema change
+this ADR predicted):
+
+- The "Minimal SPI port" section is superseded: `EventSerializer` now
+  has `format()` and works over the two-lane `SerializedPayload`
+  (text/bytes) instead of `String`.
+- The "DB schema" section is superseded: `payload` is nullable JSONB
+  next to `payload_binary BYTEA` (CHECK: exactly one set) and a
+  `payload_format VARCHAR(64) NOT NULL` column records the writing
+  serializer, enabling registry-routed deserialization and format
+  migration.
+- The `payload_class` note is corrected: the FQCN was never read back
+  for "strict deserialization" — the deserialization target is always
+  `EventHandler.payloadType()` (ADR-0003); the column is publish-time
+  diagnostics.
+
+Everything else stands: **Jackson remains the only shipped
+implementation** (path 4 — actual binary modules — still awaits real
+demand), the ObjectMapper resolution order, the
+`outboxEventSerializer` override contract, and the whole "Why
+Jackson / why not X" rationale.
 
 ## Related decisions
 

@@ -11,9 +11,11 @@ package io.github.bams22.outboxer.storage.postgres;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.Clock;
@@ -118,6 +120,40 @@ class PostgresEventStoreArchiveIT {
   }
 
   @Test
+  @DisplayName("binary payload survives the archive byte-exact, format preserved (ADR-0025)")
+  void markProcessed_archivesBinaryPayloadByteExact() {
+    byte[] raw = new byte[] {0x00, (byte) 0xFF, 0x42, 0x00, (byte) 0x80};
+    ClaimedEvent claimed =
+        claimOne(
+            PendingEvent.builder()
+                .id(UUID.randomUUID())
+                .eventType("ARCHIVE_BIN")
+                .payload(SerializedPayload.ofBytes(raw))
+                .payloadFormat("test-binary")
+                .payloadClass("java.lang.String")
+                .priority((short) 0)
+                .runAt(Instant.now().minusSeconds(1))
+                .traceContext(Map.of())
+                .build());
+
+    assertThat(store.markProcessed(claimed.id(), WORKER, claimed.claimedVersion())).isTrue();
+
+    PostgresOutboxAdmin admin =
+        new PostgresOutboxAdmin(
+            PostgresTestEnvironment.connectionSupplier(),
+            PostgresStorageProperties.builder()
+                .schema(PostgresTestEnvironment.SCHEMA)
+                .tablePrefix("")
+                .archiveEnabled(true)
+                .metricsCacheTtl(Duration.ofSeconds(30))
+                .build());
+    ArchivedEvent archived = admin.findInArchive(claimed.id()).orElseThrow();
+    assertThat(archived.payload().isText()).isFalse();
+    assertThat(archived.payload().requireBytes()).isEqualTo(raw);
+    assertThat(archived.payloadFormat()).isEqualTo("test-binary");
+  }
+
+  @Test
   @DisplayName("release() after claim leaves no archive row and the event is re-claimable")
   void release_leavesNoArchiveRow() {
     ClaimedEvent claimed = publishAndClaim("payload-3");
@@ -136,18 +172,22 @@ class PostgresEventStoreArchiveIT {
   // ---------------------------------------------------------------------------------------------
 
   private ClaimedEvent publishAndClaim(String payload) {
-    PendingEvent p =
+    return claimOne(
         PendingEvent.builder()
             .id(UUID.randomUUID())
             .eventType("ARCHIVE_T")
-            .payload("\"" + payload + "\"")
+            .payload(SerializedPayload.ofText("\"" + payload + "\""))
+            .payloadFormat("test-json")
             .payloadClass("java.lang.String")
             .priority((short) 0)
             .runAt(Instant.now().minusSeconds(1))
             .traceContext(Map.of())
-            .build();
+            .build());
+  }
+
+  private ClaimedEvent claimOne(PendingEvent p) {
     store.save(p);
-    List<ClaimedEvent> claimed = store.claim(new ClaimRequest("ARCHIVE_T", WORKER, 10));
+    List<ClaimedEvent> claimed = store.claim(new ClaimRequest(p.eventType(), WORKER, 10));
     return claimed.stream()
         .filter(ce -> ce.id().equals(p.id()))
         .findFirst()

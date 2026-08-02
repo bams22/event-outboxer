@@ -23,7 +23,8 @@ class PendingEventTest {
     return PendingEvent.builder()
         .id(UUID.randomUUID())
         .eventType("TEST_EVENT")
-        .payload("{}")
+        .payload(SerializedPayload.ofText("{}"))
+        .payloadFormat("test-json")
         .payloadClass("com.example.TestPayload")
         .priority((short) 0)
         .runAt(Instant.now())
@@ -38,7 +39,8 @@ class PendingEventTest {
         PendingEvent.builder()
             .id(id)
             .eventType("T")
-            .payload("{\"x\":1}")
+            .payload(SerializedPayload.ofText("{\"x\":1}"))
+            .payloadFormat("test-json")
             .payloadClass("com.example.X")
             .priority((short) 3)
             .runAt(now)
@@ -46,7 +48,22 @@ class PendingEventTest {
             .build();
     assertThat(e.id()).isEqualTo(id);
     assertThat(e.priority()).isEqualTo((short) 3);
+    assertThat(e.payloadFormat()).isEqualTo("test-json");
     assertThat(e.traceContext()).containsEntry("traceparent", "00-x-y-z");
+  }
+
+  @Test
+  void rejectsBlankPayloadFormat() {
+    assertThatThrownBy(() -> validBuilder().payloadFormat(" ").build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("payloadFormat");
+  }
+
+  @Test
+  void rejectsOversizedPayloadFormat() {
+    assertThatThrownBy(() -> validBuilder().payloadFormat("x".repeat(65)).build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("payloadFormat");
   }
 
   @Test

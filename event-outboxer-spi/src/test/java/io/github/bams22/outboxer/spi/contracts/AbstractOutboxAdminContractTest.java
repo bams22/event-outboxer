@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.AdminCursor;
 import io.github.bams22.outboxer.spi.ClaimRequest;
@@ -217,7 +218,8 @@ public abstract class AbstractOutboxAdminContractTest {
     return PendingEvent.builder()
         .id(UUID.randomUUID())
         .eventType(type)
-        .payload("\"" + payload + "\"")
+        .payload(SerializedPayload.ofText("\"" + payload + "\""))
+        .payloadFormat("test-json")
         .payloadClass("java.lang.String")
         .priority((short) 0)
         .runAt(Instant.now().minusSeconds(1))

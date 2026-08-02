@@ -35,6 +35,7 @@ import io.github.bams22.outboxer.spring.lock.PostgresLeaseLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.publisher.SpringTransactionContext;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
+import io.github.bams22.outboxer.spring.serializer.OutboxSerializers;
 import io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration;
 import java.util.List;
 import java.util.Map;
@@ -108,11 +109,22 @@ public class OutboxEngineAutoConfiguration {
         : WorkerId.generateDefault();
   }
 
+  /**
+   * All registered {@code EventSerializer} beans (keyed by bean name) resolved into the write
+   * serializer + read-only rest (ADR-0025). See {@link OutboxSerializers#resolve}.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public OutboxSerializers outboxSerializers(
+      OutboxProperties properties, Map<String, EventSerializer> serializerBeans) {
+    return OutboxSerializers.resolve(serializerBeans, properties.getSerializer().getWriteFormat());
+  }
+
   @Bean
   @ConditionalOnMissingBean(OutboxEventPublisher.class)
   public OutboxEventPublisher outboxEventPublisher(
       EventStore store,
-      EventSerializer serializer,
+      OutboxSerializers serializers,
       Clock clock,
       TransactionContext txContext,
       OutboxProperties properties,
@@ -125,7 +137,7 @@ public class OutboxEngineAutoConfiguration {
     OutboxListener fanout = new FanOutListener(listeners);
     return new io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher(
         store,
-        serializer,
+        serializers.write(),
         clock,
         txContext,
         policy,
@@ -140,7 +152,7 @@ public class OutboxEngineAutoConfiguration {
       EventStore store,
       WorkerRegistry registry,
       EntityLocker locker,
-      EventSerializer serializer,
+      OutboxSerializers serializers,
       Clock clock,
       TransactionContext txContext,
       WorkerId workerId,
@@ -163,7 +175,8 @@ public class OutboxEngineAutoConfiguration {
         new OutboxEngineBuilder()
             .eventStore(store)
             .workerRegistry(registry)
-            .eventSerializer(serializer)
+            .eventSerializer(serializers.write())
+            .additionalSerializers(serializers.readOnly().toArray(EventSerializer[]::new))
             .entityLocker(locker)
             .clock(clock)
             .transactionContext(txContext)
