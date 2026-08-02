@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.cache.redis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.lettuce.core.RedisClient;
@@ -131,15 +132,13 @@ class LettuceMetricsSnapshotCacheIT {
                         connection,
                         Duration.ofSeconds(30),
                         "tenant-a:outbox:metrics:",
-                        new com.fasterxml.jackson.databind.json.JsonMapper()
-                                .findAndRegisterModules());
+                        new JsonMapper().findAndRegisterModules());
         MetricsSnapshotCache b =
                 new LettuceMetricsSnapshotCache(
                         connection,
                         Duration.ofSeconds(30),
                         "tenant-b:outbox:metrics:",
-                        new com.fasterxml.jackson.databind.json.JsonMapper()
-                                .findAndRegisterModules());
+                        new JsonMapper().findAndRegisterModules());
 
         a.put(SNAPSHOT);
 

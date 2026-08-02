@@ -21,8 +21,10 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.context.propagation.ContextPropagators;
+import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
@@ -54,12 +56,9 @@ class OtelOutboxTracerTest {
                                         .build())
                         .setPropagators(
                                 ContextPropagators.create(
-                                        io.opentelemetry.context.propagation.TextMapPropagator
-                                                .composite(
-                                                        io.opentelemetry.api.trace.propagation
-                                                                .W3CTraceContextPropagator
-                                                                .getInstance(),
-                                                        W3CBaggagePropagator.getInstance())))
+                                        TextMapPropagator.composite(
+                                                W3CTraceContextPropagator.getInstance(),
+                                                W3CBaggagePropagator.getInstance())))
                         .build();
         tracer = new OtelOutboxTracer(sdk);
     }

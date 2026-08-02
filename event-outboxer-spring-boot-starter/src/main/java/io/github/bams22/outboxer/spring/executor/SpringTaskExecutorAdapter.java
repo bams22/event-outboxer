@@ -13,7 +13,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -63,7 +65,7 @@ final class SpringTaskExecutorAdapter implements ExecutorService {
     public <T> Future<T> submit(Runnable task, T result) {
         // TPTE only has submit(Runnable) / submit(Callable); adapt with
         // java.util.concurrent.Executors.
-        return taskExecutor.submit(java.util.concurrent.Executors.callable(task, result));
+        return taskExecutor.submit(Executors.callable(task, result));
     }
 
     @Override
@@ -121,13 +123,13 @@ final class SpringTaskExecutorAdapter implements ExecutorService {
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
-            throws InterruptedException, java.util.concurrent.ExecutionException {
+            throws InterruptedException, ExecutionException {
         return underlying.invokeAny(tasks);
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-            throws InterruptedException, java.util.concurrent.ExecutionException, TimeoutException {
+            throws InterruptedException, ExecutionException, TimeoutException {
         return underlying.invokeAny(tasks, timeout, unit);
     }
 }

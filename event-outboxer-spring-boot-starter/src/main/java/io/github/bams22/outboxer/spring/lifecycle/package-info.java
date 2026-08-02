@@ -9,5 +9,7 @@
  */
 
 /** SmartLifecycle wrapper that starts and stops the OutboxEngine with the application context. */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.lifecycle;
+
+import org.jspecify.annotations.NullMarked;

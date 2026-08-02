@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.cache.redis;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -109,7 +110,7 @@ public final class LettuceMetricsSnapshotCache implements MetricsSnapshotCache {
         }
         try {
             return Optional.of(mapper.readValue(raw, OutboxMetricsSnapshot.class));
-        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException ex) {
+        } catch (RuntimeException | JsonProcessingException ex) {
             log.warn(
                     "failed to deserialise cached metrics snapshot (treating as miss): {}",
                     ex.toString());
@@ -123,7 +124,7 @@ public final class LettuceMetricsSnapshotCache implements MetricsSnapshotCache {
         String payload;
         try {
             payload = mapper.writeValueAsString(snapshot);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
             log.warn("failed to serialise metrics snapshot for Redis cache: {}", ex.toString());
             return;
         }

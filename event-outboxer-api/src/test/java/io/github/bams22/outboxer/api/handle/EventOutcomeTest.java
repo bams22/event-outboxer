@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.api.handle;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class EventOutcomeTest {
 
     @Test
     void failRequiresNonNullReason() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new EventOutcome.Fail(null, null))
+        assertThatThrownBy(() -> new EventOutcome.Fail(null, null))
                 .isInstanceOf(NullPointerException.class);
     }
 }

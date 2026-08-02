@@ -20,6 +20,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 
@@ -39,8 +40,7 @@ import org.springframework.context.annotation.Conditional;
  * {@code DataSource} beans the {@link OutboxDataSource @OutboxDataSource}-qualified one wins
  * (ADR-0024), and a transaction-aware proxy handed in that way is unwrapped back to its raw target.
  */
-@AutoConfiguration(
-        after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+@AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgAdvisoryLocker.class)
 @ConditionalOnBean(DataSource.class)
 @Conditional(OnPostgresAdvisoryLockCondition.class)

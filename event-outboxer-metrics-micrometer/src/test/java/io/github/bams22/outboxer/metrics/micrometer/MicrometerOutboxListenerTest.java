@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -85,7 +86,7 @@ class MicrometerOutboxListenerTest {
                                         "event_outboxer.events.processing_time",
                                         "event_type",
                                         "ORDER")
-                                .totalTime(java.util.concurrent.TimeUnit.MILLISECONDS))
+                                .totalTime(TimeUnit.MILLISECONDS))
                 .isEqualTo(150.0);
         assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
                 .isEqualTo(1.0);

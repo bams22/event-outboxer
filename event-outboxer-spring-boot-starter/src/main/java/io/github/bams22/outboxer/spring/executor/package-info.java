@@ -12,5 +12,7 @@
  * Handler executor wiring: Spring ThreadPoolTaskExecutor and virtual-thread factories with
  * TaskDecorator-based context propagation.
  */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.executor;
+
+import org.jspecify.annotations.NullMarked;

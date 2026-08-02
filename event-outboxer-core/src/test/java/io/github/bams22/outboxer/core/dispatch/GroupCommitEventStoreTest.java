@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -226,7 +227,7 @@ class GroupCommitEventStoreTest {
         final ConcurrentLinkedQueue<Integer> processedBatchSizes = new ConcurrentLinkedQueue<>();
         private final ConcurrentLinkedQueue<UUID> processedMarks = new ConcurrentLinkedQueue<>();
         private final ConcurrentLinkedQueue<UUID> retryMarks = new ConcurrentLinkedQueue<>();
-        private final Set<UUID> accepted = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        private final Set<UUID> accepted = ConcurrentHashMap.newKeySet();
         private final long sleepMillis;
         volatile boolean failProcessed;
 
@@ -255,7 +256,7 @@ class GroupCommitEventStoreTest {
             if (failProcessed) {
                 throw new EventStoreException("batch finalize failed");
             }
-            Set<UUID> applied = java.util.concurrent.ConcurrentHashMap.newKeySet();
+            Set<UUID> applied = ConcurrentHashMap.newKeySet();
             for (EventStore.ProcessedMark mark : marks) {
                 processedMarks.add(mark.id());
                 if (accepted.contains(mark.id())) {
@@ -268,7 +269,7 @@ class GroupCommitEventStoreTest {
         @Override
         public Set<UUID> markForRetryAll(List<EventStore.RetryMark> marks, WorkerId workerId) {
             sleep();
-            Set<UUID> applied = java.util.concurrent.ConcurrentHashMap.newKeySet();
+            Set<UUID> applied = ConcurrentHashMap.newKeySet();
             for (EventStore.RetryMark mark : marks) {
                 retryMarks.add(mark.id());
                 if (accepted.contains(mark.id())) {

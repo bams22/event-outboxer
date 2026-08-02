@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.spi.AdminCursor;
+import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.storage.postgres.internal.FlatMapJson;
 import io.github.bams22.outboxer.storage.postgres.internal.OutboxJdbcRunner;
@@ -48,8 +49,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
     private final SchemaResolver tables;
 
     public PostgresOutboxAdmin(
-            io.github.bams22.outboxer.spi.ConnectionSupplier connections,
-            PostgresStorageProperties properties) {
+            ConnectionSupplier connections, PostgresStorageProperties properties) {
         this.jdbc = new OutboxJdbcRunner(Objects.requireNonNull(connections, "connections"));
         this.tables = new SchemaResolver(Objects.requireNonNull(properties, "properties"));
     }

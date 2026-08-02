@@ -11,5 +11,7 @@
  * Engine-internal tracing support: defensive wrapping of the {@code OutboxTracer} SPI port
  * (ADR-0023) so that a misbehaving tracing adapter can never break publish or dispatch.
  */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.core.tracing;
+
+import org.jspecify.annotations.NullMarked;

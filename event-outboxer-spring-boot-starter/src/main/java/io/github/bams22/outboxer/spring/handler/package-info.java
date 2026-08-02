@@ -9,5 +9,7 @@
  */
 
 /** EventHandler discovery support for the auto-configuration. */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.handler;
+
+import org.jspecify.annotations.NullMarked;

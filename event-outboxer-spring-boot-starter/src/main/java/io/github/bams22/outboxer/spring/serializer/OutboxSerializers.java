@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Starter-internal resolution of the serializer roster (ADR-0025): every registered {@link
@@ -61,7 +62,7 @@ public record OutboxSerializers(
      */
     public static OutboxSerializers resolve(
             Map<String, EventSerializer> beansByName,
-            @org.jspecify.annotations.Nullable String writeFormat,
+            @Nullable String writeFormat,
             Map<String, String> writeFormatPerType) {
         if (beansByName.isEmpty()) {
             throw new InvariantViolationException(
@@ -114,7 +115,7 @@ public record OutboxSerializers(
     private static EventSerializer resolveWrite(
             Map<String, EventSerializer> beansByName,
             EventSerializerRegistry registry,
-            @org.jspecify.annotations.Nullable String writeFormat) {
+            @Nullable String writeFormat) {
         if (writeFormat != null && !writeFormat.isBlank()) {
             return registry.find(writeFormat)
                     .orElseThrow(

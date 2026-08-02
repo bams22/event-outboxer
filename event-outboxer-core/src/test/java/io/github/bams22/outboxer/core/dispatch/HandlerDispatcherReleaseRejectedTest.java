@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.core.dispatch;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
+import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
@@ -54,7 +55,7 @@ class HandlerDispatcherReleaseRejectedTest {
                         new EventHandlerResolver(List.of()),
                         new FailureHandlerResolver(Map.of(), FailureHandlers.defaults()),
                         new InFlightRegistry(),
-                        new io.github.bams22.outboxer.api.observer.OutboxListener() {},
+                        new OutboxListener() {},
                         Clock.system(),
                         WORKER,
                         new EventTypeConfigProvider(EventTypeConfig.defaults(), Map.of()),

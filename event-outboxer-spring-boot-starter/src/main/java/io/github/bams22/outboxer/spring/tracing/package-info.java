@@ -12,5 +12,7 @@
  * the OpenTelemetry API on the classpath and wires the matching adapter into the publisher and the
  * engine.
  */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.tracing;
+
+import org.jspecify.annotations.NullMarked;

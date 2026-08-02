@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -236,7 +237,7 @@ public final class HandlerExecutorManager {
                             || System.nanoTime() >= deadline) {
                         throw ex;
                     }
-                    java.util.concurrent.locks.LockSupport.parkNanos(HANDOFF_RETRY_PAUSE_NANOS);
+                    LockSupport.parkNanos(HANDOFF_RETRY_PAUSE_NANOS);
                 }
             }
         }

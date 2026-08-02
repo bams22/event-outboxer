@@ -11,5 +11,7 @@
 /**
  * Transaction integration for OutboxEventPublisher: Spring-managed TransactionContext detection.
  */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.publisher;
+
+import org.jspecify.annotations.NullMarked;

@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.core.task.TaskDecorator;
 
 class ContextPropagatingExecutorServiceTest {
 
@@ -103,8 +104,7 @@ class ContextPropagatingExecutorServiceTest {
      * and restores it inside the decorated Runnable. Doesn't pull in the micrometer
      * context-propagation lib, so the test suite stays self-contained.
      */
-    private static final class CapturingMdcTaskDecorator
-            implements org.springframework.core.task.TaskDecorator {
+    private static final class CapturingMdcTaskDecorator implements TaskDecorator {
         @Override
         public Runnable decorate(Runnable task) {
             var snapshot = MDC.getCopyOfContextMap();

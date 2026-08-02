@@ -14,8 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spring.OutboxEngineAutoConfiguration;
+import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,8 +41,7 @@ class UnconfiguredStorageTest {
                     .withConfiguration(
                             AutoConfigurations.of(
                                     JacksonSerializerAutoConfiguration.class,
-                                    io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
-                                            .class,
+                                    NoOpLockAutoConfiguration.class,
                                     OutboxEngineAutoConfiguration.class))
                     .withUserConfiguration(HandlerOnly.class);
 
@@ -62,10 +63,7 @@ class UnconfiguredStorageTest {
                         ctx -> {
                             assertThat(ctx).hasNotFailed();
                             assertThat(ctx).hasSingleBean(EventStore.class);
-                            assertThat(ctx)
-                                    .hasSingleBean(
-                                            io.github.bams22.outboxer.core.engine.OutboxEngine
-                                                    .class);
+                            assertThat(ctx).hasSingleBean(OutboxEngine.class);
                         });
     }
 

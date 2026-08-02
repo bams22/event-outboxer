@@ -14,11 +14,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EntityLocker.LockHandle;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Assumptions;
@@ -151,7 +153,7 @@ public abstract class AbstractEntityLockerContractTest {
             AtomicInteger acquired = new AtomicInteger();
             ConcurrentHashMap.KeySetView<LockHandle, Boolean> handles =
                     ConcurrentHashMap.newKeySet();
-            var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            var futures = new ArrayList<Future<?>>();
             for (int i = 0; i < threads; i++) {
                 futures.add(
                         exec.submit(

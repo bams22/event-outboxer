@@ -15,17 +15,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
+import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
 import io.github.bams22.outboxer.domain.exception.PublishValidationException;
 import io.github.bams22.outboxer.spi.Clock;
+import io.github.bams22.outboxer.spi.EventSerializer;
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -54,8 +62,7 @@ class DefaultOutboxEventPublisherTest {
 
         Optional<Event> saved = store.findById(id);
         assertThat(saved).isPresent();
-        assertThat(saved.orElseThrow().payload())
-                .isEqualTo(io.github.bams22.outboxer.domain.SerializedPayload.ofText("hello"));
+        assertThat(saved.orElseThrow().payload()).isEqualTo(SerializedPayload.ofText("hello"));
         assertThat(saved.orElseThrow().payloadFormat()).isEqualTo(StringEventSerializer.FORMAT);
         assertThat(saved.orElseThrow().status()).isEqualTo(EventStatus.PENDING);
         assertThat(captured.get()).isNotNull();
@@ -117,7 +124,7 @@ class DefaultOutboxEventPublisherTest {
     void wakeFiresOnlyAfterCommitAndOncePerType() {
         InMemoryEventStore store = new InMemoryEventStore();
         // TransactionContext that buffers afterCommit actions until the test "commits".
-        java.util.List<Runnable> pendingCommitHooks = new java.util.ArrayList<>();
+        List<Runnable> pendingCommitHooks = new ArrayList<>();
         TransactionContext buffering =
                 new TransactionContext() {
                     @Override
@@ -130,7 +137,7 @@ class DefaultOutboxEventPublisherTest {
                         pendingCommitHooks.add(action);
                     }
                 };
-        java.util.List<String> wakes = new java.util.ArrayList<>();
+        List<String> wakes = new ArrayList<>();
         DefaultOutboxEventPublisher publisher =
                 new DefaultOutboxEventPublisher(
                         store,
@@ -142,10 +149,10 @@ class DefaultOutboxEventPublisherTest {
                         wakes::add);
 
         publisher.publishAll(
-                java.util.List.of(
-                        new io.github.bams22.outboxer.api.publish.PublishRequest("A", "a1", null),
-                        new io.github.bams22.outboxer.api.publish.PublishRequest("A", "a2", null),
-                        new io.github.bams22.outboxer.api.publish.PublishRequest("B", "b1", null)));
+                List.of(
+                        new PublishRequest("A", "a1", null),
+                        new PublishRequest("A", "a2", null),
+                        new PublishRequest("B", "b1", null)));
         publisher.publish("C", "c1");
 
         // Nothing may be woken before the surrounding transaction commits.
@@ -180,9 +187,8 @@ class DefaultOutboxEventPublisherTest {
     @Test
     void dedupKeyCoalescesIntoExistingPendingEvent() {
         InMemoryEventStore store = new InMemoryEventStore();
-        java.util.concurrent.atomic.AtomicInteger published =
-                new java.util.concurrent.atomic.AtomicInteger();
-        java.util.List<String> wakes = new java.util.ArrayList<>();
+        AtomicInteger published = new AtomicInteger();
+        List<String> wakes = new ArrayList<>();
         DefaultOutboxEventPublisher publisher =
                 new DefaultOutboxEventPublisher(
                         store,
@@ -218,15 +224,12 @@ class DefaultOutboxEventPublisherTest {
         DefaultOutboxEventPublisher publisher = plain(store);
         PublishOptions keyed = PublishOptions.builder().dedupKey("k").build();
 
-        java.util.List<UUID> ids =
+        List<UUID> ids =
                 publisher.publishAll(
-                        java.util.List.of(
-                                new io.github.bams22.outboxer.api.publish.PublishRequest(
-                                        "A", "a1", keyed),
-                                new io.github.bams22.outboxer.api.publish.PublishRequest(
-                                        "A", "a2", keyed),
-                                new io.github.bams22.outboxer.api.publish.PublishRequest(
-                                        "A", "plain", null)));
+                        List.of(
+                                new PublishRequest("A", "a1", keyed),
+                                new PublishRequest("A", "a2", keyed),
+                                new PublishRequest("A", "plain", null)));
 
         assertThat(ids).hasSize(3);
         assertThat(ids.get(1)).isEqualTo(ids.get(0)); // second keyed request coalesced
@@ -247,8 +250,7 @@ class DefaultOutboxEventPublisherTest {
                 .isEqualTo(StringEventSerializer.FORMAT);
         Event b = store.findById(overridden).orElseThrow();
         assertThat(b.payloadFormat()).isEqualTo("test-alt");
-        assertThat(b.payload())
-                .isEqualTo(io.github.bams22.outboxer.domain.SerializedPayload.ofText("alt:hello"));
+        assertThat(b.payload()).isEqualTo(SerializedPayload.ofText("alt:hello"));
     }
 
     @Test
@@ -256,13 +258,11 @@ class DefaultOutboxEventPublisherTest {
         InMemoryEventStore store = new InMemoryEventStore();
         DefaultOutboxEventPublisher publisher = withOverride(store, "B");
 
-        java.util.List<UUID> ids =
+        List<UUID> ids =
                 publisher.publishAll(
-                        java.util.List.of(
-                                new io.github.bams22.outboxer.api.publish.PublishRequest(
-                                        "A", "one", null),
-                                new io.github.bams22.outboxer.api.publish.PublishRequest(
-                                        "B", "two", null)));
+                        List.of(
+                                new PublishRequest("A", "one", null),
+                                new PublishRequest("B", "two", null)));
 
         assertThat(store.findById(ids.get(0)).orElseThrow().payloadFormat())
                 .isEqualTo(StringEventSerializer.FORMAT);
@@ -272,23 +272,20 @@ class DefaultOutboxEventPublisherTest {
     private static final OutboxListener NOOP = new OutboxListener() {};
 
     /** Distinct-format stub so per-type routing is observable in the stored payloadFormat. */
-    private static final io.github.bams22.outboxer.spi.EventSerializer ALT_SERIALIZER =
-            new io.github.bams22.outboxer.spi.EventSerializer() {
+    private static final EventSerializer ALT_SERIALIZER =
+            new EventSerializer() {
                 @Override
                 public String format() {
                     return "test-alt";
                 }
 
                 @Override
-                public io.github.bams22.outboxer.domain.SerializedPayload serialize(
-                        Object payload) {
-                    return io.github.bams22.outboxer.domain.SerializedPayload.ofText(
-                            "alt:" + payload);
+                public SerializedPayload serialize(Object payload) {
+                    return SerializedPayload.ofText("alt:" + payload);
                 }
 
                 @Override
-                public <T> T deserialize(
-                        io.github.bams22.outboxer.domain.SerializedPayload payload, Class<T> type) {
+                public <T> T deserialize(SerializedPayload payload, Class<T> type) {
                     return type.cast(payload.requireText().substring("alt:".length()));
                 }
             };
@@ -298,13 +295,13 @@ class DefaultOutboxEventPublisherTest {
         return new DefaultOutboxEventPublisher(
                 store,
                 new StringEventSerializer(),
-                java.util.Map.of(overriddenType, ALT_SERIALIZER),
+                Map.of(overriddenType, ALT_SERIALIZER),
                 Clock.system(),
                 TransactionContext.alwaysActive(),
                 NoTransactionPolicy.FAIL,
                 NOOP,
                 PollerWaker.NOOP,
-                io.github.bams22.outboxer.spi.OutboxTracer.NOOP);
+                OutboxTracer.NOOP);
     }
 
     private static DefaultOutboxEventPublisher plain(InMemoryEventStore store) {

@@ -20,8 +20,15 @@ import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
+import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.Event;
+import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.domain.exception.EventStoreException;
+import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.EntityLocker;
+import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import java.time.Duration;
@@ -256,8 +263,7 @@ class OutboxEngineRecoveryTest {
         return fastEngineOn(store, customize);
     }
 
-    private OutboxEngineBuilder fastEngineOn(
-            io.github.bams22.outboxer.spi.EventStore eventStore, TypeCfg customize) {
+    private OutboxEngineBuilder fastEngineOn(EventStore eventStore, TypeCfg customize) {
         EventTypeConfig fast =
                 customize
                         .apply(
@@ -339,7 +345,7 @@ class OutboxEngineRecoveryTest {
 
         private final AtomicInteger failuresLeft;
 
-        FlakyFinalizeStore(io.github.bams22.outboxer.spi.EventStore delegate, int failures) {
+        FlakyFinalizeStore(EventStore delegate, int failures) {
             super(delegate);
             this.failuresLeft = new AtomicInteger(failures);
         }
@@ -347,8 +353,7 @@ class OutboxEngineRecoveryTest {
         @Override
         public boolean markProcessed(UUID id, WorkerId workerId, long claimedVersion) {
             if (failuresLeft.getAndDecrement() > 0) {
-                throw new io.github.bams22.outboxer.domain.exception.EventStoreException(
-                        "simulated transient finalize failure");
+                throw new EventStoreException("simulated transient finalize failure");
             }
             return super.markProcessed(id, workerId, claimedVersion);
         }
@@ -358,16 +363,16 @@ class OutboxEngineRecoveryTest {
      * Forwards every {@code EventStore} call to a delegate; test doubles override single methods.
      * Package-private so sibling engine tests can reuse it.
      */
-    static class DelegatingEventStore implements io.github.bams22.outboxer.spi.EventStore {
+    static class DelegatingEventStore implements EventStore {
 
-        private final io.github.bams22.outboxer.spi.EventStore delegate;
+        private final EventStore delegate;
 
-        DelegatingEventStore(io.github.bams22.outboxer.spi.EventStore delegate) {
+        DelegatingEventStore(EventStore delegate) {
             this.delegate = delegate;
         }
 
         @Override
-        public boolean save(io.github.bams22.outboxer.domain.PendingEvent event) {
+        public boolean save(PendingEvent event) {
             return delegate.save(event);
         }
 
@@ -377,13 +382,12 @@ class OutboxEngineRecoveryTest {
         }
 
         @Override
-        public void saveAll(List<io.github.bams22.outboxer.domain.PendingEvent> events) {
+        public void saveAll(List<PendingEvent> events) {
             delegate.saveAll(events);
         }
 
         @Override
-        public List<io.github.bams22.outboxer.domain.ClaimedEvent> claim(
-                io.github.bams22.outboxer.spi.ClaimRequest request) {
+        public List<ClaimedEvent> claim(ClaimRequest request) {
             return delegate.claim(request);
         }
 
@@ -422,7 +426,7 @@ class OutboxEngineRecoveryTest {
         }
 
         @Override
-        public int sweepStale(java.time.Duration olderThan, int limit) {
+        public int sweepStale(Duration olderThan, int limit) {
             return delegate.sweepStale(olderThan, limit);
         }
 
@@ -432,12 +436,12 @@ class OutboxEngineRecoveryTest {
         }
 
         @Override
-        public Optional<io.github.bams22.outboxer.domain.Event> findById(UUID id) {
+        public Optional<Event> findById(UUID id) {
             return delegate.findById(id);
         }
 
         @Override
-        public io.github.bams22.outboxer.spi.OutboxMetricsSnapshot metricsSnapshot() {
+        public OutboxMetricsSnapshot metricsSnapshot() {
             return delegate.metricsSnapshot();
         }
     }

@@ -9,5 +9,7 @@
  */
 
 /** EntityLocker auto-configuration variants: noop, PostgreSQL advisory locks, Redis/KeyDB. */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.lock;
+
+import org.jspecify.annotations.NullMarked;

@@ -16,15 +16,23 @@ import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
+import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
+import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
+import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
+import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -240,16 +248,15 @@ class OutboxEngineIntegrationTest {
 
         UUID unknownId = UUID.randomUUID();
         store.save(
-                io.github.bams22.outboxer.domain.PendingEvent.builder()
+                PendingEvent.builder()
                         .id(unknownId)
                         .eventType("UNKNOWN")
-                        .payload(io.github.bams22.outboxer.domain.SerializedPayload.ofText("x"))
-                        .payloadFormat(
-                                io.github.bams22.outboxer.core.support.StringEventSerializer.FORMAT)
+                        .payload(SerializedPayload.ofText("x"))
+                        .payloadFormat(StringEventSerializer.FORMAT)
                         .payloadClass("java.lang.String")
                         .priority((short) 0)
-                        .runAt(java.time.Instant.now().minusSeconds(1))
-                        .traceContext(java.util.Map.of())
+                        .runAt(Instant.now().minusSeconds(1))
+                        .traceContext(Map.of())
                         .build());
 
         // Should be picked by a poller eventually... but we only poll KNOWN, so no poller sees it.
@@ -280,10 +287,7 @@ class OutboxEngineIntegrationTest {
                         .listener(
                                 new OutboxListener() {
                                     @Override
-                                    public void onEventProcessed(
-                                            io.github.bams22.outboxer.api.observer
-                                                            .EventProcessedInfo
-                                                    info) {
+                                    public void onEventProcessed(EventProcessedInfo info) {
                                         processedCallbacks.incrementAndGet();
                                     }
                                 })
@@ -312,8 +316,7 @@ class OutboxEngineIntegrationTest {
      * Counts finalize batch statements. The artificial flush latency widens the group-commit window
      * so the coalescing assertion is deterministic rather than a scheduling coincidence.
      */
-    private static final class CountingBatchStore
-            extends io.github.bams22.outboxer.core.support.ForwardingEventStore {
+    private static final class CountingBatchStore extends ForwardingEventStore {
 
         final AtomicInteger batchCalls = new AtomicInteger();
         final AtomicInteger totalMarksFlushed = new AtomicInteger();
@@ -323,9 +326,7 @@ class OutboxEngineIntegrationTest {
         }
 
         @Override
-        public Set<UUID> markProcessedAll(
-                List<io.github.bams22.outboxer.spi.EventStore.ProcessedMark> marks,
-                io.github.bams22.outboxer.domain.WorkerId workerId) {
+        public Set<UUID> markProcessedAll(List<EventStore.ProcessedMark> marks, WorkerId workerId) {
             batchCalls.incrementAndGet();
             totalMarksFlushed.addAndGet(marks.size());
             sleepQuietly(20);

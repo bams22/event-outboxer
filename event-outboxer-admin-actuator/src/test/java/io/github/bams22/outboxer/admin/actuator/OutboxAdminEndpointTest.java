@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -102,9 +103,7 @@ class OutboxAdminEndpointTest {
                 PendingEvent.builder()
                         .id(UUID.randomUUID())
                         .eventType(type)
-                        .payload(
-                                io.github.bams22.outboxer.domain.SerializedPayload.ofText(
-                                        "\"" + payload + "\""))
+                        .payload(SerializedPayload.ofText("\"" + payload + "\""))
                         .payloadFormat("test-json")
                         .payloadClass("java.lang.String")
                         .priority((short) 0)

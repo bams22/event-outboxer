@@ -23,6 +23,7 @@ import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -258,7 +260,7 @@ public abstract class AbstractEventStoreContractTest {
             CountDownLatch go = new CountDownLatch(1);
             Set<UUID> allClaimed = ConcurrentHashMap.newKeySet();
             AtomicInteger duplicates = new AtomicInteger();
-            List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+            List<Future<?>> futures = new ArrayList<>();
             for (int w = 0; w < workers; w++) {
                 WorkerId wid = new WorkerId("w-" + w);
                 futures.add(
@@ -391,10 +393,8 @@ public abstract class AbstractEventStoreContractTest {
         ClaimedEvent b = publishAndClaim(EVENT_TYPE_A, "b", WORKER_1);
         ClaimedEvent stale = publishAndClaim(EVENT_TYPE_B, "s", WORKER_1);
         // Truncate to microseconds: TIMESTAMPTZ in PG is microsecond-precision.
-        Instant runA =
-                Instant.now().plusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-        Instant runB =
-                Instant.now().plusSeconds(90).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant runA = Instant.now().plusSeconds(30).truncatedTo(ChronoUnit.MICROS);
+        Instant runB = Instant.now().plusSeconds(90).truncatedTo(ChronoUnit.MICROS);
 
         Set<UUID> applied =
                 store.markForRetryAll(
@@ -438,8 +438,7 @@ public abstract class AbstractEventStoreContractTest {
     void markForRetry_revertsToPending() {
         ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
         // Truncate to microseconds: TIMESTAMPTZ in PG is microsecond-precision.
-        Instant nextRun =
-                Instant.now().plusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant nextRun = Instant.now().plusSeconds(60).truncatedTo(ChronoUnit.MICROS);
 
         boolean ok =
                 store.markForRetry(
@@ -514,7 +513,7 @@ public abstract class AbstractEventStoreContractTest {
     @DisplayName("forceReclaim() reverts PROCESSING to PENDING and bumps attempts + version")
     void forceReclaim_revertsToPending() {
         ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
-        Instant rerun = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant rerun = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
         boolean ok = store.forceReclaim(claimed.id(), WORKER_1, claimed.claimedVersion(), rerun);
 
@@ -627,8 +626,7 @@ public abstract class AbstractEventStoreContractTest {
     @DisplayName("release() reverts to PENDING and bumps version WITHOUT incrementing attempts")
     void release_revertsToPending_withoutAttemptsBump() {
         ClaimedEvent claimed = publishAndClaim(EVENT_TYPE_A, "x", WORKER_1);
-        Instant nextRun =
-                Instant.now().plusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant nextRun = Instant.now().plusSeconds(30).truncatedTo(ChronoUnit.MICROS);
 
         boolean ok =
                 store.release(
@@ -682,7 +680,7 @@ public abstract class AbstractEventStoreContractTest {
         ClaimedEvent c1 = publishAndClaim(EVENT_TYPE_A, "1", WORKER_1);
         ClaimedEvent c2 = publishAndClaim(EVENT_TYPE_B, "2", WORKER_1);
         ClaimedEvent other = publishAndClaim(EVENT_TYPE_A, "3", WORKER_2);
-        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
         int released = store.releaseClaimed(WORKER_1, now);
 

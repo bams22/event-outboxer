@@ -12,5 +12,7 @@
  * Spring Boot Actuator surface over the OutboxAdmin SPI port: inspect and re-enable DISABLED
  * events, purge the archive and old failures (ADR-0019).
  */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.admin.actuator;
+
+import org.jspecify.annotations.NullMarked;

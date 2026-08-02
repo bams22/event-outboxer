@@ -9,5 +9,7 @@
  */
 
 /** Micrometer integration: MicrometerOutboxListener registration and engine-state gauges. */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.metrics;
+
+import org.jspecify.annotations.NullMarked;

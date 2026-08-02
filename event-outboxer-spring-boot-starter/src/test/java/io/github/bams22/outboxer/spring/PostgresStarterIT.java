@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -142,10 +143,7 @@ class PostgresStarterIT {
     // Boot's LiquibaseAutoConfiguration which then looks for the stock
     // db/changelog/db.changelog-master.yaml and fails when it's absent. Exclude it — this test
     // drives migrations through Flyway (see spring.flyway.locations above).
-    @EnableAutoConfiguration(
-            exclude =
-                    org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration
-                            .class)
+    @EnableAutoConfiguration(exclude = LiquibaseAutoConfiguration.class)
     static class TestApp {
 
         @Bean

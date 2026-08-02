@@ -9,5 +9,7 @@
  */
 
 /** Jackson EventSerializer auto-configuration and outboxObjectMapper resolution. */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.serializer;
+
+import org.jspecify.annotations.NullMarked;

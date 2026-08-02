@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.api.handle.builtin;
 
 import io.github.bams22.outboxer.api.handle.FailureHandler;
 import java.time.Duration;
+import org.slf4j.event.Level;
 
 /**
  * Convenience entry point for constructing {@link FailureHandler} chains. Provides {@link
@@ -33,7 +34,7 @@ public final class FailureHandlers {
      */
     public static <T> FailureHandler<T> defaults() {
         return FailureHandlers.<T>builder()
-                .withLogging(org.slf4j.event.Level.WARN)
+                .withLogging(Level.WARN)
                 .withMaxAttempts(10, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
                 .withExponentialBackoff(Duration.ofSeconds(5), 2.0, Duration.ofHours(1), 0.2);
     }

@@ -34,6 +34,7 @@ import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
 import io.github.bams22.outboxer.core.maintenance.RetentionTask;
 import io.github.bams22.outboxer.core.maintenance.StaleClaimSweeperTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
+import io.github.bams22.outboxer.core.polling.HandlerExecutorGate;
 import io.github.bams22.outboxer.core.polling.LockAndFetchStrategy;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
 import io.github.bams22.outboxer.core.polling.Poller;
@@ -58,6 +59,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -72,6 +74,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
@@ -413,8 +416,7 @@ public final class OutboxEngineBuilder {
             EventTypeConfig cfg =
                     Objects.requireNonNull(
                             executorConfigs.get(type), "no executor config for type " + type);
-            io.github.bams22.outboxer.core.polling.HandlerExecutorGate gate =
-                    executors.executorFor(type);
+            HandlerExecutorGate gate = executors.executorFor(type);
             Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
             // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the
             // poller immediately instead of costing the remainder of the poll interval.
@@ -443,8 +445,7 @@ public final class OutboxEngineBuilder {
 
         // The engine-health-check needs to report crashes to the engine, but the engine isn't
         // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.
-        java.util.concurrent.atomic.AtomicReference<OutboxEngine> engineRef =
-                new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<OutboxEngine> engineRef = new AtomicReference<>();
         EngineHealthCheckTask engineHealthCheck =
                 new EngineHealthCheckTask(
                         pollers,
@@ -498,7 +499,7 @@ public final class OutboxEngineBuilder {
      * that raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
      */
     static Duration resolveStaleClaimThreshold(
-            MaintenanceConfig maintenance, java.util.Collection<EventTypeConfig> typeConfigs) {
+            MaintenanceConfig maintenance, Collection<EventTypeConfig> typeConfigs) {
         Duration maxRuntime = Duration.ZERO;
         for (EventTypeConfig cfg : typeConfigs) {
             if (cfg.handlerMaxRuntime().compareTo(maxRuntime) > 0) {

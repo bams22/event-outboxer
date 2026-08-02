@@ -18,17 +18,27 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
+import io.github.bams22.outboxer.core.config.UnknownHandlerPolicy;
+import io.github.bams22.outboxer.core.dispatch.DispatcherConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
+import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.spi.ClaimRequest;
+import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,11 +55,9 @@ class StaleClaimSweeperTest {
      * Real time plus a mutable offset, shared by the store and the engine: time flows normally
      * (watchdog/poller cadence works), while bumping the offset ages existing claims instantly.
      */
-    private final java.util.concurrent.atomic.AtomicReference<Duration> offset =
-            new java.util.concurrent.atomic.AtomicReference<>(Duration.ZERO);
+    private final AtomicReference<Duration> offset = new AtomicReference<>(Duration.ZERO);
 
-    private final io.github.bams22.outboxer.spi.Clock clock =
-            () -> java.time.Instant.now().plus(offset.get());
+    private final Clock clock = () -> Instant.now().plus(offset.get());
 
     private InMemoryEventStore store;
     private InMemoryWorkerRegistry registry;
@@ -81,10 +89,8 @@ class StaleClaimSweeperTest {
                                                         Duration.ofSeconds(
                                                                 60))) // watchdog out of the picture
                         .dispatcher(
-                                io.github.bams22.outboxer.core.dispatch.DispatcherConfig.builder()
-                                        .unknownHandlerPolicy(
-                                                io.github.bams22.outboxer.core.config
-                                                        .UnknownHandlerPolicy.FAIL)
+                                DispatcherConfig.builder()
+                                        .unknownHandlerPolicy(UnknownHandlerPolicy.FAIL)
                                         .unknownHandlerRetryDelay(Duration.ofMinutes(1))
                                         .lockBusyRetryDelay(Duration.ofSeconds(1))
                                         .dispatchRejectedRetryDelay(Duration.ofSeconds(1))
@@ -100,22 +106,17 @@ class StaleClaimSweeperTest {
         // keeps living. Orphan recovery never touches it; only the sweeper can.
         UUID id = UUID.randomUUID();
         store.save(
-                io.github.bams22.outboxer.domain.PendingEvent.builder()
+                PendingEvent.builder()
                         .id(id)
                         .eventType("ORPHANED_TYPE")
-                        .payload(io.github.bams22.outboxer.domain.SerializedPayload.ofText("\"x\""))
-                        .payloadFormat(
-                                io.github.bams22.outboxer.core.support.StringEventSerializer.FORMAT)
+                        .payload(SerializedPayload.ofText("\"x\""))
+                        .payloadFormat(StringEventSerializer.FORMAT)
                         .payloadClass("java.lang.String")
                         .priority((short) 0)
                         .runAt(clock.now().minusSeconds(1))
-                        .traceContext(java.util.Map.of())
+                        .traceContext(Map.of())
                         .build());
-        store.claim(
-                new io.github.bams22.outboxer.spi.ClaimRequest(
-                        "ORPHANED_TYPE",
-                        new io.github.bams22.outboxer.domain.WorkerId("zombie"),
-                        10));
+        store.claim(new ClaimRequest("ORPHANED_TYPE", new WorkerId("zombie"), 10));
         assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
 
         // Age the claim past the 1s threshold by advancing the shared clock.

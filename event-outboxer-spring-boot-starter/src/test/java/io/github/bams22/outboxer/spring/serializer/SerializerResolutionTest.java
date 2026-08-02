@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.serializer.jackson.JacksonEventSerializer;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spring.OutboxEngineAutoConfiguration;
+import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,8 +39,7 @@ class SerializerResolutionTest {
                     .withConfiguration(
                             AutoConfigurations.of(
                                     JacksonSerializerAutoConfiguration.class,
-                                    io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
-                                            .class,
+                                    NoOpLockAutoConfiguration.class,
                                     OutboxEngineAutoConfiguration.class))
                     .withUserConfiguration(
                             OutboxInMemoryTestConfiguration.class, HandlerOnly.class);
@@ -159,8 +159,7 @@ class SerializerResolutionTest {
         new ApplicationContextRunner()
                 .withConfiguration(
                         AutoConfigurations.of(
-                                io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration
-                                        .class,
+                                NoOpLockAutoConfiguration.class,
                                 OutboxEngineAutoConfiguration.class))
                 .withUserConfiguration(
                         OutboxInMemoryTestConfiguration.class,

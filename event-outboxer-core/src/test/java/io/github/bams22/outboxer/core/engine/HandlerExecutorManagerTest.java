@@ -17,8 +17,14 @@ import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.polling.HandlerExecutorGate;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,18 +53,18 @@ class HandlerExecutorManagerTest {
     }
 
     /** Mirrors the builder's default factory: fixed pool + bounded queue + AbortPolicy. */
-    private static java.util.concurrent.ExecutorService fixedPool(EventTypeConfig cfg) {
-        java.util.concurrent.BlockingQueue<Runnable> queue =
+    private static ExecutorService fixedPool(EventTypeConfig cfg) {
+        BlockingQueue<Runnable> queue =
                 cfg.handlerQueueCapacity() == 0
-                        ? new java.util.concurrent.SynchronousQueue<>()
-                        : new java.util.concurrent.ArrayBlockingQueue<>(cfg.handlerQueueCapacity());
-        return new java.util.concurrent.ThreadPoolExecutor(
+                        ? new SynchronousQueue<>()
+                        : new ArrayBlockingQueue<>(cfg.handlerQueueCapacity());
+        return new ThreadPoolExecutor(
                 cfg.handlerPoolSize(),
                 cfg.handlerPoolSize(),
                 0L,
-                java.util.concurrent.TimeUnit.MILLISECONDS,
+                TimeUnit.MILLISECONDS,
                 queue,
-                new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     @AfterEach

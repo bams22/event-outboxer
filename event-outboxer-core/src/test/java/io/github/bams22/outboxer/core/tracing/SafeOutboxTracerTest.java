@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.core.tracing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.util.Map;
@@ -129,8 +130,7 @@ class SafeOutboxTracerTest {
 
     @Test
     void delegatesToWorkingTracer() {
-        io.github.bams22.outboxer.core.support.RecordingOutboxTracer recording =
-                new io.github.bams22.outboxer.core.support.RecordingOutboxTracer();
+        RecordingOutboxTracer recording = new RecordingOutboxTracer();
         OutboxTracer safe = SafeOutboxTracer.wrap(recording);
 
         UUID id = UUID.randomUUID();

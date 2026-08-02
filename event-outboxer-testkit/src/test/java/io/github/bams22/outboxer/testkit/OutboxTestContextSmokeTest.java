@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.domain.EventStatus;
 import java.time.Duration;
 import java.util.UUID;
@@ -84,8 +85,7 @@ class OutboxTestContextSmokeTest {
         OutboxTestContext ctx =
                 OutboxTestContext.builder()
                         .defaultEventTypeConfig(
-                                io.github.bams22.outboxer.core.config.EventTypeConfig.defaults()
-                                        .toBuilder()
+                                EventTypeConfig.defaults().toBuilder()
                                         .handlerMaxRuntime(Duration.ofMillis(10))
                                         .build())
                         .handler(

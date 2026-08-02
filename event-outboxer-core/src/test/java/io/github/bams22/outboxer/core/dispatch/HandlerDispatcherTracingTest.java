@@ -15,8 +15,10 @@ import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
+import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
+import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
@@ -83,7 +85,7 @@ class HandlerDispatcherTracingTest {
                 new EventHandlerResolver(List.of(handler)),
                 new FailureHandlerResolver(Map.of(), FailureHandlers.defaults()),
                 new InFlightRegistry(),
-                new io.github.bams22.outboxer.api.observer.OutboxListener() {},
+                new OutboxListener() {},
                 Clock.system(),
                 WORKER,
                 new EventTypeConfigProvider(EventTypeConfig.defaults(), Map.of()),
@@ -209,7 +211,7 @@ class HandlerDispatcherTracingTest {
         AtomicReference<Integer> closeCountAtFinalize = new AtomicReference<>();
         InMemoryEventStore inner = new InMemoryEventStore();
         EventStore observing =
-                new io.github.bams22.outboxer.core.support.ForwardingEventStore(inner) {
+                new ForwardingEventStore(inner) {
                     @Override
                     public boolean markProcessed(UUID id, WorkerId workerId, long claimedVersion) {
                         closeCountAtFinalize.set(tracer.processSpans.get(0).closeCount.get());

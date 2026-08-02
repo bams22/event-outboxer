@@ -12,5 +12,7 @@
  * publisher's distributed trace into handler execution via the event row's {@code trace_context}
  * carrier, honouring Spring Boot's propagation and baggage configuration.
  */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.tracing.micrometer;
+
+import org.jspecify.annotations.NullMarked;

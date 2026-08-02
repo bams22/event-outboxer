@@ -9,15 +9,22 @@
  */
 package io.github.bams22.outboxer.spring;
 
+import com.zaxxer.hikari.HikariDataSource;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
+import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
+import io.github.bams22.outboxer.core.config.RetentionConfig;
+import io.github.bams22.outboxer.core.config.UnknownHandlerPolicy;
 import io.github.bams22.outboxer.core.dispatch.DispatcherConfig;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.core.engine.OutboxEngineBuilder;
+import io.github.bams22.outboxer.core.polling.PollStrategy;
+import io.github.bams22.outboxer.core.polling.PollerWakeHub;
+import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -25,6 +32,7 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.spring.executor.HandlerExecutorFactory;
@@ -37,6 +45,8 @@ import io.github.bams22.outboxer.spring.publisher.SpringTransactionContext;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
 import io.github.bams22.outboxer.spring.serializer.OutboxSerializers;
 import io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration;
+import io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration;
+import io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -48,6 +58,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.task.TaskDecorator;
+import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
+import org.springframework.util.ClassUtils;
 
 /**
  * Central wiring of the outbox engine. Consumes the lower-level auto-configurations ({@code
@@ -64,8 +77,8 @@ import org.springframework.context.annotation.Bean;
             PostgresAdvisoryLockAutoConfiguration.class,
             RedisLockAutoConfiguration.class,
             JacksonSerializerAutoConfiguration.class,
-            io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration.class,
-            io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration.class
+            MicrometerTracingAutoConfiguration.class,
+            OtelTracingAutoConfiguration.class
         })
 @EnableConfigurationProperties(OutboxProperties.class)
 @ConditionalOnProperty(
@@ -96,8 +109,8 @@ public class OutboxEngineAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public io.github.bams22.outboxer.core.polling.PollerWakeHub outboxPollerWakeHub() {
-        return new io.github.bams22.outboxer.core.polling.PollerWakeHub();
+    public PollerWakeHub outboxPollerWakeHub() {
+        return new PollerWakeHub();
     }
 
     @Bean
@@ -131,7 +144,7 @@ public class OutboxEngineAutoConfiguration {
             Clock clock,
             TransactionContext txContext,
             OutboxProperties properties,
-            io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
+            PollerWakeHub wakeHub,
             ObjectProvider<OutboxTracer> tracerProvider,
             List<OutboxListener> listeners) {
         NoTransactionPolicy policy =
@@ -139,7 +152,7 @@ public class OutboxEngineAutoConfiguration {
         // Publisher fires listener callbacks directly; the engine's ListenerRegistry will subsume
         // these when the engine starts — for now, aggregate all application-registered listeners.
         OutboxListener fanout = new FanOutListener(listeners);
-        return new io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher(
+        return new DefaultOutboxEventPublisher(
                 store,
                 serializers.write(),
                 serializers.writePerType(),
@@ -162,8 +175,8 @@ public class OutboxEngineAutoConfiguration {
             TransactionContext txContext,
             WorkerId workerId,
             OutboxProperties properties,
-            io.github.bams22.outboxer.core.polling.PollerWakeHub wakeHub,
-            ObjectProvider<io.github.bams22.outboxer.spi.OutboxAdmin> adminProvider,
+            PollerWakeHub wakeHub,
+            ObjectProvider<OutboxAdmin> adminProvider,
             @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSourceProvider,
             ObjectProvider<DataSource> dataSourceProvider,
             ObjectProvider<EventHandler<?>> handlerProvider,
@@ -171,9 +184,8 @@ public class OutboxEngineAutoConfiguration {
                     ObjectProvider<FailureHandler<?>> defaultFailureHandlerProvider,
             @Qualifier("outboxPerTypeFailureHandlers")
                     ObjectProvider<Map<String, FailureHandler<?>>> perTypeFailureHandlersProvider,
-            ObjectProvider<io.github.bams22.outboxer.core.polling.PollStrategy>
-                    pollStrategyProvider,
-            ObjectProvider<org.springframework.core.task.TaskDecorator> taskDecoratorProvider,
+            ObjectProvider<PollStrategy> pollStrategyProvider,
+            ObjectProvider<TaskDecorator> taskDecoratorProvider,
             ObjectProvider<OutboxTracer> tracerProvider,
             List<OutboxListener> listeners) {
 
@@ -239,9 +251,8 @@ public class OutboxEngineAutoConfiguration {
         // Wire handler executor factory per outbox.handler-executor.type. A user-provided
         // @Bean TaskDecorator wins; otherwise fall back to Spring's ContextPropagatingTaskDecorator
         // (which already propagates MDC / Observation / security context).
-        org.springframework.core.task.TaskDecorator decorator =
-                taskDecoratorProvider.getIfAvailable(
-                        org.springframework.core.task.support.ContextPropagatingTaskDecorator::new);
+        TaskDecorator decorator =
+                taskDecoratorProvider.getIfAvailable(ContextPropagatingTaskDecorator::new);
         builder.handlerExecutorFactory(
                 switch (properties.getHandlerExecutor().getType()) {
                     case virtual -> HandlerExecutorFactory.virtual(decorator);
@@ -290,9 +301,8 @@ public class OutboxEngineAutoConfiguration {
                 .build();
     }
 
-    private static io.github.bams22.outboxer.core.config.RetentionConfig mapRetention(
-            OutboxProperties.Retention r) {
-        return io.github.bams22.outboxer.core.config.RetentionConfig.builder()
+    private static RetentionConfig mapRetention(OutboxProperties.Retention r) {
+        return RetentionConfig.builder()
                 .archiveOlderThan(r.getArchiveOlderThan())
                 .disabledOlderThan(r.getDisabledOlderThan())
                 .batchSize(r.getBatchSize())
@@ -304,13 +314,9 @@ public class OutboxEngineAutoConfiguration {
         return DispatcherConfig.builder()
                 .unknownHandlerPolicy(
                         switch (d.getUnknownHandlerPolicy()) {
-                            case SKIP ->
-                                    io.github.bams22.outboxer.core.config.UnknownHandlerPolicy.SKIP;
-                            case DISABLE ->
-                                    io.github.bams22.outboxer.core.config.UnknownHandlerPolicy
-                                            .DISABLE;
-                            case FAIL ->
-                                    io.github.bams22.outboxer.core.config.UnknownHandlerPolicy.FAIL;
+                            case SKIP -> UnknownHandlerPolicy.SKIP;
+                            case DISABLE -> UnknownHandlerPolicy.DISABLE;
+                            case FAIL -> UnknownHandlerPolicy.FAIL;
                         })
                 .unknownHandlerRetryDelay(d.getUnknownHandlerRetryDelay())
                 .lockBusyRetryDelay(d.getLockBusyRetryDelay())
@@ -380,7 +386,7 @@ public class OutboxEngineAutoConfiguration {
 
     private static @Nullable Integer hikariMaxPoolSize(@Nullable DataSource dataSource) {
         if (dataSource == null
-                || !org.springframework.util.ClassUtils.isPresent(
+                || !ClassUtils.isPresent(
                         "com.zaxxer.hikari.HikariDataSource",
                         OutboxEngineAutoConfiguration.class.getClassLoader())) {
             return null;
@@ -394,9 +400,7 @@ public class OutboxEngineAutoConfiguration {
         private HikariSupport() {}
 
         static @Nullable Integer maxPoolSize(DataSource ds) {
-            return ds instanceof com.zaxxer.hikari.HikariDataSource hikari
-                    ? hikari.getMaximumPoolSize()
-                    : null;
+            return ds instanceof HikariDataSource hikari ? hikari.getMaximumPoolSize() : null;
         }
     }
 
@@ -447,8 +451,7 @@ public class OutboxEngineAutoConfiguration {
         }
 
         @Override
-        public void onEventPublished(
-                io.github.bams22.outboxer.api.observer.EventPublishedInfo info) {
+        public void onEventPublished(EventPublishedInfo info) {
             for (OutboxListener l : delegates) {
                 try {
                     l.onEventPublished(info);

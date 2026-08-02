@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -74,13 +75,13 @@ final class ContextPropagatingExecutorService implements ExecutorService {
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
-            throws InterruptedException, java.util.concurrent.ExecutionException {
+            throws InterruptedException, ExecutionException {
         return delegate.invokeAny(tasks.stream().map(this::decorateCallable).toList());
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-            throws InterruptedException, java.util.concurrent.ExecutionException, TimeoutException {
+            throws InterruptedException, ExecutionException, TimeoutException {
         return delegate.invokeAny(
                 tasks.stream().map(this::decorateCallable).toList(), timeout, unit);
     }

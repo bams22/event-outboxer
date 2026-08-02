@@ -27,6 +27,7 @@ import io.github.bams22.outboxer.core.listener.OutboxListenerRegistry;
 import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
+import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
@@ -445,7 +446,7 @@ public final class OutboxTestContext {
                             listeners,
                             // ManualEngine has no pollers to wake — ticks are driven explicitly by
                             // the test.
-                            io.github.bams22.outboxer.core.polling.PollerWaker.NOOP,
+                            PollerWaker.NOOP,
                             tracer);
 
             WorkerInfo workerInfo =

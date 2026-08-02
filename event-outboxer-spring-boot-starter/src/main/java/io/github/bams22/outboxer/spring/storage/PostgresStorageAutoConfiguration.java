@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.spring.storage;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.spring.OutboxDataSource;
@@ -34,6 +35,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.flyway.FlywayConfigurationCustomizer;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
@@ -57,8 +59,7 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
  * wins; otherwise the unique/{@code @Primary} bean is used; otherwise startup fails fast naming the
  * candidates (see {@link OutboxDataSourceResolver}).
  */
-@AutoConfiguration(
-        after = org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class)
+@AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @ConditionalOnClass({PostgresEventStore.class, TransactionAwareDataSourceProxy.class})
 @ConditionalOnBean(DataSource.class)
 @ConditionalOnProperty(prefix = "event-outboxer.storage", name = "type", havingValue = "postgres")
@@ -104,7 +105,7 @@ public class PostgresStorageAutoConfiguration {
             ConnectionSupplier connections,
             PostgresStorageProperties properties,
             Clock clock,
-            io.github.bams22.outboxer.spi.MetricsSnapshotCache metricsCache) {
+            MetricsSnapshotCache metricsCache) {
         return new PostgresEventStore(connections, properties, clock, metricsCache);
     }
 

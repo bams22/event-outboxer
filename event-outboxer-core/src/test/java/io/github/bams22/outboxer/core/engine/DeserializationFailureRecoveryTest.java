@@ -25,11 +25,14 @@ import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.SerializedPayload;
+import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.domain.exception.PayloadDeserializationException;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
@@ -214,13 +217,12 @@ class DeserializationFailureRecoveryTest {
                     @Override
                     public boolean markForRetry(
                             UUID id,
-                            io.github.bams22.outboxer.domain.WorkerId workerId,
+                            WorkerId workerId,
                             long claimedVersion,
                             String reason,
-                            java.time.Instant runAt) {
+                            Instant runAt) {
                         if (retryFailures.getAndDecrement() > 0) {
-                            throw new io.github.bams22.outboxer.domain.exception
-                                    .EventStoreException(
+                            throw new EventStoreException(
                                     "simulated transient markForRetry failure");
                         }
                         return super.markForRetry(id, workerId, claimedVersion, reason, runAt);

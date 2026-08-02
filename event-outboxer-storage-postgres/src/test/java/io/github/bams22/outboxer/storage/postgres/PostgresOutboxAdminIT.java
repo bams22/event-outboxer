@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
@@ -125,9 +126,7 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
         }
         var p = pending("ARCH_T", payload);
         archiveStore.save(p);
-        return archiveStore
-                .claim(new io.github.bams22.outboxer.spi.ClaimRequest("ARCH_T", WORKER, 10))
-                .stream()
+        return archiveStore.claim(new ClaimRequest("ARCH_T", WORKER, 10)).stream()
                 .filter(ce -> ce.id().equals(p.id()))
                 .findFirst()
                 .orElseThrow();

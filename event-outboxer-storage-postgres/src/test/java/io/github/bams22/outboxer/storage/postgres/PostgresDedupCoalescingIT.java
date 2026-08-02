@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.storage.postgres;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.bams22.outboxer.domain.PendingEvent;
+import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.Clock;
@@ -130,9 +131,7 @@ class PostgresDedupCoalescingIT {
         return PendingEvent.builder()
                 .id(UUID.randomUUID())
                 .eventType(TYPE)
-                .payload(
-                        io.github.bams22.outboxer.domain.SerializedPayload.ofText(
-                                "\"" + payload + "\""))
+                .payload(SerializedPayload.ofText("\"" + payload + "\""))
                 .payloadFormat("test-json")
                 .payloadClass("java.lang.String")
                 .priority((short) 0)

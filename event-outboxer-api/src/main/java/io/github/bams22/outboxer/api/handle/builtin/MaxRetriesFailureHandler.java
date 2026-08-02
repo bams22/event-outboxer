@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.handle.builtin;
 
+import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.FailureContext;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
@@ -60,7 +61,7 @@ public final class MaxRetriesFailureHandler<T> implements FailureHandler<T> {
     @Override
     public FailureDecision onFailure(FailureContext<T> ctx) {
         // An explicit Fail from the handler bypasses retry counting and finalizes immediately.
-        if (ctx.outcome() instanceof io.github.bams22.outboxer.api.handle.EventOutcome.Fail) {
+        if (ctx.outcome() instanceof EventOutcome.Fail) {
             return finalize("explicit Fail", ctx);
         }
         if (ctx.attempt() >= maxAttempts) {

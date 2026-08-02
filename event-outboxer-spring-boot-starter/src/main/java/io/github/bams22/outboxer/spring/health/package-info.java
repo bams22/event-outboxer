@@ -9,5 +9,7 @@
  */
 
 /** Actuator integration: the outbox HealthIndicator and probe-group environment post-processing. */
-@org.jspecify.annotations.NullMarked
+@NullMarked
 package io.github.bams22.outboxer.spring.health;
+
+import org.jspecify.annotations.NullMarked;
