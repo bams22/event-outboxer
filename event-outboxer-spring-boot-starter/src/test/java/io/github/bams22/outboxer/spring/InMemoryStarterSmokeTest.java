@@ -103,24 +103,15 @@ class InMemoryStarterSmokeTest {
         // Gauges are registered eagerly at context refresh; values are pulled on scrape. The
         // per-type
         // rows exist before any event is published — initial values are 0.
-        assertThat(
-                        meterRegistry
-                                .get("event_outboxer.events.pending")
-                                .tag("event_type", "ORDER")
-                                .gauge())
-                .isNotNull();
-        assertThat(
-                        meterRegistry
-                                .get("event_outboxer.events.processing")
-                                .tag("event_type", "ORDER")
-                                .gauge())
-                .isNotNull();
-        assertThat(
-                        meterRegistry
-                                .get("event_outboxer.events.disabled")
-                                .tag("event_type", "ORDER")
-                                .gauge())
-                .isNotNull();
+        for (String status : new String[] {"pending", "processing", "disabled"}) {
+            assertThat(
+                            meterRegistry
+                                    .get("event_outboxer.events.backlog")
+                                    .tag("event_type", "ORDER")
+                                    .tag("status", status)
+                                    .gauge())
+                    .isNotNull();
+        }
         assertThat(
                         meterRegistry
                                 .get("event_outboxer.events.oldest_pending_age_seconds")
@@ -135,8 +126,9 @@ class InMemoryStarterSmokeTest {
         // Values are finite doubles — i.e. the gauge supplier runs cleanly with an empty store.
         assertThat(
                         meterRegistry
-                                .get("event_outboxer.events.pending")
+                                .get("event_outboxer.events.backlog")
                                 .tag("event_type", "ORDER")
+                                .tag("status", "pending")
                                 .gauge()
                                 .value())
                 .isNotNaN();

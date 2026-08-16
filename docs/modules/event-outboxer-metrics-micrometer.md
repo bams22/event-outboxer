@@ -41,8 +41,8 @@ catalogue in [OBSERVABILITY.md §Micrometer metrics reference](../OBSERVABILITY.
 the engine are present, the starter's `MicrometerAutoConfiguration`
 additionally registers `event_outboxer.engine.state{state=…}` (0/1
 per lifecycle state — the alerting signal for a crashed engine) and
-the backlog gauges `event_outboxer.events.pending` / `.processing` /
-`.disabled` / `.oldest_pending_age_seconds` per handler type plus a
+the backlog gauge `event_outboxer.events.backlog{status=pending|processing|disabled}`
+and `.oldest_pending_age_seconds` per handler type plus a
 global `.oldest_claimed_age_seconds`, all read through the
 `MetricsSnapshotCache` (see
 [event-outboxer-cache-redis](event-outboxer-cache-redis.md) for

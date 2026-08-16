@@ -90,9 +90,11 @@ public class MicrometerAutoConfiguration {
      * <p>Per-event-type (one row per registered {@link EventHandler}):
      *
      * <ul>
-     *   <li>{@code event_outboxer.events.pending{event_type="…"}}
-     *   <li>{@code event_outboxer.events.processing{event_type="…"}}
-     *   <li>{@code event_outboxer.events.disabled{event_type="…"}}
+     *   <li>{@code event_outboxer.events.backlog{event_type="…",
+     *       status="pending|processing|disabled"}} — current row count per lifecycle status. A
+     *       single gauge name with a {@code status} tag (rather than one gauge per status) so it
+     *       cannot collide with the {@code events.disabled} <em>counter</em> emitted by {@link
+     *       MicrometerOutboxListener}.
      *   <li>{@code event_outboxer.events.oldest_pending_age_seconds{event_type="…"}} — how long the
      *       oldest PENDING row of this type has been waiting; {@code 0} when no rows pending.
      * </ul>
@@ -106,7 +108,7 @@ public class MicrometerAutoConfiguration {
      * </ul>
      *
      * <p>To aggregate totals in PromQL: {@code sum
-     * without(event_type)(event_outboxer_events_pending)}.
+     * without(event_type)(event_outboxer_events_backlog{status="pending"})}.
      */
     @Bean
     @ConditionalOnBean({EventStore.class, OutboxEngine.class})
@@ -123,28 +125,31 @@ public class MicrometerAutoConfiguration {
         for (EventHandler<?> handler : handlers) {
             String eventType = handler.eventType();
 
-            registerPerType(
+            registerBacklog(
                     registry,
-                    prefix + "pending",
+                    prefix + "backlog",
                     eventType,
+                    "pending",
                     store,
                     s ->
                             perType(s, eventType)
                                     .map(OutboxMetricsSnapshot.EventTypeStats::pending)
                                     .orElse(0L));
-            registerPerType(
+            registerBacklog(
                     registry,
-                    prefix + "processing",
+                    prefix + "backlog",
                     eventType,
+                    "processing",
                     store,
                     s ->
                             perType(s, eventType)
                                     .map(OutboxMetricsSnapshot.EventTypeStats::processing)
                                     .orElse(0L));
-            registerPerType(
+            registerBacklog(
                     registry,
-                    prefix + "disabled",
+                    prefix + "backlog",
                     eventType,
+                    "disabled",
                     store,
                     s ->
                             perType(s, eventType)
@@ -183,14 +188,17 @@ public class MicrometerAutoConfiguration {
         return new OutboxBacklogGauges();
     }
 
-    private static void registerPerType(
+    private static void registerBacklog(
             MeterRegistry registry,
             String name,
             String eventType,
+            String status,
             EventStore store,
             ToDoubleFunction<OutboxMetricsSnapshot> extractor) {
         Gauge.builder(name, store, s -> extractor.applyAsDouble(s.metricsSnapshot()))
                 .tag("event_type", eventType)
+                .tag("status", status)
+                .description("Current number of outbox rows in the given lifecycle status")
                 .strongReference(true)
                 .register(registry);
     }

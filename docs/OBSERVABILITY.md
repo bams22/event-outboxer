@@ -202,14 +202,11 @@ worker JVM.
 | `event_outboxer.heartbeat.failed` | counter | — | `WorkerRegistry.heartbeat(...)` threw or returned `false` | DB connectivity hiccup — sustained non-zero triggers orphan recovery from peers |
 | `event_outboxer.orphans.reclaimed` | counter | — | `OrphanRecoveryTask` reclaimed at least one event; value is the number of events moved back to `PENDING` | positive means a peer crashed and this instance took over |
 | `event_outboxer.orphans.dead_workers` | counter | — | same trigger as above; counts the number of distinct dead workers | |
-| `event_outboxer.lease_renewal_mismatch` | counter | — | lease renewal affected fewer rows than expected (reserved; not used in MVP) | always zero in `0.1.0` |
 | `event_outboxer.storage.errors` | counter | `operation` | any storage call raised a `StorageException` | `operation` tag values: `claim[TYPE]`, `save`, `findDead`, etc. |
 | `event_outboxer.dispatch.rejected` | counter | `event_type` | per-type handler executor rejected the dispatch | pool + queue saturated — the event is rescheduled shortly |
 | `event_outboxer.engine.state` | gauge | `state` | always present — one time series per engine state (`stopped`, `running`, `stopping`); value is 1 for the current state, 0 for the others | primary signal for metric-based alerting on engine liveness. See [§Kubernetes probes](#kubernetes-probes) for the alternative probe-based approach. |
 | `event_outboxer.engine.crashed` | counter | — | once per detected crash (poller thread death), incremented by `markCrashed(...)` | any non-zero value is an incident — pair with `engine.state{state="running"}==0` to distinguish crash from planned stop. |
-| `event_outboxer.events.pending` | gauge | `event_type` | pulled from `EventStore.metricsSnapshot()` at scrape time; one row per registered handler's event type | backlog graph. Aggregate in PromQL: `sum without(event_type)(event_outboxer_events_pending)`. |
-| `event_outboxer.events.processing` | gauge | `event_type` | as above — count of currently-claimed rows | useful alongside `pending` to see how fast handlers drain the queue |
-| `event_outboxer.events.disabled` | gauge | `event_type` | as above — count of terminal-failure rows | rising without bound means retries are exhausting permanently; investigate handler errors |
+| `event_outboxer.events.backlog` | gauge | `event_type`, `status` | pulled from `EventStore.metricsSnapshot()` at scrape time; one row per registered handler's event type and lifecycle status (`pending`, `processing`, `disabled`) | backlog graph. `status="pending"` — waiting rows; `status="processing"` — currently-claimed rows (shows how fast handlers drain the queue); `status="disabled"` — terminal-failure rows (rising without bound means retries are exhausting permanently). Aggregate in PromQL: `sum without(event_type)(event_outboxer_events_backlog{status="pending"})`. |
 | `event_outboxer.events.oldest_pending_age_seconds` | gauge | `event_type` | seconds since the oldest PENDING row of this type became eligible; `0` when empty | the alertable "am I falling behind?" signal — trigger when age exceeds SLO (e.g. >120 s) |
 | `event_outboxer.events.oldest_claimed_age_seconds` | gauge | — | seconds since the oldest PROCESSING row was claimed; `0` when nothing in-flight | pair with `handlerMaxRuntime` — early warning before the watchdog force-reclaims |
 
@@ -223,8 +220,13 @@ worker JVM.
   no reference to the engine. They are registered eagerly at context
   refresh so they appear even before `SmartLifecycle.start()` runs —
   with `state="stopped"=1` until the engine is actually started.
-- The `event_outboxer.events.*` backlog gauges are also published from
+- The `event_outboxer.events.backlog` and `oldest_*_age_seconds` gauges
+  are also published from
   the starter (`MicrometerAutoConfiguration.outboxBacklogGauges`).
+  The backlog gauge is a single meter name with a `status` tag on
+  purpose: a per-status gauge named `events.disabled` would collide
+  with the `events.disabled` *counter* from the listener (same meter id,
+  different type — Micrometer rejects the second registration).
   Every scrape reads `EventStore.metricsSnapshot()` once per gauge,
   which goes through the `MetricsSnapshotCache` SPI — so the database
   is only hit once per cache TTL (default 30 s) regardless of how many
@@ -362,8 +364,8 @@ another — tune each hot type separately.
 
 ### 2. Events accumulating in `DISABLED`
 
-**Symptom**: `event_outboxer.events.disabled` rising steadily; `totalDisabled`
-never drops.
+**Symptom**: the `event_outboxer.events.disabled` counter rising steadily and
+`event_outboxer.events.backlog{status="disabled"}` never dropping.
 
 **Diagnose**:
 - Find the rows: `SELECT id, event_type, attempts, last_fail_reason
