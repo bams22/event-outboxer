@@ -53,6 +53,21 @@ public final class InFlightRegistry {
     }
 
     /**
+     * Number of in-flight events of the given type at the time of the call. O(in-flight), which is
+     * bounded by the per-type pool budgets — cheap enough for a gauge read on scrape.
+     */
+    public int countByType(String eventType) {
+        Objects.requireNonNull(eventType, "eventType must not be null");
+        int count = 0;
+        for (Entry entry : entries.values()) {
+            if (entry.eventType().equals(eventType)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * One in-flight record.
      *
      * @param eventId id of the event being processed

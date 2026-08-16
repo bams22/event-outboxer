@@ -140,6 +140,32 @@ class InMemoryStarterSmokeTest {
                 .isNotNaN();
     }
 
+    @Test
+    void saturationGaugesAreRegisteredPerEventType() {
+        assertThat(
+                        meterRegistry
+                                .get("event_outboxer.events.in_flight")
+                                .tag("event_type", "ORDER")
+                                .gauge()
+                                .value())
+                .isNotNaN();
+        // handler-pool-size=2 (test properties) + default handler-queue-capacity=100.
+        assertThat(
+                        meterRegistry
+                                .get("event_outboxer.handler.executor.capacity")
+                                .tag("event_type", "ORDER")
+                                .gauge()
+                                .value())
+                .isEqualTo(102.0);
+        assertThat(
+                        meterRegistry
+                                .get("event_outboxer.handler.executor.free_capacity")
+                                .tag("event_type", "ORDER")
+                                .gauge()
+                                .value())
+                .isBetween(0.0, 102.0);
+    }
+
     record OrderCreated(String orderId, int count) {}
 
     static class RecordingHandler implements EventHandler<OrderCreated> {

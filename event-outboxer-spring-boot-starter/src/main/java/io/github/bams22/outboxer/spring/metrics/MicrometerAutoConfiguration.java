@@ -188,6 +188,69 @@ public class MicrometerAutoConfiguration {
         return new OutboxBacklogGauges();
     }
 
+    /**
+     * Publishes point-in-time saturation gauges read directly off the engine (no storage round
+     * trip, no cache):
+     *
+     * <p>Per-event-type (one row per registered {@link EventHandler}):
+     *
+     * <ul>
+     *   <li>{@code event_outboxer.events.in_flight{event_type="…"}} — events this JVM is processing
+     *       right now (registered in the in-flight registry).
+     *   <li>{@code event_outboxer.handler.executor.free_capacity{event_type="…"}} — remaining
+     *       submission budget of the type's handler executor; {@code 0} while saturated or stopped.
+     *   <li>{@code event_outboxer.handler.executor.capacity{event_type="…"}} — the constant budget
+     *       {@code handlerPoolSize + handlerQueueCapacity}. {@code capacity - free_capacity} =
+     *       queued + running, uniform across platform and virtual executor flavours.
+     * </ul>
+     */
+    @Bean
+    @ConditionalOnBean(OutboxEngine.class)
+    @ConditionalOnMissingBean(name = "outboxSaturationGauges")
+    public OutboxSaturationGauges outboxSaturationGauges(
+            MeterRegistry registry,
+            OutboxEngine engine,
+            List<EventHandler<?>> handlers,
+            OutboxProperties properties) {
+
+        String prefix = properties.getMetrics().getPrefix();
+
+        for (EventHandler<?> handler : handlers) {
+            String eventType = handler.eventType();
+
+            Gauge.builder(prefix + ".events.in_flight", engine, e -> e.inFlightCount(eventType))
+                    .tag("event_type", eventType)
+                    .description("Events of this type currently being processed by this JVM")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(
+                            prefix + ".handler.executor.free_capacity",
+                            engine,
+                            e -> e.handlerExecutorFreeCapacity(eventType))
+                    .tag("event_type", eventType)
+                    .description(
+                            "Remaining submission budget of the handler executor; 0 when saturated"
+                                    + " or stopped")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(
+                            prefix + ".handler.executor.capacity",
+                            engine,
+                            e -> e.handlerExecutorCapacity(eventType))
+                    .tag("event_type", eventType)
+                    .description(
+                            "Total handler executor budget (handlerPoolSize +"
+                                    + " handlerQueueCapacity)")
+                    .strongReference(true)
+                    .register(registry);
+        }
+
+        return new OutboxSaturationGauges();
+    }
+
+    /** Marker bean for the saturation gauges registration. */
+    public static final class OutboxSaturationGauges {}
+
     private static void registerBacklog(
             MeterRegistry registry,
             String name,

@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.api.observer.WorkerDeregisteredInfo;
 import io.github.bams22.outboxer.api.observer.WorkerGracefulStopInfo;
 import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
 import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.polling.Poller;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -49,6 +50,7 @@ public final class OutboxEngine {
     private final MaintenanceScheduler maintenance;
     private final List<Poller> pollers;
     private final HandlerExecutorManager handlerExecutors;
+    private final InFlightRegistry inFlight;
     private final OutboxEventPublisher publisher;
     private final OutboxListener listener;
     private final Duration shutdownTimeout;
@@ -72,6 +74,7 @@ public final class OutboxEngine {
             MaintenanceScheduler maintenance,
             List<Poller> pollers,
             HandlerExecutorManager handlerExecutors,
+            InFlightRegistry inFlight,
             OutboxListener listener,
             Duration shutdownTimeout) {
         this.registry = Objects.requireNonNull(registry);
@@ -82,6 +85,7 @@ public final class OutboxEngine {
         this.maintenance = Objects.requireNonNull(maintenance);
         this.pollers = List.copyOf(pollers);
         this.handlerExecutors = Objects.requireNonNull(handlerExecutors);
+        this.inFlight = Objects.requireNonNull(inFlight);
         this.listener = Objects.requireNonNull(listener);
         this.shutdownTimeout = Objects.requireNonNull(shutdownTimeout);
     }
@@ -94,6 +98,36 @@ public final class OutboxEngine {
     /** WorkerId under which this engine runs. */
     public WorkerId workerId() {
         return workerInfo.id();
+    }
+
+    /**
+     * Number of events currently being processed by this JVM across all types. Read-only seam for
+     * saturation gauges — the in-flight registry itself stays internal to core.
+     */
+    public int inFlightCount() {
+        return inFlight.size();
+    }
+
+    /** Number of events of the given type currently being processed by this JVM. */
+    public int inFlightCount(String eventType) {
+        return inFlight.countByType(eventType);
+    }
+
+    /**
+     * Free submission capacity of the given type's handler executor; {@code 0} while the engine is
+     * stopped. Throws {@code IllegalArgumentException} for an unknown type.
+     */
+    public int handlerExecutorFreeCapacity(String eventType) {
+        return handlerExecutors.freeCapacity(eventType);
+    }
+
+    /**
+     * Total capacity budget of the given type's handler executor ({@code handlerPoolSize +
+     * handlerQueueCapacity}); constant regardless of engine state. Throws {@code
+     * IllegalArgumentException} for an unknown type.
+     */
+    public int handlerExecutorCapacity(String eventType) {
+        return handlerExecutors.capacity(eventType);
     }
 
     /** Start worker registration, maintenance and pollers in the right order. */

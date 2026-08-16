@@ -486,6 +486,7 @@ public final class OutboxEngineBuilder {
                         maintenance,
                         pollers,
                         executors,
+                        inFlight,
                         listener,
                         maintenanceConfig.shutdownTimeout());
         engineRef.set(engine);

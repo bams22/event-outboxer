@@ -216,6 +216,9 @@ worker JVM.
 | `event_outboxer.events.backlog` | gauge | `event_type`, `status` | pulled from `EventStore.metricsSnapshot()` at scrape time; one row per registered handler's event type and lifecycle status (`pending`, `processing`, `disabled`) | backlog graph. `status="pending"` — waiting rows; `status="processing"` — currently-claimed rows (shows how fast handlers drain the queue); `status="disabled"` — terminal-failure rows (rising without bound means retries are exhausting permanently). Aggregate in PromQL: `sum without(event_type)(event_outboxer_events_backlog{status="pending"})`. |
 | `event_outboxer.events.oldest_pending_age_seconds` | gauge | `event_type` | seconds since the oldest PENDING row of this type became eligible; `0` when empty | the alertable "am I falling behind?" signal — trigger when age exceeds SLO (e.g. >120 s) |
 | `event_outboxer.events.oldest_claimed_age_seconds` | gauge | — | seconds since the oldest PROCESSING row was claimed; `0` when nothing in-flight | pair with `handlerMaxRuntime` — early warning before the watchdog force-reclaims |
+| `event_outboxer.events.in_flight` | gauge | `event_type` | read off the engine's in-flight registry at scrape time (no storage round trip) | events this JVM is processing right now; sums across replicas to fleet-wide concurrency |
+| `event_outboxer.handler.executor.free_capacity` | gauge | `event_type` | remaining submission budget of the type's handler executor; `0` while saturated or engine stopped | sustained `0` with a running engine = the type is saturated — correlate with `poller.saturated` and `dispatch.rejected` |
+| `event_outboxer.handler.executor.capacity` | gauge | `event_type` | constant budget `handlerPoolSize + handlerQueueCapacity` (uniform for platform and virtual executors) | `capacity - free_capacity` = queued + running; useful as the denominator in a utilisation panel |
 
 ### Quick checks on this table
 

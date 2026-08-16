@@ -90,6 +90,24 @@ class HandlerExecutorManagerTest {
     }
 
     @Test
+    @DisplayName("per-type accessors report capacity and free capacity; unknown types throw")
+    void perTypeAccessors() {
+        HandlerExecutorManager m = manager(2, 3);
+
+        assertThat(m.capacity(TYPE)).isEqualTo(5); // constant even while stopped
+        assertThat(m.freeCapacity(TYPE)).isZero(); // not started yet
+
+        m.start();
+        assertThat(m.freeCapacity(TYPE)).isEqualTo(5);
+        assertThat(m.capacity(TYPE)).isEqualTo(5);
+
+        assertThatThrownBy(() -> m.capacity("UNKNOWN"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> m.freeCapacity("UNKNOWN"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("submissions consume capacity; completions restore it")
     void accountingFollowsExecution() throws Exception {
         HandlerExecutorManager m = manager(1, 1);

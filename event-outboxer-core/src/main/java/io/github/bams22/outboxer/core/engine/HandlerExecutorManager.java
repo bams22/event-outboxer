@@ -86,6 +86,27 @@ public final class HandlerExecutorManager {
     }
 
     /**
+     * Free submission capacity of the given type's executor, or {@code 0} while the engine is
+     * stopped. Read-only companion to {@link #executorFor(String)} for gauges.
+     */
+    public int freeCapacity(String eventType) {
+        return executorFor(eventType).freeCapacity();
+    }
+
+    /**
+     * Total capacity budget of the given type's executor: {@code handlerPoolSize +
+     * handlerQueueCapacity}. Constant for the manager's lifetime, independent of engine state.
+     */
+    public int capacity(String eventType) {
+        Slot slot = slots.get(eventType);
+        if (slot == null) {
+            throw new IllegalArgumentException(
+                    "no handler executor configured for type " + eventType);
+        }
+        return slot.capacityLimit;
+    }
+
+    /**
      * Create and install a fresh {@code ExecutorService} (and a fresh in-flight generation) per
      * event type.
      */
