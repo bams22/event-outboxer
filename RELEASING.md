@@ -94,25 +94,42 @@ Assume we're cutting `0.2.0`. Substitute your target version throughout.
 
 ### 2. (Optional but recommended) Local dry-run
 
-Stages every artifact to `./stage/` so you can inspect the files that
-would be uploaded. Fails fast on GPG / sources / javadoc misconfig.
+Builds every artifact the release would upload — main jar,
+`-sources.jar`, `-javadoc.jar` and the flattened poms — without
+contacting Sonatype. Fails fast on GPG / sources / javadoc misconfig.
 Pass `-Drevision=` so the flattened poms carry the release version:
 
 ```bash
-./mvnw -B -ntp -Prelease clean deploy \
-  -Drevision=0.2.0 \
-  -DaltDeploymentRepository=local::file:./stage \
-  -DskipTests
+./mvnw -B -ntp -Prelease clean package -Drevision=0.2.0 -DskipTests
 ```
 
-Verify under `./stage/io/github/bams22/*/0.2.0/`:
+Verify under each module's `target/`:
 
-- [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar`, `*.pom`
+- [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar` — 18 of each. The
+      parent, the BOM and the `-lock-postgres` relocation stub are
+      pom-only and produce no jar; `event-outboxer-spi` additionally
+      produces a `-tests.jar`.
 - [ ] A matching `.asc` GPG signature next to each of the above.
-- [ ] The `.pom` files contain `<version>0.2.0</version>`, not
-      `${revision}` — confirms `flatten-maven-plugin` ran.
+- [ ] Every `.flattened-pom.xml` carries `<version>0.2.0</version>`,
+      not `${revision}` — confirms `flatten-maven-plugin` ran. (The
+      `<revision>` *property* still reads `…-SNAPSHOT` in the parent's
+      flattened pom; that is inert, consumers only read `<version>`.)
 
-Delete `./stage/` after inspection.
+Use `package`, not `deploy -DaltDeploymentRepository=…`: the
+`central-publishing-maven-plugin` is registered with
+`<extensions>true</extensions>`, so it takes over the deploy step
+entirely, ignores the alternate repository and aborts with
+`Unable to get publisher server properties for server id: central`
+unless `~/.m2/settings.xml` defines a `central` server. There is no
+local staging directory to inspect.
+
+Signing needs a pinentry the shell can reach. From a non-interactive
+shell `maven-gpg-plugin` fails with `gpg: signing failed: No pinentry`
+— run the command from a real terminal, or append `-Dgpg.skip=true` to
+check only the artifact shape. CI signing (the `GPG_PRIVATE_KEY` /
+`GPG_PASSPHRASE` secrets) is the authoritative check either way.
+
+Run `./mvnw clean` after inspection.
 
 ### 3. Tag and push
 
@@ -172,20 +189,25 @@ Expected duration: 5–10 minutes. On success, the workflow has:
    - <https://repo1.maven.org/maven2/io/github/bams22/event-outboxer-spring-boot-starter/0.2.0/>
    - <https://central.sonatype.com/artifact/io.github.bams22/event-outboxer-spring-boot-starter>
 
-### 6. (Optional) Roll the SNAPSHOT property forward
+### 6. Post-release housekeeping
 
-The `<revision>` property in `pom.xml` defaults `-SNAPSHOT` builds.
-Rolling it forward is cosmetic — nothing in the release pipeline
-depends on it — but keeps local snapshot coordinates aligned with the
-next planned version:
+Do this only **after** the deployment is published (step 5) — the
+japicmp baseline must already exist on Maven Central, otherwise the
+next `verify` fails to resolve it.
+
+In `pom.xml`:
 
 ```xml
+<!-- next planned version; cosmetic, nothing in the pipeline reads it -->
 <revision>0.3.0-SNAPSHOT</revision>
+
+<!-- compare the public API against the release just published -->
+<japicmp.baseline.version>0.2.0</japicmp.baseline.version>
 ```
 
-Commit with a fresh `## [Unreleased]` section added above `[0.2.0]`
-in `CHANGELOG.md` so subsequent feature commits have somewhere to
-land their notes.
+Commit both with a fresh `## [Unreleased]` section added above
+`[0.2.0]` in `CHANGELOG.md` so subsequent feature commits have
+somewhere to land their notes.
 
 ---
 
