@@ -168,6 +168,12 @@ longer unresponsive periods.
 
 ## Micrometer metrics reference
 
+A ready-to-import Grafana dashboard covering every metric below —
+health, throughput, latency, backlog, errors, saturation, locks and
+maintenance, with `environment` / `service` / `pod` / `eventType`
+template variables — lives in
+[docs/grafana/](grafana/README.md).
+
 The starter registers `MicrometerOutboxListener` when a
 `MeterRegistry` bean exists. Metric names carry the prefix
 `event_outboxer` by default — a specific name chosen so the library
