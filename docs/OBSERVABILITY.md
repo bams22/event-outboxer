@@ -188,7 +188,7 @@ worker JVM.
 In a Spring Boot app the timers publish SLO histogram buckets out of
 the box: the starter automatically applies the defaults shipped with
 the metrics module (`META-INF/event-outboxer/metrics-defaults.yml` —
-a 10ms–1m grid for `queue_time`/`processing_time`, 30s–1h for
+a 10ms–1h grid for `queue_time`, 10ms–10m for `processing_time` (covers the default 5m handler-max-runtime budget), 30s–1h for
 `stuck_time`; ~19 extra series per tag combination). The `_bucket`
 series aggregate across pods, so fleet-wide `histogram_quantile()`
 works with precision limited to the grid. Your own

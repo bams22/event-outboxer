@@ -60,9 +60,11 @@ All notable changes to this project are documented here. Format follows
 ### Added
 - **SLO histogram-bucket defaults for all timers, applied
   automatically.** `event-outboxer-metrics-micrometer` ships
-  `META-INF/event-outboxer/metrics-defaults.yml` (a 10ms–1m grid for
-  `events.queue_time`/`events.processing_time`, 30s–1h for
-  `handler.stuck_time`); the starter's new
+  `META-INF/event-outboxer/metrics-defaults.yml` (10ms–1h grid for
+  `events.queue_time` — retried events wait from the original publish;
+  10ms–10m for `events.processing_time`, covering the default 5m
+  `handler-max-runtime` budget; 30s–1h for `handler.stuck_time`); the
+  starter's new
   `OutboxMetricsDefaultsEnvironmentPostProcessor` appends it with the
   lowest precedence at startup, so fleet-wide `histogram_quantile()`
   works in Prometheus with zero configuration while any user-set

@@ -95,8 +95,8 @@ gauges can be replaced individually by defining beans named
 
 The module ships `META-INF/event-outboxer/metrics-defaults.yml` with
 default SLO histogram buckets for every event-outboxer timer:
-`events.queue_time` and `events.processing_time` get a 10ms–1m grid
-(18 boundaries, dense in the sub-second range), `handler.stuck_time`
+`events.queue_time` gets a 10ms–1h grid (23 boundaries — retried events wait from the original publish), `events.processing_time` a 10ms–10m grid covering the default 5m `handler-max-runtime` budget
+(dense in the sub-second range), `handler.stuck_time`
 a 30s–1h grid. In a Spring Boot app the starter applies the file
 automatically at startup (an `EnvironmentPostProcessor` appends it
 with the lowest precedence), so fleet-wide

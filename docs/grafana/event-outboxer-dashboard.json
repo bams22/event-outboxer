@@ -598,7 +598,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "How long events wait in the outbox before a worker picks them up — the end-to-end lag signal. Rising p99 means pollers or handler pools cannot keep up. Works out of the box: the Spring Boot starter ships default SLO histogram buckets (10ms–1m grid) for this timer; quantile precision is limited to that grid — enable management.metrics.distribution.percentiles-histogram for finer buckets.",
+      "description": "How long events wait in the outbox before a worker picks them up — the end-to-end lag signal. Rising p99 means pollers or handler pools cannot keep up. Works out of the box: the Spring Boot starter ships default SLO histogram buckets (10ms–1h grid; retried events wait from the original publish) for this timer; quantile precision is limited to that grid — enable management.metrics.distribution.percentiles-histogram for finer buckets.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -671,7 +671,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Full processing duration per type: dispatch + lock + handler + finalize. Use for handler SLOs and to right-size handlerMaxRuntime. Works out of the box via the starter's default SLO buckets (10ms–1m grid); precision is limited to the grid.",
+      "description": "Full processing duration per type: dispatch + lock + handler + finalize. Use for handler SLOs and to right-size handlerMaxRuntime. Works out of the box via the starter's default SLO buckets (10ms–10m grid, covering the default 5m handler-max-runtime budget); precision is limited to the grid.",
       "fieldConfig": {
         "defaults": {
           "color": {

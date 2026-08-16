@@ -58,15 +58,19 @@ class MetricsDistributionDefaultsTest {
         @Test
         void timersGetTheShippedSloBuckets() {
             CountAtBucket[] processing = timer(registry, TIMER).takeSnapshot().histogramCounts();
-            assertThat(processing).hasSize(18);
+            assertThat(processing).hasSize(21);
             assertThat(processing[0].bucket(TimeUnit.MILLISECONDS)).isEqualTo(10.0);
-            assertThat(processing[17].bucket(TimeUnit.SECONDS)).isEqualTo(60.0);
+            // The tail must cover the default handler-max-runtime budget (5m) and one
+            // bucket beyond it.
+            assertThat(processing[20].bucket(TimeUnit.MINUTES)).isEqualTo(10.0);
 
-            assertThat(
-                            timer(registry, "event_outboxer.events.queue_time")
-                                    .takeSnapshot()
-                                    .histogramCounts())
-                    .hasSize(18);
+            CountAtBucket[] queue =
+                    timer(registry, "event_outboxer.events.queue_time")
+                            .takeSnapshot()
+                            .histogramCounts();
+            assertThat(queue).hasSize(23);
+            // Retried events wait from the original publish — the tail reaches 1h.
+            assertThat(queue[22].bucket(TimeUnit.MINUTES)).isEqualTo(60.0);
             CountAtBucket[] stuck =
                     timer(registry, "event_outboxer.handler.stuck_time")
                             .takeSnapshot()
