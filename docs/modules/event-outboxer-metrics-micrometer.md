@@ -21,7 +21,7 @@ Datadog / OTLP with zero glue code.
 
 ## What it does
 
-**`MicrometerOutboxListener`** implements all 21 callbacks; each is an
+**`MicrometerOutboxListener`** implements all 25 callbacks; each is an
 O(1) meter update, safe on the dispatcher hot path. Highlights (full
 catalogue in [OBSERVABILITY.md §Micrometer metrics reference](../OBSERVABILITY.md#micrometer-metrics-reference)):
 
@@ -35,9 +35,15 @@ catalogue in [OBSERVABILITY.md §Micrometer metrics reference](../OBSERVABILITY.
 | `event_outboxer.handler.stuck_reclaimed` | counter | `event_type` |
 | `event_outboxer.handler.stuck_time` | timer | `event_type` |
 | `event_outboxer.events.unknown_type`, `.events.serialization_errors` | counter | `event_type` |
-| `event_outboxer.lock.acquisition_failed`, `.lock.release_failed` | counter | `event_type` |
+| `event_outboxer.poller.polls` | counter | `event_type`, `result` (`claimed`/`empty`) |
+| `event_outboxer.poller.batch_size` | distribution summary | `event_type` |
+| `event_outboxer.poller.saturated` | counter | `event_type` |
+| `event_outboxer.lock.acquisition_failed` | counter | `event_type`, `outcome` (`busy`/`error`) |
+| `event_outboxer.lock.release_failed` | counter | `event_type` |
 | `event_outboxer.dispatch.rejected` | counter | `event_type` |
 | `event_outboxer.storage.errors` | counter | `operation` |
+| `event_outboxer.retention.purged` | counter | `kind` (`archive`/`disabled`) |
+| `event_outboxer.claims.stale_swept` | counter | — |
 | `event_outboxer.workers.registered` / `.graceful_stops` / `.deregistered`, `.heartbeat.failed`, `.orphans.reclaimed`, `.orphans.dead_workers`, `.engine.crashed` | counter | — |
 
 **Gauges live in the starter, not here.** When both this module and

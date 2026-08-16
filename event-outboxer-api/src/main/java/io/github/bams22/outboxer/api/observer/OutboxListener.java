@@ -44,6 +44,25 @@ public interface OutboxListener {
         // no-op
     }
 
+    // ==================== Polling ====================
+
+    /**
+     * Called after every claim attempt of a per-type poller, including empty polls. This is the
+     * highest-frequency callback in the interface — up to once per {@code pollMinInterval} (default
+     * 500 ms) per event type — so implementations must be strictly O(1) and allocation-light.
+     */
+    default void onPollCompleted(PollCompletedInfo info) {
+        // no-op
+    }
+
+    /**
+     * Called when a per-type poller skipped a claim cycle because the handler executor had no free
+     * capacity. Sustained firing means the type's pool/queue budget is undersized for its load.
+     */
+    default void onPollerSaturated(PollerSaturatedInfo info) {
+        // no-op
+    }
+
     // ==================== Processing lifecycle ====================
 
     /** Called when a worker successfully claimed an event and is about to dispatch it. */
@@ -152,6 +171,25 @@ public interface OutboxListener {
      * handlerMaxRuntime}.
      */
     default void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
+        // no-op
+    }
+
+    // ==================== Maintenance ====================
+
+    /**
+     * Called when the stale-claim sweeper released events back to {@code PENDING} whose claims
+     * outlived the threshold without a live in-flight registration. Fires only when at least one
+     * claim was swept.
+     */
+    default void onStaleClaimsSwept(StaleClaimsSweptInfo info) {
+        // no-op
+    }
+
+    /**
+     * Called when the retention task permanently deleted rows past their retention window. Fires
+     * only when at least one row was purged.
+     */
+    default void onRetentionPurged(RetentionPurgedInfo info) {
         // no-op
     }
 

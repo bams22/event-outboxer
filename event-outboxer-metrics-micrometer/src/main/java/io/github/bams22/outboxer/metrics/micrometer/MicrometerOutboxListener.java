@@ -24,7 +24,11 @@ import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
+import io.github.bams22.outboxer.api.observer.PollerSaturatedInfo;
+import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
 import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
+import io.github.bams22.outboxer.api.observer.StaleClaimsSweptInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
@@ -88,6 +92,28 @@ public final class MicrometerOutboxListener implements OutboxListener {
     @Override
     public void onEventPublished(EventPublishedInfo info) {
         incType("events.published", info.eventType());
+    }
+
+    // ==================== Polling ====================
+
+    @Override
+    public void onPollCompleted(PollCompletedInfo info) {
+        registry.counter(
+                        metric("poller.polls"),
+                        "event_type",
+                        info.eventType(),
+                        "result",
+                        info.claimed() > 0 ? "claimed" : "empty")
+                .increment();
+        if (info.claimed() > 0) {
+            registry.summary(metric("poller.batch_size"), "event_type", info.eventType())
+                    .record(info.claimed());
+        }
+    }
+
+    @Override
+    public void onPollerSaturated(PollerSaturatedInfo info) {
+        incType("poller.saturated", info.eventType());
     }
 
     // ==================== Processing lifecycle ====================
@@ -175,7 +201,13 @@ public final class MicrometerOutboxListener implements OutboxListener {
 
     @Override
     public void onLockAcquisitionFailed(LockAcquisitionInfo info) {
-        incType("lock.acquisition_failed", info.eventType());
+        registry.counter(
+                        metric("lock.acquisition_failed"),
+                        "event_type",
+                        info.eventType(),
+                        "outcome",
+                        tagValue(info.outcome()))
+                .increment();
     }
 
     @Override
@@ -218,6 +250,25 @@ public final class MicrometerOutboxListener implements OutboxListener {
         incType("handler.stuck_reclaimed", info.eventType());
         registry.timer(metric("handler.stuck_time"), "event_type", info.eventType())
                 .record(info.elapsed().toNanos(), TimeUnit.NANOSECONDS);
+    }
+
+    // ==================== Maintenance ====================
+
+    @Override
+    public void onStaleClaimsSwept(StaleClaimsSweptInfo info) {
+        registry.counter(metric("claims.stale_swept")).increment(info.count());
+    }
+
+    @Override
+    public void onRetentionPurged(RetentionPurgedInfo info) {
+        if (info.archivedPurged() > 0) {
+            registry.counter(metric("retention.purged"), "kind", "archive")
+                    .increment(info.archivedPurged());
+        }
+        if (info.disabledPurged() > 0) {
+            registry.counter(metric("retention.purged"), "kind", "disabled")
+                    .increment(info.disabledPurged());
+        }
     }
 
     // ==================== Storage ====================

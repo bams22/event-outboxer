@@ -457,11 +457,12 @@ public final class OutboxEngineBuilder {
                         });
         RetentionTask retention =
                 admin != null && retentionConfig.enabled()
-                        ? new RetentionTask(admin, clock, retentionConfig)
+                        ? new RetentionTask(admin, listener, clock, retentionConfig)
                         : null;
         StaleClaimSweeperTask staleClaimSweeper =
                 new StaleClaimSweeperTask(
                         eventStore,
+                        listener,
                         resolveStaleClaimThreshold(maintenanceConfig, executorConfigs.values()),
                         maintenanceConfig.staleClaimSweepInterval(),
                         maintenanceConfig.reclaimBatchSize());

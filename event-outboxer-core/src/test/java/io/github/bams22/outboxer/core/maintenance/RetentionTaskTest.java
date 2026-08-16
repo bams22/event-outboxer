@@ -11,6 +11,8 @@ package io.github.bams22.outboxer.core.maintenance;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
 import io.github.bams22.outboxer.core.config.RetentionConfig;
 import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.Event;
@@ -52,9 +54,18 @@ class RetentionTaskTest {
                         return 0;
                     }
                 };
+        List<RetentionPurgedInfo> purgedInfos = new ArrayList<>();
+        OutboxListener listener =
+                new OutboxListener() {
+                    @Override
+                    public void onRetentionPurged(RetentionPurgedInfo info) {
+                        purgedInfos.add(info);
+                    }
+                };
         RetentionTask task =
                 new RetentionTask(
                         admin,
+                        listener,
                         Clock.system(),
                         RetentionConfig.builder()
                                 .archiveOlderThan(Duration.ofDays(30))
@@ -67,6 +78,7 @@ class RetentionTaskTest {
 
         assertThat(archiveRemaining).hasValue(0);
         assertThat(disabledCalls).hasValue(0);
+        assertThat(purgedInfos).containsExactly(new RetentionPurgedInfo(23, 0));
     }
 
     @Test
@@ -89,6 +101,7 @@ class RetentionTaskTest {
         RetentionTask task =
                 new RetentionTask(
                         admin,
+                        new OutboxListener() {},
                         Clock.system(),
                         RetentionConfig.builder()
                                 .archiveOlderThan(Duration.ofDays(30))

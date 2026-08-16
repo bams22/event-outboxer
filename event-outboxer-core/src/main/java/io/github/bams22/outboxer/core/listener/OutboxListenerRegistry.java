@@ -24,7 +24,11 @@ import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
+import io.github.bams22.outboxer.api.observer.PollerSaturatedInfo;
+import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
 import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
+import io.github.bams22.outboxer.api.observer.StaleClaimsSweptInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
@@ -91,6 +95,16 @@ public final class OutboxListenerRegistry implements OutboxListener {
     @Override
     public void onEventPublished(EventPublishedInfo info) {
         broadcast(l -> l.onEventPublished(info), info);
+    }
+
+    @Override
+    public void onPollCompleted(PollCompletedInfo info) {
+        broadcast(l -> l.onPollCompleted(info), info);
+    }
+
+    @Override
+    public void onPollerSaturated(PollerSaturatedInfo info) {
+        broadcast(l -> l.onPollerSaturated(info), info);
     }
 
     @Override
@@ -176,6 +190,16 @@ public final class OutboxListenerRegistry implements OutboxListener {
     @Override
     public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
         broadcast(l -> l.onStuckHandlerReclaimed(info), info);
+    }
+
+    @Override
+    public void onStaleClaimsSwept(StaleClaimsSweptInfo info) {
+        broadcast(l -> l.onStaleClaimsSwept(info), info);
+    }
+
+    @Override
+    public void onRetentionPurged(RetentionPurgedInfo info) {
+        broadcast(l -> l.onRetentionPurged(info), info);
     }
 
     @Override

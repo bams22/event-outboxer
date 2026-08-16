@@ -11,6 +11,8 @@ package io.github.bams22.outboxer.core.polling;
 
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
+import io.github.bams22.outboxer.api.observer.PollerSaturatedInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.dispatch.HandlerDispatcher;
@@ -158,6 +160,7 @@ public final class Poller {
                 try {
                     int free = handlerExecutor.freeCapacity();
                     if (free <= 0) {
+                        listener.onPollerSaturated(new PollerSaturatedInfo(eventType));
                         // Executor saturated: claiming now would only produce rejected dispatches
                         // and
                         // claim/release churn. Park with a bounded fallback — the gate's
@@ -226,6 +229,7 @@ public final class Poller {
             log.warn("unexpected claim error for type {}: {}", eventType, ex.toString(), ex);
             return 0;
         }
+        listener.onPollCompleted(new PollCompletedInfo(eventType, limit, batch.size()));
         if (batch.isEmpty()) {
             return 0;
         }

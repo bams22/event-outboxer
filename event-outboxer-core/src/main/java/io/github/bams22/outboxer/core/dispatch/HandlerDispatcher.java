@@ -381,7 +381,12 @@ public final class HandlerDispatcher {
             held = locker.tryLock(lockKey, ttl);
         } catch (RuntimeException ex) {
             listener.onLockAcquisitionFailed(
-                    new LockAcquisitionInfo(claimed.id(), claimed.eventType(), lockKey));
+                    new LockAcquisitionInfo(
+                            claimed.id(),
+                            claimed.eventType(),
+                            lockKey,
+                            LockAcquisitionInfo.Outcome.ERROR,
+                            ex));
             Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
             // release, not markForRetry: the handler never ran, so lock contention or a flaky lock
             // backend must not consume the retry budget (MaxRetriesFailureHandler counts attempts).
@@ -395,7 +400,12 @@ public final class HandlerDispatcher {
         }
         if (held.isEmpty()) {
             listener.onLockAcquisitionFailed(
-                    new LockAcquisitionInfo(claimed.id(), claimed.eventType(), lockKey));
+                    new LockAcquisitionInfo(
+                            claimed.id(),
+                            claimed.eventType(),
+                            lockKey,
+                            LockAcquisitionInfo.Outcome.BUSY,
+                            null));
             Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
             boolean ok =
                     store.release(

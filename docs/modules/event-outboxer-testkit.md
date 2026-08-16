@@ -26,7 +26,7 @@ is three lines instead of a polling loop.
 | `OutboxTestContext` (+ builder) | one-stop fixture: in-memory store/registry/locker, Jackson serializer, `SettableClock`, publisher, `ManualEngine`, `RecordingOutboxListener` pre-attached |
 | `ManualEngine` | synchronous driver: `tick()` claims + dispatches **on the calling thread**; `tick(type, batchSize)`, `tickHeartbeat()`, `tickOrphanRecovery()`, `tickWatchdog()` |
 | `SettableClock` | thread-safe mutable `Clock`: `advance(Duration)`, `set(Instant)`; statics `atSystemNow()`, `atEpoch()` |
-| `RecordingOutboxListener` | captures all 21 `OutboxListener` callbacks into lists: `processed()`, `retryScheduled()`, `disabled()`, `stuckReclaimed()`, … plus `clear()` |
+| `RecordingOutboxListener` | captures all 25 `OutboxListener` callbacks into lists: `processed()`, `retryScheduled()`, `disabled()`, `stuckReclaimed()`, … plus `clear()` |
 | `OutboxExtension` | JUnit 5 extension injecting a fresh default `OutboxTestContext` per test |
 | `EventAssertions` / `EventStoreAssert` | AssertJ entry point `assertThatStore(store)`: `hasEvent(id).withStatus(…).withAttempts(…)`, `hasNoEvent(id)`, `hasTotalPending(n)`, … |
 

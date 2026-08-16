@@ -153,7 +153,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | `EventHandler<T>` | Handler for a specific event type (user-facing contract) |
 | `EventOutcome` | Sealed interface of outcomes: Success / Retry / Fail / Skip |
 | `FailureHandler<T>` | Chain-of-responsibility for handling failures |
-| `OutboxListener` | Event bus for observability (21 methods) |
+| `OutboxListener` | Event bus for observability (25 methods) |
 | domain value objects | `Event`, `ClaimedEvent`, `PendingEvent`, `WorkerId`, `WorkerInfo` |
 | exceptions | `OutboxException` hierarchy |
 

@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.core.maintenance;
 
+import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.StaleClaimsSweptInfo;
 import io.github.bams22.outboxer.spi.EventStore;
 import java.time.Duration;
 import java.util.Objects;
@@ -32,13 +34,19 @@ public final class StaleClaimSweeperTask implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(StaleClaimSweeperTask.class);
 
     private final EventStore store;
+    private final OutboxListener listener;
     private final Duration threshold;
     private final Duration interval;
     private final int batchSize;
 
     public StaleClaimSweeperTask(
-            EventStore store, Duration threshold, Duration interval, int batchSize) {
+            EventStore store,
+            OutboxListener listener,
+            Duration threshold,
+            Duration interval,
+            int batchSize) {
         this.store = Objects.requireNonNull(store, "store must not be null");
+        this.listener = Objects.requireNonNull(listener, "listener must not be null");
         this.threshold = Objects.requireNonNull(threshold, "threshold must not be null");
         this.interval = Objects.requireNonNull(interval, "interval must not be null");
         if (batchSize <= 0) {
@@ -67,6 +75,7 @@ public final class StaleClaimSweeperTask implements Runnable {
                                 + "these rows were invisible to the watchdog and orphan recovery",
                         total,
                         threshold);
+                listener.onStaleClaimsSwept(new StaleClaimsSweptInfo(total, threshold));
             }
         } catch (RuntimeException ex) {
             log.warn(

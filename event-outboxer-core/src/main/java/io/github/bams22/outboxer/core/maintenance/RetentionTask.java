@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.core.maintenance;
 
+import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
 import io.github.bams22.outboxer.core.config.RetentionConfig;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
@@ -33,11 +35,14 @@ public final class RetentionTask implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(RetentionTask.class);
 
     private final OutboxAdmin admin;
+    private final OutboxListener listener;
     private final Clock clock;
     private final RetentionConfig config;
 
-    public RetentionTask(OutboxAdmin admin, Clock clock, RetentionConfig config) {
+    public RetentionTask(
+            OutboxAdmin admin, OutboxListener listener, Clock clock, RetentionConfig config) {
         this.admin = Objects.requireNonNull(admin, "admin must not be null");
+        this.listener = Objects.requireNonNull(listener, "listener must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
     }
@@ -49,19 +54,28 @@ public final class RetentionTask implements Runnable {
 
     @Override
     public void run() {
+        long archivedPurged = 0;
         Duration archiveAge = config.archiveOlderThan();
         if (archiveAge != null) {
             Instant threshold = clock.now().minus(archiveAge);
-            sweep("archive", () -> admin.purgeArchive(threshold, config.batchSize()));
+            archivedPurged =
+                    sweep("archive", () -> admin.purgeArchive(threshold, config.batchSize()));
         }
+        long disabledPurged = 0;
         Duration disabledAge = config.disabledOlderThan();
         if (disabledAge != null) {
             Instant threshold = clock.now().minus(disabledAge);
-            sweep("disabled", () -> admin.purgeDisabled(null, threshold, config.batchSize()));
+            disabledPurged =
+                    sweep(
+                            "disabled",
+                            () -> admin.purgeDisabled(null, threshold, config.batchSize()));
+        }
+        if (archivedPurged + disabledPurged > 0) {
+            listener.onRetentionPurged(new RetentionPurgedInfo(archivedPurged, disabledPurged));
         }
     }
 
-    private void sweep(String what, IntSupplier purgeBatch) {
+    private long sweep(String what, IntSupplier purgeBatch) {
         long total = 0;
         try {
             int purged;
@@ -79,5 +93,6 @@ public final class RetentionTask implements Runnable {
                     total,
                     ex.toString());
         }
+        return total;
     }
 }

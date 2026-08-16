@@ -19,7 +19,12 @@ import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
+import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
+import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
+import io.github.bams22.outboxer.api.observer.PollerSaturatedInfo;
+import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
+import io.github.bams22.outboxer.api.observer.StaleClaimsSweptInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
@@ -259,6 +264,101 @@ class MicrometerOutboxListenerTest {
                         registry.counter("event_outboxer.dispatch.rejected", "event_type", "ORDER")
                                 .count())
                 .isEqualTo(1.0);
+    }
+
+    @Test
+    void pollCompletedTagsResultAndRecordsBatchSize() {
+        listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 7));
+        listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 0));
+
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.poller.polls",
+                                        "event_type",
+                                        "ORDER",
+                                        "result",
+                                        "claimed")
+                                .count())
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.poller.polls",
+                                        "event_type",
+                                        "ORDER",
+                                        "result",
+                                        "empty")
+                                .count())
+                .isEqualTo(1.0);
+        // Batch size recorded only for the non-empty poll.
+        assertThat(
+                        registry.summary("event_outboxer.poller.batch_size", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1L);
+        assertThat(
+                        registry.summary("event_outboxer.poller.batch_size", "event_type", "ORDER")
+                                .totalAmount())
+                .isEqualTo(7.0);
+    }
+
+    @Test
+    void pollerSaturatedIncrementsCounter() {
+        listener.onPollerSaturated(new PollerSaturatedInfo("ORDER"));
+
+        assertThat(
+                        registry.counter("event_outboxer.poller.saturated", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void lockAcquisitionFailedTagsOutcome() {
+        listener.onLockAcquisitionFailed(
+                new LockAcquisitionInfo(
+                        UUID.randomUUID(), "ORDER", "k-1", LockAcquisitionInfo.Outcome.BUSY, null));
+        listener.onLockAcquisitionFailed(
+                new LockAcquisitionInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        "k-1",
+                        LockAcquisitionInfo.Outcome.ERROR,
+                        new RuntimeException("redis down")));
+
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.lock.acquisition_failed",
+                                        "event_type",
+                                        "ORDER",
+                                        "outcome",
+                                        "busy")
+                                .count())
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.lock.acquisition_failed",
+                                        "event_type",
+                                        "ORDER",
+                                        "outcome",
+                                        "error")
+                                .count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void staleClaimsSweptIncrementsByCount() {
+        listener.onStaleClaimsSwept(new StaleClaimsSweptInfo(12, Duration.ofMinutes(10)));
+
+        assertThat(registry.counter("event_outboxer.claims.stale_swept").count()).isEqualTo(12.0);
+    }
+
+    @Test
+    void retentionPurgedIncrementsPerKind() {
+        listener.onRetentionPurged(new RetentionPurgedInfo(23, 4));
+        listener.onRetentionPurged(new RetentionPurgedInfo(0, 6));
+
+        assertThat(registry.counter("event_outboxer.retention.purged", "kind", "archive").count())
+                .isEqualTo(23.0);
+        assertThat(registry.counter("event_outboxer.retention.purged", "kind", "disabled").count())
+                .isEqualTo(10.0);
     }
 
     @Test

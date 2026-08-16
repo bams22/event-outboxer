@@ -196,7 +196,7 @@ worker JVM.
 | `event_outboxer.handler.errors` | counter | `event_type`, `exception` | handler threw an uncaught exception; `exception` is the simple class name of the thrown type | spike → application bug or downstream outage; the `exception` tag separates timeouts from logic bugs |
 | `event_outboxer.handler.stuck_reclaimed` | counter | `event_type` | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | non-zero = your handler is slower than you expected |
 | `event_outboxer.handler.stuck_time` | timer | `event_type` | same trigger as `handler.stuck_reclaimed`; records how long the stuck handler had been running when reclaimed | how far past `handlerMaxRuntime` handlers actually run — use to right-size the budget |
-| `event_outboxer.lock.acquisition_failed` | counter | `event_type` | `EntityLocker.tryLock(...)` returned empty or threw | busy-lock path — safe up to a point; rising value means contention or locker backend trouble |
+| `event_outboxer.lock.acquisition_failed` | counter | `event_type`, `outcome` | `EntityLocker.tryLock(...)` returned empty (`outcome="busy"`) or threw (`outcome="error"`) | `busy` is normal contention, safe up to a point; `error` means the locker backend is failing — alert on it separately |
 | `event_outboxer.lock.release_failed` | counter | `event_type` | `LockHandle.close()` threw | Redis/PG returning errors on release — check the locker's backend |
 | `event_outboxer.workers.registered` | counter | — | once per `OutboxEngine.start()` | increases by 1 per app restart (and per replica) |
 | `event_outboxer.workers.graceful_stops` | counter | — | once per graceful shutdown, after `workers.graceful_stop = TRUE` | equal to `workers.registered` over long windows means no crashes |
@@ -206,6 +206,11 @@ worker JVM.
 | `event_outboxer.orphans.dead_workers` | counter | — | same trigger as above; counts the number of distinct dead workers | |
 | `event_outboxer.storage.errors` | counter | `operation` | any storage call raised a `StorageException` | `operation` tag values: `claim[TYPE]`, `save`, `findDead`, etc. |
 | `event_outboxer.dispatch.rejected` | counter | `event_type` | per-type handler executor rejected the dispatch | pool + queue saturated — the event is rescheduled shortly |
+| `event_outboxer.poller.polls` | counter | `event_type`, `result` | after every claim attempt of the per-type poller; `result` is `claimed` or `empty` | poll cadence and hit rate; a high `empty` share with low lag is healthy idling, a high `empty` share with growing backlog means events are scheduled in the future (backoff) |
+| `event_outboxer.poller.batch_size` | summary | `event_type` | on every non-empty poll, records the claimed batch size | consistently maxed batches (= `claimBatchSize`) with a growing backlog → raise the batch size or pool |
+| `event_outboxer.poller.saturated` | counter | `event_type` | poller skipped a claim cycle because the handler executor had no free capacity | each increment ≈ one skipped poll cycle; a sustained rate means the type's pool/queue budget is undersized |
+| `event_outboxer.claims.stale_swept` | counter | — | stale-claim sweeper released abandoned PROCESSING rows back to PENDING; incremented by the swept count | any non-zero value indicates a bug or incident — these rows were invisible to the watchdog and orphan recovery |
+| `event_outboxer.retention.purged` | counter | `kind` | retention task deleted rows past their window; `kind` is `archive` or `disabled` | confirms retention is actually running; a flat line with retention enabled means the task is failing (check WARN logs) |
 | `event_outboxer.engine.state` | gauge | `state` | always present — one time series per engine state (`stopped`, `running`, `stopping`); value is 1 for the current state, 0 for the others | primary signal for metric-based alerting on engine liveness. See [§Kubernetes probes](#kubernetes-probes) for the alternative probe-based approach. |
 | `event_outboxer.engine.crashed` | counter | — | once per detected crash (poller thread death), incremented by `markCrashed(...)` | any non-zero value is an incident — pair with `engine.state{state="running"}==0` to distinguish crash from planned stop. |
 | `event_outboxer.events.backlog` | gauge | `event_type`, `status` | pulled from `EventStore.metricsSnapshot()` at scrape time; one row per registered handler's event type and lifecycle status (`pending`, `processing`, `disabled`) | backlog graph. `status="pending"` — waiting rows; `status="processing"` — currently-claimed rows (shows how fast handlers drain the queue); `status="disabled"` — terminal-failure rows (rising without bound means retries are exhausting permanently). Aggregate in PromQL: `sum without(event_type)(event_outboxer_events_backlog{status="pending"})`. |
@@ -258,7 +263,7 @@ you care about.
 | 8 | `onHandlerError` | errors | handler threw an uncaught exception — **fires before** `onEventRetryScheduled` / `onEventDisabled` | `eventId`, `eventType`, `attempts`, `cause` |
 | 9 | `onUnknownEventType` | errors | claim returned an event with no registered handler | `eventId`, `eventType` |
 | 10 | `onEventSerializationError` | errors | payload could not be deserialised into `handler.payloadType()` | `eventId`, `eventType`, `payloadClass`, `cause` |
-| 11 | `onLockAcquisitionFailed` | errors | `EntityLocker.tryLock(...)` returned empty or threw — **informational**, not an error | `eventId`, `eventType`, `lockKey` |
+| 11 | `onLockAcquisitionFailed` | errors | `EntityLocker.tryLock(...)` returned empty (`outcome=BUSY` — normal contention, informational) or threw (`outcome=ERROR` — locker backend failure) | `eventId`, `eventType`, `lockKey`, `outcome`, `cause` (null for BUSY) |
 | 12 | `onLockReleaseFailed` | errors | `LockHandle.close()` threw (locker backend refused release) | `eventId`, `eventType`, `lockKey`, `cause` |
 | 13 | `onWorkerRegistered` | worker | once per engine start, after the `event_outboxer.workers` row is inserted | `info` (full `WorkerInfo`) |
 | 14 | `onWorkerGracefulStop` | worker | once per graceful shutdown, after `graceful_stop = TRUE` | `workerId` |
@@ -269,6 +274,10 @@ you care about.
 | 19 | `onStorageError` | storage | any storage call raised a `StorageException` | `operation`, `cause` |
 | 20 | `onDispatchRejected` | dispatch | per-type handler executor rejected via `RejectedExecutionException` | `eventId`, `eventType`, `cause` |
 | 21 | `onEngineCrashed` | engine | the background health check detected that a critical component (typically a poller thread) is no longer alive | `reason`, `cause` (nullable — uncaught `Error` that killed the thread is usually lost), `at`, `workerId` |
+| 22 | `onPollCompleted` | polling | after every claim attempt of a per-type poller, including empty polls — the **highest-frequency callback** (up to once per `pollMinInterval` per type); keep implementations O(1) | `eventType`, `requested`, `claimed` |
+| 23 | `onPollerSaturated` | polling | poller skipped a claim cycle because the handler executor had no free capacity | `eventType` |
+| 24 | `onStaleClaimsSwept` | maintenance | stale-claim sweeper released abandoned PROCESSING rows back to PENDING (fires only when ≥1 was swept) | `count`, `threshold` |
+| 25 | `onRetentionPurged` | maintenance | retention task deleted rows past their window (fires only when ≥1 was purged) | `archivedPurged`, `disabledPurged` |
 
 ### Writing custom listeners
 

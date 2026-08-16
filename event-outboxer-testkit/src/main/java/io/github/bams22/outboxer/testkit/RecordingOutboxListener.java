@@ -24,7 +24,11 @@ import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
+import io.github.bams22.outboxer.api.observer.PollerSaturatedInfo;
+import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
 import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
+import io.github.bams22.outboxer.api.observer.StaleClaimsSweptInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
@@ -76,6 +80,14 @@ public final class RecordingOutboxListener implements OutboxListener {
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<EngineCrashedInfo> engineCrashed =
             new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<PollCompletedInfo> pollsCompleted =
+            new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<PollerSaturatedInfo> pollerSaturated =
+            new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<StaleClaimsSweptInfo> staleClaimsSwept =
+            new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<RetentionPurgedInfo> retentionPurged =
+            new CopyOnWriteArrayList<>();
 
     /** Reset every captured list. */
     public void clear() {
@@ -100,6 +112,10 @@ public final class RecordingOutboxListener implements OutboxListener {
         storageErrors.clear();
         dispatchRejected.clear();
         engineCrashed.clear();
+        pollsCompleted.clear();
+        pollerSaturated.clear();
+        staleClaimsSwept.clear();
+        retentionPurged.clear();
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -211,6 +227,26 @@ public final class RecordingOutboxListener implements OutboxListener {
         engineCrashed.add(info);
     }
 
+    @Override
+    public void onPollCompleted(PollCompletedInfo info) {
+        pollsCompleted.add(info);
+    }
+
+    @Override
+    public void onPollerSaturated(PollerSaturatedInfo info) {
+        pollerSaturated.add(info);
+    }
+
+    @Override
+    public void onStaleClaimsSwept(StaleClaimsSweptInfo info) {
+        staleClaimsSwept.add(info);
+    }
+
+    @Override
+    public void onRetentionPurged(RetentionPurgedInfo info) {
+        retentionPurged.add(info);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // accessors — snapshots for assertions
     // ---------------------------------------------------------------------------------------------
@@ -297,5 +333,21 @@ public final class RecordingOutboxListener implements OutboxListener {
 
     public List<EngineCrashedInfo> engineCrashed() {
         return List.copyOf(engineCrashed);
+    }
+
+    public List<PollCompletedInfo> pollsCompleted() {
+        return List.copyOf(pollsCompleted);
+    }
+
+    public List<PollerSaturatedInfo> pollerSaturated() {
+        return List.copyOf(pollerSaturated);
+    }
+
+    public List<StaleClaimsSweptInfo> staleClaimsSwept() {
+        return List.copyOf(staleClaimsSwept);
+    }
+
+    public List<RetentionPurgedInfo> retentionPurged() {
+        return List.copyOf(retentionPurged);
     }
 }

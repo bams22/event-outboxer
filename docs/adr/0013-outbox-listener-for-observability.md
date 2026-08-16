@@ -3,7 +3,11 @@
 ## Status
 
 Accepted (amended 2026-07-27: corrected where the logging listener is
-registered by default)
+registered by default; amended 2026-08-16: 21 → 25 methods — added the
+Polling group (`onPollCompleted`, `onPollerSaturated`) and the
+Maintenance group (`onStaleClaimsSwept`, `onRetentionPurged`),
+discriminated lock-busy vs locker-backend-error via
+`LockAcquisitionInfo.Outcome`, and corrected stale metric-name examples)
 
 ## Date
 
@@ -36,23 +40,27 @@ separate `event-outboxer-metrics-micrometer` module with
 
 ### API
 
-21 methods in `OutboxListener`, all with a default no-op. Arguments are
+25 methods in `OutboxListener`, all with a default no-op. Arguments are
 records (protection against breaking changes when adding fields).
 
 Groups:
 1. **Publication**: `onEventPublished`.
-2. **Processing lifecycle**: `onEventClaimed`, `onEventProcessed`,
+2. **Polling**: `onPollCompleted` (every claim attempt including empty
+   polls — the highest-frequency callback), `onPollerSaturated` (claim
+   cycle skipped because the handler executor had no free capacity).
+3. **Processing lifecycle**: `onEventClaimed`, `onEventProcessed`,
    `onEventRetryScheduled`, `onEventDisabled`, `onEventDeleted`,
    `onEventSkipped`.
-3. **Errors & anomalies**: `onHandlerError`, `onUnknownEventType`,
+4. **Errors & anomalies**: `onHandlerError`, `onUnknownEventType`,
    `onEventSerializationError`, `onLockAcquisitionFailed`,
    `onLockReleaseFailed`.
-4. **Worker lifecycle**: `onWorkerRegistered`, `onWorkerGracefulStop`,
+5. **Worker lifecycle**: `onWorkerRegistered`, `onWorkerGracefulStop`,
    `onWorkerDeregistered`, `onHeartbeatFailed`.
-5. **Recovery**: `onOrphansReclaimed`, `onStuckHandlerReclaimed`.
-6. **Storage**: `onStorageError`.
-7. **Dispatch**: `onDispatchRejected`.
-8. **Engine lifecycle**: `onEngineCrashed`.
+6. **Recovery**: `onOrphansReclaimed`, `onStuckHandlerReclaimed`.
+7. **Maintenance**: `onStaleClaimsSwept`, `onRetentionPurged`.
+8. **Storage**: `onStorageError`.
+9. **Dispatch**: `onDispatchRejected`.
+10. **Engine lifecycle**: `onEngineCrashed`.
 
 The complete list lives in `OutboxListener` itself — the methods are
 grouped under the same section headings as above.
@@ -76,9 +84,10 @@ automatically into `OutboxListenerRegistry`. In plain Java — via a builder.
 The `event-outboxer-metrics-micrometer` module provides a ready
 implementation. Mapping (sample):
 - `onEventProcessed` → `event_outboxer.events.processed{event_type}` Counter +
-  `event_outboxer.events.handle.duration{event_type}` Timer.
-- `onEventRetryScheduled` → `event_outboxer.events.retried{event_type}` Counter.
-- `onEventDisabled` → `event_outboxer.events.disabled{event_type}` Counter.
+  `event_outboxer.events.processing_time{event_type}` Timer.
+- `onEventRetryScheduled` →
+  `event_outboxer.events.retry_scheduled{event_type,reason}` Counter.
+- `onEventDisabled` → `event_outboxer.events.disabled{event_type,reason}` Counter.
 - `onOrphansReclaimed` → `event_outboxer.orphans.reclaimed` Counter.
 - etc.
 
@@ -149,7 +158,7 @@ no dedicated enable/disable property.
 
 ### Negative consequences
 
-- 21 methods — a noticeable API surface. Adding a new one is a breaking
+- 25 methods — a noticeable API surface. Adding a new one is a breaking
   change.
 - Listeners must be thread-safe and fast.
 - A little more boilerplate when creating a custom listener.

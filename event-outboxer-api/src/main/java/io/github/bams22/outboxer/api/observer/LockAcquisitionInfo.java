@@ -11,22 +11,44 @@ package io.github.bams22.outboxer.api.observer;
 
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Payload of {@link OutboxListener#onLockAcquisitionFailed(LockAcquisitionInfo)} — fired when
- * {@code EntityLocker.tryLock} returned {@code Optional.empty()} (lock currently held by another
- * worker). The engine re-schedules the event with a short delay and retries. Note: a technical
- * failure (for example Redis unreachable) surfaces as {@code StorageErrorInfo} instead.
+ * {@code EntityLocker.tryLock} did not yield a lock. Two distinct situations share this callback,
+ * discriminated by {@link #outcome()}: the normal busy path ({@code Optional.empty()} — the key is
+ * held by another worker) and a technical failure (the locker backend threw, for example Redis
+ * unreachable). In both cases the engine releases the event back to {@code PENDING} with a short
+ * delay without consuming its retry budget.
  *
  * @param eventId identifier of the event whose lock could not be acquired
  * @param eventType event type string
  * @param lockKey the contested lock key
+ * @param outcome whether the lock was busy or the locker backend failed
+ * @param cause the backend exception for {@link Outcome#ERROR}, always null for {@link
+ *     Outcome#BUSY}
  */
-public record LockAcquisitionInfo(UUID eventId, String eventType, String lockKey) {
+public record LockAcquisitionInfo(
+        UUID eventId,
+        String eventType,
+        String lockKey,
+        Outcome outcome,
+        @Nullable Throwable cause) {
 
     public LockAcquisitionInfo {
         Objects.requireNonNull(eventId, "eventId must not be null");
         Objects.requireNonNull(eventType, "eventType must not be null");
         Objects.requireNonNull(lockKey, "lockKey must not be null");
+        Objects.requireNonNull(outcome, "outcome must not be null");
+    }
+
+    /** Why the lock acquisition did not yield a lock. Bounded set, safe as a metric tag. */
+    public enum Outcome {
+        /** The lock key is currently held by another worker — the normal contention path. */
+        BUSY,
+        /**
+         * The locker backend threw while trying to acquire — a technical failure, not contention.
+         */
+        ERROR
     }
 }
