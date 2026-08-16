@@ -36,6 +36,7 @@ public class OutboxProperties {
     private boolean enabled = true;
 
     private final Storage storage = new Storage();
+    private final Redis redis = new Redis();
     private final Lock lock = new Lock();
     private final Publisher publisher = new Publisher();
     private final Serializer serializer = new Serializer();
@@ -85,6 +86,49 @@ public class OutboxProperties {
 
     public enum StorageType {
         postgres
+    }
+
+    /**
+     * Connection details for the starter-managed Lettuce connection (ADR-0027). When {@code uri} or
+     * {@code host} is set, the starter creates and owns a {@code StatefulRedisConnection} shared by
+     * the Redis entity locker and the Redis metrics cache. Ignored entirely when the application
+     * defines its own {@code StatefulRedisConnection} bean.
+     */
+    @Getter
+    @Setter
+    public static class Redis {
+        /**
+         * Full Lettuce {@code RedisURI}, e.g. {@code redis://localhost:6379/0} or {@code
+         * redis-sentinel://host1,host2/0#mymaster}. Wins over the discrete fields when set.
+         */
+        private @Nullable String uri;
+
+        /** Redis host. Used only when {@code uri} is not set. */
+        private @Nullable String host;
+
+        /** Redis port. */
+        private int port = 6379;
+
+        /** Username for Redis ACL authentication; requires {@code password}. */
+        private @Nullable String username;
+
+        /** Password for Redis authentication. */
+        private @Nullable String password;
+
+        /** Database index. */
+        private int database = 0;
+
+        /** Connect over SSL/TLS. */
+        private boolean ssl = false;
+
+        /**
+         * Connect and command timeout. {@code null} (default): Lettuce's own default (60 seconds).
+         * Also bounds how long a down Redis can block application startup.
+         */
+        private @Nullable Duration timeout;
+
+        /** Client name reported to the server ({@code CLIENT SETNAME}). */
+        private @Nullable String clientName;
     }
 
     @Getter

@@ -1,3 +1,4 @@
+io.github.bams22.outboxer.spring.redis.RedisConnectionAutoConfiguration
 io.github.bams22.outboxer.spring.cache.CacheAutoConfiguration
 io.github.bams22.outboxer.spring.cache.RedisCacheAutoConfiguration
 io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration

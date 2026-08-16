@@ -36,8 +36,9 @@ Everything else comes from the defaults. To add the
 PostgreSQL-backed entity lock, set `event-outboxer.lock.type:
 postgres-lease` and include the `classpath:db/migration/outbox/lock` Flyway
 location; for the Redis/KeyDB lock, set `event-outboxer.lock.type:
-redis` and provide a Lettuce
-`StatefulRedisConnection<String, String>` bean (see
+redis` and point `event-outboxer.redis.uri` (or `.host`) at your
+Redis — the starter creates the Lettuce connection itself (see
+[`event-outboxer.redis.*`](#event-outboxerredis) and
 [`event-outboxer.lock.*`](#event-outboxerlock)).
 
 ---
@@ -67,6 +68,17 @@ event-outboxer:
     table-prefix: ""                 # optional table-name prefix (event_outboxer.<prefix>events)
     archive-enabled: false           # move successful events to the archive table
     metrics-cache-ttl: 30s           # TTL of the metricsSnapshot() cache
+
+  redis:                             # starter-managed Lettuce connection (ADR-0027);
+    uri: null                        # full RedisURI; wins over the discrete fields below
+    host: null                       # either uri or host activates the managed connection
+    port: 6379
+    username: null                   # ACL user; requires password
+    password: null
+    database: 0
+    ssl: false
+    timeout: null                    # connect/command timeout; null = Lettuce default (60s)
+    client-name: null                # CLIENT SETNAME
 
   lock:
     type: noop                       # noop (default) | postgres-lease | postgres-advisory | redis
@@ -207,6 +219,35 @@ Storage adapter settings.
   Ignored when `event-outboxer.cache.type=noop` or a custom
   `@Bean MetricsSnapshotCache` takes over.
 
+### `event-outboxer.redis.*`
+
+Starter-managed Lettuce connection (ADR-0027) shared by the Redis
+entity locker (`lock.type=redis`) and the Redis metrics cache
+(`cache.type=redis`). When `uri` or `host` is set — and the
+application defines no `StatefulRedisConnection` bean of its own —
+the starter creates a `RedisClient` + `StatefulRedisConnection<String,
+String>` at startup, exposes the connection as the bean
+`outboxRedisConnection` carrying
+[`@OutboxRedisConnection`](#selecting-the-redis-connection-outboxredisconnection),
+and closes both on context shutdown (connection first, then client).
+
+- `uri` — full Lettuce `RedisURI`, e.g. `redis://localhost:6379/0` or
+  `redis-sentinel://host1,host2/0#mymaster`. **Wins over the discrete
+  fields** when both are set (mirrors `spring.data.redis.url`).
+- `host` / `port` / `database` / `ssl` — discrete alternative to
+  `uri`.
+- `username` / `password` — ACL (`AUTH user pass`) when both set;
+  password-only `AUTH` when just `password`.
+- `timeout` — connect and command timeout; `null` keeps Lettuce's
+  60-second default. The connection is opened eagerly, so this also
+  bounds how long a down Redis can block application startup.
+- `client-name` — reported via `CLIENT SETNAME`.
+
+A user-defined `StatefulRedisConnection` bean always wins: the starter
+then creates nothing and these properties are inert. Redis Cluster or
+custom `ClientResources` are deliberately not covered — define your
+own connection bean for those.
+
 ### `event-outboxer.lock.*`
 
 `EntityLocker` selection. There is no classpath auto-detection — the
@@ -237,9 +278,13 @@ default is `noop` and other backends are opt-in:
   network partition) the lock is held until TCP keepalive reaps the
   backend — hours with Linux defaults.
 - `type: redis` — Redis/KeyDB locker; requires
-  `event-outboxer-lock-redis` on the classpath and a user-provided
-  Lettuce `StatefulRedisConnection<String, String>` bean (the starter
-  does not manage Redis connections itself).
+  `event-outboxer-lock-redis` on the classpath and a
+  `StatefulRedisConnection<String, String>` — either starter-managed
+  via [`event-outboxer.redis.*`](#event-outboxerredis) (ADR-0027) or a
+  user-provided bean (with several, see
+  [Selecting the Redis connection](#selecting-the-redis-connection-outboxredisconnection)).
+  With neither, startup fails fast naming both remedies — `redis` is
+  an explicit opt-in, so there is no silent back-off.
 - `key-prefix` — prefix for lock keys, default `outbox:lock:`
   (Redis locker only; the PG lockers store/hash the raw key).
 
@@ -283,7 +328,10 @@ Redis wiring recipe.
     database. Useful for tests that need live state.
   - `redis` — shared Redis/KeyDB-backed cache; requires
     `event-outboxer-cache-redis` on the classpath and a
-    `StatefulRedisConnection<String, String>` bean.
+    `StatefulRedisConnection<String, String>` — starter-managed via
+    [`event-outboxer.redis.*`](#event-outboxerredis) or a user bean,
+    resolved exactly like the Redis locker's (they share one
+    connection by design). With neither, startup fails fast.
 - `redis.key-prefix` — prefix prepended to the cache key when
   `type=redis`. Default `outbox:metrics:`; the cache writes a single
   key `<key-prefix>snapshot`.
@@ -734,6 +782,43 @@ Notes:
   participates via the primary/unique rule instead.
 - User-defined `ConnectionSupplier` / `EntityLocker` beans still
   override the outbox JDBC wiring entirely.
+
+### Selecting the Redis connection (`@OutboxRedisConnection`)
+
+With [`event-outboxer.redis.*`](#event-outboxerredis) set or a single
+`StatefulRedisConnection<String, String>` bean, nothing is needed.
+With several connection beans, mark the one the outbox should use
+(ADR-0027), mirroring `@OutboxDataSource`:
+
+```java
+@Bean(destroyMethod = "close")
+@OutboxRedisConnection
+public StatefulRedisConnection<String, String> outboxRedis(RedisClient client) {
+    return client.connect();
+}
+```
+
+Resolution order — applied identically by the Redis locker and the
+Redis metrics cache (they share one connection by design):
+
+1. the single bean marked
+   `@io.github.bams22.outboxer.spring.OutboxRedisConnection` — wins
+   even when another bean is `@Primary`;
+2. otherwise the unique `StatefulRedisConnection` bean, or the
+   `@Primary` one among several;
+3. otherwise startup fails fast, naming the candidate beans and the
+   fix. Two beans carrying the qualifier fail the same way — exactly
+   one may.
+
+Notes:
+
+- Any user-defined connection bean disables the starter-managed
+  connection entirely — `event-outboxer.redis.*` becomes inert.
+- The starter-created connection (bean name `outboxRedisConnection`)
+  carries the qualifier itself, so it resolves deterministically even
+  next to unrelated user connections.
+- User-defined `EntityLocker` / `MetricsSnapshotCache` beans still
+  override the outbox Redis wiring entirely.
 
 ### Custom ObjectMapper for serialization
 

@@ -596,7 +596,7 @@ other) has been a real source of bugs.
 | Worker registry | `WorkerRegistry` SPI per adapter | adapter-specific auto-config (PG / in-memory) |
 | Engine lifecycle | manual `engine.start()` / `engine.stop(timeout)` | `OutboxSmartLifecycle` at phase 20000 (auto-start on refresh, drain on shutdown) |
 | Configuration | programmatic via `OutboxEngineBuilder` | `@ConfigurationProperties("event-outboxer")` (`OutboxProperties`) → thin merge → core config records (invariants validated in their constructors) |
-| Metrics-snapshot cache | `MetricsSnapshotCache` SPI with `noop()` / `inMemory(Clock, ttl)` static factories; caller passes the one they want into `PostgresEventStore` | `CacheAutoConfiguration` picks `memory` (default) / `noop` per `event-outboxer.cache.type`; `RedisCacheAutoConfiguration` selects the Lettuce-backed variant from `event-outboxer-cache-redis` when `type=redis` and a `StatefulRedisConnection` bean exists; user `@Bean MetricsSnapshotCache` overrides everything |
+| Metrics-snapshot cache | `MetricsSnapshotCache` SPI with `noop()` / `inMemory(Clock, ttl)` static factories; caller passes the one they want into `PostgresEventStore` | `CacheAutoConfiguration` picks `memory` (default) / `noop` per `event-outboxer.cache.type`; `RedisCacheAutoConfiguration` selects the Lettuce-backed variant from `event-outboxer-cache-redis` when `type=redis`, resolving the connection per ADR-0027 (`@OutboxRedisConnection`-qualified bean → unique/`@Primary` → the `RedisConnectionAutoConfiguration`-managed connection from `event-outboxer.redis.*`); user `@Bean MetricsSnapshotCache` overrides everything |
 
 **Invariant.** If you are tempted to ship something only in the starter
 (auto-instantiation, YAML binding, `ObjectProvider` resolution), it must

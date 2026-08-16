@@ -9,7 +9,7 @@ the single-instance Redlock recipe.
 | Coordinates | `io.github.bams22:event-outboxer-lock-redis` |
 | Java package | `io.github.bams22.outboxer.lock.redis` |
 | Depends on | [`event-outboxer-api`](event-outboxer-api.md), [`event-outboxer-spi`](event-outboxer-spi.md), `io.lettuce:lettuce-core` (6.x) |
-| Requires | Redis 7+ / KeyDB 6+, and a user-provided `StatefulRedisConnection<String, String>` bean |
+| Requires | Redis 7+ / KeyDB 6+, and a `StatefulRedisConnection<String, String>` — starter-managed via `event-outboxer.redis.*` (ADR-0027) or user-provided |
 | Enable with | `event-outboxer.lock.type: redis` |
 
 ## What it does
@@ -63,14 +63,22 @@ PostgreSQL is your only infrastructure — same guarantee level
 
 ```yaml
 event-outboxer:
+  redis:
+    uri: redis://localhost:6379    # or host/port/username/password/database/ssl/timeout
   lock:
     type: redis
     key-prefix: "outbox:lock:"   # default
 ```
 
-The starter does **not** manage Redis connections — provide the bean
-yourself (it can be shared with
-[`event-outboxer-cache-redis`](event-outboxer-cache-redis.md)):
+That is all — with `event-outboxer.redis.uri` (or `.host`) set, the
+starter creates and owns the Lettuce connection (ADR-0027), shares it
+with [`event-outboxer-cache-redis`](event-outboxer-cache-redis.md),
+and closes it on shutdown.
+
+Alternatively, bring your own connection — any user-defined
+`StatefulRedisConnection` bean wins and makes `event-outboxer.redis.*`
+inert; with several connection beans, mark the outbox one with
+`@OutboxRedisConnection`:
 
 ```java
 @Bean(destroyMethod = "shutdown")
@@ -79,10 +87,14 @@ public RedisClient redisClient() {
 }
 
 @Bean(destroyMethod = "close")
+@OutboxRedisConnection   // needed only when several connection beans exist
 public StatefulRedisConnection<String, String> redisConnection(RedisClient client) {
     return client.connect();
 }
 ```
+
+With `lock.type: redis` and neither properties nor a bean, startup
+fails fast naming both remedies.
 
 The lock TTL passed to `tryLock` is the per-type
 `event-outboxer.event-types.*.lock-ttl` (default 10 m).

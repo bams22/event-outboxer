@@ -12,28 +12,44 @@ package io.github.bams22.outboxer.spring.lock;
 import io.github.bams22.outboxer.lock.redis.RedisEntityLocker;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spring.OutboxProperties;
+import io.github.bams22.outboxer.spring.OutboxRedisConnection;
+import io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionResolver;
+import io.github.bams22.outboxer.spring.redis.RedisConnectionAutoConfiguration;
 import io.lettuce.core.api.StatefulRedisConnection;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 
 /**
- * Registers {@link RedisEntityLocker} when {@code event-outboxer.lock.type=redis} and a {@link
- * StatefulRedisConnection} bean is available (users create one via Lettuce's {@code RedisClient}).
+ * Registers {@link RedisEntityLocker} when {@code event-outboxer.lock.type=redis}. The connection
+ * comes from {@link OutboxRedisConnectionResolver} (ADR-0027): the
+ * {@code @OutboxRedisConnection}-qualified bean, else the unique/{@code @Primary} one, else the
+ * connection the starter created from {@code event-outboxer.redis.*}. With no connection resolvable
+ * at all, startup fails fast with an actionable diagnosis — {@code lock.type=redis} is an explicit
+ * opt-in, so silent back-off would only surface later as a cryptic missing-{@code EntityLocker}
+ * error.
  */
-@AutoConfiguration
+@AutoConfiguration(after = RedisConnectionAutoConfiguration.class)
 @ConditionalOnClass(RedisEntityLocker.class)
-@ConditionalOnBean(StatefulRedisConnection.class)
-@ConditionalOnProperty(prefix = "event-outboxer.lock", name = "type", havingValue = "redis")
+@Conditional(OnRedisLockCondition.class)
+@EnableConfigurationProperties(OutboxProperties.class)
 public class RedisLockAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(EntityLocker.class)
     public EntityLocker outboxEntityLocker(
-            StatefulRedisConnection<String, String> connection, OutboxProperties properties) {
-        return new RedisEntityLocker(connection, properties.getLock().getKeyPrefix());
+            @OutboxRedisConnection
+                    ObjectProvider<StatefulRedisConnection<String, String>> qualified,
+            ObjectProvider<StatefulRedisConnection<String, String>> connections,
+            ListableBeanFactory beanFactory,
+            OutboxProperties properties) {
+        return new RedisEntityLocker(
+                OutboxRedisConnectionResolver.resolve(qualified, connections, beanFactory),
+                properties.getLock().getKeyPrefix());
     }
 }

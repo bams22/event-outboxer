@@ -38,6 +38,19 @@ All notable changes to this project are documented here. Format follows
     `payloadFormat` fields.
 
 ### Added
+- **Starter-managed Redis connection (ADR-0027).** Setting
+  `event-outboxer.redis.uri` (or `.host`, plus optional
+  `port`/`username`/`password`/`database`/`ssl`/`timeout`/
+  `client-name`) is now all it takes to run `lock.type: redis` and
+  `cache.type: redis` — the starter creates the Lettuce
+  `StatefulRedisConnection<String, String>` itself (bean
+  `outboxRedisConnection`), shares it between the Redis entity locker
+  and the Redis metrics cache, and closes it (connection first, then
+  client) on context shutdown. A user-defined connection bean still
+  wins and makes the properties inert. New `@OutboxRedisConnection`
+  qualifier mirrors `@OutboxDataSource` (ADR-0024) for applications
+  with several Redis connections: qualified bean → unique/`@Primary` →
+  fail-fast with a dedicated `FailureAnalyzer` naming the candidates.
 - **Per-event-type write serializer overrides (ADR-0025 amendment).**
   The default writer can now be overridden per event type — the
   gradual-migration knob: `event-outboxer.serializer.
@@ -141,6 +154,14 @@ All notable changes to this project are documented here. Format follows
   and stale-release semantics.
 
 ### Changed
+- **`lock.type=redis` / `cache.type=redis` without a resolvable Redis
+  connection now fail startup with a diagnosis (ADR-0027).** The
+  Redis lock and cache auto-configurations no longer back off silently
+  when no `StatefulRedisConnection` bean exists — previously that
+  surfaced later as a cryptic `NoSuchBeanDefinitionException:
+  EntityLocker` (or booted with no locker when the engine itself
+  backed off). The failure now names both remedies: set
+  `event-outboxer.redis.uri`/`.host`, or define a connection bean.
 - **BREAKING: Java baseline raised from 17 to 25 (ADR-0017
   amendment).** The minimum runtime and build JDK is now 25
   (`maven.compiler.release=25`, enforcer `requireJavaVersion [25,)`).

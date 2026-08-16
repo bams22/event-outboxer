@@ -751,7 +751,7 @@ The cache is selected by `event-outboxer.cache.type`:
 |----------|-----------------------------------------------------------------------------------------------------------|
 | `memory` | Default. Per-JVM `AtomicReference` with `TTL` from `event-outboxer.storage.metrics-cache-ttl`. Matches pre-SPI behaviour. |
 | `noop`   | No caching. Each `metricsSnapshot()` call hits the database. Simplest for tests; costly at scale.         |
-| `redis`  | Redis/KeyDB-backed (requires `event-outboxer-cache-redis` module and a `StatefulRedisConnection` bean).   |
+| `redis`  | Redis/KeyDB-backed (requires the `event-outboxer-cache-redis` module and a `StatefulRedisConnection` — starter-managed via `event-outboxer.redis.*` or a user bean, ADR-0027). |
 
 #### Redis cache
 
@@ -772,8 +772,13 @@ outbox:
     metrics-cache-ttl: 30s             # becomes the Redis key PX expire
 ```
 
-Supply a `StatefulRedisConnection<String, String>` `@Bean`; the starter
-wires `LettuceMetricsSnapshotCache` against it. A Redis outage is
+Point `event-outboxer.redis.uri` (or `.host`) at your Redis and the
+starter creates the Lettuce connection itself (ADR-0027), shared with
+the Redis entity locker; or supply your own
+`StatefulRedisConnection<String, String>` `@Bean` (it wins and makes
+the properties inert). Either way the starter wires
+`LettuceMetricsSnapshotCache` against the resolved connection. A Redis
+outage at runtime is
 fail-safe: errors are logged and treated as cache miss, so the health
 probe keeps working (each pod just falls back to its own database
 query).

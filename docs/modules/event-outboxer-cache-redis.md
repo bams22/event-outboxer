@@ -10,7 +10,7 @@ window** instead of N per-JVM caches refreshing on their own rhythm.
 | Coordinates | `io.github.bams22:event-outboxer-cache-redis` |
 | Java package | `io.github.bams22.outboxer.cache.redis` |
 | Depends on | [`event-outboxer-spi`](event-outboxer-spi.md), `io.lettuce:lettuce-core`, `jackson-databind` + `jsr310` |
-| Enable with | `event-outboxer.cache.type: redis` + a `StatefulRedisConnection<String, String>` bean |
+| Enable with | `event-outboxer.cache.type: redis` + a `StatefulRedisConnection<String, String>` — starter-managed via `event-outboxer.redis.*` (ADR-0027) or user-provided |
 
 ## Why it exists
 
@@ -63,6 +63,8 @@ by the replica count.
 
 ```yaml
 event-outboxer:
+  redis:
+    uri: redis://localhost:6379       # starter-managed connection (ADR-0027)
   cache:
     type: redis
     redis:
@@ -71,11 +73,16 @@ event-outboxer:
     metrics-cache-ttl: 30s            # default; becomes the PX expire on the key
 ```
 
-Provide the Lettuce connection bean yourself (shareable with the
-[Redis locker](event-outboxer-lock-redis.md)):
+With `event-outboxer.redis.uri` (or `.host`) set, the starter creates
+and owns the Lettuce connection, shared with the
+[Redis locker](event-outboxer-lock-redis.md). Alternatively bring your
+own bean — it wins and makes `event-outboxer.redis.*` inert; with
+several connection beans, mark the outbox one with
+`@OutboxRedisConnection`:
 
 ```java
 @Bean(destroyMethod = "close")
+@OutboxRedisConnection   // needed only when several connection beans exist
 public StatefulRedisConnection<String, String> redisConnection(RedisClient client) {
     return client.connect();
 }

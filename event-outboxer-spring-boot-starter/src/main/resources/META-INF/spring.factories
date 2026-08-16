@@ -4,4 +4,5 @@ io.github.bams22.outboxer.spring.storage.OutboxLiquibaseParameterEnvironmentPost
 
 org.springframework.boot.diagnostics.FailureAnalyzer=\
 io.github.bams22.outboxer.spring.storage.OutboxStorageFailureAnalyzer,\
-io.github.bams22.outboxer.spring.OutboxDataSourceFailureAnalyzer
+io.github.bams22.outboxer.spring.OutboxDataSourceFailureAnalyzer,\
+io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionFailureAnalyzer
