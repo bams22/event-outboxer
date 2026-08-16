@@ -84,7 +84,7 @@ Assume we're cutting `0.2.0`. Substitute your target version throughout.
 
 ### 1. Pre-flight checks
 
-- [ ] `main` branch is green in the `CI` workflow (unit matrix 17/21/25
+- [ ] `main` branch is green in the `CI` workflow (unit tests on JDK 25
       plus the Testcontainers IT job).
 - [ ] `CHANGELOG.md` contains a `## [0.2.0] — YYYY-MM-DD` section with
       Added / Changed / Removed / Fixed bullets for everything in this
@@ -228,6 +228,35 @@ in `pom.xml` or call the pinned version explicitly:
 ./mvnw org.codehaus.mojo:versions-maven-plugin:2.16.2:set \
   -DnewVersion=N.N.N -DgenerateBackupPoms=false
 ```
+
+### `UnrecognizedPropertyException: Unrecognized field "..."` during deploy
+
+`central-publishing-maven-plugin` deserializes the Portal's deployment
+responses with Jackson's `FAIL_ON_UNKNOWN_PROPERTIES` left on, so any
+field Sonatype adds server-side breaks every client older than that
+change. 0.6.0 hit exactly this on a new `warnings` field while cutting
+0.3.0.
+
+The dangerous part is *when* it fails: after `Uploaded bundle
+successfully, deployment name: Deployment, deploymentId: <uuid>`. The
+upload already happened — a real deployment is sitting in the portal
+while the workflow reports failure and skips the "Create GitHub
+Release" step. Do not assume nothing was published.
+
+Recovery:
+
+1. Take the `deploymentId` from that log line and open
+   <https://central.sonatype.com/publishing/deployments>.
+2. Either **Publish** the deployment (artifacts are already uploaded
+   and signed — then create the GitHub Release by hand, since the
+   workflow never got there), or **Drop** it to free the coordinates
+   for a clean re-cut.
+3. Either way, bump `central-publishing-maven-plugin.version` in
+   `pom.xml` to the latest release before the next tag, or the next
+   attempt dies the same way. Check
+   <https://repo1.maven.org/maven2/org/sonatype/central/central-publishing-maven-plugin/maven-metadata.xml>
+   for the current version — this plugin is worth keeping current
+   precisely because it is not forward-compatible.
 
 ### `401 Unauthorized` during Maven deploy
 

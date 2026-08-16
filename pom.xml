@@ -108,7 +108,14 @@
         <flatten-maven-plugin.version>1.7.0</flatten-maven-plugin.version>
         <spotless-maven-plugin.version>3.8.0</spotless-maven-plugin.version>
         <protobuf-maven-plugin.version>5.1.7</protobuf-maven-plugin.version>
-        <central-publishing-maven-plugin.version>0.6.0</central-publishing-maven-plugin.version>
+        <!--
+            Keep current: the plugin deserializes Sonatype's deployment-status
+            response with FAIL_ON_UNKNOWN_PROPERTIES, so a field added on the
+            server side breaks every older client. 0.6.0 died on the "warnings"
+            field mid-release (upload had already succeeded, only the status
+            poll crashed) — see RELEASING.md § Troubleshooting.
+        -->
+        <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
         <japicmp-maven-plugin.version>0.23.1</japicmp-maven-plugin.version>
         <!--
             Baseline for japicmp API-compatibility reports: the latest release
