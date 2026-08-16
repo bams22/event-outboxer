@@ -78,7 +78,7 @@
             never see the property placeholder. Release runbook lives in
             RELEASING.md.
         -->
-        <revision>0.3.0-SNAPSHOT</revision>
+        <revision>0.4.0-SNAPSHOT</revision>
 
         <!-- Baseline Java 25 (LTS) — ADR-0017. -->
         <java.version>25</java.version>
@@ -121,7 +121,7 @@
             Baseline for japicmp API-compatibility reports: the latest release
             published to Maven Central. Bump on every release.
         -->
-        <japicmp.baseline.version>0.2.0</japicmp.baseline.version>
+        <japicmp.baseline.version>0.3.0</japicmp.baseline.version>
 
         <!-- Non-Boot-managed test libs -->
         <testcontainers.version>1.20.4</testcontainers.version>
@@ -462,10 +462,12 @@
                             <breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
                             <breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
                             <!--
-                                Modules that did not exist in the baseline release
-                                (cache-redis, admin-actuator, admin-rest,
-                                serializer-protobuf) have no old artifact to
-                                compare against — skip them instead of failing resolution.
+                                Modules added after the baseline release have no old
+                                artifact to compare against — skip them instead of failing
+                                resolution. This also covers the window right after a
+                                release, while Central finishes syncing the new baseline:
+                                the report comes back empty for 15-30 minutes and then
+                                heals itself.
                             -->
                             <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                             <skipPomModules>true</skipPomModules>
