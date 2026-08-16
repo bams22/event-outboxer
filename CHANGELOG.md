@@ -5,7 +5,7 @@ All notable changes to this project are documented here. Format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.3.0] — 2026-08-03
+## [0.3.0] — 2026-08-16
 
 ### Breaking
 - **Observability surface extended and re-tagged (amends ADR-0013).**
@@ -116,6 +116,17 @@ All notable changes to this project are documented here. Format follows
   `event-outboxer.metrics.distribution-defaults.enabled=false`.
   `MetricsDistributionDefaultsTest` pins all three behaviours
   (auto-applied, override wins, opt-out).
+- **Ready-to-import Grafana dashboard.**
+  [docs/grafana/event-outboxer-dashboard.json](docs/grafana/event-outboxer-dashboard.json)
+  — 31 panels in 8 rows (health, throughput, latency, backlog, errors,
+  saturation, locks, maintenance) over the Prometheus metric catalogue,
+  with `environment` / `service` / `pod` / `eventType` template
+  variables and a `DS_PROMETHEUS` datasource variable, so importing it
+  needs no manual datasource mapping. Store-wide gauges (backlog, ages,
+  lease count) aggregate across pods with `max`, per-JVM metrics with
+  `sum`; the p50/p99 panels use `histogram_quantile` and so depend on
+  the histogram buckets applied by the SLO defaults above. Import
+  smoke-tested against Grafana 11.4.
 - **Queue-time lag, saturation and maintenance metrics.** New meters in
   `event-outboxer-metrics-micrometer`: `events.queue_time` timer
   (publish → claim lag, the "am I falling behind" signal),
@@ -269,6 +280,35 @@ All notable changes to this project are documented here. Format follows
   The entity-locker contract test gains an opt-in
   `supportsTtlExpiry()`/`forceExpire()` hook covering expiry takeover
   and stale-release semantics.
+- **Capacity-coupled polling.** The poller now claims
+  `min(claim-batch-size, free executor capacity)`, stops claiming entirely
+  while the per-type executor is saturated, re-polls immediately after a
+  full batch, and is woken the moment a saturated executor frees a slot.
+  This removes the `claim-batch-size / poll-min-interval` throughput
+  ceiling (20 events/s per type with defaults, regardless of pool size)
+  and eliminates the claim/release write churn under overload (previously
+  ~2 wasted hot-table writes per event while the pool was full).
+  `handler-pool-size + handler-queue-capacity` now also acts as a soft
+  in-flight cap for `handler-executor.type: virtual`. Amends ADR-0004.
+- **Same-JVM after-commit poller wake-up.** `OutboxEventPublisher` now wakes
+  the local poller of a published event type as soon as the publishing
+  transaction commits (`TransactionContext.afterCommit` +
+  `PollerWakeHub`/`Poller.wake()`), dropping same-JVM publish→handle latency
+  from the poll interval (up to `poll-max-interval`, 10s default) to
+  milliseconds. Rollbacks never wake; cross-pod pickup stays poll-bound.
+  Always on, no configuration. Amends ADR-0006 (the `afterDone` mitigation
+  cited there was never built).
+- `EventStore.release(...)` and `EventStore.releaseClaimed(...)` SPI operations:
+  return claimed events to `PENDING` **without** incrementing `attempts`. Used
+  for lock contention, executor backpressure, unknown-handler SKIP, transient
+  finalize failures and shutdown — none of these consume the retry budget any
+  more.
+- `event-outboxer.dispatcher.dispatch-rejected-retry-delay` property (default
+  `1s`) — reschedule delay for dispatches rejected by a saturated handler
+  executor.
+- Enforcer rule `ban-core-in-adapter` in every adapter module: the
+  "adapters must not depend on core" invariant is now build-enforced.
+- Apache-2.0 license headers in `examples/`.
 
 ### Changed
 - **`lock.type=redis` / `cache.type=redis` without a resolvable Redis
@@ -326,7 +366,6 @@ All notable changes to this project are documented here. Format follows
   the supported baseline. They stay resolvable on Maven Central
   (coordinates are immutable) — deprecated by policy, not withdrawn.
   See the Versions section in `README.md`.
-
 - **Poll-interval jitter.** Every wait emitted by the adaptive poller
   backoff now carries a uniform ±10% jitter, desynchronizing claim
   bursts across a fleet of JVMs deployed together (same
@@ -339,7 +378,6 @@ All notable changes to this project are documented here. Format follows
   1.0 — pre-1.0 SPI breaks are intentional and tracked here; the
   break-build flags flip on when preparing 1.0. Modules new since the
   baseline are skipped automatically.
-
 - **Group-commit finalize batching (amends ADR-0014).** Concurrent
   `markProcessed` / `markForRetry` calls now coalesce into one multi-row
   statement per flush: a finalizing handler thread flushes immediately
@@ -393,32 +431,6 @@ All notable changes to this project are documented here. Format follows
   when Spring Security is present without `@EnableMethodSecurity`).
   A shipped `RetentionTask` (off by default, `event-outboxer.retention.*`)
   batch-purges the archive and old `DISABLED` rows. 15 modules total.
-
-### Fixed
-- **`event_outboxer.events.disabled` counter silently never recorded in
-  Spring apps.** The starter eagerly registered a *gauge* with the same
-  name and tags; Micrometer then rejected the listener's lazy *counter*
-  registration and `OutboxListenerRegistry` swallowed the exception.
-  The backlog gauges are now a single `events.backlog{status}` meter
-  (see Breaking), and `MicrometerMeterCollisionTest` pins the
-  coexistence. The never-emitted `lease_renewal_mismatch` metric was
-  removed from OBSERVABILITY.md.
-- **Documentation drift.** ADR-0002 and the `OutboxEventPublisher`
-  javadoc advertised a `no-transaction-policy` value `AUTO` that never
-  existed (the enum is `FAIL | IGNORE`; the javadoc also used a stale
-  `outbox.*` property prefix). ADR-0010's SPI signature block and port
-  inventory were resynchronized with the shipped interfaces. ADR-0013
-  wrongly claimed the Spring starter registers `LoggingOutboxListener`
-  by default behind a non-existent property — the plain-Java builder
-  adds it, the starter opts out. ARTIFACTS.md now lists all 15 modules.
-- **Payload deserialization failures are recoverable.** They now route
-  through the `FailureHandler` chain (retry with backoff, `DISABLED` only
-  after the attempt budget) instead of finalizing to `DISABLED` on the
-  first failure with no recovery path. A rolling deploy with mixed-version
-  replicas no longer permanently disables events; `onEventSerializationError`
-  still fires on every failed attempt. Amends ADR-0007.
-
-### Changed
 - **Entity-lock contract made honest and enforced (amends ADR-0012).**
   `lockTtl >= handlerMaxRuntime` is now validated at startup (a shorter
   TTL let the Redis lock expire under a legitimately running handler),
@@ -451,39 +463,34 @@ All notable changes to this project are documented here. Format follows
   removing DTO fields is now safe across a rolling deploy. Behavioral
   change vs 0.2.0; strictness is available via a custom
   `@Bean("outboxObjectMapper")`.
-
-### Added
-- **Capacity-coupled polling.** The poller now claims
-  `min(claim-batch-size, free executor capacity)`, stops claiming entirely
-  while the per-type executor is saturated, re-polls immediately after a
-  full batch, and is woken the moment a saturated executor frees a slot.
-  This removes the `claim-batch-size / poll-min-interval` throughput
-  ceiling (20 events/s per type with defaults, regardless of pool size)
-  and eliminates the claim/release write churn under overload (previously
-  ~2 wasted hot-table writes per event while the pool was full).
-  `handler-pool-size + handler-queue-capacity` now also acts as a soft
-  in-flight cap for `handler-executor.type: virtual`. Amends ADR-0004.
-- **Same-JVM after-commit poller wake-up.** `OutboxEventPublisher` now wakes
-  the local poller of a published event type as soon as the publishing
-  transaction commits (`TransactionContext.afterCommit` +
-  `PollerWakeHub`/`Poller.wake()`), dropping same-JVM publish→handle latency
-  from the poll interval (up to `poll-max-interval`, 10s default) to
-  milliseconds. Rollbacks never wake; cross-pod pickup stays poll-bound.
-  Always on, no configuration. Amends ADR-0006 (the `afterDone` mitigation
-  cited there was never built).
-- `EventStore.release(...)` and `EventStore.releaseClaimed(...)` SPI operations:
-  return claimed events to `PENDING` **without** incrementing `attempts`. Used
-  for lock contention, executor backpressure, unknown-handler SKIP, transient
-  finalize failures and shutdown — none of these consume the retry budget any
-  more.
-- `event-outboxer.dispatcher.dispatch-rejected-retry-delay` property (default
-  `1s`) — reschedule delay for dispatches rejected by a saturated handler
-  executor.
-- Enforcer rule `ban-core-in-adapter` in every adapter module: the
-  "adapters must not depend on core" invariant is now build-enforced.
-- Apache-2.0 license headers in `examples/`.
+- `OutboxEngine` constructor takes the `EventStore`, `Clock` and a
+  `HandlerExecutorManager` (engine-owned executor lifecycle); `HeartbeatTask`
+  takes `WorkerInfo` instead of `WorkerId`. Plain-Java users going through
+  `OutboxEngineBuilder` are unaffected.
 
 ### Fixed
+- **`event_outboxer.events.disabled` counter silently never recorded in
+  Spring apps.** The starter eagerly registered a *gauge* with the same
+  name and tags; Micrometer then rejected the listener's lazy *counter*
+  registration and `OutboxListenerRegistry` swallowed the exception.
+  The backlog gauges are now a single `events.backlog{status}` meter
+  (see Breaking), and `MicrometerMeterCollisionTest` pins the
+  coexistence. The never-emitted `lease_renewal_mismatch` metric was
+  removed from OBSERVABILITY.md.
+- **Documentation drift.** ADR-0002 and the `OutboxEventPublisher`
+  javadoc advertised a `no-transaction-policy` value `AUTO` that never
+  existed (the enum is `FAIL | IGNORE`; the javadoc also used a stale
+  `outbox.*` property prefix). ADR-0010's SPI signature block and port
+  inventory were resynchronized with the shipped interfaces. ADR-0013
+  wrongly claimed the Spring starter registers `LoggingOutboxListener`
+  by default behind a non-existent property — the plain-Java builder
+  adds it, the starter opts out. ARTIFACTS.md now lists all 15 modules.
+- **Payload deserialization failures are recoverable.** They now route
+  through the `FailureHandler` chain (retry with backoff, `DISABLED` only
+  after the attempt budget) instead of finalizing to `DISABLED` on the
+  first failure with no recovery path. A rolling deploy with mixed-version
+  replicas no longer permanently disables events; `onEventSerializationError`
+  still fires on every failed attempt. Amends ADR-0007.
 - **Stranded `PROCESSING` events.** Four recovery-path bugs could leave a
   claimed event invisible to both the watchdog and orphan recovery while the
   worker stayed alive: a dispatch rejected by a saturated executor was never
@@ -520,12 +527,6 @@ All notable changes to this project are documented here. Format follows
   binding (property names, defaults, removed never-implemented subtrees).
 - Release workflow now runs the full test suite and validates the changelog
   section **before** the irreversible deploy to Maven Central.
-
-### Changed
-- `OutboxEngine` constructor takes the `EventStore`, `Clock` and a
-  `HandlerExecutorManager` (engine-owned executor lifecycle); `HeartbeatTask`
-  takes `WorkerInfo` instead of `WorkerId`. Plain-Java users going through
-  `OutboxEngineBuilder` are unaffected.
 
 ## [0.2.0] — 2026-04-22
 
