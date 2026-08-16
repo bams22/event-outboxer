@@ -88,7 +88,40 @@ Override the prefix when several outbox instances share one registry
 or your organisation mandates a namespace. Declaring your own
 `MicrometerOutboxListener` bean replaces the auto-configured one; the
 gauges can be replaced individually by defining beans named
-`outboxEngineStateGauges` / `outboxBacklogGauges`.
+`outboxEngineStateGauges` / `outboxBacklogGauges` /
+`outboxSaturationGauges`.
+
+### Default percentiles for the timers (opt-in YAML)
+
+The module ships a ready-made configuration file that makes every
+event-outboxer timer (`events.queue_time`, `events.processing_time`,
+`handler.stuck_time`) publish client-side percentiles
+p50/p75/p90/p95/p99:
+
+```yaml
+spring:
+  config:
+    import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"
+```
+
+These are precomputed per-JVM `{quantile="…"}` series — cheap (+5
+series per tag combination) and available without histogram buckets,
+but **not aggregatable across pods** (you cannot sum or average a p99).
+For fleet-wide percentiles enable histogram buckets instead (they can
+coexist):
+
+```yaml
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        event_outboxer.events.queue_time: true
+        event_outboxer.events.processing_time: true
+```
+
+The keys inside `metrics-defaults.yml` use the default metric prefix —
+if you override `event-outboxer.metrics.prefix`, copy the file and
+adjust the meter names.
 
 ### Without Spring
 

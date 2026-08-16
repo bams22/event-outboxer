@@ -485,6 +485,15 @@ module are on the classpath and a `MeterRegistry` bean exists.
   requires a different namespace. See [docs/OBSERVABILITY.md](OBSERVABILITY.md)
   for the full metric catalogue.
 
+The metrics module also ships an opt-in defaults file that makes every
+event-outboxer timer publish client-side percentiles p50/p75/p90/p95/p99:
+
+```yaml
+spring:
+  config:
+    import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"
+```
+
 ### `event-outboxer.tracing.*`
 
 Distributed-tracing integration (ADR-0023). A `PRODUCER` span wraps

@@ -199,6 +199,15 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Applies management.metrics.distribution.* properties (PropertiesMeterFilter)
+            so MetricsDefaultsImportTest can verify the shipped metrics-defaults.yml keys.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator-autoconfigure</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>io.github.bams22</groupId>
             <artifactId>event-outboxer-testkit</artifactId>

@@ -185,6 +185,19 @@ Every per-event metric carries an `event_type` tag so dashboards can
 drill down. Types without a tag are engine-wide and fire once per
 worker JVM.
 
+Timers publish no distribution data by default (only count/sum/max).
+Two opt-ins, combinable:
+
+- **Client-side percentiles p50/p75/p90/p95/p99** — import the defaults
+  shipped with the metrics module:
+  `spring.config.import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"`.
+  Cheap (+5 series per tag combination), works with any backend, but
+  per-JVM and not aggregatable across pods.
+- **Histogram buckets** for fleet-wide `histogram_quantile()` in
+  Prometheus:
+  `management.metrics.distribution.percentiles-histogram.event_outboxer.events.processing_time: true`
+  (and `…queue_time`). ~70 extra series per tag combination.
+
 | Metric | Type | Tags | When emitted | Interpretation |
 |---|---|---|---|---|
 | `event_outboxer.events.published` | counter | `event_type` | after `OutboxEventPublisher.publish(...)` persists a `PendingEvent` | publish throughput per type |
