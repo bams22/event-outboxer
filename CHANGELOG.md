@@ -8,6 +8,26 @@ All notable changes to this project are documented here. Format follows
 ## [0.3.0] — 2026-08-03
 
 ### Breaking
+- **Observability surface extended and re-tagged (amends ADR-0013).**
+  Pre-1.0 breaking changes to the `OutboxListener` contract and metric
+  names:
+  - `OutboxListener` grows 21 → 25 methods: `onPollCompleted`,
+    `onPollerSaturated` (new Polling group), `onStaleClaimsSwept`,
+    `onRetentionPurged` (new Maintenance group) — all default no-op.
+  - `EventClaimedInfo` gains `createdAt`; `EventRetryScheduledInfo` and
+    `EventDisabledInfo` gain a bounded `Trigger` enum (the free-form
+    `reason` string stays for logging); `LockAcquisitionInfo` gains
+    `Outcome (BUSY | ERROR)` + nullable `cause`, discriminating normal
+    contention from locker-backend failures.
+  - The three starter backlog gauges `events.pending` / `.processing`
+    / `.disabled` merged into one
+    `event_outboxer.events.backlog{event_type,status}` gauge (see the
+    meter-collision fix below). Dashboards must be updated.
+  - `events.retry_scheduled` and `events.disabled` counters gain a
+    `reason` tag, `handler.errors` an `exception` tag,
+    `lock.acquisition_failed` an `outcome` tag — PromQL that summed
+    these by name alone keeps working; per-series dashboards see new
+    label sets.
 - **Binary-capable serializer SPI and per-event payload format
   (ADR-0025).** Pre-1.0 breaking change preparing the serialization
   seam for binary formats (Protobuf, Smile, Fury) — the first of them
@@ -38,6 +58,19 @@ All notable changes to this project are documented here. Format follows
     `payloadFormat` fields.
 
 ### Added
+- **Queue-time lag, saturation and maintenance metrics.** New meters in
+  `event-outboxer-metrics-micrometer`: `events.queue_time` timer
+  (publish → claim lag, the "am I falling behind" signal),
+  `handler.stuck_time` timer, `poller.polls{result}` counter,
+  `poller.batch_size` summary, `poller.saturated` counter,
+  `claims.stale_swept` and `retention.purged{kind}` counters; the
+  `events.attempts` summary now also records on disabled and deleted
+  finalizes. New starter gauges read directly off the engine:
+  `events.in_flight{event_type}`,
+  `handler.executor.free_capacity{event_type}` and
+  `handler.executor.capacity{event_type}` (uniform pool+queue budget
+  semantics for platform and virtual executors), via new read-only
+  `OutboxEngine` accessors — core stays Micrometer-free.
 - **Starter-managed Redis connection (ADR-0027).** Setting
   `event-outboxer.redis.uri` (or `.host`, plus optional
   `port`/`username`/`password`/`database`/`ssl`/`timeout`/
@@ -278,6 +311,14 @@ All notable changes to this project are documented here. Format follows
   batch-purges the archive and old `DISABLED` rows. 15 modules total.
 
 ### Fixed
+- **`event_outboxer.events.disabled` counter silently never recorded in
+  Spring apps.** The starter eagerly registered a *gauge* with the same
+  name and tags; Micrometer then rejected the listener's lazy *counter*
+  registration and `OutboxListenerRegistry` swallowed the exception.
+  The backlog gauges are now a single `events.backlog{status}` meter
+  (see Breaking), and `MicrometerMeterCollisionTest` pins the
+  coexistence. The never-emitted `lease_renewal_mismatch` metric was
+  removed from OBSERVABILITY.md.
 - **Documentation drift.** ADR-0002 and the `OutboxEventPublisher`
   javadoc advertised a `no-transaction-policy` value `AUTO` that never
   existed (the enum is `FAIL | IGNORE`; the javadoc also used a stale
