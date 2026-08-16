@@ -62,6 +62,7 @@ class BinaryPayloadDispatchTest {
                         .deadThreshold(Duration.ofSeconds(5))
                         .orphanRecoveryInterval(Duration.ofSeconds(60))
                         .watchdogInterval(Duration.ofSeconds(1))
+                        .abandonedHandlerGrace(Duration.ofSeconds(1))
                         .reclaimBatchSize(10)
                         .shutdownTimeout(Duration.ofSeconds(2))
                         .staleClaimSweepInterval(Duration.ofMinutes(5))

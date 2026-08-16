@@ -349,6 +349,7 @@ class OutboxEngineIntegrationTest {
                         .deadThreshold(Duration.ofSeconds(1))
                         .orphanRecoveryInterval(Duration.ofMillis(500))
                         .watchdogInterval(Duration.ofMillis(200))
+                        .abandonedHandlerGrace(Duration.ofSeconds(1))
                         .reclaimBatchSize(10)
                         .shutdownTimeout(Duration.ofSeconds(2))
                         .staleClaimSweepInterval(Duration.ofMinutes(5))

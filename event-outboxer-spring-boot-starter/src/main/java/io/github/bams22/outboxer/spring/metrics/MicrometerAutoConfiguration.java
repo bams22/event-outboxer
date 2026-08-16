@@ -202,6 +202,10 @@ public class MicrometerAutoConfiguration {
      *   <li>{@code event_outboxer.handler.executor.capacity{event_type="…"}} — the constant budget
      *       {@code handlerPoolSize + handlerQueueCapacity}. {@code capacity - free_capacity} =
      *       queued + running, uniform across platform and virtual executor flavours.
+     *   <li>{@code event_outboxer.handler.abandoned_threads{event_type="…"}} — force-reclaimed
+     *       dispatches whose thread never returned. Each one permanently holds a slot of the type's
+     *       pool, so a value that only grows is a leak: the type stops processing once it reaches
+     *       {@code handler.executor.capacity}.
      * </ul>
      */
     @Bean
@@ -241,6 +245,16 @@ public class MicrometerAutoConfiguration {
                     .description(
                             "Total handler executor budget (handlerPoolSize +"
                                     + " handlerQueueCapacity)")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(
+                            prefix + ".handler.abandoned_threads",
+                            engine,
+                            e -> e.abandonedCount(eventType))
+                    .tag("event_type", eventType)
+                    .description(
+                            "Force-reclaimed dispatches whose thread is still running and still"
+                                    + " holding a handler pool slot")
                     .strongReference(true)
                     .register(registry);
         }

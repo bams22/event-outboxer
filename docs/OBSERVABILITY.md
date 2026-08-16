@@ -3,7 +3,7 @@
 How to tell what event-outboxer is doing from the outside: the
 Actuator health indicator, the Micrometer metrics catalogue, the
 `OutboxListener` callback reference, distributed tracing, and a short
-troubleshooting playbook for the five most common production
+troubleshooting playbook for the seven most common production
 scenarios.
 
 ## Contents
@@ -216,6 +216,7 @@ on top — boundaries merge.
 | `event_outboxer.handler.errors` | counter | `event_type`, `exception` | handler threw an uncaught exception; `exception` is the simple class name of the thrown type | spike → application bug or downstream outage; the `exception` tag separates timeouts from logic bugs |
 | `event_outboxer.handler.stuck_reclaimed` | counter | `event_type` | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | non-zero = your handler is slower than you expected |
 | `event_outboxer.handler.stuck_time` | timer | `event_type` | same trigger as `handler.stuck_reclaimed`; records how long the stuck handler had been running when reclaimed | how far past `handlerMaxRuntime` handlers actually run — use to right-size the budget |
+| `event_outboxer.handler.abandoned` | counter | `event_type` | a force-reclaimed dispatch was still running `abandonedHandlerGrace` later — it ignored the interrupt, or the type set `interrupt-stuck-handler: false` and was never asked to stop | **every increment is a handler thread this JVM cannot get back until the handler returns on its own** — normally blocked in something without a timeout; the row itself is safe (already back in PENDING). `HandlerAbandonedInfo.interrupted` and the log level (ERROR vs WARN) separate the runaway handler from the configured opt-out |
 | `event_outboxer.lock.acquisition_failed` | counter | `event_type`, `outcome` | `EntityLocker.tryLock(...)` returned empty (`outcome="busy"`) or threw (`outcome="error"`) | `busy` is normal contention, safe up to a point; `error` means the locker backend is failing — alert on it separately |
 | `event_outboxer.lock.release_failed` | counter | `event_type` | `LockHandle.close()` threw | Redis/PG returning errors on release — check the locker's backend |
 | `event_outboxer.workers.registered` | counter | — | once per `OutboxEngine.start()` | increases by 1 per app restart (and per replica) |
@@ -239,6 +240,7 @@ on top — boundaries merge.
 | `event_outboxer.events.in_flight` | gauge | `event_type` | read off the engine's in-flight registry at scrape time (no storage round trip) | events this JVM is processing right now; sums across replicas to fleet-wide concurrency |
 | `event_outboxer.handler.executor.free_capacity` | gauge | `event_type` | remaining submission budget of the type's handler executor; `0` while saturated or engine stopped | sustained `0` with a running engine = the type is saturated — correlate with `poller.saturated` and `dispatch.rejected` |
 | `event_outboxer.handler.executor.capacity` | gauge | `event_type` | constant budget `handlerPoolSize + handlerQueueCapacity` (uniform for platform and virtual executors) | `capacity - free_capacity` = queued + running; useful as the denominator in a utilisation panel |
+| `event_outboxer.handler.abandoned_threads` | gauge | `event_type` | force-reclaimed dispatches of this type whose thread has still not returned | the leak counter: it drops back only when a thread finally returns. Approaching `handler.executor.capacity` means the type is about to stop processing entirely — alert well before that |
 
 ### Quick checks on this table
 
@@ -293,7 +295,7 @@ you care about.
 | 15 | `onWorkerDeregistered` | worker | once per graceful shutdown, after `DELETE FROM event_outboxer.workers` | `workerId` |
 | 16 | `onHeartbeatFailed` | worker | periodic heartbeat write threw or affected zero rows | `workerId`, `cause` |
 | 17 | `onOrphansReclaimed` | recovery | `OrphanRecoveryTask` moved ≥1 row back to `PENDING` | `deadWorkers` collection, `eventCount` |
-| 18 | `onStuckHandlerReclaimed` | recovery | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | `eventId`, `eventType`, `elapsed`, `workerId` |
+| 18 | `onStuckHandlerReclaimed` | recovery | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | `eventId`, `eventType`, `elapsed`, `workerId`, `interrupted` (whether the handler thread was interrupted) |
 | 19 | `onStorageError` | storage | any storage call raised a `StorageException` | `operation`, `cause` |
 | 20 | `onDispatchRejected` | dispatch | per-type handler executor rejected via `RejectedExecutionException` | `eventId`, `eventType`, `cause` |
 | 21 | `onEngineCrashed` | engine | the background health check detected that a critical component (typically a poller thread) is no longer alive | `reason`, `cause` (nullable — uncaught `Error` that killed the thread is usually lost), `at`, `workerId` |
@@ -301,6 +303,7 @@ you care about.
 | 23 | `onPollerSaturated` | polling | poller skipped a claim cycle because the handler executor had no free capacity | `eventType` |
 | 24 | `onStaleClaimsSwept` | maintenance | stale-claim sweeper released abandoned PROCESSING rows back to PENDING (fires only when ≥1 was swept) | `count`, `threshold` |
 | 25 | `onRetentionPurged` | maintenance | retention task deleted rows past their window (fires only when ≥1 was purged) | `archivedPurged`, `disabledPurged` |
+| 26 | `onHandlerAbandoned` | recovery | fires **once** per force-reclaimed dispatch that was still running `abandonedHandlerGrace` later — its thread keeps a slot of the type's pool until it returns. `interrupted=true`: the handler ignored the interrupt (logged ERROR); `interrupted=false`: the type set `interrupt-stuck-handler: false`, so it was never asked to stop (logged WARN) | `eventId`, `eventType`, `workerId`, `threadName`, `elapsed`, `interrupted` |
 
 ### Writing custom listeners
 
@@ -501,6 +504,44 @@ runs.
 - Post-mortem: fix the underlying cause — heap sizing, stricter
   validation on the handler's input, etc. The engine does not
   attempt to restart itself in-process.
+
+### 7. One event type stopped processing (leaked handler threads)
+
+**Symptom**: `event_outboxer.handler.abandoned_threads{event_type=…}`
+is non-zero and climbing; `handler.executor.free_capacity` for that
+type sits at `0` while other types keep flowing;
+`events.backlog{status="pending"}` grows for that type only; logs
+contain `handler ignored the interrupt and did not yield …` (or, for a
+type with `interrupt-stuck-handler: false`, `handler still running …
+after force-reclaim`). The engine is `UP` — this is not a crash.
+
+**Diagnose**:
+- Each increment of `handler.abandoned` is one dispatch whose row was
+  force-reclaimed and whose thread kept running anyway. With
+  `interrupt-stuck-handler` on (the default) that means the interrupt
+  was ignored — almost always blocking I/O with no timeout: an HTTP
+  client with no connect/read timeout, a driver call with no socket
+  timeout, a `take()` on a queue nobody feeds. With the opt-out on
+  (`HandlerAbandonedInfo.interrupted=false`, logged at WARN) the thread
+  was never asked to stop, so the reading is "this handler is slower
+  than `handler-max-runtime`", not "this handler is unstoppable".
+- `HandlerAbandonedInfo.threadName` names the thread — take a thread
+  dump (`jcmd <pid> Thread.print`) and look at that thread's stack to
+  see exactly what it is blocked on.
+- The events themselves are **safe**: every one of them went back to
+  `PENDING` with `attempts + 1` at reclaim time. Only this JVM's
+  threads are lost.
+
+**Fix**:
+- Set timeouts on the client the handler calls. That is the actual fix;
+  everything else is mitigation.
+- Until then, `handler-pool-size` can be raised to buy time (each leak
+  costs one slot), and `handler-max-runtime` should be set close to the
+  handler's realistic worst case so the reclaim happens promptly.
+- If the handler is deliberately non-interruptible, keep
+  `interrupt-stuck-handler: false` for that type and treat the gauge as
+  the leak budget.
+- Restarting the pod is the only way to reclaim already-lost threads.
 
 ---
 

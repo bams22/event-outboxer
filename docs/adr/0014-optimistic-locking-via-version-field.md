@@ -3,7 +3,9 @@
 ## Status
 
 Accepted (amended 2026-07-27: batch form of the finalize invariant —
-group-commit finalize batching)
+group-commit finalize batching; amended 2026-08-16: the losing side is
+interrupted — stuck-handler cancellation and abandoned-thread
+reporting)
 
 ## Date
 
@@ -108,6 +110,76 @@ release path runs per event as before. A batch statement does finalize
 its rows atomically (all-or-nothing on storage failure), which is
 strictly within at-least-once semantics.
 
+### The losing side is interrupted (amendment, 2026-08-16)
+
+The invariant above says a force-reclaimed handler's finalize *will*
+fail. Until this amendment nothing followed from that: the watchdog
+fixed the row and left the handler running. A handler that never
+returns — the common shape is blocking I/O with no timeout on the
+client — then held its slot of the per-type handler pool forever.
+Because the retry chain only runs when a handler *returns*, a
+permanently blocked handler never reaches `MaxRetriesFailureHandler`
+either: the event is re-claimed, blocks again, and burns one more
+thread per `handlerMaxRuntime`. After `handlerPoolSize` rounds the type
+stops processing entirely while every other type keeps running
+(ADR-0004), which reads in metrics as a mysteriously idle event type.
+
+The watchdog therefore **interrupts the dispatching thread** right
+after a successful `forceReclaim`. This adds no new race: the interrupt
+happens strictly after the version bump, so whatever the handler does
+next already loses the finalize race, and the interrupt only converts a
+guaranteed-worthless computation into an early exit. Specifics:
+
+- The in-flight registry entry carries a `DispatchHandle` bound to the
+  dispatching thread. `interruptIfActive()` and the dispatcher's
+  `deactivate()` are mutually exclusive, so an interrupt can never land
+  on a pool thread that has already moved on to the next event.
+- The dispatcher clears a watchdog-issued interrupt **as soon as the
+  handler unwinds** — before the finalize and the entity-lock release —
+  and once more before returning the thread to the pool. The interrupt's
+  only job is to unblock the handler; carrying it any further would
+  break the cleanup instead. An interrupted finalize can kill a pooled
+  JDBC connection, and under group-commit batching that one failure is
+  shared by every other event in the same statement; an interrupted lock
+  release would leave the entity lock to expire on its TTL (`>=
+  handlerMaxRuntime`) and stall redelivery of that key. Each interrupt is
+  consumed exactly once, so the interrupt status a `shutdownNow()` sets
+  on the same thread afterwards is left standing — the flag belongs to
+  the thread, not to us.
+- A handler that unwinds on the interrupt reports the resulting
+  exception through the normal `HandlerErrorInfo` → failure-chain path;
+  its finalize then loses the race and is logged at debug, as before.
+- Per-type opt-out `interruptStuckHandler` (default on) for handlers
+  that are not interrupt-safe. The row is force-reclaimed either way.
+
+Nothing can force a thread that ignores interrupts, and pretending
+otherwise would be worse than not trying. Such dispatches are therefore
+tracked as **abandoned** — the row belongs to whoever claims it next,
+the thread is still ours and still holds its pool slot — and reported
+once, after `abandonedHandlerGrace`, via
+`OutboxListener.onHandlerAbandoned` plus the
+`event_outboxer.handler.abandoned_threads` gauge. That gauge growing
+toward `handler.executor.capacity` is the mechanical warning that the
+type is about to stall, and the actionable message is always the same:
+set a timeout on whatever the handler is blocked on. A dispatch of a
+type that opted out of the interrupt is tracked and reported the same
+way, carrying `interrupted=false` — its thread holds a slot just as
+long, it was simply never asked to stop, so it is logged as a warning
+rather than an error.
+
+The abandoned set is keyed by **dispatch**, not by event id. A
+force-reclaimed row goes straight back to `PENDING` and is routinely
+re-claimed by this same JVM while the previous dispatch is still
+running, so two dispatches of one event id overlap by design;
+bookkeeping keyed by id alone would let the newer dispatch erase the
+record of the thread the older one is still burning — exactly the leak
+the gauge exists to expose.
+
+Also note that `pgjdbc` may close a connection interrupted mid-I/O.
+That is a property of interrupt-based cancellation, not of this
+design; a handler doing long database work can opt out per type and
+rely on a `statement_timeout` instead.
+
 ### Heartbeat does NOT change `version`
 
 Important note: lease renewal (if we had per-event leases) must not
@@ -161,6 +233,13 @@ short, `deadThreshold` too short).
 - Under normal operation — ~0 conflicts. Frequent conflicts — tune
   `handlerMaxRuntime` and `deadThreshold`.
 - Idempotent handlers are mandatory (ADR-0015).
+- A handler exceeding `handlerMaxRuntime` gets interrupted; handlers
+  that are not interrupt-safe set
+  `event-outboxer.event-types.overrides.<TYPE>.interrupt-stuck-handler:
+  false`.
+- `event_outboxer.handler.abandoned_threads` > 0 means this JVM has lost
+  handler threads for good — the fix belongs in the handler's client
+  timeouts, not in outbox configuration.
 
 ### For maintainers
 

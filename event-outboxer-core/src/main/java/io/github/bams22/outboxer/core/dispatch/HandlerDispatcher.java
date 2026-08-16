@@ -147,22 +147,32 @@ public final class HandlerDispatcher {
         // so the watchdog can force-reclaim a hang anywhere in the pipeline (a stuck lock backend
         // used to leave the row PROCESSING outside any registry). handlerMaxRuntime therefore
         // budgets the full processing of a claim, not just handler.handle().
-        inFlight.register(
-                claimed.id(),
+        DispatchHandle handle = new DispatchHandle(Thread.currentThread());
+        InFlightRegistry.Entry entry =
                 new InFlightRegistry.Entry(
                         claimed.id(),
                         claimed.eventType(),
                         workerId,
                         claimed.claimedVersion(),
-                        clock.now()));
+                        clock.now(),
+                        handle);
+        inFlight.register(entry);
         try {
-            dispatchRegistered(claimed);
+            dispatchRegistered(claimed, handle);
         } finally {
-            inFlight.unregister(claimed.id());
+            // Detach before unregistering: a watchdog iterating a stale snapshot must not land an
+            // interrupt on a pool thread that has already picked up the next event.
+            handle.deactivate();
+            // Backstop for the paths that returned before dispatchRegistered's own cleanup
+            // (unknown type, deserialization failure, busy lock). After deactivate() no further
+            // interrupt can arrive, so this clear is final: the next task on this pool thread
+            // cannot start out interrupted.
+            handle.consumeInterrupt();
+            inFlight.unregister(entry);
         }
     }
 
-    private void dispatchRegistered(ClaimedEvent claimed) {
+    private void dispatchRegistered(ClaimedEvent claimed, DispatchHandle handle) {
         Optional<EventHandler<?>> handlerOpt = handlers.find(claimed.eventType());
         if (handlerOpt.isEmpty()) {
             handleUnknownType(claimed);
@@ -216,6 +226,12 @@ public final class HandlerDispatcher {
                 }
             }
             EventOutcome outcome = invokeHandler(claimed, handler, payload);
+            // A watchdog interrupt has served its whole purpose the moment the handler unwound.
+            // Clear it before any storage or locker call: an interrupted finalize can kill a pooled
+            // JDBC connection — and under group-commit batching that failure is shared with every
+            // other event in the same statement — while an interrupted lock release would leave the
+            // entity lock to expire on its TTL and stall redelivery of that key.
+            handle.consumeInterrupt();
             try {
                 routeOutcome(claimed, handler, payload, outcome);
             } catch (RuntimeException ex) {
@@ -237,6 +253,8 @@ public final class HandlerDispatcher {
                 releaseAfterFinalizeFailure(claimed, ex);
             }
         } finally {
+            // Same reason, for an interrupt that landed while the finalize above was running.
+            handle.consumeInterrupt();
             closeLock(claimed, lockKey, lock);
         }
     }

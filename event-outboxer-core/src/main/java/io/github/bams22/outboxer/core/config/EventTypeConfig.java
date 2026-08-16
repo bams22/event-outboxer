@@ -31,6 +31,11 @@ import lombok.Builder;
  *     handoff that fails fast (triggers {@code onDispatchRejected})
  * @param handlerMaxRuntime maximum handler wall-clock time before the watchdog force-reclaims the
  *     row
+ * @param interruptStuckHandler whether the watchdog interrupts the dispatching thread after a
+ *     force-reclaim. On by default: the force-reclaim already invalidated the handler's finalize
+ *     (ADR-0014), so a handler left running can only waste a slot of this type's pool. Turn it off
+ *     for handlers that are not interrupt-safe — the row is reclaimed either way, but the thread is
+ *     then never asked to stop
  * @param lockTtl safety timeout passed to {@code EntityLocker.tryLock(...)}. Must be {@code >=
  *     handlerMaxRuntime} (validated): for TTL-honouring lockers (Redis) a shorter TTL would let the
  *     entity lock expire while a legitimate handler is still running, breaking per-key
@@ -46,6 +51,7 @@ public record EventTypeConfig(
         int handlerPoolSize,
         int handlerQueueCapacity,
         Duration handlerMaxRuntime,
+        boolean interruptStuckHandler,
         Duration lockTtl) {
 
     public EventTypeConfig {
@@ -113,6 +119,7 @@ public record EventTypeConfig(
                 .handlerPoolSize(3)
                 .handlerQueueCapacity(100)
                 .handlerMaxRuntime(Duration.ofMinutes(5))
+                .interruptStuckHandler(true)
                 // 2 x handlerMaxRuntime: the TTL is the crash-release mechanism, and the margin
                 // covers
                 // a zombie handler finishing after its row was already force-reclaimed by the

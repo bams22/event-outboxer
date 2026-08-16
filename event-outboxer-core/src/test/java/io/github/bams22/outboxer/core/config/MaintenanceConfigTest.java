@@ -25,6 +25,7 @@ class MaintenanceConfigTest {
                                         .deadThreshold(Duration.ofSeconds(10))
                                         .orphanRecoveryInterval(Duration.ofSeconds(10))
                                         .watchdogInterval(Duration.ofSeconds(10))
+                                        .abandonedHandlerGrace(Duration.ofSeconds(1))
                                         .reclaimBatchSize(10)
                                         .shutdownTimeout(Duration.ofSeconds(10))
                                         .staleClaimSweepInterval(Duration.ofMinutes(5))

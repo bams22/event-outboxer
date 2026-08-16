@@ -98,6 +98,7 @@ event-outboxer:
       handler-pool-size: 3           # fixed per-type thread pool (core == max, no scaling)
       handler-queue-capacity: 100    # bounded queue; 0 = synchronous handoff (fail fast)
       handler-max-runtime: 5m        # watchdog threshold for a stuck handler
+      interrupt-stuck-handler: true  # interrupt the handler thread after force-reclaim
       lock-ttl: 10m                  # entity-lock TTL; must be >= handler-max-runtime (2x recommended)
     overrides:                       # thin merge: set only the fields you change
       SEND_EMAIL:
@@ -121,6 +122,7 @@ event-outboxer:
     dead-threshold: 30s              # heartbeat silence before a worker counts as dead
     orphan-recovery-interval: 30s    # orphan-recovery task period
     watchdog-interval: 10s           # stuck-handler watchdog period
+    abandoned-handler-grace: 30s     # after this, a force-reclaimed thread counts as lost
     reclaim-batch-size: 50           # max dead workers processed per orphan-recovery pass
     shutdown-timeout: 30s            # max wait for in-flight handlers on shutdown
     stale-claim-threshold: null      # null = derived: 2 × max handler-max-runtime
@@ -374,6 +376,18 @@ per-type overrides adjust individual fields (see
   after `dispatcher.dispatch-rejected-retry-delay`.
 - `handler-max-runtime` — watchdog threshold. A handler running longer
   is force-reclaimed (see ADR-0005).
+- `interrupt-stuck-handler` — whether the watchdog also interrupts the
+  handler thread it just force-reclaimed (default `true`). The
+  reclaimed row is going to reject that handler's finalize anyway
+  (ADR-0014), so letting it run only burns a pool slot; the interrupt
+  gives the slot back as soon as the handler unwinds. Set to `false`
+  for handlers that are not interrupt-safe — for example long database
+  work where you would rather rely on `statement_timeout`, since
+  `pgjdbc` may close a connection interrupted mid-I/O. Either way, a
+  dispatch still running `maintenance.abandoned-handler-grace` after the
+  reclaim is reported as abandoned; the callback's `interrupted` flag
+  (and the log level) says whether the thread ignored an interrupt or
+  was never asked to stop.
 - `lock-ttl` — entity-lock TTL passed to `EntityLocker.tryLock()`.
   **Must be `>= handler-max-runtime`** (validated at startup): for
   TTL-honouring lockers (Redis, the PG lease locker) a shorter TTL
@@ -439,6 +453,15 @@ Maintenance-process parameters.
 - `orphan-recovery-interval` — period of `OrphanRecoveryTask`.
 - `watchdog-interval` — period of `WatchdogTask` (also used by the
   engine crash detector).
+- `abandoned-handler-grace` — how long a force-reclaimed dispatch may
+  keep running before its thread counts as lost (default 30s). Past it
+  the watchdog fires `OutboxListener.onHandlerAbandoned` once for that
+  dispatch and keeps counting the thread in `handler.abandoned_threads`
+  until it finally returns. Logged at ERROR when the handler ignored the
+  interrupt, at WARN when the type opted out of being interrupted at all
+  (`interrupted=false` on the callback). Size it above the worst-case
+  unwind of an interrupt-honouring handler so the alert means "this
+  thread is never coming back", not "it is still tidying up".
 - `reclaim-batch-size` — maximum number of dead workers processed per
   orphan-recovery pass.
 - `shutdown-timeout` — maximum wait for in-flight handlers during
@@ -462,7 +485,7 @@ and entity-lock acquisition, not just `handler.handle()`.
 
 > See [docs/OBSERVABILITY.md](OBSERVABILITY.md) for what these knobs
 > look like from the outside — the health endpoint, the Micrometer
-> metric list and five troubleshooting recipes.
+> metric list and seven troubleshooting recipes.
 
 ### `event-outboxer.handler-executor.type`
 
@@ -739,6 +762,7 @@ refresh:
 | `poll-multiplier > 1.0` | `EventTypeConfig` | Adaptive backoff needs growth |
 | `claim-batch-size > 0`, `handler-pool-size > 0`, `handler-queue-capacity >= 0` | `EventTypeConfig` | Pool is fixed-size and bounded |
 | `handler-max-runtime > 0`, `lock-ttl > 0` | `EventTypeConfig` | Sanity |
+| `abandoned-handler-grace >= 0` | `MaintenanceConfig` | Sanity |
 | retry delays not negative | `DispatcherConfig` | Sanity |
 
 ---

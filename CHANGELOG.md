@@ -11,9 +11,11 @@ All notable changes to this project are documented here. Format follows
 - **Observability surface extended and re-tagged (amends ADR-0013).**
   Pre-1.0 breaking changes to the `OutboxListener` contract and metric
   names:
-  - `OutboxListener` grows 21 → 25 methods: `onPollCompleted`,
+  - `OutboxListener` grows 21 → 26 methods: `onPollCompleted`,
     `onPollerSaturated` (new Polling group), `onStaleClaimsSwept`,
-    `onRetentionPurged` (new Maintenance group) — all default no-op.
+    `onRetentionPurged` (new Maintenance group) and `onHandlerAbandoned`
+    (Recovery group, see the stuck-handler entry under Added) — all
+    default no-op.
   - `EventClaimedInfo` gains `createdAt`; `EventRetryScheduledInfo` and
     `EventDisabledInfo` gain a bounded `Trigger` enum (the free-form
     `reason` string stays for logging); `LockAcquisitionInfo` gains
@@ -56,8 +58,50 @@ All notable changes to this project are documented here. Format follows
   - Admin surfaces (actuator + REST): `payload` is now nullable (text
     lane) next to new `payloadBase64` (binary lane) and
     `payloadFormat` fields.
+- **Stuck-handler cancellation reshapes three core types (amends
+  ADR-0014).** Pre-1.0 breaking changes that come with the feature
+  described under Added:
+  - `StuckHandlerReclaimedInfo` gains an `interrupted` component.
+  - `MaintenanceConfig` gains `abandonedHandlerGrace` and
+    `EventTypeConfig` gains `interruptStuckHandler` — plain-Java wiring
+    that builds them field-by-field must set both.
+  - Plain-Java wiring only: `WatchdogTask`'s constructor takes the
+    abandoned-handler grace, `InFlightRegistry.Entry` carries a
+    `DispatchHandle`, and `InFlightRegistry.register` / `unregister` /
+    `markAbandoned` take that entry instead of a bare event id (both
+    registry sets are keyed per dispatch, since a force-reclaimed event
+    is routinely re-claimed by the same JVM while the old dispatch runs
+    on). `OutboxEngineBuilder` users are unaffected.
 
 ### Added
+- **Stuck handlers are cancelled, not just reclaimed (amends
+  ADR-0014).** After a successful `forceReclaim` the watchdog now
+  interrupts the dispatching thread: the force-reclaim already
+  invalidated that handler's finalize, so letting it run only burned a
+  slot of the per-type handler pool. Previously a handler blocked
+  without a timeout leaked one thread per `handlerMaxRuntime` — and,
+  because the retry chain only runs when a handler *returns*, it never
+  reached `MaxRetriesFailureHandler` either, so the type quietly
+  stopped processing once every pool slot was held by a zombie.
+  - Per-type opt-out `event-outboxer.event-types.*.interrupt-stuck-handler`
+    (default `true`) for handlers that are not interrupt-safe.
+  - The dispatcher clears a watchdog-issued interrupt as soon as the
+    handler unwinds — before the finalize and the entity-lock release,
+    so a cancellation cannot break the cleanup — and again before
+    returning its thread to the pool, so it never leaks into the next
+    event.
+  - Dispatches still running after the new
+    `event-outboxer.maintenance.abandoned-handler-grace` (default 30s)
+    are tracked as **abandoned** and reported once:
+    `OutboxListener.onHandlerAbandoned(HandlerAbandonedInfo)` (26th
+    callback, default no-op), counter
+    `event_outboxer.handler.abandoned`, gauge
+    `event_outboxer.handler.abandoned_threads{event_type}`, and a log
+    line naming the thread — ERROR when the handler ignored the
+    interrupt, WARN when the type opted out of being interrupted.
+  - New troubleshooting recipe #7 in
+    [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for a single event
+    type that stopped processing.
 - **SLO histogram-bucket defaults for all timers, applied
   automatically.** `event-outboxer-metrics-micrometer` ships
   `META-INF/event-outboxer/metrics-defaults.yml` (10ms–1h grid for

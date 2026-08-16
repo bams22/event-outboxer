@@ -51,7 +51,28 @@ class EventTypeThinMergeTest {
         assertThat(merged.claimBatchSize()).isEqualTo(base.claimBatchSize());
         assertThat(merged.handlerQueueCapacity()).isEqualTo(base.handlerQueueCapacity());
         assertThat(merged.handlerMaxRuntime()).isEqualTo(base.handlerMaxRuntime());
+        assertThat(merged.interruptStuckHandler()).isEqualTo(base.interruptStuckHandler());
         assertThat(merged.lockTtl()).isEqualTo(base.lockTtl());
+    }
+
+    @Test
+    @DisplayName("interrupt-stuck-handler=false survives the merge; unset keeps the default true")
+    void interruptStuckHandlerOptOut() {
+        EventTypeConfig base = EventTypeConfig.defaults();
+        assertThat(base.interruptStuckHandler()).isTrue();
+
+        OutboxProperties.EventType override = new OutboxProperties.EventType();
+        override.setInterruptStuckHandler(false);
+
+        assertThat(
+                        OutboxEngineAutoConfiguration.mergeEventType(override, base)
+                                .interruptStuckHandler())
+                .isFalse();
+        assertThat(
+                        OutboxEngineAutoConfiguration.mergeEventType(
+                                        new OutboxProperties.EventType(), base)
+                                .interruptStuckHandler())
+                .isTrue();
     }
 
     @Test

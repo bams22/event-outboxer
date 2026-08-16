@@ -114,6 +114,20 @@ public final class OutboxEngine {
     }
 
     /**
+     * Number of dispatches whose row the watchdog force-reclaimed but whose thread is still
+     * running, across all types. Every one of them permanently holds a slot of its type's handler
+     * pool until it returns — a non-zero, non-transient value is a leak, not a hiccup.
+     */
+    public int abandonedCount() {
+        return inFlight.abandonedCount();
+    }
+
+    /** Number of force-reclaimed dispatches of the given type whose thread is still running. */
+    public int abandonedCount(String eventType) {
+        return inFlight.abandonedCountByType(eventType);
+    }
+
+    /**
      * Free submission capacity of the given type's handler executor; {@code 0} while the engine is
      * stopped. Throws {@code IllegalArgumentException} for an unknown type.
      */

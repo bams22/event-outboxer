@@ -153,7 +153,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | `EventHandler<T>` | Handler for a specific event type (user-facing contract) |
 | `EventOutcome` | Sealed interface of outcomes: Success / Retry / Fail / Skip |
 | `FailureHandler<T>` | Chain-of-responsibility for handling failures |
-| `OutboxListener` | Event bus for observability (25 methods) |
+| `OutboxListener` | Event bus for observability (26 methods) |
 | domain value objects | `Event`, `ClaimedEvent`, `PendingEvent`, `WorkerId`, `WorkerInfo` |
 | exceptions | `OutboxException` hierarchy |
 
@@ -176,10 +176,10 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | `Poller` (per type) | Background polling loop driven by `PollStrategy` |
 | `PollStrategy` | One claim iteration (`LockAndFetchStrategy` / `FetchThenLockStrategy`) |
 | `HandlerDispatcher` (per type) | Bridge between poller and executor, full processing lifecycle |
-| `InFlightRegistry` | In-memory registry of events being processed (for the watchdog) |
+| `InFlightRegistry` | In-memory registry of events being processed (for the watchdog), plus the abandoned set of force-reclaimed dispatches whose thread never returned |
 | `HeartbeatTask` | Periodic `workerRegistry.heartbeat()` |
 | `OrphanRecoveryTask` | `findDead + reclaimOrphans + removeDead` |
-| `WatchdogTask` | Force-reclaim stuck handlers after `handlerMaxRuntime` |
+| `WatchdogTask` | Force-reclaim stuck handlers after `handlerMaxRuntime`, interrupt them, report threads that never return |
 | `EventHandlerResolver` | Resolves handlers by eventType |
 | `DefaultOutboxEventPublisher` | Default publisher implementation |
 
@@ -299,7 +299,7 @@ WorkerRegistry.heartbeat(workerId)
 
 All three steps run in one adapter transaction.
 
-#### WatchdogTask (every 30s)
+#### WatchdogTask (every watchdog-interval)
 ```
 InFlightRegistry.snapshot()
     │
@@ -314,10 +314,32 @@ For each inflight e where (now - e.claimedAt) > handlerMaxRuntime(e.eventType):
         │
         ▼
     if reclaimed:
-        InFlightRegistry.unregister(id)
-        Listener.onStuckHandlerReclaimed(...)
-        [physical thread leak — unavoidable in Java]
+        e.handle.interruptIfActive()          # unless interruptStuckHandler=false
+        InFlightRegistry.markAbandoned(e)     # out of in-flight, into the abandoned set
+        Listener.onStuckHandlerReclaimed(..., interrupted)
+
+InFlightRegistry.abandonedSnapshot()
+    │
+    ▼
+For each abandoned a whose thread already returned:
+    InFlightRegistry.unregister(a.entry)      # nothing leaked; keeps the gauge honest
+For each abandoned a still running after abandonedHandlerGrace (once per dispatch):
+    Listener.onHandlerAbandoned(..., threadName, interrupted)
+    [its pool slot is lost until it returns — ERROR when the interrupt was
+     ignored, WARN when the type opted out of being interrupted at all]
 ```
+
+Both registry sets are keyed by **dispatch**, not by event id: a
+force-reclaimed row is back in `PENDING` and is regularly re-claimed by
+this same JVM while the abandoned dispatch is still running, so the two
+must not overwrite each other's bookkeeping.
+
+The dispatch's own `finally` blocks clear a watchdog-issued interrupt —
+once as soon as the handler unwinds, so it cannot break the finalize or
+the entity-lock release, and once before the thread goes back to the
+pool — and unregister the dispatch from both sets. A handler that
+unwinds therefore gives its slot straight back and never poisons the
+next event on that pool thread. See the ADR-0014 amendment.
 
 ---
 

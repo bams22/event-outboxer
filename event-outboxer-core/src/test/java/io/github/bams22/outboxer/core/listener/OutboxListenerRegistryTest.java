@@ -13,9 +13,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import java.lang.reflect.Method;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class OutboxListenerRegistryTest {
@@ -68,6 +72,26 @@ class OutboxListenerRegistryTest {
         registry.onEventPublished(somePublished());
 
         assertThat(a).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("every listener callback is fanned out — an inherited default silently drops it")
+    void overridesEveryCallback() {
+        List<String> notFannedOut = new ArrayList<>();
+        for (Method callback : OutboxListener.class.getDeclaredMethods()) {
+            if (!callback.isDefault()) {
+                continue;
+            }
+            try {
+                // getDeclaredMethod, not getMethod: inheriting the interface's no-op default is
+                // exactly the bug this guards against.
+                OutboxListenerRegistry.class.getDeclaredMethod(
+                        callback.getName(), callback.getParameterTypes());
+            } catch (NoSuchMethodException e) {
+                notFannedOut.add(callback.getName());
+            }
+        }
+        assertThat(notFannedOut).isEmpty();
     }
 
     private static EventPublishedInfo somePublished() {

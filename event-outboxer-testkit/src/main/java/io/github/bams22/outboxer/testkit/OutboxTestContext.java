@@ -420,7 +420,13 @@ public final class OutboxTestContext {
                             resolvedMaintenance,
                             listeners);
             WatchdogTask watchdog =
-                    new WatchdogTask(inFlight, resolvedStore, resolvedClock, typeCfg, listeners);
+                    new WatchdogTask(
+                            inFlight,
+                            resolvedStore,
+                            resolvedClock,
+                            typeCfg,
+                            listeners,
+                            resolvedMaintenance.abandonedHandlerGrace());
 
             List<String> types = new ArrayList<>(handlerResolver.registeredTypes());
 
@@ -480,6 +486,7 @@ public final class OutboxTestContext {
                     .handlerPoolSize(1)
                     .handlerQueueCapacity(100)
                     .handlerMaxRuntime(Duration.ofMinutes(1))
+                    .interruptStuckHandler(true)
                     .lockTtl(Duration.ofMinutes(1))
                     .build();
         }
@@ -490,6 +497,7 @@ public final class OutboxTestContext {
                     .deadThreshold(Duration.ofSeconds(3))
                     .orphanRecoveryInterval(Duration.ofSeconds(1))
                     .watchdogInterval(Duration.ofMillis(500))
+                    .abandonedHandlerGrace(Duration.ofSeconds(1))
                     .reclaimBatchSize(50)
                     .shutdownTimeout(Duration.ofSeconds(1))
                     .staleClaimSweepInterval(Duration.ofMinutes(5))

@@ -252,6 +252,14 @@ public class OutboxProperties {
         private Duration deadThreshold = Duration.ofSeconds(30);
         private Duration orphanRecoveryInterval = Duration.ofSeconds(30);
         private Duration watchdogInterval = Duration.ofSeconds(10);
+
+        /**
+         * How long a force-reclaimed dispatch may keep running before the watchdog reports its
+         * thread as lost to the handler pool ({@code handler.abandoned}). Covers the unwind of a
+         * handler that honours the interrupt.
+         */
+        private Duration abandonedHandlerGrace = Duration.ofSeconds(30);
+
         private int reclaimBatchSize = 50;
         private Duration shutdownTimeout = Duration.ofSeconds(30);
 
@@ -322,6 +330,13 @@ public class OutboxProperties {
         private @Nullable Integer handlerPoolSize;
         private @Nullable Integer handlerQueueCapacity;
         private @Nullable Duration handlerMaxRuntime;
+
+        /**
+         * Whether the watchdog interrupts the handler thread after force-reclaiming its row.
+         * Defaults to {@code true}; set to {@code false} for handlers that are not interrupt-safe.
+         */
+        private @Nullable Boolean interruptStuckHandler;
+
         private @Nullable Duration lockTtl;
     }
 

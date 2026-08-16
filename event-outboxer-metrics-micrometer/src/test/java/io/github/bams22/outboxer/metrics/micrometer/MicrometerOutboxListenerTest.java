@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
+import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
@@ -226,7 +227,11 @@ class MicrometerOutboxListenerTest {
     void stuckHandlerReclaimedIncrementsCounterAndRecordsElapsed() {
         listener.onStuckHandlerReclaimed(
                 new StuckHandlerReclaimedInfo(
-                        UUID.randomUUID(), "ORDER", Duration.ofSeconds(90), new WorkerId("w-1")));
+                        UUID.randomUUID(),
+                        "ORDER",
+                        Duration.ofSeconds(90),
+                        new WorkerId("w-1"),
+                        true));
 
         assertThat(
                         registry.counter(
@@ -239,6 +244,23 @@ class MicrometerOutboxListenerTest {
                         registry.timer("event_outboxer.handler.stuck_time", "event_type", "ORDER")
                                 .totalTime(TimeUnit.SECONDS))
                 .isEqualTo(90.0);
+    }
+
+    @Test
+    void handlerAbandonedIncrementsCounter() {
+        listener.onHandlerAbandoned(
+                new HandlerAbandonedInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        new WorkerId("w-1"),
+                        "outbox-ORDER-2",
+                        Duration.ofMinutes(6),
+                        true));
+
+        assertThat(
+                        registry.counter("event_outboxer.handler.abandoned", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1.0);
     }
 
     @Test

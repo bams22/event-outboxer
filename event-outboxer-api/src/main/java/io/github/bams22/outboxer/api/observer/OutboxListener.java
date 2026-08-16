@@ -174,6 +174,16 @@ public interface OutboxListener {
         // no-op
     }
 
+    /**
+     * Called once per force-reclaimed dispatch that was still running after {@code
+     * abandonedHandlerGrace} — its thread is lost to the type's handler pool until it returns on
+     * its own. {@code info.interrupted()} distinguishes a handler that ignored the interrupt from a
+     * type that opted out of being interrupted at all.
+     */
+    default void onHandlerAbandoned(HandlerAbandonedInfo info) {
+        // no-op
+    }
+
     // ==================== Maintenance ====================
 
     /**

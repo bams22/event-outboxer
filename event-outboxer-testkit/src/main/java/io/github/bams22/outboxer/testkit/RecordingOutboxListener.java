@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
+import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
@@ -73,6 +74,8 @@ public final class RecordingOutboxListener implements OutboxListener {
     private final CopyOnWriteArrayList<OrphansReclaimedInfo> orphansReclaimed =
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<StuckHandlerReclaimedInfo> stuckReclaimed =
+            new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<HandlerAbandonedInfo> handlersAbandoned =
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<StorageErrorInfo> storageErrors =
             new CopyOnWriteArrayList<>();
@@ -213,6 +216,11 @@ public final class RecordingOutboxListener implements OutboxListener {
     }
 
     @Override
+    public void onHandlerAbandoned(HandlerAbandonedInfo info) {
+        handlersAbandoned.add(info);
+    }
+
+    @Override
     public void onStorageError(StorageErrorInfo info) {
         storageErrors.add(info);
     }
@@ -321,6 +329,10 @@ public final class RecordingOutboxListener implements OutboxListener {
 
     public List<StuckHandlerReclaimedInfo> stuckReclaimed() {
         return List.copyOf(stuckReclaimed);
+    }
+
+    public List<HandlerAbandonedInfo> handlersAbandoned() {
+        return List.copyOf(handlersAbandoned);
     }
 
     public List<StorageErrorInfo> storageErrors() {

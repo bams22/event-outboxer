@@ -28,6 +28,10 @@ import org.jspecify.annotations.Nullable;
  *     workers
  * @param watchdogInterval cadence of the watchdog that scans the in-flight registry for stuck
  *     handlers
+ * @param abandonedHandlerGrace how long a force-reclaimed dispatch may keep running before the
+ *     watchdog reports its thread as lost ({@code onHandlerAbandoned}). Covers the unwind of a
+ *     handler that honours the interrupt; anything still running past it is blocked in something
+ *     that ignores interrupts
  * @param reclaimBatchSize upper bound on dead workers processed per orphan-recovery pass
  * @param shutdownTimeout budget for in-flight handlers to complete during graceful stop
  * @param staleClaimThreshold age of a {@code PROCESSING} claim before the stale-claim sweeper
@@ -42,6 +46,7 @@ public record MaintenanceConfig(
         Duration deadThreshold,
         Duration orphanRecoveryInterval,
         Duration watchdogInterval,
+        Duration abandonedHandlerGrace,
         int reclaimBatchSize,
         Duration shutdownTimeout,
         @Nullable Duration staleClaimThreshold,
@@ -72,6 +77,11 @@ public record MaintenanceConfig(
             throw new IllegalArgumentException(
                     "watchdogInterval must be positive, got " + watchdogInterval);
         }
+        Objects.requireNonNull(abandonedHandlerGrace, "abandonedHandlerGrace must not be null");
+        if (abandonedHandlerGrace.isNegative()) {
+            throw new IllegalArgumentException(
+                    "abandonedHandlerGrace must not be negative, got " + abandonedHandlerGrace);
+        }
         if (reclaimBatchSize <= 0) {
             throw new IllegalArgumentException(
                     "reclaimBatchSize must be positive, got " + reclaimBatchSize);
@@ -99,6 +109,7 @@ public record MaintenanceConfig(
                 .deadThreshold(Duration.ofSeconds(30))
                 .orphanRecoveryInterval(Duration.ofSeconds(30))
                 .watchdogInterval(Duration.ofSeconds(10))
+                .abandonedHandlerGrace(Duration.ofSeconds(30))
                 .reclaimBatchSize(50)
                 .shutdownTimeout(Duration.ofSeconds(30))
                 .staleClaimSweepInterval(Duration.ofMinutes(5))

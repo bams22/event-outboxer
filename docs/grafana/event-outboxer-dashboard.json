@@ -2127,7 +2127,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Watchdog force-reclaims of handlers exceeding handlerMaxRuntime, plus the observed stuck runtime (right axis in seconds) — use it to right-size the runtime budget.",
+      "description": "Watchdog force-reclaims of handlers exceeding handlerMaxRuntime, plus the observed stuck runtime (right axis in seconds) — use it to right-size the runtime budget. The abandoned-thread series counts handlers that ignored the interrupt: each one permanently holds a slot of its type's pool, so a rising line means that event type is heading for a full stall.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2203,9 +2203,27 @@
           "expr": "max by (event_type) (event_outboxer_handler_stuck_time_seconds_max{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"})",
           "legendFormat": "{{event_type}}: stuck max (s)",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (event_outboxer_handler_abandoned_threads{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"})",
+          "legendFormat": "{{event_type}}: abandoned threads",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (rate(event_outboxer_handler_abandoned_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}: abandoned rate",
+          "refId": "D"
         }
       ],
-      "title": "Stuck handlers: reclaims & runtime",
+      "title": "Stuck handlers: reclaims, runtime & leaked threads",
       "type": "timeseries"
     },
     {

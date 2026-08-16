@@ -441,7 +441,14 @@ public final class OutboxEngineBuilder {
         OrphanRecoveryTask orphanTask =
                 new OrphanRecoveryTask(
                         workerRegistry, eventStore, clock, maintenanceConfig, listener);
-        WatchdogTask watchdog = new WatchdogTask(inFlight, eventStore, clock, typeConfig, listener);
+        WatchdogTask watchdog =
+                new WatchdogTask(
+                        inFlight,
+                        eventStore,
+                        clock,
+                        typeConfig,
+                        listener,
+                        maintenanceConfig.abandonedHandlerGrace());
 
         // The engine-health-check needs to report crashes to the engine, but the engine isn't
         // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.

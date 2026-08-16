@@ -4,6 +4,18 @@ Terminology used throughout the event-outboxer documentation and code.
 
 ## A
 
+**abandoned handler** — a force-reclaimed dispatch that was still
+running `abandoned-handler-grace` later: it either ignored the interrupt
+or belongs to a type with `interrupt-stuck-handler: false` and was never
+asked to stop. The event is safe (back in PENDING); the thread is lost
+to its per-type handler pool until it returns on its own. Surfaced by
+`OutboxListener.onHandlerAbandoned`, the counter
+`event_outboxer.handler.abandoned` and the gauge
+`event_outboxer.handler.abandoned_threads`. Usual cause: blocking I/O
+with no timeout configured on the client. Tracked per dispatch, not per
+event id — the same event is normally re-claimed by this JVM while the
+abandoned dispatch is still running.
+
 **at-least-once** — delivery guarantee: the event will be processed **at
 least once**, possibly more (due to crashes, orphan recovery, retry after
 a transient exception). The handler MUST be idempotent. See
@@ -111,7 +123,10 @@ version-check) for storages without `SKIP LOCKED`. Not used in MVP.
 
 **force reclaim** — forced return of an event from PROCESSING to PENDING
 from the WatchdogTask (when `handlerMaxRuntime` is exceeded). Differs from
-orphan reclaim in that the worker is still alive.
+orphan reclaim in that the worker is still alive. The handler thread is
+interrupted at the same time (per-type `interrupt-stuck-handler`,
+default on) because its finalize is already doomed to lose the version
+check — see [ADR-0014](adr/0014-optimistic-locking-via-version-field.md).
 
 ## H
 
@@ -179,7 +194,7 @@ OrphanRecoveryTask in the maintenance executor: `findDead()` +
 **OutboxEventPublisher** — public API for publishing events. The default
 implementation in the core uses EventSerializer + EventStore.save().
 
-**OutboxListener** — event bus for observability (25 methods).
+**OutboxListener** — event bus for observability (26 methods).
 Implementations: `LoggingOutboxListener` (default),
 `MicrometerOutboxListener` (separate module). See
 [ADR-0013](adr/0013-outbox-listener-for-observability.md).
@@ -265,8 +280,11 @@ NOT change on heartbeat (stored in a separate table).
 ## W
 
 **WatchdogTask** — maintenance task detecting stuck handlers
-(`now - claimedAt > handlerMaxRuntime`) and triggering force reclaim. See
-[ADR-0005](adr/0005-workers-heartbeat-table.md).
+(`now - claimedAt > handlerMaxRuntime`), triggering force reclaim,
+interrupting the handler thread, and reporting an
+[abandoned handler](#a) when that thread does not return. See
+[ADR-0005](adr/0005-workers-heartbeat-table.md) and
+[ADR-0014](adr/0014-optimistic-locking-via-version-field.md).
 
 **WorkerId** — unique identifier of a JVM instance. Format:
 `{hostname}-{pid}-{uuid8}`. One per JVM, shared across all event types.

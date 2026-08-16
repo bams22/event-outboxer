@@ -294,6 +294,7 @@ public class OutboxEngineAutoConfiguration {
                 .deadThreshold(m.getDeadThreshold())
                 .orphanRecoveryInterval(m.getOrphanRecoveryInterval())
                 .watchdogInterval(m.getWatchdogInterval())
+                .abandonedHandlerGrace(m.getAbandonedHandlerGrace())
                 .reclaimBatchSize(m.getReclaimBatchSize())
                 .shutdownTimeout(m.getShutdownTimeout())
                 .staleClaimThreshold(m.getStaleClaimThreshold())
@@ -438,6 +439,10 @@ public class OutboxEngineAutoConfiguration {
                         e.getHandlerMaxRuntime() != null
                                 ? e.getHandlerMaxRuntime()
                                 : base.handlerMaxRuntime())
+                .interruptStuckHandler(
+                        e.getInterruptStuckHandler() != null
+                                ? e.getInterruptStuckHandler()
+                                : base.interruptStuckHandler())
                 .lockTtl(e.getLockTtl() != null ? e.getLockTtl() : base.lockTtl())
                 .build();
     }

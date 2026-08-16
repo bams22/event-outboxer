@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
+import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
@@ -250,6 +251,11 @@ public final class MicrometerOutboxListener implements OutboxListener {
         incType("handler.stuck_reclaimed", info.eventType());
         registry.timer(metric("handler.stuck_time"), "event_type", info.eventType())
                 .record(info.elapsed().toNanos(), TimeUnit.NANOSECONDS);
+    }
+
+    @Override
+    public void onHandlerAbandoned(HandlerAbandonedInfo info) {
+        incType("handler.abandoned", info.eventType());
     }
 
     // ==================== Maintenance ====================

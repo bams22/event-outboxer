@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
+import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
@@ -155,6 +156,11 @@ public final class LoggingOutboxListener implements OutboxListener {
     @Override
     public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
         log.warn("stuck handler reclaimed {}", info);
+    }
+
+    @Override
+    public void onHandlerAbandoned(HandlerAbandonedInfo info) {
+        log.error("handler abandoned (thread lost to the pool) {}", info);
     }
 
     @Override

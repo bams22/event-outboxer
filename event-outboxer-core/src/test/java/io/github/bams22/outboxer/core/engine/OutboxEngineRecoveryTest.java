@@ -15,7 +15,9 @@ import static org.awaitility.Awaitility.await;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
@@ -36,6 +38,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -133,6 +136,93 @@ class OutboxEngineRecoveryTest {
 
         assertThat(store.metricsSnapshot().totalProcessing()).isZero();
         assertThat(store.metricsSnapshot().totalPending()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName(
+            "stuck handler honouring the interrupt → pool slot freed and the event is redelivered")
+    void stuckHandlerIsInterruptedAndSlotFreed() {
+        AtomicInteger attempts = new AtomicInteger();
+        CountDownLatch neverOpens = new CountDownLatch(1);
+        List<StuckHandlerReclaimedInfo> stuck = new CopyOnWriteArrayList<>();
+        // pool=1: the second attempt can only run if the interrupted first one gave its thread
+        // back.
+        engine =
+                fastEngine(
+                                cfg ->
+                                        cfg.handlerPoolSize(1)
+                                                .handlerQueueCapacity(0)
+                                                .handlerMaxRuntime(Duration.ofMillis(300)))
+                        .listener(
+                                new OutboxListener() {
+                                    @Override
+                                    public void onStuckHandlerReclaimed(
+                                            StuckHandlerReclaimedInfo info) {
+                                        stuck.add(info);
+                                    }
+                                })
+                        .handler(
+                                handler(
+                                        "HANG",
+                                        (ctx, payload) -> {
+                                            if (attempts.incrementAndGet() == 1) {
+                                                try {
+                                                    neverOpens.await();
+                                                } catch (InterruptedException e) {
+                                                    throw new IllegalStateException(
+                                                            "handler interrupted", e);
+                                                }
+                                            }
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
+
+        UUID id = engine.publisher().publish("HANG", "payload");
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
+        assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
+        assertThat(stuck).isNotEmpty();
+        assertThat(stuck.getFirst().interrupted()).isTrue();
+        assertThat(engine.abandonedCount("HANG")).isZero();
+    }
+
+    @Test
+    @DisplayName(
+            "stuck handler ignoring the interrupt → reported abandoned, thread counted as lost")
+    void stuckHandlerIgnoringInterruptIsReportedAbandoned() {
+        List<HandlerAbandonedInfo> abandoned = new CopyOnWriteArrayList<>();
+        engine =
+                fastEngine(
+                                cfg ->
+                                        cfg.handlerPoolSize(1)
+                                                .handlerQueueCapacity(0)
+                                                .handlerMaxRuntime(Duration.ofMillis(200)))
+                        .listener(
+                                new OutboxListener() {
+                                    @Override
+                                    public void onHandlerAbandoned(HandlerAbandonedInfo info) {
+                                        abandoned.add(info);
+                                    }
+                                })
+                        .handler(
+                                handler(
+                                        "ZOMBIE",
+                                        (ctx, payload) -> {
+                                            sleepIgnoringInterrupts(3_000);
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
+
+        engine.publisher().publish("ZOMBIE", "payload");
+
+        // watchdog 200ms + abandonedHandlerGrace 1s: the thread is interrupted, ignores it, and is
+        // reported as lost to the ZOMBIE pool.
+        await().atMost(Duration.ofSeconds(10)).until(() -> !abandoned.isEmpty());
+        assertThat(abandoned.getFirst().interrupted()).isTrue();
+        assertThat(abandoned.getFirst().eventType()).isEqualTo("ZOMBIE");
+        assertThat(engine.abandonedCount("ZOMBIE")).isGreaterThanOrEqualTo(1);
     }
 
     @Test
@@ -279,6 +369,7 @@ class OutboxEngineRecoveryTest {
                         .deadThreshold(Duration.ofSeconds(5))
                         .orphanRecoveryInterval(Duration.ofSeconds(60))
                         .watchdogInterval(Duration.ofMillis(200))
+                        .abandonedHandlerGrace(Duration.ofSeconds(1))
                         .reclaimBatchSize(10)
                         .shutdownTimeout(Duration.ofSeconds(2))
                         .staleClaimSweepInterval(Duration.ofMinutes(5))

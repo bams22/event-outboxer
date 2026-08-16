@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
+import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
@@ -190,6 +191,11 @@ public final class OutboxListenerRegistry implements OutboxListener {
     @Override
     public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
         broadcast(l -> l.onStuckHandlerReclaimed(info), info);
+    }
+
+    @Override
+    public void onHandlerAbandoned(HandlerAbandonedInfo info) {
+        broadcast(l -> l.onHandlerAbandoned(info), info);
     }
 
     @Override

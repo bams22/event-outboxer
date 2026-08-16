@@ -184,7 +184,7 @@ configurable via `event-outboxer.storage.schema` and `event-outboxer.metrics.pre
 so the library never clashes with siblings in the same deployment.
 See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for the field-level
 health reference, the metrics catalogue, the k8s probe playbook and
-five troubleshooting recipes.
+seven troubleshooting recipes.
 
 ## Documentation
 
