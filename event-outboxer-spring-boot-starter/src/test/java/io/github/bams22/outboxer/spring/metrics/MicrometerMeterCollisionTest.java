@@ -52,7 +52,13 @@ class MicrometerMeterCollisionTest {
         // Lazy counter registration on the first disable — must not collide with the gauges.
         MicrometerOutboxListener listener = new MicrometerOutboxListener(registry);
         listener.onEventDisabled(
-                new EventDisabledInfo(UUID.randomUUID(), "ORDER", 5, "retries exhausted", null));
+                new EventDisabledInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        5,
+                        EventDisabledInfo.Trigger.FAILURE_DECISION,
+                        "retries exhausted",
+                        null));
 
         assertThat(
                         registry.get("event_outboxer.events.disabled")

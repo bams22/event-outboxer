@@ -183,17 +183,19 @@ worker JVM.
 |---|---|---|---|---|
 | `event_outboxer.events.published` | counter | `event_type` | after `OutboxEventPublisher.publish(...)` persists a `PendingEvent` | publish throughput per type |
 | `event_outboxer.events.claimed` | counter | `event_type` | after `EventStore.claim(...)` returns a batch and the dispatcher picks up an event | claim throughput; low value with growing `pending` → poller starvation |
+| `event_outboxer.events.queue_time` | timer | `event_type` | same trigger as `events.claimed`; records `claimedAt - createdAt` (clamped at 0 on clock skew) | how long events wait in the outbox before a worker picks them up — the end-to-end lag signal; a rising `p99` means pollers or handler pools cannot keep up |
 | `event_outboxer.events.processed` | counter | `event_type` | handler returned `Success`, storage acknowledged the finalize | success rate per type |
 | `event_outboxer.events.processing_time` | timer | `event_type` | around `handler.handle(...)`, recorded on successful finalize | tail latency per type — use `p99` for SLOs |
-| `event_outboxer.events.attempts` | summary | `event_type` | on successful finalize, records the attempt count that eventually succeeded | values > 1 mean transient failures recovered — large mean = flaky handler |
-| `event_outboxer.events.retry_scheduled` | counter | `event_type` | failure chain decided `RetryAt`, storage acknowledged `markForRetry` | retry rate — healthy at small values, watch the ratio `retry_scheduled / processed` |
-| `event_outboxer.events.disabled` | counter | `event_type` | failure chain decided `Disable`, storage acknowledged `markDisabled` | exhaustion rate — **any sustained non-zero value deserves triage** |
+| `event_outboxer.events.attempts` | summary | `event_type` | on processed, disabled and deleted finalizes, records the final attempt count | values > 1 mean transient failures recovered — large mean = flaky handler; disabled/deleted samples show how much budget doomed events burned |
+| `event_outboxer.events.retry_scheduled` | counter | `event_type`, `reason` | a retry was scheduled; `reason` is a bounded set: `failure_decision`, `lock_busy`, `unknown_handler`, `dispatch_rejected` | retry rate — healthy at small values, watch the ratio `retry_scheduled / processed`; the `reason` tag separates handler failures from backpressure and lock contention |
+| `event_outboxer.events.disabled` | counter | `event_type`, `reason` | the event was disabled; `reason` is a bounded set: `failure_decision`, `failure_handler_error`, `unknown_handler` | exhaustion rate — **any sustained non-zero value deserves triage** |
 | `event_outboxer.events.deleted` | counter | `event_type` | failure chain decided `Delete` (rare) | only fires if a custom `FailureHandler` uses `Delete` — usually zero |
-| `event_outboxer.events.skipped` | counter | `event_type` | handler returned `Skip` | idempotent no-ops (handler saw the event was already processed) |
+| `event_outboxer.events.skipped` | counter | `event_type` | handler returned `Skip` | idempotent no-ops (handler saw the event was already processed). Deliberately **no** `reason` tag: the skip reason is user-supplied free-form text — unbounded tag cardinality |
 | `event_outboxer.events.unknown_type` | counter | `event_type` | claimed an event with no registered handler (see `UnknownHandlerPolicy`) | spikes after a deploy where two instances disagree on the handler set |
 | `event_outboxer.events.serialization_errors` | counter | `event_type` | payload could not be deserialised into `handler.payloadType()` | DTO schema drift; the engine disables the event |
-| `event_outboxer.handler.errors` | counter | `event_type` | handler threw an uncaught exception | spike → application bug or downstream outage |
+| `event_outboxer.handler.errors` | counter | `event_type`, `exception` | handler threw an uncaught exception; `exception` is the simple class name of the thrown type | spike → application bug or downstream outage; the `exception` tag separates timeouts from logic bugs |
 | `event_outboxer.handler.stuck_reclaimed` | counter | `event_type` | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | non-zero = your handler is slower than you expected |
+| `event_outboxer.handler.stuck_time` | timer | `event_type` | same trigger as `handler.stuck_reclaimed`; records how long the stuck handler had been running when reclaimed | how far past `handlerMaxRuntime` handlers actually run — use to right-size the budget |
 | `event_outboxer.lock.acquisition_failed` | counter | `event_type` | `EntityLocker.tryLock(...)` returned empty or threw | busy-lock path — safe up to a point; rising value means contention or locker backend trouble |
 | `event_outboxer.lock.release_failed` | counter | `event_type` | `LockHandle.close()` threw | Redis/PG returning errors on release — check the locker's backend |
 | `event_outboxer.workers.registered` | counter | — | once per `OutboxEngine.start()` | increases by 1 per app restart (and per replica) |
@@ -247,11 +249,11 @@ you care about.
 | # | Callback | Stage | Fires when | Key fields on the `*Info` record |
 |---|---|---|---|---|
 | 1 | `onEventPublished` | publish | after `EventStore.save(...)` returns, **before the caller's transaction commits** (so a rollback means the listener fired but no event was persisted) | `eventId`, `eventType`, `runAt`, `priority` |
-| 2 | `onEventClaimed` | dispatch | after a claim-batch row is picked up by the dispatcher | `eventId`, `eventType`, `attempts`, `claimedAt`, `workerId` |
+| 2 | `onEventClaimed` | dispatch | after a claim-batch row is picked up by the dispatcher | `eventId`, `eventType`, `attempts`, `createdAt`, `claimedAt`, `workerId` |
 | 3 | `onEventProcessed` | dispatch | handler returned `Success`, finalize acknowledged | `eventId`, `eventType`, `attempts`, `duration` |
 | 4 | `onEventSkipped` | dispatch | handler returned `Skip` (idempotent no-op) | `eventId`, `eventType`, `reason` |
-| 5 | `onEventRetryScheduled` | dispatch | failure chain decided `RetryAt`, finalize acknowledged | `eventId`, `eventType`, `attempts`, `nextRunAt`, `reason`, `cause` |
-| 6 | `onEventDisabled` | dispatch | failure chain decided `Disable`, finalize acknowledged | `eventId`, `eventType`, `attempts`, `reason`, `cause` |
+| 5 | `onEventRetryScheduled` | dispatch | a retry was scheduled (failure decision, lock busy, unknown handler, or dispatch rejected), finalize acknowledged | `eventId`, `eventType`, `attempts`, `nextRunAt`, `trigger` (bounded enum, safe as a tag), `reason` (free-form), `cause` |
+| 6 | `onEventDisabled` | dispatch | failure chain decided `Disable` (or the failure handler threw / unknown-handler policy), finalize acknowledged | `eventId`, `eventType`, `attempts`, `trigger` (bounded enum, safe as a tag), `reason` (free-form), `cause` |
 | 7 | `onEventDeleted` | dispatch | failure chain decided `Delete` (custom handlers only) | `eventId`, `eventType`, `attempts`, `reason` |
 | 8 | `onHandlerError` | errors | handler threw an uncaught exception — **fires before** `onEventRetryScheduled` / `onEventDisabled` | `eventId`, `eventType`, `attempts`, `cause` |
 | 9 | `onUnknownEventType` | errors | claim returned an event with no registered handler | `eventId`, `eventType` |

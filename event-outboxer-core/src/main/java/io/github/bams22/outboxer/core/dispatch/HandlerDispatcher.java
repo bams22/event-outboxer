@@ -140,6 +140,7 @@ public final class HandlerDispatcher {
                         claimed.id(),
                         claimed.eventType(),
                         claimed.attempts() + 1,
+                        claimed.createdAt(),
                         claimed.claimedAt(),
                         workerId));
         // Register for the WHOLE dispatch — deserialization, lock acquisition, handler, finalize —
@@ -265,6 +266,7 @@ public final class HandlerDispatcher {
                                 claimed.eventType(),
                                 claimed.attempts() + 1,
                                 when,
+                                EventRetryScheduledInfo.Trigger.DISPATCH_REJECTED,
                                 "dispatch rejected",
                                 null));
             }
@@ -324,13 +326,17 @@ public final class HandlerDispatcher {
                                     claimed.eventType(),
                                     claimed.attempts() + 1,
                                     when,
+                                    EventRetryScheduledInfo.Trigger.UNKNOWN_HANDLER,
                                     "unknown handler",
                                     null));
                 }
             }
             case DISABLE ->
                     finaliseDisable(
-                            claimed, "no handler for eventType " + claimed.eventType(), null);
+                            claimed,
+                            EventDisabledInfo.Trigger.UNKNOWN_HANDLER,
+                            "no handler for eventType " + claimed.eventType(),
+                            null);
             case FAIL -> {
                 // Deliberately leave the row PROCESSING as a visible poison-pill marker. Note:
                 // while
@@ -405,6 +411,7 @@ public final class HandlerDispatcher {
                                 claimed.eventType(),
                                 claimed.attempts() + 1,
                                 when,
+                                EventRetryScheduledInfo.Trigger.LOCK_BUSY,
                                 "lock busy",
                                 null));
             }
@@ -509,7 +516,11 @@ public final class HandlerDispatcher {
         }
     }
 
-    private void finaliseDisable(ClaimedEvent claimed, String reason, @Nullable Throwable cause) {
+    private void finaliseDisable(
+            ClaimedEvent claimed,
+            EventDisabledInfo.Trigger trigger,
+            String reason,
+            @Nullable Throwable cause) {
         boolean ok = store.markDisabled(claimed.id(), workerId, claimed.claimedVersion(), reason);
         if (ok) {
             listener.onEventDisabled(
@@ -517,6 +528,7 @@ public final class HandlerDispatcher {
                             claimed.id(),
                             claimed.eventType(),
                             claimed.attempts() + 1,
+                            trigger,
                             reason,
                             cause));
         }
@@ -553,15 +565,18 @@ public final class HandlerDispatcher {
                 new FailureContext(
                         claimed, payload, outcome, cause, claimed.attempts() + 1, clock.now());
         FailureDecision decision;
+        EventDisabledInfo.Trigger disableTrigger = EventDisabledInfo.Trigger.FAILURE_DECISION;
         try {
             decision = fh.onFailure(ctx);
         } catch (RuntimeException ex) {
             log.warn("failure handler threw; defaulting to Disable", ex);
             decision = new FailureDecision.Disable("failure handler threw: " + ex);
+            disableTrigger = EventDisabledInfo.Trigger.FAILURE_HANDLER_ERROR;
         }
         switch (decision) {
             case FailureDecision.RetryAt ra -> applyRetry(claimed, ra.when(), ra.reason(), cause);
-            case FailureDecision.Disable d -> finaliseDisable(claimed, d.reason(), cause);
+            case FailureDecision.Disable d ->
+                    finaliseDisable(claimed, disableTrigger, d.reason(), cause);
             case FailureDecision.Delete del -> applyDelete(claimed, del.reason());
         }
     }
@@ -577,6 +592,7 @@ public final class HandlerDispatcher {
                             claimed.eventType(),
                             claimed.attempts() + 1,
                             when,
+                            EventRetryScheduledInfo.Trigger.FAILURE_DECISION,
                             reason,
                             cause));
         }

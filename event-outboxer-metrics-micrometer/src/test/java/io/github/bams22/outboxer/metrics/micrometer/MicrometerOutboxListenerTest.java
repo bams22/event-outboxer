@@ -21,6 +21,7 @@ import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
+import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
@@ -63,13 +64,41 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void claimedIncrementsPerTypeCounter() {
+    void claimedIncrementsPerTypeCounterAndRecordsQueueTime() {
+        Instant createdAt = Instant.now();
         listener.onEventClaimed(
                 new EventClaimedInfo(
-                        UUID.randomUUID(), "ORDER", 1, Instant.now(), new WorkerId("w-1")));
+                        UUID.randomUUID(),
+                        "ORDER",
+                        1,
+                        createdAt,
+                        createdAt.plusMillis(250),
+                        new WorkerId("w-1")));
 
         assertThat(registry.counter("event_outboxer.events.claimed", "event_type", "ORDER").count())
                 .isEqualTo(1.0);
+        assertThat(
+                        registry.timer("event_outboxer.events.queue_time", "event_type", "ORDER")
+                                .totalTime(TimeUnit.MILLISECONDS))
+                .isEqualTo(250.0);
+    }
+
+    @Test
+    void negativeQueueTimeIsClampedToZero() {
+        Instant createdAt = Instant.now();
+        listener.onEventClaimed(
+                new EventClaimedInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        1,
+                        createdAt,
+                        createdAt.minusSeconds(5),
+                        new WorkerId("w-1")));
+
+        assertThat(
+                        registry.timer("event_outboxer.events.queue_time", "event_type", "ORDER")
+                                .totalTime(TimeUnit.MILLISECONDS))
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -93,13 +122,14 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void retryScheduledIncrementsCounter() {
+    void retryScheduledIncrementsCounterTaggedByTrigger() {
         listener.onEventRetryScheduled(
                 new EventRetryScheduledInfo(
                         UUID.randomUUID(),
                         "ORDER",
                         2,
                         Instant.now().plusSeconds(60),
+                        EventRetryScheduledInfo.Trigger.FAILURE_DECISION,
                         "transient",
                         new RuntimeException("boom")));
 
@@ -107,28 +137,51 @@ class MicrometerOutboxListenerTest {
                         registry.counter(
                                         "event_outboxer.events.retry_scheduled",
                                         "event_type",
-                                        "ORDER")
+                                        "ORDER",
+                                        "reason",
+                                        "failure_decision")
                                 .count())
                 .isEqualTo(1.0);
     }
 
     @Test
-    void disabledIncrementsCounter() {
+    void disabledIncrementsCounterTaggedByTriggerAndRecordsAttempts() {
         listener.onEventDisabled(
-                new EventDisabledInfo(UUID.randomUUID(), "ORDER", 10, "max-attempts", null));
+                new EventDisabledInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        10,
+                        EventDisabledInfo.Trigger.FAILURE_DECISION,
+                        "max-attempts",
+                        null));
 
         assertThat(
-                        registry.counter("event_outboxer.events.disabled", "event_type", "ORDER")
+                        registry.counter(
+                                        "event_outboxer.events.disabled",
+                                        "event_type",
+                                        "ORDER",
+                                        "reason",
+                                        "failure_decision")
                                 .count())
                 .isEqualTo(1.0);
+        assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
+                .isEqualTo(10.0);
     }
 
     @Test
-    void handlerErrorTagsByType() {
+    void handlerErrorTagsByTypeAndExceptionClass() {
         listener.onHandlerError(
-                new HandlerErrorInfo(UUID.randomUUID(), "ORDER", 1, new RuntimeException("x")));
+                new HandlerErrorInfo(
+                        UUID.randomUUID(), "ORDER", 1, new IllegalStateException("x")));
 
-        assertThat(registry.counter("event_outboxer.handler.errors", "event_type", "ORDER").count())
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.handler.errors",
+                                        "event_type",
+                                        "ORDER",
+                                        "exception",
+                                        "IllegalStateException")
+                                .count())
                 .isEqualTo(1.0);
     }
 
@@ -162,6 +215,25 @@ class MicrometerOutboxListenerTest {
 
         assertThat(registry.counter("event_outboxer.orphans.reclaimed").count()).isEqualTo(7.0);
         assertThat(registry.counter("event_outboxer.orphans.dead_workers").count()).isEqualTo(2.0);
+    }
+
+    @Test
+    void stuckHandlerReclaimedIncrementsCounterAndRecordsElapsed() {
+        listener.onStuckHandlerReclaimed(
+                new StuckHandlerReclaimedInfo(
+                        UUID.randomUUID(), "ORDER", Duration.ofSeconds(90), new WorkerId("w-1")));
+
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.handler.stuck_reclaimed",
+                                        "event_type",
+                                        "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.timer("event_outboxer.handler.stuck_time", "event_type", "ORDER")
+                                .totalTime(TimeUnit.SECONDS))
+                .isEqualTo(90.0);
     }
 
     @Test

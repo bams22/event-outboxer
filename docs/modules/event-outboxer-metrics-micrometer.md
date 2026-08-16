@@ -27,10 +27,13 @@ catalogue in [OBSERVABILITY.md §Micrometer metrics reference](../OBSERVABILITY.
 
 | Meter (default prefix) | Type | Tag |
 |---|---|---|
-| `event_outboxer.events.published` / `.claimed` / `.processed` / `.retry_scheduled` / `.disabled` / `.deleted` / `.skipped` | counter | `event_type` |
-| `event_outboxer.events.processing_time` | timer | `event_type` |
+| `event_outboxer.events.published` / `.claimed` / `.processed` / `.deleted` / `.skipped` | counter | `event_type` |
+| `event_outboxer.events.retry_scheduled` / `.disabled` | counter | `event_type`, `reason` (bounded trigger set) |
+| `event_outboxer.events.processing_time`, `.events.queue_time` | timer | `event_type` |
 | `event_outboxer.events.attempts` | distribution summary | `event_type` |
-| `event_outboxer.handler.errors`, `.handler.stuck_reclaimed` | counter | `event_type` |
+| `event_outboxer.handler.errors` | counter | `event_type`, `exception` |
+| `event_outboxer.handler.stuck_reclaimed` | counter | `event_type` |
+| `event_outboxer.handler.stuck_time` | timer | `event_type` |
 | `event_outboxer.events.unknown_type`, `.events.serialization_errors` | counter | `event_type` |
 | `event_outboxer.lock.acquisition_failed`, `.lock.release_failed` | counter | `event_type` |
 | `event_outboxer.dispatch.rejected` | counter | `event_type` |

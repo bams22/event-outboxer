@@ -21,15 +21,23 @@ import java.util.UUID;
  * @param eventId identifier of the claimed event
  * @param eventType event type string
  * @param attempts number of processing attempts so far, including the one starting now
+ * @param createdAt time the event was originally published; {@code claimedAt - createdAt} is the
+ *     time the event spent waiting in the outbox (queue time)
  * @param claimedAt time the claim was acquired
  * @param workerId the worker that holds the claim
  */
 public record EventClaimedInfo(
-        UUID eventId, String eventType, int attempts, Instant claimedAt, WorkerId workerId) {
+        UUID eventId,
+        String eventType,
+        int attempts,
+        Instant createdAt,
+        Instant claimedAt,
+        WorkerId workerId) {
 
     public EventClaimedInfo {
         Objects.requireNonNull(eventId, "eventId must not be null");
         Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(createdAt, "createdAt must not be null");
         Objects.requireNonNull(claimedAt, "claimedAt must not be null");
         Objects.requireNonNull(workerId, "workerId must not be null");
     }

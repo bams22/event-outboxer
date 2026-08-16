@@ -32,6 +32,8 @@ import io.github.bams22.outboxer.api.observer.WorkerDeregisteredInfo;
 import io.github.bams22.outboxer.api.observer.WorkerGracefulStopInfo;
 import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -77,6 +79,10 @@ public final class MicrometerOutboxListener implements OutboxListener {
         registry.counter(metric(name)).increment();
     }
 
+    private static String tagValue(Enum<?> value) {
+        return value.name().toLowerCase(Locale.ROOT);
+    }
+
     // ==================== Publication ====================
 
     @Override
@@ -89,6 +95,14 @@ public final class MicrometerOutboxListener implements OutboxListener {
     @Override
     public void onEventClaimed(EventClaimedInfo info) {
         incType("events.claimed", info.eventType());
+        Duration queueTime = Duration.between(info.createdAt(), info.claimedAt());
+        if (queueTime.isNegative()) {
+            // Clock skew between the publishing and the claiming node — clamp at zero rather
+            // than poison the timer with a negative sample.
+            queueTime = Duration.ZERO;
+        }
+        registry.timer(metric("events.queue_time"), "event_type", info.eventType())
+                .record(queueTime.toNanos(), TimeUnit.NANOSECONDS);
     }
 
     @Override
@@ -102,17 +116,33 @@ public final class MicrometerOutboxListener implements OutboxListener {
 
     @Override
     public void onEventRetryScheduled(EventRetryScheduledInfo info) {
-        incType("events.retry_scheduled", info.eventType());
+        registry.counter(
+                        metric("events.retry_scheduled"),
+                        "event_type",
+                        info.eventType(),
+                        "reason",
+                        tagValue(info.trigger()))
+                .increment();
     }
 
     @Override
     public void onEventDisabled(EventDisabledInfo info) {
-        incType("events.disabled", info.eventType());
+        registry.counter(
+                        metric("events.disabled"),
+                        "event_type",
+                        info.eventType(),
+                        "reason",
+                        tagValue(info.trigger()))
+                .increment();
+        registry.summary(metric("events.attempts"), "event_type", info.eventType())
+                .record(info.attempts());
     }
 
     @Override
     public void onEventDeleted(EventDeletedInfo info) {
         incType("events.deleted", info.eventType());
+        registry.summary(metric("events.attempts"), "event_type", info.eventType())
+                .record(info.attempts());
     }
 
     @Override
@@ -124,7 +154,13 @@ public final class MicrometerOutboxListener implements OutboxListener {
 
     @Override
     public void onHandlerError(HandlerErrorInfo info) {
-        incType("handler.errors", info.eventType());
+        registry.counter(
+                        metric("handler.errors"),
+                        "event_type",
+                        info.eventType(),
+                        "exception",
+                        info.cause().getClass().getSimpleName())
+                .increment();
     }
 
     @Override
@@ -180,6 +216,8 @@ public final class MicrometerOutboxListener implements OutboxListener {
     @Override
     public void onStuckHandlerReclaimed(StuckHandlerReclaimedInfo info) {
         incType("handler.stuck_reclaimed", info.eventType());
+        registry.timer(metric("handler.stuck_time"), "event_type", info.eventType())
+                .record(info.elapsed().toNanos(), TimeUnit.NANOSECONDS);
     }
 
     // ==================== Storage ====================
