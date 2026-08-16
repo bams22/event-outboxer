@@ -10,11 +10,20 @@
 package io.github.bams22.outboxer.tracing.micrometer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.OutboxTracer;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationHandler;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.TraceContext;
+import io.micrometer.tracing.handler.DefaultTracingObservationHandler;
+import io.micrometer.tracing.handler.PropagatingReceiverTracingObservationHandler;
+import io.micrometer.tracing.handler.PropagatingSenderTracingObservationHandler;
 import io.micrometer.tracing.propagation.Propagator;
 import io.micrometer.tracing.test.simple.SimpleSpan;
 import io.micrometer.tracing.test.simple.SimpleTracer;
@@ -22,16 +31,43 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Span model and handle semantics of the adapter, driven through the same {@code
+ * ObservationHandler}s Spring Boot registers (ADR-0023).
+ */
 class MicrometerOutboxTracerTest {
 
     private static final WorkerId WORKER = new WorkerId("micrometer-test-worker");
 
     private final SimpleTracer tracer = new SimpleTracer();
     private final RecordingPropagator propagator = new RecordingPropagator(tracer);
+    private final TestObservationRegistry registry = TestObservationRegistry.create();
     private final MicrometerOutboxTracer outboxTracer =
-            new MicrometerOutboxTracer(tracer, propagator);
+            new MicrometerOutboxTracer(registry, tracer);
+
+    /**
+     * The handler set Spring Boot registers whenever a {@code Tracer} and a {@code Propagator} bean
+     * exist — the adapter delegates span creation, kind, parent extraction and carrier injection to
+     * them. {@code DefaultTracingObservationHandler} is included, and ordered last exactly as
+     * Boot's {@code ObservationHandlerGrouping} orders it: it matches every context, so if it ever
+     * won the first-matching composite the carrier would silently stay empty and span names would
+     * be mangled through {@code SpanNameUtil}. Keeping it here means every assertion below also
+     * asserts that the propagating handlers still win.
+     */
+    @BeforeEach
+    void registerTracingHandlers() {
+        registry.observationConfig()
+                .observationHandler(
+                        new ObservationHandler.FirstMatchingCompositeObservationHandler(
+                                new PropagatingReceiverTracingObservationHandler<>(
+                                        tracer, propagator),
+                                new PropagatingSenderTracingObservationHandler<>(
+                                        tracer, propagator),
+                                new DefaultTracingObservationHandler(tracer)));
+    }
 
     /**
      * Test double for the configured propagator: injects a synthetic {@code traceparent} from the
@@ -111,18 +147,47 @@ class MicrometerOutboxTracerTest {
     }
 
     @Test
+    void publishObservationIsNamedForMetricsAndKeepsIdsOffTheTimer() {
+        UUID id = UUID.randomUUID();
+
+        outboxTracer.startPublishSpan(id, "T").close();
+
+        TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo(outboxTracer.publishObservationName())
+                .that()
+                .hasBeenStarted()
+                .hasBeenStopped()
+                .hasContextualNameEqualTo("outbox publish T")
+                .hasLowCardinalityKeyValue("messaging.destination.name", "T")
+                .hasHighCardinalityKeyValue("messaging.message.id", id.toString());
+    }
+
+    @Test
+    void publishSpanNeverBecomesCurrentOnTheCallerThread() {
+        OutboxTracer.PublishSpan span = outboxTracer.startPublishSpan(UUID.randomUUID(), "T");
+
+        assertThat(registry.getCurrentObservation()).isNull();
+        assertThat(tracer.currentSpan()).isNull();
+
+        span.close();
+    }
+
+    @Test
     void processSpanExtractsStoredCarrierAndBecomesCurrent() {
         Map<String, String> stored =
                 Map.of("traceparent", "00-11111111111111111111111111111111-2222222222222222-01");
 
         OutboxTracer.ProcessSpan span = outboxTracer.startProcessSpan(processInfo(stored));
         Span current = tracer.currentSpan();
+        // The current observation is what ContextSnapshot carries across a handler's thread hop.
+        assertThat(registry.getCurrentObservation()).isNotNull();
         span.close();
 
         assertThat(propagator.extractedCarriers).containsExactly(stored);
         SimpleSpan finished = tracer.onlySpan();
         assertThat(current).isNotNull();
         assertThat(tracer.currentSpan()).isNull(); // scope closed with the handle
+        assertThat(registry.getCurrentObservation()).isNull();
         assertThat(finished.getName()).isEqualTo("outbox process T");
         assertThat(finished.getKind()).isEqualTo(Span.Kind.CONSUMER);
         assertThat(finished.getTags())
@@ -164,5 +229,111 @@ class MicrometerOutboxTracerTest {
         process.close();
 
         assertThat(tracer.getSpans()).hasSize(2);
+    }
+
+    @Test
+    void noopRegistryDegradesToAnUntracedHop() {
+        MicrometerOutboxTracer noop = new MicrometerOutboxTracer(ObservationRegistry.NOOP, tracer);
+
+        OutboxTracer.PublishSpan publish = noop.startPublishSpan(UUID.randomUUID(), "T");
+        assertThat(publish.contextToStore()).isEmpty();
+        publish.close();
+        noop.startProcessSpan(processInfo(Map.of())).close();
+
+        assertThat(tracer.getSpans()).isEmpty();
+    }
+
+    /**
+     * The observations feed meters, so their names must follow the same {@code
+     * event-outboxer.metrics.prefix} slot every other meter of the library honours.
+     */
+    @Test
+    void observationNamesFollowTheConfiguredPrefix() {
+        MicrometerOutboxTracer prefixed =
+                new MicrometerOutboxTracer(registry, tracer, "myapp.outbox");
+
+        assertThat(prefixed.publishObservationName()).isEqualTo("myapp.outbox.publish");
+        assertThat(prefixed.processObservationName()).isEqualTo("myapp.outbox.process");
+
+        prefixed.startPublishSpan(UUID.randomUUID(), "T").close();
+
+        TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo("myapp.outbox.publish");
+    }
+
+    /**
+     * Detaching the tracer's current span is not enough: {@code createNotStarted} captures the
+     * thread's current observation as the parent before that. A worker carrying a leaked scope must
+     * not end up parenting the consumer observation either (ADR-0023).
+     */
+    @Test
+    void processObservationDoesNotAdoptAnAmbientObservationAsParent() {
+        Observation ambient = Observation.createNotStarted("ambient", registry).start();
+        try (Observation.Scope ignored = ambient.openScope()) {
+            outboxTracer.startProcessSpan(processInfo(Map.of())).close();
+        }
+        ambient.stop();
+
+        TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo(outboxTracer.processObservationName())
+                .that()
+                .doesNotHaveParentObservation();
+    }
+
+    /**
+     * The publish side is the mirror image: the caller's observation is exactly the parent the
+     * producer span should hang from, so nothing is detached there.
+     */
+    @Test
+    void publishObservationKeepsTheCallersObservationAsParent() {
+        Observation caller = Observation.createNotStarted("business-op", registry).start();
+        try (Observation.Scope ignored = caller.openScope()) {
+            outboxTracer.startPublishSpan(UUID.randomUUID(), "T").close();
+        }
+        caller.stop();
+
+        TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo(outboxTracer.publishObservationName())
+                .that()
+                .hasParentObservationEqualTo(caller);
+    }
+
+    /**
+     * {@code start()} registers a {@code LongTaskTimer} sample the registry retains until {@code
+     * stop()}, and {@code SafeOutboxTracer} swallows whatever we throw — so a failure between the
+     * two must not leave the observation in flight. {@code openScope()} additionally makes the
+     * observation current <em>before</em> notifying the handlers, so the registry's thread-local
+     * has to be released too or the next task on this pooled worker inherits it.
+     */
+    @Test
+    void observationIsStoppedAndUnscopedWhenOpeningTheScopeFails() {
+        registry.observationConfig().observationHandler(new ThrowingScopeHandler());
+
+        assertThatThrownBy(() -> outboxTracer.startProcessSpan(processInfo(Map.of())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("scope handler exploded");
+
+        assertThat(registry.getCurrentObservation()).isNull();
+        assertThat(registry.getCurrentObservationScope()).isNull();
+        TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo(outboxTracer.processObservationName())
+                .that()
+                .hasBeenStarted()
+                .hasBeenStopped();
+    }
+
+    /** Fails only when a scope is opened, leaving {@code start()} and {@code stop()} usable. */
+    private static final class ThrowingScopeHandler
+            implements ObservationHandler<Observation.Context> {
+
+        @Override
+        public void onScopeOpened(Observation.Context context) {
+            throw new IllegalStateException("scope handler exploded");
+        }
+
+        @Override
+        public boolean supportsContext(Observation.Context context) {
+            return true;
+        }
     }
 }

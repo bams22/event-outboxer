@@ -181,11 +181,15 @@ does not clash with other sources of `outbox.*` metrics. Override via
 `event-outboxer.metrics.prefix` (Spring Boot starter) or the second argument
 to `new MicrometerOutboxListener(registry, prefix)` (plain Java).
 
-Every per-event metric carries an `event_type` tag so dashboards can
-drill down. Types without a tag are engine-wide and fire once per
-worker JVM.
+Every per-event metric in the catalogue below carries an `event_type`
+tag so dashboards can drill down. Types without a tag are engine-wide
+and fire once per worker JVM. (The side-effect meters the tracing
+adapter contributes are the one exception — they key the event type as
+`messaging.destination.name`; see
+[§Side-effect meters from the tracing adapter](#side-effect-meters-from-the-tracing-adapter).)
 
-In a Spring Boot app the timers publish SLO histogram buckets out of
+In a Spring Boot app the three timers of the catalogue below publish
+SLO histogram buckets out of
 the box: the starter automatically applies the defaults shipped with
 the metrics module (`META-INF/event-outboxer/metrics-defaults.yml` —
 a 10ms–1h grid for `queue_time`, 10ms–10m for `processing_time` (covers the default 5m handler-max-runtime budget), 30s–1h for
@@ -265,6 +269,64 @@ on top — boundaries merge.
   per-type rows exist. Switch to `event-outboxer.cache.type=redis` to share the
   snapshot across pods so dashboards aggregate to a single value across
   the fleet instead of averaging divergent per-pod caches.
+
+### Side-effect meters from the tracing adapter
+
+Everything above comes from `event-outboxer-metrics-micrometer`. If
+[`event-outboxer-tracing-micrometer`](modules/event-outboxer-tracing-micrometer.md)
+is *also* wired, four more meters appear — not from the listener but
+from Boot's `DefaultMeterObservationHandler`, which turns every
+observation into a `Timer` plus (while
+`management.observations.long-task-timer.enabled` stays at its default
+`true`) a `LongTaskTimer`. They use the same `event-outboxer.metrics.prefix`
+as the table above:
+
+| Metric | Type | Tags | When emitted | Interpretation |
+|---|---|---|---|---|
+| `event_outboxer.publish` | timer | `messaging.system`, `messaging.operation.type`, `messaging.destination.name`, `error` | publish-side observation | see the caveat below — on the batch path this is **not** per-event latency |
+| `event_outboxer.publish.active` | long task timer | same, minus `error` | in-flight publish observations | non-zero only during a publish |
+| `event_outboxer.process` | timer | same four keys | handle-side observation, around `handler.handle(...)` only | per-attempt handler latency, **failures included** |
+| `event_outboxer.process.active` | long task timer | same, minus `error` | in-flight handler attempts | overlaps `events.in_flight`, which is the cheaper gauge |
+
+Three things to know before you build on them:
+
+- **`process` is not a substitute for `events.processing_time`.** The
+  observation wraps only `handler.handle(...)` and is recorded on
+  *every* attempt including failures and retries;
+  `events.processing_time` measures claim → finalize and only on
+  success, and is tagged `event_type` rather than
+  `messaging.destination.name`. Keep `events.processing_time` as the
+  processing-latency SLI. The `error` tag Micrometer appends (`none`
+  or the exception's simple name) is what separates the two
+  populations here.
+- **`publish` is not per-event latency on the batch path.**
+  `publishAll(...)` opens one observation per request and closes them
+  all after the single batch insert, so one sample covers the whole
+  batch and the rest cover almost nothing. Single `publish(...)` calls
+  are accurate; ignore the distribution if the application batches.
+- **No SLO buckets, no dashboard panels.**
+  `META-INF/event-outboxer/metrics-defaults.yml` covers only the three
+  listener timers, and so does
+  [the shipped dashboard](grafana/README.md) — these four publish
+  count/sum/max and no `_bucket` series unless you add boundaries
+  yourself.
+
+If you do not want them, drop the meters and leave tracing alone:
+
+```java
+@Bean
+MeterFilter denyOutboxTracingMeters() {
+    return MeterFilter.deny(
+            id ->
+                    id.getName().startsWith("event_outboxer.publish")
+                            || id.getName().startsWith("event_outboxer.process"));
+}
+```
+
+Do **not** reach for `management.observations.enable.event_outboxer=false`
+instead: that switches off the observations themselves, which silently
+takes the PRODUCER/CONSUMER spans and the stored `trace_context` with
+them.
 
 ---
 
@@ -353,7 +415,7 @@ classpath (both are `<optional>` in the starter):
 
 | Your setup | Add | Auto-configured when |
 |---|---|---|
-| Spring Boot Actuator + `micrometer-tracing-bridge-otel` (or `-brave`) | `event-outboxer-tracing-micrometer` | Boot provides `Tracer` + `Propagator` beans; the stored carrier follows `management.tracing.propagation.*` and `management.tracing.baggage.remote-fields` |
+| Spring Boot Actuator + `micrometer-tracing-bridge-otel` (or `-brave`) | `event-outboxer-tracing-micrometer` | Boot provides `ObservationRegistry` + `Tracer` + `Propagator` beans; the stored carrier follows `management.tracing.propagation.*` and `management.tracing.baggage.remote-fields` |
 | OpenTelemetry Java agent, or a hand-built OTel SDK | `event-outboxer-tracing-otel` | always (uses the `OpenTelemetry` bean if present, else `GlobalOpenTelemetry`); an unconfigured instance stores an empty context |
 | Both modules present | — | Micrometer wins; the OTel adapter backs off |
 | Neither | — | `OutboxTracer.NOOP` — zero cost, empty `trace_context` |
@@ -362,6 +424,31 @@ classpath (both are `<optional>` in the starter):
 auto-configurations; a user-defined `OutboxTracer` bean always takes
 precedence. Without Spring, wire an adapter directly:
 `builder.tracer(new OtelOutboxTracer(openTelemetry))`.
+
+The Micrometer adapter instruments through the Observation API
+(ADR-0023, 2026-08-16 amendment), which has three visible effects. The
+current *observation* is set around handler invocation, so handler
+code that offloads work — `@Async`, `ContextPropagatingTaskDecorator`,
+Reactor `contextCapture()` — keeps the trace instead of starting a
+detached one. The same observations also register four meters as a
+side effect — see
+[§Side-effect meters from the tracing adapter](#side-effect-meters-from-the-tracing-adapter)
+for what they do and do not measure, and for the `MeterFilter` that
+removes them. And, because Boot filters observations by name, they can
+be switched off from the outside:
+`management.observations.enable.all=false` (or
+`...enable.event_outboxer=false`) leaves the adapter wired but silent —
+no spans, empty `trace_context`, no error anywhere. Suppress the meters
+with a `MeterFilter`, never with that property. The OTel adapter has
+neither behaviour: it emits spans only.
+
+Because those observations become meters, their names honour
+`event-outboxer.metrics.prefix` just like the listener's — set the
+prefix and both modules move namespace together. Note that the event
+type lands on them as a real Micrometer tag
+(`messaging.destination.name`), which makes this adapter share the
+metrics module's assumption that event types are a bounded,
+code-defined set — never a per-tenant or per-entity string.
 
 Adapter failures never affect delivery: the engine wraps the tracer
 defensively (`SafeOutboxTracer`), so a throwing tracing backend

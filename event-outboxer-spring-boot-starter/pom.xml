@@ -220,6 +220,17 @@
             <artifactId>opentelemetry-sdk-testing</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Lets MicrometerTracingBootWiringTest boot Boot's own tracing
+            auto-configuration, so the handler grouping the Micrometer adapter
+            depends on is asserted against the real thing rather than a
+            hand-built ObservationRegistry.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>

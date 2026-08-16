@@ -115,9 +115,9 @@ declare your own `TaskDecorator` bean to replace it.
   gauges.
 - **Tracing** — auto-detects
   [tracing-micrometer](event-outboxer-tracing-micrometer.md) (Boot
-  `Tracer`+`Propagator` beans; wins when both present) then
-  [tracing-otel](event-outboxer-tracing-otel.md); switch:
-  `event-outboxer.tracing.enabled`.
+  `ObservationRegistry`+`Tracer`+`Propagator` beans; wins when both
+  present) then [tracing-otel](event-outboxer-tracing-otel.md);
+  switch: `event-outboxer.tracing.enabled`.
 
 ### Migration plumbing
 

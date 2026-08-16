@@ -59,6 +59,11 @@ import org.springframework.context.annotation.Import;
 @SpringBootTest(
         classes = TracingEndToEndTest.TestApp.class,
         properties = {
+            // This test is about the OTel adapter. micrometer-tracing-bridge-otel is on the test
+            // classpath for MicrometerTracingBootWiringTest, which would otherwise give Boot the
+            // Tracer/Propagator beans that make the Micrometer adapter win here.
+            "spring.autoconfigure.exclude="
+                    + "io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration",
             "event-outboxer.publisher.no-transaction-policy=IGNORE",
             "event-outboxer.event-types.defaults.poll-min-interval=20ms",
             "event-outboxer.event-types.defaults.poll-max-interval=50ms",

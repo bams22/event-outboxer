@@ -15,6 +15,7 @@ import static org.mockito.Mockito.mock;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.tracing.micrometer.MicrometerOutboxTracer;
 import io.github.bams22.outboxer.tracing.otel.OtelOutboxTracer;
+import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import io.opentelemetry.api.OpenTelemetry;
@@ -37,6 +38,16 @@ class TracingAutoConfigurationTest {
                                     MicrometerTracingAutoConfiguration.class,
                                     OtelTracingAutoConfiguration.class));
 
+    /**
+     * The bean set Boot's tracing auto-configuration provides: the registry the adapter instruments
+     * through, plus the two beans that gate the propagating tracing handlers.
+     */
+    private ApplicationContextRunner withMicrometerTracingBeans(ApplicationContextRunner runner) {
+        return runner.withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(Propagator.class, () -> mock(Propagator.class))
+                .withBean(ObservationRegistry.class, ObservationRegistry::create);
+    }
+
     @Test
     void noTracingLibrariesOnClasspathMeansNoTracerBean() {
         runner.withClassLoader(new FilteredClassLoader(Tracer.class, OpenTelemetry.class))
@@ -45,8 +56,7 @@ class TracingAutoConfigurationTest {
 
     @Test
     void micrometerBeansActivateTheMicrometerAdapter() {
-        runner.withBean(Tracer.class, () -> mock(Tracer.class))
-                .withBean(Propagator.class, () -> mock(Propagator.class))
+        withMicrometerTracingBeans(runner)
                 .withClassLoader(new FilteredClassLoader(OpenTelemetry.class))
                 .run(
                         context ->
@@ -78,8 +88,7 @@ class TracingAutoConfigurationTest {
 
     @Test
     void micrometerWinsWhenBothAdaptersAreAvailable() {
-        runner.withBean(Tracer.class, () -> mock(Tracer.class))
-                .withBean(Propagator.class, () -> mock(Propagator.class))
+        withMicrometerTracingBeans(runner)
                 .withBean(OpenTelemetry.class, OpenTelemetry::noop)
                 .run(
                         context -> {
@@ -93,6 +102,19 @@ class TracingAutoConfigurationTest {
     @Test
     void micrometerWithoutPropagatorBeanBacksOffToOtel() {
         runner.withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(ObservationRegistry.class, ObservationRegistry::create)
+                .withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .getBean(OutboxTracer.class)
+                                        .isInstanceOf(OtelOutboxTracer.class));
+    }
+
+    @Test
+    void micrometerWithoutObservationRegistryBeanBacksOffToOtel() {
+        runner.withBean(Tracer.class, () -> mock(Tracer.class))
+                .withBean(Propagator.class, () -> mock(Propagator.class))
                 .withBean(OpenTelemetry.class, OpenTelemetry::noop)
                 .run(
                         context ->
@@ -103,9 +125,8 @@ class TracingAutoConfigurationTest {
 
     @Test
     void disabledPropertySuppressesBothAdapters() {
-        runner.withPropertyValues("event-outboxer.tracing.enabled=false")
-                .withBean(Tracer.class, () -> mock(Tracer.class))
-                .withBean(Propagator.class, () -> mock(Propagator.class))
+        withMicrometerTracingBeans(runner)
+                .withPropertyValues("event-outboxer.tracing.enabled=false")
                 .withBean(OpenTelemetry.class, OpenTelemetry::noop)
                 .run(context -> assertThat(context).doesNotHaveBean(OutboxTracer.class));
     }
@@ -113,9 +134,8 @@ class TracingAutoConfigurationTest {
     @Test
     void userDefinedTracerBeanBeatsBothAdapters() {
         OutboxTracer custom = OutboxTracer.NOOP;
-        runner.withBean("customOutboxTracer", OutboxTracer.class, () -> custom)
-                .withBean(Tracer.class, () -> mock(Tracer.class))
-                .withBean(Propagator.class, () -> mock(Propagator.class))
+        withMicrometerTracingBeans(runner)
+                .withBean("customOutboxTracer", OutboxTracer.class, () -> custom)
                 .withBean(OpenTelemetry.class, OpenTelemetry::noop)
                 .run(
                         context -> {

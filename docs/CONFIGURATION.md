@@ -522,8 +522,15 @@ every event insert and its context is stored with the event; a
 `CONSUMER` span restores that context around every handler attempt —
 one trace across the outbox hop. The adapter is picked automatically:
 `event-outboxer-tracing-micrometer` when Boot's tracing provides
-`Tracer`/`Propagator` beans, else `event-outboxer-tracing-otel` when
-the OpenTelemetry API is present (OTel Java agent included). See
+`ObservationRegistry`/`Tracer`/`Propagator` beans, else
+`event-outboxer-tracing-otel` when the OpenTelemetry API is present
+(OTel Java agent included). The Micrometer adapter instruments through
+the Observation API, which has two knock-on effects worth knowing:
+it registers four meters under `event-outboxer.metrics.prefix`
+(`.publish`, `.publish.active`, `.process`, `.process.active`), and
+Boot's `management.observations.enable.*` can no-op it entirely —
+spans and stored carrier included — with nothing logged. Remove the
+meters with a `MeterFilter`, never with that property. See
 [docs/OBSERVABILITY.md §Distributed tracing](OBSERVABILITY.md#distributed-tracing).
 
 - `enabled` — master switch for the adapter auto-detection.

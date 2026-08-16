@@ -42,13 +42,26 @@ broken tracing backend can never fail a publish or strand an event.
 With an unconfigured `OpenTelemetry` the captured map is empty —
 graceful degradation to no-op.
 
+**Thread hops inside a handler.** The consumer scope is a plain OTel
+`Context`, so work the handler offloads to another thread keeps the
+trace only if OTel context propagation covers that hop: the **Java
+agent instruments executors** and it just works, and manual setups can
+use `Context.taskWrapping(executor)` or `Context.current().wrap(...)`.
+Spring's `ContextPropagatingTaskDecorator` / Reactor's
+`contextCapture()` do **not** carry it — they copy Micrometer
+observations, and an agent-less OTel setup has none. This is a
+property of OTel context in a Boot application rather than of this
+adapter (the app's own spans behave identically); if it matters, the
+[Micrometer adapter](event-outboxer-tracing-micrometer.md) is the one
+that rides `ContextSnapshot`.
+
 ## When to use it
 
 - Your service is instrumented with the **OTel Java agent** or a
   hand-built OTel SDK, and you are *not* using Spring Boot's
   Micrometer Tracing bridge.
-- If Boot Actuator provides `Tracer`/`Propagator` beans
-  (`micrometer-tracing-bridge-*`), prefer
+- If Boot Actuator provides `ObservationRegistry`/`Tracer`/`Propagator`
+  beans (`micrometer-tracing-bridge-*`), prefer
   [`event-outboxer-tracing-micrometer`](event-outboxer-tracing-micrometer.md)
   — the starter picks it automatically and it wins when both modules
   are present, so the outbox carrier matches every other outbound

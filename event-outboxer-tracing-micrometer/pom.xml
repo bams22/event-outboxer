@@ -11,12 +11,12 @@
     <artifactId>event-outboxer-tracing-micrometer</artifactId>
 
     <name>event-outboxer (Micrometer Tracing adapter)</name>
-    <description>OutboxTracer implementation on Micrometer Tracing (ADR-0023):
-        PRODUCER span per publish with context capture into the event row,
-        CONSUMER span per handler attempt restoring the stored context.
-        Propagation format follows Spring Boot's
-        management.tracing.propagation settings and works with both the
-        OpenTelemetry and Brave bridges.</description>
+    <description>OutboxTracer implementation on Micrometer's Observation API
+        (ADR-0023): PRODUCER observation per publish with context capture
+        into the event row, CONSUMER observation per handler attempt
+        restoring the stored context. Propagation format follows Spring
+        Boot's management.tracing.propagation settings and works with both
+        the OpenTelemetry and Brave bridges.</description>
 
     <dependencies>
         <dependency>
@@ -27,6 +27,20 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-spi</artifactId>
         </dependency>
+        <!--
+            The instrumentation API the adapter drives: spans, kinds, parent
+            extraction and carrier injection are owned by the ObservationHandlers
+            Boot registers on top of it.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-observation</artifactId>
+        </dependency>
+        <!--
+            Still required even though no span is built by hand: the Tracer
+            detaches the worker thread's ambient context before the consumer
+            parent is resolved from the stored carrier.
+        -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing</artifactId>
@@ -57,6 +71,31 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-observation-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            Real OTel bridge + SDK for the behavioural tests that the handler-based
+            wiring exists for: child observation nesting, context propagation across
+            a thread hop, and parent isolation on an empty carrier.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-testing</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

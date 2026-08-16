@@ -225,6 +225,32 @@ All notable changes to this project are documented here. Format follows
   `trace_context` shape was corrected to the flat carrier the
   PostgreSQL adapter actually persists (single-string `baggage`
   header value, no nested objects).
+  The Micrometer adapter instruments through the **Observation API**
+  rather than `Tracer`/`Propagator` directly (ADR-0023 amended
+  2026-08-16):
+  `MicrometerOutboxTracer(ObservationRegistry, Tracer[, prefix])`
+  starts a `SenderContext` observation per publish and a
+  `ReceiverContext` observation per attempt, so Boot's propagating
+  tracing handlers own span creation, parent extraction and carrier
+  injection. This sets the current *observation* around handler
+  invocation — the thing `ContextPropagatingTaskDecorator`, Reactor
+  `contextCapture()` and `@Async` actually carry — so handler code
+  that offloads work no longer lands in a detached trace; a consumer
+  span started from an empty stored carrier adopts neither an ambient
+  span nor an ambient observation on the worker thread. Span names,
+  kinds and attributes are unchanged.
+  As a side effect the observations register four meters —
+  `<prefix>.publish{,.active}` and `<prefix>.process{,.active}`, where
+  `<prefix>` is `event-outboxer.metrics.prefix` — carrying the
+  low-cardinality `messaging.*` keys plus Micrometer's `error`, with no
+  SLO buckets and no dashboard panels. `<prefix>.process` is **not**
+  interchangeable with `event_outboxer.events.processing_time`: it
+  wraps only `handler.handle(...)` and records every attempt, while the
+  listener's timer measures claim → finalize on success only and is
+  tagged `event_type`. Remove the extra meters with a `MeterFilter` —
+  not with `management.observations.enable.*`, which would silently
+  disable the spans and the stored `trace_context` as well.
+  The starter's condition set grows `ObservationRegistry`.
 - **Lease-table PostgreSQL entity locker (ADR-0022) — new module
   `event-outboxer-lock-postgres-lease`, selected via
   `lock.type=postgres-lease`.** `PgLeaseEntityLocker` keeps lock state in an
