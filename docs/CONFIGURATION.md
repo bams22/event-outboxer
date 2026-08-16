@@ -485,14 +485,12 @@ module are on the classpath and a `MeterRegistry` bean exists.
   requires a different namespace. See [docs/OBSERVABILITY.md](OBSERVABILITY.md)
   for the full metric catalogue.
 
-The metrics module also ships an opt-in defaults file that makes every
-event-outboxer timer publish client-side percentiles p50/p75/p90/p95/p99:
-
-```yaml
-spring:
-  config:
-    import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"
-```
+- `distribution-defaults.enabled` — whether the starter applies the SLO
+  histogram-bucket defaults shipped with the metrics module
+  (`META-INF/event-outboxer/metrics-defaults.yml`) to the
+  event-outboxer timers. Applied with the lowest precedence, so any
+  `management.metrics.distribution.*` value you set yourself always
+  wins. **Default: `true`.**
 
 ### `event-outboxer.tracing.*`
 

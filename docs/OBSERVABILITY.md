@@ -185,18 +185,19 @@ Every per-event metric carries an `event_type` tag so dashboards can
 drill down. Types without a tag are engine-wide and fire once per
 worker JVM.
 
-Timers publish no distribution data by default (only count/sum/max).
-Two opt-ins, combinable:
-
-- **Client-side percentiles p50/p75/p90/p95/p99** — import the defaults
-  shipped with the metrics module:
-  `spring.config.import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"`.
-  Cheap (+5 series per tag combination), works with any backend, but
-  per-JVM and not aggregatable across pods.
-- **Histogram buckets** for fleet-wide `histogram_quantile()` in
-  Prometheus:
-  `management.metrics.distribution.percentiles-histogram.event_outboxer.events.processing_time: true`
-  (and `…queue_time`). ~70 extra series per tag combination.
+In a Spring Boot app the timers publish SLO histogram buckets out of
+the box: the starter automatically applies the defaults shipped with
+the metrics module (`META-INF/event-outboxer/metrics-defaults.yml` —
+a 10ms–1m grid for `queue_time`/`processing_time`, 30s–1h for
+`stuck_time`; ~19 extra series per tag combination). The `_bucket`
+series aggregate across pods, so fleet-wide `histogram_quantile()`
+works with precision limited to the grid. Your own
+`management.metrics.distribution.*` settings always override the
+defaults; disable them entirely with
+`event-outboxer.metrics.distribution-defaults.enabled: false`. For
+finer quantiles add
+`management.metrics.distribution.percentiles-histogram` (~70 series)
+on top — boundaries merge.
 
 | Metric | Type | Tags | When emitted | Interpretation |
 |---|---|---|---|---|

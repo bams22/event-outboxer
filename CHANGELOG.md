@@ -58,14 +58,18 @@ All notable changes to this project are documented here. Format follows
     `payloadFormat` fields.
 
 ### Added
-- **Opt-in percentile defaults for all timers.**
-  `event-outboxer-metrics-micrometer` ships
-  `META-INF/event-outboxer/metrics-defaults.yml`; importing it via
-  `spring.config.import` makes `events.queue_time`,
-  `events.processing_time` and `handler.stuck_time` publish client-side
-  percentiles p50/p75/p90/p95/p99. The Grafana dashboard gained two
-  "percentiles (client-side, worst pod)" latency panels driven by these
-  series; a starter test pins that the YAML keys actually bind.
+- **SLO histogram-bucket defaults for all timers, applied
+  automatically.** `event-outboxer-metrics-micrometer` ships
+  `META-INF/event-outboxer/metrics-defaults.yml` (a 10ms–1m grid for
+  `events.queue_time`/`events.processing_time`, 30s–1h for
+  `handler.stuck_time`); the starter's new
+  `OutboxMetricsDefaultsEnvironmentPostProcessor` appends it with the
+  lowest precedence at startup, so fleet-wide `histogram_quantile()`
+  works in Prometheus with zero configuration while any user-set
+  `management.metrics.distribution.*` value still wins. Opt out with
+  `event-outboxer.metrics.distribution-defaults.enabled=false`.
+  `MetricsDistributionDefaultsTest` pins all three behaviours
+  (auto-applied, override wins, opt-out).
 - **Queue-time lag, saturation and maintenance metrics.** New meters in
   `event-outboxer-metrics-micrometer`: `events.queue_time` timer
   (publish → claim lag, the "am I falling behind" signal),

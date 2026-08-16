@@ -91,37 +91,34 @@ gauges can be replaced individually by defining beans named
 `outboxEngineStateGauges` / `outboxBacklogGauges` /
 `outboxSaturationGauges`.
 
-### Default percentiles for the timers (opt-in YAML)
+### Distribution defaults: SLO histogram buckets (applied automatically)
 
-The module ships a ready-made configuration file that makes every
-event-outboxer timer (`events.queue_time`, `events.processing_time`,
-`handler.stuck_time`) publish client-side percentiles
-p50/p75/p90/p95/p99:
+The module ships `META-INF/event-outboxer/metrics-defaults.yml` with
+default SLO histogram buckets for every event-outboxer timer:
+`events.queue_time` and `events.processing_time` get a 10ms–1m grid
+(18 boundaries, dense in the sub-second range), `handler.stuck_time`
+a 30s–1h grid. In a Spring Boot app the starter applies the file
+automatically at startup (an `EnvironmentPostProcessor` appends it
+with the lowest precedence), so fleet-wide
+`histogram_quantile()` works in Prometheus with zero configuration —
+the `_bucket{le=…}` series aggregate across pods, unlike client-side
+percentiles.
 
-```yaml
-spring:
-  config:
-    import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"
-```
+Two knobs:
 
-These are precomputed per-JVM `{quantile="…"}` series — cheap (+5
-series per tag combination) and available without histogram buckets,
-but **not aggregatable across pods** (you cannot sum or average a p99).
-For fleet-wide percentiles enable histogram buckets instead (they can
-coexist):
+- any `management.metrics.distribution.*` value you set yourself
+  always wins over these defaults (an SLO list for the same meter
+  replaces the shipped grid entirely);
+- opt out completely with
+  `event-outboxer.metrics.distribution-defaults.enabled: false`.
 
-```yaml
-management:
-  metrics:
-    distribution:
-      percentiles-histogram:
-        event_outboxer.events.queue_time: true
-        event_outboxer.events.processing_time: true
-```
-
-The keys inside `metrics-defaults.yml` use the default metric prefix —
-if you override `event-outboxer.metrics.prefix`, copy the file and
-adjust the meter names.
+Quantile precision is limited to the bucket grid; for finer buckets
+enable `management.metrics.distribution.percentiles-histogram` on top
+(the boundaries merge). The keys inside the file use the default
+metric prefix — if you override `event-outboxer.metrics.prefix`, the
+defaults simply stop matching and you set your own boundaries. Plain
+Java (non-Spring) apps are unaffected — configure a
+`DistributionStatisticConfig` via `MeterFilter` yourself.
 
 ### Without Spring
 

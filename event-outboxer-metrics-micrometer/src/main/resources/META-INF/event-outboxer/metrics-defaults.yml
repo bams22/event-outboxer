@@ -1,25 +1,78 @@
 # Default Micrometer distribution settings for the event-outboxer timers.
 #
-# Opt-in: this file is NOT loaded automatically. Import it from your
-# application configuration:
+# Applied automatically by the Spring Boot starter (an
+# EnvironmentPostProcessor appends this file with the LOWEST precedence),
+# so any management.metrics.distribution.* value you set yourself always
+# wins. Disable entirely with:
 #
-#   spring:
-#     config:
-#       import: "classpath:META-INF/event-outboxer/metrics-defaults.yml"
+#   event-outboxer:
+#     metrics:
+#       distribution-defaults:
+#         enabled: false
 #
-# It configures client-side percentiles (p50/p75/p90/p95/p99) for every
-# event-outboxer timer. These are published as precomputed per-JVM gauge
-# series (Prometheus: {quantile="0.5"} ... {quantile="0.99"}) — cheap
-# (+5 series per tag combination), but NOT aggregatable across pods; a
-# fleet-wide percentile still requires histogram buckets
-# (management.metrics.distribution.percentiles-histogram).
+# The SLO boundaries below publish histogram buckets (_bucket{le=...}
+# series in Prometheus): aggregatable across pods, so fleet-wide
+# histogram_quantile() works out of the box with precision limited to
+# the bucket grid (~19 extra series per tag combination). For finer
+# quantiles enable management.metrics.distribution.percentiles-histogram
+# on top — the boundaries merge.
 #
 # Note: keys below use the default metric prefix. If you override
-# event-outboxer.metrics.prefix, copy this file and adjust the names.
+# event-outboxer.metrics.prefix, set your own SLO boundaries under the
+# new names (these defaults will simply not match any meter).
 management:
   metrics:
     distribution:
-      percentiles:
-        "[event_outboxer.events.queue_time]": [0.5, 0.75, 0.90, 0.95, 0.99]
-        "[event_outboxer.events.processing_time]": [0.5, 0.75, 0.90, 0.95, 0.99]
-        "[event_outboxer.handler.stuck_time]": [0.5, 0.75, 0.90, 0.95, 0.99]
+      slo:
+        # Publish -> claim wait and claim -> finalize duration: a grid dense
+        # in the sub-second range where healthy outboxes live, sparse in the
+        # tail where only the fact of slowness matters.
+        "[event_outboxer.events.queue_time]":
+          - 10ms
+          - 25ms
+          - 50ms
+          - 75ms
+          - 100ms
+          - 150ms
+          - 250ms
+          - 500ms
+          - 750ms
+          - 1s
+          - 1500ms
+          - 2500ms
+          - 5s
+          - 10s
+          - 20s
+          - 30s
+          - 45s
+          - 1m
+        "[event_outboxer.events.processing_time]":
+          - 10ms
+          - 25ms
+          - 50ms
+          - 75ms
+          - 100ms
+          - 150ms
+          - 250ms
+          - 500ms
+          - 750ms
+          - 1s
+          - 1500ms
+          - 2500ms
+          - 5s
+          - 10s
+          - 20s
+          - 30s
+          - 45s
+          - 1m
+        # Stuck-handler runtime at watchdog reclaim: always >= handlerMaxRuntime,
+        # so the grid starts where the other timers end.
+        "[event_outboxer.handler.stuck_time]":
+          - 30s
+          - 1m
+          - 2m
+          - 5m
+          - 10m
+          - 15m
+          - 30m
+          - 1h

@@ -598,7 +598,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "How long events wait in the outbox before a worker picks them up — the end-to-end lag signal. Rising p99 means pollers or handler pools cannot keep up. Requires percentile histograms enabled on the client (management.metrics.distribution.percentiles-histogram).",
+      "description": "How long events wait in the outbox before a worker picks them up — the end-to-end lag signal. Rising p99 means pollers or handler pools cannot keep up. Works out of the box: the Spring Boot starter ships default SLO histogram buckets (10ms–1m grid) for this timer; quantile precision is limited to that grid — enable management.metrics.distribution.percentiles-histogram for finer buckets.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -671,7 +671,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Full processing duration per type: dispatch + lock + handler + finalize. Use for handler SLOs and to right-size handlerMaxRuntime.",
+      "description": "Full processing duration per type: dispatch + lock + handler + finalize. Use for handler SLOs and to right-size handlerMaxRuntime. Works out of the box via the starter's default SLO buckets (10ms–1m grid); precision is limited to the grid.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -859,134 +859,6 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "Precomputed p50–p99 published by the timers when the shipped defaults are imported (spring.config.import: classpath:META-INF/event-outboxer/metrics-defaults.yml). Computed per JVM over a sliding window and not aggregatable across pods — the panel shows the worst pod via max. Works without histogram buckets, unlike the histogram_quantile panels above.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 40
-      },
-      "id": 17,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "max by (quantile) (event_outboxer_events_queue_time_seconds{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\",quantile=~\".+\"})",
-          "legendFormat": "p{{quantile}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Queue time percentiles (client-side, worst pod)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "Precomputed p50–p99 for the full claim→finalize duration, published when the shipped metrics-defaults.yml is imported. Per-JVM sliding-window values, not aggregatable — worst pod via max. Works without histogram buckets.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 40
-      },
-      "id": 18,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "max by (quantile) (event_outboxer_events_processing_time_seconds{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\",quantile=~\".+\"})",
-          "legendFormat": "p{{quantile}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Processing time percentiles (client-side, worst pod)",
-      "type": "timeseries"
-    },
-    {
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
@@ -996,9 +868,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 40
       },
-      "id": 19,
+      "id": 17,
       "panels": [],
       "title": "Backlog (store-wide — aggregated with max, not sum)",
       "type": "row"
@@ -1034,9 +906,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 41
       },
-      "id": 20,
+      "id": 18,
       "options": {
         "legend": {
           "calcs": [
@@ -1098,9 +970,9 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 49
+        "y": 41
       },
-      "id": 21,
+      "id": 19,
       "options": {
         "legend": {
           "calcs": [
@@ -1162,9 +1034,9 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 49
+        "y": 41
       },
-      "id": 22,
+      "id": 20,
       "options": {
         "legend": {
           "calcs": [
@@ -1205,9 +1077,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 49
       },
-      "id": 23,
+      "id": 21,
       "panels": [],
       "title": "Errors & failures",
       "type": "row"
@@ -1243,9 +1115,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 58
+        "y": 50
       },
-      "id": 24,
+      "id": 22,
       "options": {
         "legend": {
           "calcs": [
@@ -1307,9 +1179,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 58
+        "y": 50
       },
-      "id": 25,
+      "id": 23,
       "options": {
         "legend": {
           "calcs": [
@@ -1371,9 +1243,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 66
+        "y": 58
       },
-      "id": 26,
+      "id": 24,
       "options": {
         "legend": {
           "calcs": [
@@ -1435,9 +1307,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 66
+        "y": 58
       },
-      "id": 27,
+      "id": 25,
       "options": {
         "legend": {
           "calcs": [
@@ -1508,9 +1380,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 66
+        "y": 58
       },
-      "id": 28,
+      "id": 26,
       "options": {
         "legend": {
           "calcs": [
@@ -1551,9 +1423,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 66
       },
-      "id": 29,
+      "id": 27,
       "panels": [],
       "title": "Saturation & backpressure",
       "type": "row"
@@ -1589,9 +1461,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 67
       },
-      "id": 30,
+      "id": 28,
       "options": {
         "legend": {
           "calcs": [
@@ -1675,9 +1547,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 67
       },
-      "id": 31,
+      "id": 29,
       "options": {
         "legend": {
           "calcs": [
@@ -1739,9 +1611,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 75
       },
-      "id": 32,
+      "id": 30,
       "options": {
         "legend": {
           "calcs": [
@@ -1829,9 +1701,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 75
       },
-      "id": 33,
+      "id": 31,
       "options": {
         "legend": {
           "calcs": [
@@ -1881,9 +1753,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 91
+        "y": 83
       },
-      "id": 34,
+      "id": 32,
       "panels": [],
       "title": "Entity locks",
       "type": "row"
@@ -1935,9 +1807,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 92
+        "y": 84
       },
-      "id": 35,
+      "id": 33,
       "options": {
         "legend": {
           "calcs": [
@@ -1999,9 +1871,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 92
+        "y": 84
       },
-      "id": 36,
+      "id": 34,
       "options": {
         "legend": {
           "calcs": [
@@ -2063,9 +1935,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 92
+        "y": 84
       },
-      "id": 37,
+      "id": 35,
       "options": {
         "legend": {
           "calcs": [
@@ -2106,9 +1978,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 100
+        "y": 92
       },
-      "id": 38,
+      "id": 36,
       "panels": [],
       "title": "Maintenance & recovery",
       "type": "row"
@@ -2144,9 +2016,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 101
+        "y": 93
       },
-      "id": 39,
+      "id": 37,
       "options": {
         "legend": {
           "calcs": [
@@ -2217,9 +2089,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 101
+        "y": 93
       },
-      "id": 40,
+      "id": 38,
       "options": {
         "legend": {
           "calcs": [
@@ -2294,9 +2166,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 101
+        "y": 93
       },
-      "id": 41,
+      "id": 39,
       "options": {
         "legend": {
           "calcs": [
@@ -2367,9 +2239,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 109
+        "y": 101
       },
-      "id": 42,
+      "id": 40,
       "options": {
         "legend": {
           "calcs": [
