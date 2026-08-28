@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -35,6 +36,7 @@ import org.jspecify.annotations.Nullable;
  * @param archivedAt time the row was moved to the archive
  * @param archivedBy worker that finalized the event
  */
+@Builder
 public record ArchivedEvent(
         UUID id,
         String eventType,

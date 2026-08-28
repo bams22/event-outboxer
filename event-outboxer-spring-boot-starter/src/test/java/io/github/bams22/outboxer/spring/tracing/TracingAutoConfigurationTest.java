@@ -186,13 +186,11 @@ class TracingAutoConfigurationTest {
                             assertThat(tracing.getDeferredPropagation())
                                     .isEqualTo(OutboxTracer.Propagation.LINK);
                             assertThat(tracing.getLinkThreshold()).isEqualTo(Duration.ofMinutes(1));
-                            assertThat(tracing.resolveLinkThreshold())
-                                    .isEqualTo(Duration.ofMinutes(1));
                         });
     }
 
     @Test
-    void linkThresholdBindsAndChildPropagationDisablesTheRule() {
+    void linkThresholdAndDeferredPropagationBind() {
         withMicrometerTracingBeans(runner)
                 .withPropertyValues("event-outboxer.tracing.link-threshold=0s")
                 .run(
@@ -200,7 +198,7 @@ class TracingAutoConfigurationTest {
                                 assertThat(
                                                 context.getBean(OutboxProperties.class)
                                                         .getTracing()
-                                                        .resolveLinkThreshold())
+                                                        .getLinkThreshold())
                                         .isEqualTo(Duration.ZERO));
         withMicrometerTracingBeans(runner)
                 .withPropertyValues("event-outboxer.tracing.deferred-propagation=child")
@@ -210,7 +208,7 @@ class TracingAutoConfigurationTest {
                                     context.getBean(OutboxProperties.class).getTracing();
                             assertThat(tracing.getDeferredPropagation())
                                     .isEqualTo(OutboxTracer.Propagation.CHILD);
-                            assertThat(tracing.resolveLinkThreshold()).isNull();
+                            assertThat(tracing.getLinkThreshold()).isEqualTo(Duration.ofMinutes(1));
                         });
     }
 

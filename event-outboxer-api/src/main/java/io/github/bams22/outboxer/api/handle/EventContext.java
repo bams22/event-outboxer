@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.Builder;
 
 /**
  * Immutable context passed into {@code EventHandler.handle(ctx, payload)}. Carries metadata about
@@ -22,12 +23,14 @@ import java.util.UUID;
  *
  * @param eventId unique identifier of the event
  * @param eventType event type string that selected this handler
- * @param attempt 1-based attempt counter, including the current invocation
+ * @param attempt 1-based attempt counter, including the current invocation (required — the builder
+ *     default of {@code 0} is rejected)
  * @param createdAt time the event was originally published
  * @param claimedAt time the worker claimed it for this attempt
  * @param workerId id of the worker JVM running the handler
  * @param traceContext restored W3C trace/baggage context (never null, empty map allowed)
  */
+@Builder
 public record EventContext(
         UUID eventId,
         String eventType,

@@ -300,10 +300,11 @@ links.
 from the publisher's intent, and travels with the event:
 
 - `DefaultOutboxEventPublisher` compares `runAt - clock.now()` with a
-  **link threshold** (`OutboxEngineBuilder.tracingLinkThreshold`,
-  starter `event-outboxer.tracing.link-threshold`, default 1 minute;
-  `event-outboxer.tracing.deferred-propagation: child` or a `null`
-  threshold disables the rule). Beyond the threshold the event is
+  **link threshold** (`OutboxEngineBuilder.linkThreshold`, starter
+  `event-outboxer.tracing.link-threshold`, default 1 minute) when the
+  **deferred propagation** is `LINK` (`OutboxEngineBuilder.deferredPropagation`,
+  starter `event-outboxer.tracing.deferred-propagation`; `CHILD`
+  disables the rule). Beyond the threshold the event is
   *deferred*: the producer span is told (`PublishSpan.linked()`, which
   tags it `event_outboxer.propagation=link`) and the stored carrier
   gets the extra entry `event_outboxer.propagation=link` next to the
@@ -443,6 +444,13 @@ Considered for the 2026-08-16 amendment:
   `DefaultOutboxEventPublisher` / `HandlerDispatcher`,
   `event-outboxer.tracing.enabled` property. All additive; japicmp
   clean.
+- (2026-08-28, follow-up) Those constructor overloads are gone: the
+  core wiring classes (`DefaultOutboxEventPublisher`,
+  `HandlerDispatcher`, `Poller`, the maintenance tasks) now construct
+  through Lombok builders on private validating constructors, and the
+  nullable link threshold became the `deferredPropagation` /
+  `linkThreshold` pair. Pre-1.0 breaking change, recorded in the
+  CHANGELOG.
 - Coalesced publishes (ADR-0021) intentionally do NOT link the second
   publisher's trace to the surviving event beyond the
   `coalesced_into` tag; span links may be added later if operators
@@ -460,7 +468,8 @@ Considered for the 2026-08-16 amendment:
   previous behaviour. Additive API: `OutboxTracer.Propagation`,
   `PublishSpan.linked()` (default), `ProcessSpanInfo.propagation()`
   with a compatibility constructor, `OutboxTraceAttributes.PROPAGATION`
-  / `PROPAGATION_LINK`, `OutboxEngineBuilder.tracingLinkThreshold`,
-  a `DefaultOutboxEventPublisher` overload, and in the Micrometer
+  / `PROPAGATION_LINK`, `OutboxEngineBuilder.deferredPropagation` /
+  `linkThreshold` (and the same pair on
+  `DefaultOutboxEventPublisher.builder()`), and in the Micrometer
   module `OutboxReceiverContext` +
   `OutboxReceiverTracingObservationHandler`.

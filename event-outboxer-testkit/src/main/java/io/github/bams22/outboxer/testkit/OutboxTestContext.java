@@ -387,19 +387,20 @@ public final class OutboxTestContext {
             EventSerializerRegistry serializerRegistry = EventSerializerRegistry.of(allSerializers);
 
             HandlerDispatcher dispatcher =
-                    new HandlerDispatcher(
-                            resolvedStore,
-                            resolvedLocker,
-                            serializerRegistry,
-                            handlerResolver,
-                            failureResolver,
-                            inFlight,
-                            listeners,
-                            resolvedClock,
-                            resolvedWorkerId,
-                            typeCfg,
-                            resolvedDispatcher,
-                            tracer);
+                    HandlerDispatcher.builder()
+                            .store(resolvedStore)
+                            .locker(resolvedLocker)
+                            .serializerRegistry(serializerRegistry)
+                            .handlerResolver(handlerResolver)
+                            .failureHandlerResolver(failureResolver)
+                            .inFlight(inFlight)
+                            .listener(listeners)
+                            .clock(resolvedClock)
+                            .workerId(resolvedWorkerId)
+                            .typeConfig(typeCfg)
+                            .dispatcherConfig(resolvedDispatcher)
+                            .tracer(tracer)
+                            .build();
 
             WorkerInfo heartbeatWorkerInfo =
                     WorkerInfo.builder()
@@ -413,20 +414,22 @@ public final class OutboxTestContext {
                     new HeartbeatTask(
                             resolvedRegistry, heartbeatWorkerInfo, resolvedClock, listeners);
             OrphanRecoveryTask orphan =
-                    new OrphanRecoveryTask(
-                            resolvedRegistry,
-                            resolvedStore,
-                            resolvedClock,
-                            resolvedMaintenance,
-                            listeners);
+                    OrphanRecoveryTask.builder()
+                            .registry(resolvedRegistry)
+                            .store(resolvedStore)
+                            .clock(resolvedClock)
+                            .config(resolvedMaintenance)
+                            .listener(listeners)
+                            .build();
             WatchdogTask watchdog =
-                    new WatchdogTask(
-                            inFlight,
-                            resolvedStore,
-                            resolvedClock,
-                            typeCfg,
-                            listeners,
-                            resolvedMaintenance.abandonedHandlerGrace());
+                    WatchdogTask.builder()
+                            .inFlight(inFlight)
+                            .store(resolvedStore)
+                            .clock(resolvedClock)
+                            .typeConfig(typeCfg)
+                            .listener(listeners)
+                            .abandonedGrace(resolvedMaintenance.abandonedHandlerGrace())
+                            .build();
 
             List<String> types = new ArrayList<>(handlerResolver.registeredTypes());
 
@@ -442,18 +445,19 @@ public final class OutboxTestContext {
                             defaultBatchSize);
 
             OutboxEventPublisher publisher =
-                    new DefaultOutboxEventPublisher(
-                            resolvedStore,
-                            resolvedSerializer,
-                            writeSerializerOverrides,
-                            resolvedClock,
-                            resolvedTxCtx,
-                            noTransactionPolicy,
-                            listeners,
+                    DefaultOutboxEventPublisher.builder()
+                            .store(resolvedStore)
+                            .serializer(resolvedSerializer)
+                            .writeSerializerOverrides(writeSerializerOverrides)
+                            .clock(resolvedClock)
+                            .transactionContext(resolvedTxCtx)
+                            .noTransactionPolicy(noTransactionPolicy)
+                            .listener(listeners)
                             // ManualEngine has no pollers to wake — ticks are driven explicitly by
                             // the test.
-                            PollerWaker.NOOP,
-                            tracer);
+                            .waker(PollerWaker.NOOP)
+                            .tracer(tracer)
+                            .build();
 
             WorkerInfo workerInfo =
                     WorkerInfo.builder()

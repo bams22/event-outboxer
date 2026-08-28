@@ -7,6 +7,53 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Breaking
+- **Core wiring classes construct through builders (amends ADR-0023).**
+  Pre-1.0 breaking change: the telescoping public constructors are
+  gone, replaced by Lombok builders on private validating constructors
+  (required collaborators throw `NullPointerException` with the
+  parameter name; every other parameter defaults when unset).
+  - `DefaultOutboxEventPublisher`: the four constructors (7–10 args)
+    → `DefaultOutboxEventPublisher.builder()`. Required: `store`,
+    `serializer`. Defaults: no write-serializer overrides,
+    `Clock.system()`, `TransactionContext.alwaysActive()`,
+    `NoTransactionPolicy.FAIL`, `OutboxListener.NOOP`,
+    `PollerWaker.NOOP`, `OutboxTracer.NOOP`, `deferredPropagation =
+    LINK`, `linkThreshold = 1m`.
+  - `HandlerDispatcher`: both constructors (11/12 args) →
+    `HandlerDispatcher.builder()`. Required: `store`,
+    `serializerRegistry`, `handlerResolver`, `workerId`; everything
+    else defaults (`EntityLocker.NOOP`, default failure-handler chain,
+    a private `InFlightRegistry`, `OutboxListener.NOOP`,
+    `Clock.system()`, `EventTypeConfig.defaults()`,
+    `DispatcherConfig.defaults()`, `OutboxTracer.NOOP`).
+  - `Poller`, `WatchdogTask`, `OrphanRecoveryTask`,
+    `StaleClaimSweeperTask`, `MaintenanceScheduler`: constructors →
+    `builder()` with the same required/default split (see each class
+    Javadoc). `StaleClaimSweeperTask` takes `threshold` / `interval` by
+    name, so the two adjacent `Duration` parameters can no longer be
+    swapped silently.
+  - `OutboxEngine`'s constructor is package-private: assemble engines
+    with `OutboxEngineBuilder`, which the Spring Boot starter uses too.
+  - The nullable link threshold (added in this release cycle) is
+    replaced by an explicit pair: `OutboxEngineBuilder.tracingLinkThreshold(Duration)`
+    → `.deferredPropagation(Propagation)` + `.linkThreshold(Duration)`;
+    the former `null` ("never link") is now `Propagation.CHILD`.
+    `OutboxProperties.Tracing.resolveLinkThreshold()` is removed — the
+    starter passes `deferred-propagation` and `link-threshold` through
+    unchanged.
+  - Migration:
+    ```java
+    // before
+    new DefaultOutboxEventPublisher(store, serializer, clock, txContext,
+            NoTransactionPolicy.FAIL, listener, waker, tracer);
+    // after
+    DefaultOutboxEventPublisher.builder()
+            .store(store).serializer(serializer).clock(clock)
+            .transactionContext(txContext).listener(listener)
+            .waker(waker).tracer(tracer).build();
+    ```
+
 ### Changed
 - **Deferred events start a new trace linked to the producer span
   (amends ADR-0023).** An event published with a `runAt` further ahead
@@ -28,10 +75,15 @@ All notable changes to this project are documented here. Format follows
 - `OutboxTracer.Propagation`, `PublishSpan.linked()` (default no-op),
   `ProcessSpanInfo.propagation()` with a five-argument compatibility
   constructor, `OutboxTraceAttributes.PROPAGATION` /
-  `PROPAGATION_LINK`, `OutboxEngineBuilder.tracingLinkThreshold(...)`
-  and a matching `DefaultOutboxEventPublisher` overload; in the
-  Micrometer module `OutboxReceiverContext` and
-  `OutboxReceiverTracingObservationHandler`. All additive.
+  `PROPAGATION_LINK`, `OutboxEngineBuilder.deferredPropagation(...)` /
+  `.linkThreshold(...)`; in the Micrometer module
+  `OutboxReceiverContext` and `OutboxReceiverTracingObservationHandler`.
+- `OutboxListener.NOOP` — a listener whose every callback is the
+  default no-op, the non-null default of the wiring builders.
+- Lombok `@Builder` on the domain records `Event`, `ArchivedEvent`,
+  `ClaimedEvent` and on `EventContext` / `FailureContext` (canonical
+  constructors unchanged; handy for tests and custom storage
+  adapters).
 
 
 ## [0.3.0] — 2026-08-16

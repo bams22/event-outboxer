@@ -14,11 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
-import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
-import io.github.bams22.outboxer.core.config.EventTypeConfig;
-import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
@@ -27,8 +24,6 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
-import io.github.bams22.outboxer.spi.Clock;
-import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import io.github.bams22.outboxer.spi.contracts.support.BinaryTestEventSerializer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -80,18 +75,13 @@ class HandlerDispatcherFormatRoutingTest {
                         serializationError.set(info);
                     }
                 };
-        return new HandlerDispatcher(
-                store,
-                EntityLocker.NOOP,
-                serializers,
-                new EventHandlerResolver(List.of(handler)),
-                new FailureHandlerResolver(Map.of(), FailureHandlers.defaults()),
-                new InFlightRegistry(),
-                listener,
-                Clock.system(),
-                WORKER,
-                new EventTypeConfigProvider(EventTypeConfig.defaults(), Map.of()),
-                DispatcherConfig.defaults());
+        return HandlerDispatcher.builder()
+                .store(store)
+                .serializerRegistry(serializers)
+                .handlerResolver(new EventHandlerResolver(List.of(handler)))
+                .listener(listener)
+                .workerId(WORKER)
+                .build();
     }
 
     private ClaimedEvent saveAndClaim(String payloadFormat) {

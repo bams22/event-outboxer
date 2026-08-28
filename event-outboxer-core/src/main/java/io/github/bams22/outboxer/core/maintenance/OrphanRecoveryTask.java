@@ -19,6 +19,8 @@ import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
 import java.util.List;
 import java.util.Objects;
+import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +30,9 @@ import org.slf4j.LoggerFactory;
  * independent calls (each atomic on its own, not jointly): if {@code removeDead} fails after a
  * successful reclaim, the dead worker rows survive until the next pass, where reclaiming their (now
  * zero) events again is a no-op — the flow is idempotent, not transactional.
+ *
+ * <p><b>Construction.</b> {@code OrphanRecoveryTask.builder()} — see the constructor for required
+ * collaborators and defaults.
  */
 public final class OrphanRecoveryTask implements Runnable {
 
@@ -39,17 +44,23 @@ public final class OrphanRecoveryTask implements Runnable {
     private final MaintenanceConfig config;
     private final OutboxListener listener;
 
-    public OrphanRecoveryTask(
+    /**
+     * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
+     * registry} and {@code store}. Defaults: {@link Clock#system()}, {@link
+     * MaintenanceConfig#defaults()}, {@link OutboxListener#NOOP}.
+     */
+    @Builder
+    private OrphanRecoveryTask(
             WorkerRegistry registry,
             EventStore store,
-            Clock clock,
-            MaintenanceConfig config,
-            OutboxListener listener) {
-        this.registry = Objects.requireNonNull(registry);
-        this.store = Objects.requireNonNull(store);
-        this.clock = Objects.requireNonNull(clock);
-        this.config = Objects.requireNonNull(config);
-        this.listener = Objects.requireNonNull(listener);
+            @Nullable Clock clock,
+            @Nullable MaintenanceConfig config,
+            @Nullable OutboxListener listener) {
+        this.registry = Objects.requireNonNull(registry, "registry must not be null");
+        this.store = Objects.requireNonNull(store, "store must not be null");
+        this.clock = clock != null ? clock : Clock.system();
+        this.config = config != null ? config : MaintenanceConfig.defaults();
+        this.listener = listener != null ? listener : OutboxListener.NOOP;
     }
 
     @Override

@@ -143,6 +143,17 @@ in a new or amended ADR.
 - **Lombok allowed**: `@Builder`, `@AllArgsConstructor`,
   `@NoArgsConstructor`, `@RequiredArgsConstructor` — prefer these over
   hand-written constructors/builders.
+- **Builders instead of wide constructors.** Wiring classes (publisher,
+  dispatcher, pollers, maintenance tasks) put `@Builder` on a *private*
+  validating constructor: required collaborators `requireNonNull(x, "x
+  must not be null")`, `null` optional parameters get their default
+  substituted in the constructor (constructor-level `@Builder` has no
+  `@Builder.Default`), optional parameters are `@Nullable` in the
+  signature, and the class Javadoc carries a "Construction" paragraph
+  listing required vs defaulted. Parameter names become the public
+  builder methods — no abbreviations. Records use class-level
+  `@Builder` plus compact-constructor validation. `OutboxEngine` itself
+  is assembled only by `OutboxEngineBuilder`.
 - **Google Java Format** via Spotless (`mvn spotless:apply` to fix).
 - **Multi-line pom element values** (description, etc.) are expected —
   Spotless `sortPom` formats them.

@@ -33,6 +33,13 @@ package io.github.bams22.outboxer.api.observer;
  */
 public interface OutboxListener {
 
+    /**
+     * Listener whose every callback is the interface's default no-op. Exists so that wiring classes
+     * have a non-null default collaborator (mirrors {@code EntityLocker.NOOP} and {@code
+     * OutboxTracer.NOOP}); use it instead of an ad-hoc {@code new OutboxListener() {}}.
+     */
+    OutboxListener NOOP = new OutboxListener() {};
+
     // ==================== Publication ====================
 
     /**

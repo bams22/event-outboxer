@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.api.handle;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import java.time.Instant;
 import java.util.Objects;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -26,10 +27,12 @@ import org.jspecify.annotations.Nullable;
  *     uncaught exception before the handler returned
  * @param cause underlying exception, if any; null when the handler returned an explicit non-null
  *     {@code outcome}
- * @param attempt 1-based counter, including the current failed attempt
+ * @param attempt 1-based counter, including the current failed attempt (required — the builder
+ *     default of {@code 0} is rejected)
  * @param now wall-clock time at which the failure handler is invoked
  * @param <T> payload type corresponding to the {@code EventHandler} that failed
  */
+@Builder
 public record FailureContext<T>(
         ClaimedEvent event,
         @Nullable T payload,

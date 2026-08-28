@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.FailureContext;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
+import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
@@ -44,6 +45,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +57,13 @@ import org.slf4j.LoggerFactory;
  *
  * <p>One dispatcher instance is shared across per-type handler executors; it holds no mutable state
  * and is safe for concurrent use.
+ *
+ * <p><b>Construction.</b> {@code HandlerDispatcher.builder()}. Required: {@code store}, {@code
+ * serializerRegistry}, {@code handlerResolver}, {@code workerId}. Every other knob has a default:
+ * {@link EntityLocker#NOOP}, the default failure-handler chain, a private {@link InFlightRegistry}
+ * (standalone use only — the engine shares one with the watchdog), {@link OutboxListener#NOOP},
+ * {@link Clock#system()}, {@link EventTypeConfig#defaults()}, {@link DispatcherConfig#defaults()}
+ * and {@link OutboxTracer#NOOP}. {@code OutboxEngineBuilder} passes every collaborator explicitly.
  */
 public final class HandlerDispatcher {
 
@@ -80,58 +89,63 @@ public final class HandlerDispatcher {
     private final DispatcherConfig dispatcherConfig;
     private final OutboxTracer tracer;
 
-    public HandlerDispatcher(
+    /**
+     * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
+     * store}, {@code serializerRegistry}, {@code handlerResolver}, {@code workerId}. Every other
+     * parameter accepts {@code null}, which selects the default listed in the class Javadoc.
+     *
+     * @param store event store used for claim finalization
+     * @param locker business-key locker; {@code null} = {@link EntityLocker#NOOP}
+     * @param serializerRegistry serializers keyed by stored payload format
+     * @param handlerResolver event type → handler lookup
+     * @param failureHandlerResolver event type → failure handler lookup; {@code null} = the default
+     *     chain of {@link FailureHandlers#defaults()} for every type
+     * @param inFlight in-flight registry; {@code null} = a fresh private one — suitable standalone
+     *     only, the engine shares one registry between the dispatcher and the watchdog
+     * @param listener observer; {@code null} = {@link OutboxListener#NOOP}
+     * @param clock dispatch-time clock; {@code null} = {@link Clock#system()}
+     * @param workerId id of the worker running this dispatcher
+     * @param typeConfig per-type configuration; {@code null} = {@link EventTypeConfig#defaults()}
+     *     for every type
+     * @param dispatcherConfig dispatcher-wide knobs; {@code null} = {@link
+     *     DispatcherConfig#defaults()}
+     * @param tracer tracing port (ADR-0023), wrapped defensively; {@code null} = {@link
+     *     OutboxTracer#NOOP}
+     */
+    @Builder
+    private HandlerDispatcher(
             EventStore store,
-            EntityLocker locker,
-            EventSerializerRegistry serializers,
-            EventHandlerResolver handlers,
-            FailureHandlerResolver failureHandlers,
-            InFlightRegistry inFlight,
-            OutboxListener listener,
-            Clock clock,
+            @Nullable EntityLocker locker,
+            EventSerializerRegistry serializerRegistry,
+            EventHandlerResolver handlerResolver,
+            @Nullable FailureHandlerResolver failureHandlerResolver,
+            @Nullable InFlightRegistry inFlight,
+            @Nullable OutboxListener listener,
+            @Nullable Clock clock,
             WorkerId workerId,
-            EventTypeConfigProvider typeConfig,
-            DispatcherConfig dispatcherConfig) {
-        this(
-                store,
-                locker,
-                serializers,
-                handlers,
-                failureHandlers,
-                inFlight,
-                listener,
-                clock,
-                workerId,
-                typeConfig,
-                dispatcherConfig,
-                OutboxTracer.NOOP);
-    }
-
-    public HandlerDispatcher(
-            EventStore store,
-            EntityLocker locker,
-            EventSerializerRegistry serializers,
-            EventHandlerResolver handlers,
-            FailureHandlerResolver failureHandlers,
-            InFlightRegistry inFlight,
-            OutboxListener listener,
-            Clock clock,
-            WorkerId workerId,
-            EventTypeConfigProvider typeConfig,
-            DispatcherConfig dispatcherConfig,
-            OutboxTracer tracer) {
-        this.store = Objects.requireNonNull(store);
-        this.locker = Objects.requireNonNull(locker);
-        this.serializers = Objects.requireNonNull(serializers);
-        this.handlers = Objects.requireNonNull(handlers);
-        this.failureHandlers = Objects.requireNonNull(failureHandlers);
-        this.inFlight = Objects.requireNonNull(inFlight);
-        this.listener = Objects.requireNonNull(listener);
-        this.clock = Objects.requireNonNull(clock);
-        this.workerId = Objects.requireNonNull(workerId);
-        this.typeConfig = Objects.requireNonNull(typeConfig);
-        this.dispatcherConfig = Objects.requireNonNull(dispatcherConfig);
-        this.tracer = SafeOutboxTracer.wrap(Objects.requireNonNull(tracer));
+            @Nullable EventTypeConfigProvider typeConfig,
+            @Nullable DispatcherConfig dispatcherConfig,
+            @Nullable OutboxTracer tracer) {
+        this.store = Objects.requireNonNull(store, "store must not be null");
+        this.locker = locker != null ? locker : EntityLocker.NOOP;
+        this.serializers =
+                Objects.requireNonNull(serializerRegistry, "serializerRegistry must not be null");
+        this.handlers = Objects.requireNonNull(handlerResolver, "handlerResolver must not be null");
+        this.failureHandlers =
+                failureHandlerResolver != null
+                        ? failureHandlerResolver
+                        : new FailureHandlerResolver(Map.of(), FailureHandlers.defaults());
+        this.inFlight = inFlight != null ? inFlight : new InFlightRegistry();
+        this.listener = listener != null ? listener : OutboxListener.NOOP;
+        this.clock = clock != null ? clock : Clock.system();
+        this.workerId = Objects.requireNonNull(workerId, "workerId must not be null");
+        this.typeConfig =
+                typeConfig != null
+                        ? typeConfig
+                        : new EventTypeConfigProvider(EventTypeConfig.defaults(), Map.of());
+        this.dispatcherConfig =
+                dispatcherConfig != null ? dispatcherConfig : DispatcherConfig.defaults();
+        this.tracer = SafeOutboxTracer.wrap(tracer != null ? tracer : OutboxTracer.NOOP);
     }
 
     /** Entry point invoked by the per-type handler executor for each claimed event. */

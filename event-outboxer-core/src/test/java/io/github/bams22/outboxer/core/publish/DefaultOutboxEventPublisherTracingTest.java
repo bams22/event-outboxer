@@ -15,7 +15,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.api.publish.PublishRequest;
-import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
@@ -23,7 +22,6 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.domain.exception.PublishFailedException;
 import io.github.bams22.outboxer.domain.exception.StorageException;
-import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import java.util.List;
@@ -42,15 +40,11 @@ class DefaultOutboxEventPublisherTracingTest {
 
     private static DefaultOutboxEventPublisher publisher(
             EventStore store, RecordingOutboxTracer t) {
-        return new DefaultOutboxEventPublisher(
-                store,
-                new StringEventSerializer(),
-                Clock.system(),
-                TransactionContext.alwaysActive(),
-                NoTransactionPolicy.FAIL,
-                NOOP_LISTENER,
-                PollerWaker.NOOP,
-                t);
+        return DefaultOutboxEventPublisher.builder()
+                .store(store)
+                .serializer(new StringEventSerializer())
+                .tracer(t)
+                .build();
     }
 
     @Test

@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,9 @@ import org.slf4j.LoggerFactory;
  * interrupts the thread so an in-progress {@code Thread.sleep} returns immediately. Waiting for
  * in-flight handlers to drain is done separately by the caller (see the engine's {@code
  * shutdownTimeout}).
+ *
+ * <p><b>Construction.</b> {@code Poller.builder()} — see the constructor for required collaborators
+ * and defaults; {@code OutboxEngineBuilder} creates one poller per handler.
  */
 public final class Poller {
 
@@ -56,27 +60,34 @@ public final class Poller {
     private @Nullable Thread thread;
     private final AtomicBoolean wakeRequested = new AtomicBoolean();
 
-    public Poller(
+    /**
+     * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
+     * eventType}, {@code workerId}, {@code strategy}, {@code dispatcher}, {@code handlerExecutor}.
+     * {@code listener} defaults to {@link OutboxListener#NOOP}, {@code config} to {@link
+     * EventTypeConfig#defaults()}; the adaptive poll waiter is derived from the resolved config.
+     */
+    @Builder
+    private Poller(
             String eventType,
             WorkerId workerId,
             PollStrategy strategy,
             HandlerDispatcher dispatcher,
             HandlerExecutorGate handlerExecutor,
-            OutboxListener listener,
-            EventTypeConfig config) {
+            @Nullable OutboxListener listener,
+            @Nullable EventTypeConfig config) {
         this.eventType = Objects.requireNonNull(eventType, "eventType must not be null");
         this.workerId = Objects.requireNonNull(workerId, "workerId must not be null");
         this.strategy = Objects.requireNonNull(strategy, "strategy must not be null");
         this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher must not be null");
         this.handlerExecutor =
                 Objects.requireNonNull(handlerExecutor, "handlerExecutor must not be null");
-        this.listener = Objects.requireNonNull(listener, "listener must not be null");
-        this.config = Objects.requireNonNull(config, "config must not be null");
+        this.listener = listener != null ? listener : OutboxListener.NOOP;
+        this.config = config != null ? config : EventTypeConfig.defaults();
         this.waiter =
                 new AdaptiveWaiter(
-                        config.pollMinInterval(),
-                        config.pollMaxInterval(),
-                        config.pollMultiplier());
+                        this.config.pollMinInterval(),
+                        this.config.pollMaxInterval(),
+                        this.config.pollMultiplier());
     }
 
     /** Spawn the polling thread. Must be called exactly once. */

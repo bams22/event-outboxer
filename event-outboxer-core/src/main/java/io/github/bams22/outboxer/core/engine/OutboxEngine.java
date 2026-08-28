@@ -65,7 +65,12 @@ public final class OutboxEngine {
      */
     private volatile boolean crashed = false;
 
-    public OutboxEngine(
+    /**
+     * Package-private on purpose: engines are assembled by {@link OutboxEngineBuilder}, which owns
+     * the collaborator wiring (per-type pollers, executors, maintenance tasks) this constructor
+     * merely receives.
+     */
+    OutboxEngine(
             WorkerRegistry registry,
             WorkerInfo workerInfo,
             EventStore store,

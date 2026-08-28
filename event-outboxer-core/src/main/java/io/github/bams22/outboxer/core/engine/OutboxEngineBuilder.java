@@ -80,8 +80,8 @@ import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Plain-Java builder for {@link OutboxEngine}. The Spring Boot starter (P9) wires Spring-managed
- * collaborators directly into the engine constructor instead of going through this builder.
+ * Plain-Java builder for {@link OutboxEngine} — the only way to assemble one; the Spring Boot
+ * starter feeds its Spring-managed collaborators through this builder as well.
  *
  * <p>Required collaborators: {@link EventStore}, {@link WorkerRegistry}, {@link EventSerializer},
  * and at least one {@link EventHandler}. Every other knob has a default.
@@ -107,8 +107,9 @@ public final class OutboxEngineBuilder {
     private final List<OutboxListener> listeners = new ArrayList<>();
     private boolean includeLoggingListener = true;
     private OutboxTracer tracer = OutboxTracer.NOOP;
-    private @Nullable Duration tracingLinkThreshold =
-            DefaultOutboxEventPublisher.DEFAULT_LINK_THRESHOLD;
+    private OutboxTracer.Propagation deferredPropagation =
+            DefaultOutboxEventPublisher.DEFAULT_DEFERRED_PROPAGATION;
+    private Duration linkThreshold = DefaultOutboxEventPublisher.DEFAULT_LINK_THRESHOLD;
     private Supplier<WorkerId> workerIdSupplier = WorkerIdFactory.defaultGenerator();
     private @Nullable String host;
     private final Map<String, String> workerMetadata = new LinkedHashMap<>();
@@ -266,15 +267,27 @@ public final class OutboxEngineBuilder {
     }
 
     /**
-     * Trace-propagation link threshold (ADR-0023, 2026-08-28 amendment): an event whose {@code
-     * runAt} lies further than this ahead of the publish-time clock gets a CONSUMER span that
+     * Span shape of a deferred event (ADR-0023, 2026-08-28 amendment). {@link
+     * OutboxTracer.Propagation#LINK} (default): an event whose {@code runAt} lies further than
+     * {@link #linkThreshold(Duration)} ahead of the publish-time clock gets a CONSUMER span that
      * <em>links</em> to the PRODUCER span instead of descending from it, so a deliberately deferred
-     * event does not stretch one trace across days. Decided once at publish time; retries and
-     * backlog never revisit it. Default: {@link DefaultOutboxEventPublisher#DEFAULT_LINK_THRESHOLD}
-     * (one minute). {@code null} disables the rule — every event keeps parent-child continuity.
+     * event does not stretch one trace across days. {@link OutboxTracer.Propagation#CHILD} disables
+     * the rule — every event keeps parent-child continuity. Decided once at publish time; retries
+     * and backlog never revisit it.
      */
-    public OutboxEngineBuilder tracingLinkThreshold(@Nullable Duration threshold) {
-        this.tracingLinkThreshold = threshold;
+    public OutboxEngineBuilder deferredPropagation(OutboxTracer.Propagation propagation) {
+        this.deferredPropagation = Objects.requireNonNull(propagation);
+        return this;
+    }
+
+    /**
+     * How far ahead of the publish-time clock {@code runAt} must lie for an event to count as
+     * deferred under {@link #deferredPropagation(OutboxTracer.Propagation)}. Default: {@link
+     * DefaultOutboxEventPublisher#DEFAULT_LINK_THRESHOLD} (one minute); {@code Duration.ZERO} links
+     * every event with an explicit future {@code runAt}.
+     */
+    public OutboxEngineBuilder linkThreshold(Duration threshold) {
+        this.linkThreshold = Objects.requireNonNull(threshold);
         return this;
     }
 
@@ -398,19 +411,20 @@ public final class OutboxEngineBuilder {
         OutboxTracer safeTracer = SafeOutboxTracer.wrap(tracer);
 
         HandlerDispatcher dispatcher =
-                new HandlerDispatcher(
-                        dispatcherStore,
-                        locker,
-                        serializerRegistry,
-                        handlerResolver,
-                        failureResolver,
-                        inFlight,
-                        listener,
-                        clock,
-                        workerId,
-                        typeConfig,
-                        dispatcherConfig,
-                        safeTracer);
+                HandlerDispatcher.builder()
+                        .store(dispatcherStore)
+                        .locker(locker)
+                        .serializerRegistry(serializerRegistry)
+                        .handlerResolver(handlerResolver)
+                        .failureHandlerResolver(failureResolver)
+                        .inFlight(inFlight)
+                        .listener(listener)
+                        .clock(clock)
+                        .workerId(workerId)
+                        .typeConfig(typeConfig)
+                        .dispatcherConfig(dispatcherConfig)
+                        .tracer(safeTracer)
+                        .build();
 
         PollStrategy strategy =
                 pollStrategy != null ? pollStrategy : new LockAndFetchStrategy(eventStore);
@@ -432,7 +446,16 @@ public final class OutboxEngineBuilder {
                     Objects.requireNonNull(
                             executorConfigs.get(type), "no executor config for type " + type);
             HandlerExecutorGate gate = executors.executorFor(type);
-            Poller poller = new Poller(type, workerId, strategy, dispatcher, gate, listener, cfg);
+            Poller poller =
+                    Poller.builder()
+                            .eventType(type)
+                            .workerId(workerId)
+                            .strategy(strategy)
+                            .dispatcher(dispatcher)
+                            .handlerExecutor(gate)
+                            .listener(listener)
+                            .config(cfg)
+                            .build();
             // Couple the two ends of the pipeline: a saturated executor freeing a slot wakes the
             // poller immediately instead of costing the remainder of the poll interval.
             gate.onCapacityAvailable(poller::wake);
@@ -441,30 +464,38 @@ public final class OutboxEngineBuilder {
         }
 
         OutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        eventStore,
-                        eventSerializer,
-                        writeSerializerOverrides,
-                        clock,
-                        txContext,
-                        noTxPolicy,
-                        listener,
-                        hub,
-                        safeTracer,
-                        tracingLinkThreshold);
+                DefaultOutboxEventPublisher.builder()
+                        .store(eventStore)
+                        .serializer(eventSerializer)
+                        .writeSerializerOverrides(writeSerializerOverrides)
+                        .clock(clock)
+                        .transactionContext(txContext)
+                        .noTransactionPolicy(noTxPolicy)
+                        .listener(listener)
+                        .waker(hub)
+                        .tracer(safeTracer)
+                        .deferredPropagation(deferredPropagation)
+                        .linkThreshold(linkThreshold)
+                        .build();
 
         HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
         OrphanRecoveryTask orphanTask =
-                new OrphanRecoveryTask(
-                        workerRegistry, eventStore, clock, maintenanceConfig, listener);
+                OrphanRecoveryTask.builder()
+                        .registry(workerRegistry)
+                        .store(eventStore)
+                        .clock(clock)
+                        .config(maintenanceConfig)
+                        .listener(listener)
+                        .build();
         WatchdogTask watchdog =
-                new WatchdogTask(
-                        inFlight,
-                        eventStore,
-                        clock,
-                        typeConfig,
-                        listener,
-                        maintenanceConfig.abandonedHandlerGrace());
+                WatchdogTask.builder()
+                        .inFlight(inFlight)
+                        .store(eventStore)
+                        .clock(clock)
+                        .typeConfig(typeConfig)
+                        .listener(listener)
+                        .abandonedGrace(maintenanceConfig.abandonedHandlerGrace())
+                        .build();
 
         // The engine-health-check needs to report crashes to the engine, but the engine isn't
         // constructed yet. Resolve with an AtomicReference the lambda dereferences at run time.
@@ -483,21 +514,25 @@ public final class OutboxEngineBuilder {
                         ? new RetentionTask(admin, listener, clock, retentionConfig)
                         : null;
         StaleClaimSweeperTask staleClaimSweeper =
-                new StaleClaimSweeperTask(
-                        eventStore,
-                        listener,
-                        resolveStaleClaimThreshold(maintenanceConfig, executorConfigs.values()),
-                        maintenanceConfig.staleClaimSweepInterval(),
-                        maintenanceConfig.reclaimBatchSize());
+                StaleClaimSweeperTask.builder()
+                        .store(eventStore)
+                        .listener(listener)
+                        .threshold(
+                                resolveStaleClaimThreshold(
+                                        maintenanceConfig, executorConfigs.values()))
+                        .interval(maintenanceConfig.staleClaimSweepInterval())
+                        .batchSize(maintenanceConfig.reclaimBatchSize())
+                        .build();
         MaintenanceScheduler maintenance =
-                new MaintenanceScheduler(
-                        heartbeat,
-                        orphanTask,
-                        watchdog,
-                        engineHealthCheck,
-                        retention,
-                        staleClaimSweeper,
-                        maintenanceConfig);
+                MaintenanceScheduler.builder()
+                        .heartbeat(heartbeat)
+                        .orphanRecovery(orphanTask)
+                        .watchdog(watchdog)
+                        .engineHealthCheck(engineHealthCheck)
+                        .retention(retention)
+                        .staleClaimSweeper(staleClaimSweeper)
+                        .config(maintenanceConfig)
+                        .build();
 
         OutboxEngine engine =
                 new OutboxEngine(

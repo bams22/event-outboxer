@@ -15,11 +15,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.api.publish.PublishRequest;
-import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
-import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -29,7 +27,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,18 +39,23 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
     private static final OutboxListener NOOP_LISTENER = new OutboxListener() {};
 
     private static DefaultOutboxEventPublisher publisher(
-            EventStore store, RecordingOutboxTracer tracer, @Nullable Duration threshold) {
-        return new DefaultOutboxEventPublisher(
-                store,
-                new StringEventSerializer(),
-                Map.of(),
-                Clock.system(),
-                TransactionContext.alwaysActive(),
-                NoTransactionPolicy.FAIL,
-                NOOP_LISTENER,
-                PollerWaker.NOOP,
-                tracer,
-                threshold);
+            EventStore store, RecordingOutboxTracer tracer, Duration threshold) {
+        return publisher(store, tracer, OutboxTracer.Propagation.LINK, threshold);
+    }
+
+    private static DefaultOutboxEventPublisher publisher(
+            EventStore store,
+            RecordingOutboxTracer tracer,
+            OutboxTracer.Propagation propagation,
+            Duration threshold) {
+        return DefaultOutboxEventPublisher.builder()
+                .store(store)
+                .serializer(new StringEventSerializer())
+                .noTransactionPolicy(NoTransactionPolicy.FAIL)
+                .tracer(tracer)
+                .deferredPropagation(propagation)
+                .linkThreshold(threshold)
+                .build();
     }
 
     private static Instant inTwoDays() {
@@ -119,11 +121,13 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
     }
 
     @Test
-    void nullThresholdDisablesTheRule() {
+    void childPropagationDisablesTheRule() {
         InMemoryEventStore store = new InMemoryEventStore();
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-        UUID id = publisher(store, tracer, null).publish("T", "hello", inTwoDays());
+        UUID id =
+                publisher(store, tracer, OutboxTracer.Propagation.CHILD, Duration.ofMinutes(1))
+                        .publish("T", "hello", inTwoDays());
 
         assertThat(tracer.publishSpans.get(0).linked).isFalse();
         assertThat(store.findById(id).orElseThrow().traceContext())
@@ -135,21 +139,19 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
         InMemoryEventStore store = new InMemoryEventStore();
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        TransactionContext.alwaysActive(),
-                        NoTransactionPolicy.FAIL,
-                        NOOP_LISTENER,
-                        PollerWaker.NOOP,
-                        tracer);
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .tracer(tracer)
+                        .build();
 
         UUID soon = publisher.publish("T", "a", Instant.now().plusSeconds(30));
         UUID later = publisher.publish("T", "b", Instant.now().plus(Duration.ofMinutes(2)));
 
         assertThat(DefaultOutboxEventPublisher.DEFAULT_LINK_THRESHOLD)
                 .isEqualTo(Duration.ofMinutes(1));
+        assertThat(DefaultOutboxEventPublisher.DEFAULT_DEFERRED_PROPAGATION)
+                .isEqualTo(OutboxTracer.Propagation.LINK);
         assertThat(store.findById(soon).orElseThrow().traceContext())
                 .doesNotContainKey(TracePropagationMarker.KEY);
         assertThat(store.findById(later).orElseThrow().traceContext())
@@ -183,17 +185,11 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
     void emptyCarrierStaysEmptyEvenWhenDeferred() {
         InMemoryEventStore store = new InMemoryEventStore();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Map.of(),
-                        Clock.system(),
-                        TransactionContext.alwaysActive(),
-                        NoTransactionPolicy.FAIL,
-                        NOOP_LISTENER,
-                        PollerWaker.NOOP,
-                        OutboxTracer.NOOP,
-                        Duration.ofMinutes(1));
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .linkThreshold(Duration.ofMinutes(1))
+                        .build();
 
         UUID id = publisher.publish("T", "hello", inTwoDays());
 

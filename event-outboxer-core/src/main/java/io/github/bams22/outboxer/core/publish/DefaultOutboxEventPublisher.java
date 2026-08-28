@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +59,14 @@ import org.slf4j.LoggerFactory;
  *   <li>Register an after-commit hook that wakes the local poller of the published type, so
  *       same-JVM publish→handle latency is bounded by the handler, not by the poll interval.
  * </ol>
+ *
+ * <p><b>Construction.</b> {@code DefaultOutboxEventPublisher.builder()}. Required: {@code store}
+ * and {@code serializer}. Every other knob has a default: no write-serializer overrides, {@link
+ * Clock#system()}, {@link TransactionContext#alwaysActive()}, {@link NoTransactionPolicy#FAIL},
+ * {@link OutboxListener#NOOP}, {@link PollerWaker#NOOP}, {@link OutboxTracer#NOOP}, {@link
+ * #DEFAULT_DEFERRED_PROPAGATION} and {@link #DEFAULT_LINK_THRESHOLD}. {@code OutboxEngineBuilder}
+ * passes every collaborator explicitly (and keeps its own {@code NoTransactionPolicy.IGNORE}
+ * default); the builder defaults exist for standalone and test use.
  */
 public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
 
@@ -72,7 +81,15 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     private final OutboxListener listener;
     private final PollerWaker waker;
     private final OutboxTracer tracer;
-    private final @Nullable Duration linkThreshold;
+    private final OutboxTracer.Propagation deferredPropagation;
+    private final Duration linkThreshold;
+
+    /**
+     * Default {@code deferredPropagation}: deferred events get a linked consumer span (ADR-0023,
+     * 2026-08-28 amendment). {@link OutboxTracer.Propagation#CHILD} disables the rule.
+     */
+    public static final OutboxTracer.Propagation DEFAULT_DEFERRED_PROPAGATION =
+            OutboxTracer.Propagation.LINK;
 
     /**
      * Default {@code linkThreshold}: an event scheduled more than one minute ahead gets a linked
@@ -82,95 +99,62 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
      */
     public static final Duration DEFAULT_LINK_THRESHOLD = Duration.ofMinutes(1);
 
-    public DefaultOutboxEventPublisher(
-            EventStore store,
-            EventSerializer serializer,
-            Clock clock,
-            TransactionContext txContext,
-            NoTransactionPolicy noTxPolicy,
-            OutboxListener listener,
-            PollerWaker waker) {
-        this(store, serializer, clock, txContext, noTxPolicy, listener, waker, OutboxTracer.NOOP);
-    }
-
-    public DefaultOutboxEventPublisher(
-            EventStore store,
-            EventSerializer serializer,
-            Clock clock,
-            TransactionContext txContext,
-            NoTransactionPolicy noTxPolicy,
-            OutboxListener listener,
-            PollerWaker waker,
-            OutboxTracer tracer) {
-        this(store, serializer, Map.of(), clock, txContext, noTxPolicy, listener, waker, tracer);
-    }
-
     /**
-     * Variant with per-event-type write serializer overrides (ADR-0025 amendment): events of a
-     * listed type are serialized with — and stamped with the {@code format()} of — the mapped
-     * serializer; every other type uses the default {@code serializer}. Deserialization is
-     * unaffected here: it routes by the stored {@code payload_format} in the dispatcher.
+     * Builder-backed constructor; parameter names are the builder's method names. Only {@code
+     * store} and {@code serializer} are required — every other parameter accepts {@code null},
+     * which selects the default listed in the class Javadoc.
+     *
+     * @param store event store the publisher inserts into
+     * @param serializer default payload serializer
+     * @param writeSerializerOverrides per-event-type write serializers (ADR-0025 amendment): events
+     *     of a listed type are serialized with — and stamped with the {@code format()} of — the
+     *     mapped serializer; {@code null} = none
+     * @param clock publish-time clock; {@code null} = {@link Clock#system()}
+     * @param transactionContext how the publisher detects the caller's transaction; {@code null} =
+     *     {@link TransactionContext#alwaysActive()}
+     * @param noTransactionPolicy what to do when no transaction is active; {@code null} = {@link
+     *     NoTransactionPolicy#FAIL}
+     * @param listener observer notified of publishes; {@code null} = {@link OutboxListener#NOOP}
+     * @param waker after-commit poller wake-up; {@code null} = {@link PollerWaker#NOOP}
+     * @param tracer tracing port (ADR-0023), wrapped defensively; {@code null} = {@link
+     *     OutboxTracer#NOOP}
+     * @param deferredPropagation span shape of a deferred event; {@code null} = {@link
+     *     #DEFAULT_DEFERRED_PROPAGATION}
+     * @param linkThreshold how far ahead {@code runAt} must lie for an event to count as deferred;
+     *     {@code null} = {@link #DEFAULT_LINK_THRESHOLD}; must not be negative
      */
-    public DefaultOutboxEventPublisher(
+    @Builder
+    private DefaultOutboxEventPublisher(
             EventStore store,
             EventSerializer serializer,
-            Map<String, EventSerializer> writeSerializerOverrides,
-            Clock clock,
-            TransactionContext txContext,
-            NoTransactionPolicy noTxPolicy,
-            OutboxListener listener,
-            PollerWaker waker,
-            OutboxTracer tracer) {
-        this(
-                store,
-                serializer,
-                writeSerializerOverrides,
-                clock,
-                txContext,
-                noTxPolicy,
-                listener,
-                waker,
-                tracer,
-                DEFAULT_LINK_THRESHOLD);
-    }
-
-    /**
-     * Full variant. {@code linkThreshold} is the trace-propagation link threshold (ADR-0023,
-     * 2026-08-28 amendment): an event whose {@code runAt} lies further than this ahead of the
-     * publish-time clock is stored with the {@code link} marker, so its consumer span links to the
-     * producer span instead of descending from it. {@code null} disables the rule — every event
-     * keeps parent-child continuity regardless of how far ahead it is scheduled.
-     */
-    public DefaultOutboxEventPublisher(
-            EventStore store,
-            EventSerializer serializer,
-            Map<String, EventSerializer> writeSerializerOverrides,
-            Clock clock,
-            TransactionContext txContext,
-            NoTransactionPolicy noTxPolicy,
-            OutboxListener listener,
-            PollerWaker waker,
-            OutboxTracer tracer,
+            @Nullable Map<String, EventSerializer> writeSerializerOverrides,
+            @Nullable Clock clock,
+            @Nullable TransactionContext transactionContext,
+            @Nullable NoTransactionPolicy noTransactionPolicy,
+            @Nullable OutboxListener listener,
+            @Nullable PollerWaker waker,
+            @Nullable OutboxTracer tracer,
+            OutboxTracer.@Nullable Propagation deferredPropagation,
             @Nullable Duration linkThreshold) {
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
         this.writeSerializerOverrides =
-                Map.copyOf(
-                        Objects.requireNonNull(
-                                writeSerializerOverrides,
-                                "writeSerializerOverrides must not be null"));
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
-        this.txContext = Objects.requireNonNull(txContext, "txContext must not be null");
-        this.noTxPolicy = Objects.requireNonNull(noTxPolicy, "noTxPolicy must not be null");
-        this.listener = Objects.requireNonNull(listener, "listener must not be null");
-        this.waker = Objects.requireNonNull(waker, "waker must not be null");
-        this.tracer =
-                SafeOutboxTracer.wrap(Objects.requireNonNull(tracer, "tracer must not be null"));
+                writeSerializerOverrides == null ? Map.of() : Map.copyOf(writeSerializerOverrides);
+        this.clock = clock != null ? clock : Clock.system();
+        this.txContext =
+                transactionContext != null ? transactionContext : TransactionContext.alwaysActive();
+        this.noTxPolicy =
+                noTransactionPolicy != null ? noTransactionPolicy : NoTransactionPolicy.FAIL;
+        this.listener = listener != null ? listener : OutboxListener.NOOP;
+        this.waker = waker != null ? waker : PollerWaker.NOOP;
+        this.tracer = SafeOutboxTracer.wrap(tracer != null ? tracer : OutboxTracer.NOOP);
+        this.deferredPropagation =
+                deferredPropagation != null ? deferredPropagation : DEFAULT_DEFERRED_PROPAGATION;
         if (linkThreshold != null && linkThreshold.isNegative()) {
             throw new IllegalArgumentException(
                     "linkThreshold must not be negative, got " + linkThreshold);
         }
-        this.linkThreshold = linkThreshold;
+        this.linkThreshold = linkThreshold != null ? linkThreshold : DEFAULT_LINK_THRESHOLD;
     }
 
     @Override
@@ -462,7 +446,8 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
 
     private boolean isDeferredBeyondLinkThreshold(Instant runAt, Instant now) {
-        return linkThreshold != null && Duration.between(now, runAt).compareTo(linkThreshold) > 0;
+        return deferredPropagation == OutboxTracer.Propagation.LINK
+                && Duration.between(now, runAt).compareTo(linkThreshold) > 0;
     }
 
     private void emitPublished(PendingEvent pe) {

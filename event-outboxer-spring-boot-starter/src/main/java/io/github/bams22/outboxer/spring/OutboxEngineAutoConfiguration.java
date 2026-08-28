@@ -152,17 +152,19 @@ public class OutboxEngineAutoConfiguration {
         // Publisher fires listener callbacks directly; the engine's ListenerRegistry will subsume
         // these when the engine starts — for now, aggregate all application-registered listeners.
         OutboxListener fanout = new FanOutListener(listeners);
-        return new DefaultOutboxEventPublisher(
-                store,
-                serializers.write(),
-                serializers.writePerType(),
-                clock,
-                txContext,
-                policy,
-                fanout,
-                wakeHub,
-                resolveTracer(tracerProvider),
-                properties.getTracing().resolveLinkThreshold());
+        return DefaultOutboxEventPublisher.builder()
+                .store(store)
+                .serializer(serializers.write())
+                .writeSerializerOverrides(serializers.writePerType())
+                .clock(clock)
+                .transactionContext(txContext)
+                .noTransactionPolicy(policy)
+                .listener(fanout)
+                .waker(wakeHub)
+                .tracer(resolveTracer(tracerProvider))
+                .deferredPropagation(properties.getTracing().getDeferredPropagation())
+                .linkThreshold(properties.getTracing().getLinkThreshold())
+                .build();
     }
 
     @Bean
@@ -206,7 +208,8 @@ public class OutboxEngineAutoConfiguration {
                         .workerIdSupplier(() -> workerId)
                         .wakeHub(wakeHub)
                         .tracer(resolveTracer(tracerProvider))
-                        .tracingLinkThreshold(properties.getTracing().resolveLinkThreshold())
+                        .deferredPropagation(properties.getTracing().getDeferredPropagation())
+                        .linkThreshold(properties.getTracing().getLinkThreshold())
                         .maintenance(mapMaintenance(properties.getMaintenance()))
                         .retention(mapRetention(properties.getRetention()))
                         .dispatcher(mapDispatcher(properties.getDispatcher()));

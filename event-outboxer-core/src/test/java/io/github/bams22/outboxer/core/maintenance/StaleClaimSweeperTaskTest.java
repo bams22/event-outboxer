@@ -48,7 +48,13 @@ class StaleClaimSweeperTaskTest {
                     }
                 };
         StaleClaimSweeperTask task =
-                new StaleClaimSweeperTask(store, listener, THRESHOLD, Duration.ofMinutes(1), 5);
+                StaleClaimSweeperTask.builder()
+                        .store(store)
+                        .listener(listener)
+                        .threshold(THRESHOLD)
+                        .interval(Duration.ofMinutes(1))
+                        .batchSize(5)
+                        .build();
 
         task.run();
 
@@ -67,8 +73,13 @@ class StaleClaimSweeperTaskTest {
                     }
                 };
         StaleClaimSweeperTask task =
-                new StaleClaimSweeperTask(
-                        new InMemoryEventStore(), listener, THRESHOLD, Duration.ofMinutes(1), 5);
+                StaleClaimSweeperTask.builder()
+                        .store(new InMemoryEventStore())
+                        .listener(listener)
+                        .threshold(THRESHOLD)
+                        .interval(Duration.ofMinutes(1))
+                        .batchSize(5)
+                        .build();
 
         task.run();
 

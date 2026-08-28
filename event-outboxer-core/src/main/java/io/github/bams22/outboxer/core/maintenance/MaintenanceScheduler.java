@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -23,6 +24,9 @@ import org.jspecify.annotations.Nullable;
  * {@link OrphanRecoveryTask}, {@link WatchdogTask} and {@link EngineHealthCheckTask}. The executor
  * is created on {@link #start()} and shut down on {@link #stop(Duration)} so the engine's
  * graceful-shutdown flow can drain pending work deterministically.
+ *
+ * <p><b>Construction.</b> {@code MaintenanceScheduler.builder()} — see the constructor for required
+ * collaborators and defaults.
  */
 public final class MaintenanceScheduler {
 
@@ -36,21 +40,31 @@ public final class MaintenanceScheduler {
 
     private @Nullable ScheduledExecutorService executor;
 
-    public MaintenanceScheduler(
+    /**
+     * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
+     * heartbeat}, {@code orphanRecovery}, {@code watchdog}, {@code engineHealthCheck}, {@code
+     * staleClaimSweeper}. {@code retention} is genuinely optional — {@code null} means retention is
+     * disabled; {@code config} defaults to {@link MaintenanceConfig#defaults()}.
+     */
+    @Builder
+    private MaintenanceScheduler(
             HeartbeatTask heartbeat,
             OrphanRecoveryTask orphanRecovery,
             WatchdogTask watchdog,
             EngineHealthCheckTask engineHealthCheck,
             @Nullable RetentionTask retention,
             StaleClaimSweeperTask staleClaimSweeper,
-            MaintenanceConfig config) {
-        this.heartbeat = Objects.requireNonNull(heartbeat);
-        this.orphanRecovery = Objects.requireNonNull(orphanRecovery);
-        this.watchdog = Objects.requireNonNull(watchdog);
-        this.engineHealthCheck = Objects.requireNonNull(engineHealthCheck);
+            @Nullable MaintenanceConfig config) {
+        this.heartbeat = Objects.requireNonNull(heartbeat, "heartbeat must not be null");
+        this.orphanRecovery =
+                Objects.requireNonNull(orphanRecovery, "orphanRecovery must not be null");
+        this.watchdog = Objects.requireNonNull(watchdog, "watchdog must not be null");
+        this.engineHealthCheck =
+                Objects.requireNonNull(engineHealthCheck, "engineHealthCheck must not be null");
         this.retention = retention;
-        this.staleClaimSweeper = Objects.requireNonNull(staleClaimSweeper);
-        this.config = Objects.requireNonNull(config);
+        this.staleClaimSweeper =
+                Objects.requireNonNull(staleClaimSweeper, "staleClaimSweeper must not be null");
+        this.config = config != null ? config : MaintenanceConfig.defaults();
     }
 
     /** Start ticking. Must be called exactly once. */

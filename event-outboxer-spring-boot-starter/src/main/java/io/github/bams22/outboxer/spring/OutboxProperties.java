@@ -405,14 +405,6 @@ public class OutboxProperties {
          * runAt} and beyond the decision window of tail-based samplers.
          */
         private Duration linkThreshold = Duration.ofMinutes(1);
-
-        /**
-         * The threshold the engine is given: {@link #linkThreshold} under {@code LINK}, {@code
-         * null} (rule disabled) under {@code CHILD}.
-         */
-        public @Nullable Duration resolveLinkThreshold() {
-            return deferredPropagation == OutboxTracer.Propagation.LINK ? linkThreshold : null;
-        }
     }
 
     @Getter

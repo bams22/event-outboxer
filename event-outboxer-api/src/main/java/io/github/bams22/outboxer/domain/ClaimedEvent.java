@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.Builder;
 
 /**
  * An event that has just been claimed by a worker. Returned from {@code
@@ -40,6 +41,7 @@ import java.util.UUID;
  * @param claimedVersion version value recorded on the row at the moment of claim; used for
  *     optimistic concurrency control when finalizing
  */
+@Builder
 public record ClaimedEvent(
         UUID id,
         String eventType,

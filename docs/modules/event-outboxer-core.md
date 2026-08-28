@@ -222,7 +222,8 @@ new OutboxEngineBuilder()
     .dispatcher(DispatcherConfig.defaults())
     .listener(myListener)                       // in addition to LoggingOutboxListener
     .tracer(new OtelOutboxTracer(otel))         // default: NOOP
-    .tracingLinkThreshold(Duration.ofMinutes(1)) // default 1m; events scheduled further ahead get a linked root consumer span, null = never
+    .deferredPropagation(OutboxTracer.Propagation.LINK) // default; CHILD = deferred events stay parent-child
+    .linkThreshold(Duration.ofMinutes(1))       // default 1m; runAt further ahead = linked root consumer span
     .clock(clock)                               // default: Clock.system()
     .admin(outboxAdmin)                         // required for retention
     .retention(RetentionConfig.builder()

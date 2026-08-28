@@ -259,13 +259,14 @@ class WatchdogTaskTest {
                         .handlerMaxRuntime(Duration.ofMinutes(5))
                         .interruptStuckHandler(interruptStuckHandler)
                         .build();
-        return new WatchdogTask(
-                inFlight,
-                store,
-                clock,
-                new EventTypeConfigProvider(cfg, Map.of()),
-                listener,
-                abandonedGrace);
+        return WatchdogTask.builder()
+                .inFlight(inFlight)
+                .store(store)
+                .clock(clock)
+                .typeConfig(new EventTypeConfigProvider(cfg, Map.of()))
+                .listener(listener)
+                .abandonedGrace(abandonedGrace)
+                .build();
     }
 
     private Dispatch dispatch(String threadName, boolean honoursInterrupt) {

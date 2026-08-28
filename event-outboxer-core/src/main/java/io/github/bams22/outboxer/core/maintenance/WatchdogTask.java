@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.StuckHandlerReclaimedInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
+import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry.Abandoned;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry.Entry;
@@ -21,7 +22,10 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventStore;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
+import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +45,9 @@ import org.slf4j.LoggerFactory;
  * type that opted out is tracked and reported the same way, carrying {@code interrupted=false} —
  * its thread holds a pool slot just as long, it was simply never asked to stop, which is why it is
  * logged as a warning rather than an error.
+ *
+ * <p><b>Construction.</b> {@code WatchdogTask.builder()} — see the constructor for required
+ * collaborators and defaults.
  */
 public final class WatchdogTask implements Runnable {
 
@@ -53,19 +60,33 @@ public final class WatchdogTask implements Runnable {
     private final OutboxListener listener;
     private final Duration abandonedGrace;
 
-    public WatchdogTask(
+    /**
+     * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
+     * inFlight} (the registry shared with the dispatcher) and {@code store}. Defaults: {@link
+     * Clock#system()}, {@link EventTypeConfig#defaults()} for every type, {@link
+     * OutboxListener#NOOP}, {@code abandonedGrace} = {@code
+     * MaintenanceConfig.defaults().abandonedHandlerGrace()}.
+     */
+    @Builder
+    private WatchdogTask(
             InFlightRegistry inFlight,
             EventStore store,
-            Clock clock,
-            EventTypeConfigProvider typeConfig,
-            OutboxListener listener,
-            Duration abandonedGrace) {
-        this.inFlight = Objects.requireNonNull(inFlight);
-        this.store = Objects.requireNonNull(store);
-        this.clock = Objects.requireNonNull(clock);
-        this.typeConfig = Objects.requireNonNull(typeConfig);
-        this.listener = Objects.requireNonNull(listener);
-        this.abandonedGrace = Objects.requireNonNull(abandonedGrace);
+            @Nullable Clock clock,
+            @Nullable EventTypeConfigProvider typeConfig,
+            @Nullable OutboxListener listener,
+            @Nullable Duration abandonedGrace) {
+        this.inFlight = Objects.requireNonNull(inFlight, "inFlight must not be null");
+        this.store = Objects.requireNonNull(store, "store must not be null");
+        this.clock = clock != null ? clock : Clock.system();
+        this.typeConfig =
+                typeConfig != null
+                        ? typeConfig
+                        : new EventTypeConfigProvider(EventTypeConfig.defaults(), Map.of());
+        this.listener = listener != null ? listener : OutboxListener.NOOP;
+        this.abandonedGrace =
+                abandonedGrace != null
+                        ? abandonedGrace
+                        : MaintenanceConfig.defaults().abandonedHandlerGrace();
     }
 
     @Override

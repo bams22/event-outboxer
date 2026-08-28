@@ -11,10 +11,6 @@ package io.github.bams22.outboxer.core.dispatch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
-import io.github.bams22.outboxer.api.observer.OutboxListener;
-import io.github.bams22.outboxer.core.config.EventTypeConfig;
-import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
@@ -23,8 +19,6 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
-import io.github.bams22.outboxer.spi.Clock;
-import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import java.time.Instant;
@@ -48,18 +42,13 @@ class HandlerDispatcherReleaseRejectedTest {
     void releasesWithoutAttemptsBump() {
         InMemoryEventStore store = new InMemoryEventStore();
         HandlerDispatcher dispatcher =
-                new HandlerDispatcher(
-                        store,
-                        EntityLocker.NOOP,
-                        EventSerializerRegistry.of(List.of(new StringEventSerializer())),
-                        new EventHandlerResolver(List.of()),
-                        new FailureHandlerResolver(Map.of(), FailureHandlers.defaults()),
-                        new InFlightRegistry(),
-                        new OutboxListener() {},
-                        Clock.system(),
-                        WORKER,
-                        new EventTypeConfigProvider(EventTypeConfig.defaults(), Map.of()),
-                        DispatcherConfig.defaults());
+                HandlerDispatcher.builder()
+                        .store(store)
+                        .serializerRegistry(
+                                EventSerializerRegistry.of(List.of(new StringEventSerializer())))
+                        .handlerResolver(new EventHandlerResolver(List.of()))
+                        .workerId(WORKER)
+                        .build();
 
         store.save(
                 PendingEvent.builder()

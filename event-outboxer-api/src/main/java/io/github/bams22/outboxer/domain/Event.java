@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -43,6 +44,7 @@ import org.jspecify.annotations.Nullable;
  * @param traceContext W3C trace/baggage context; never null (empty map allowed)
  * @param version optimistic-concurrency version of the row at the time of read
  */
+@Builder
 public record Event(
         UUID id,
         String eventType,

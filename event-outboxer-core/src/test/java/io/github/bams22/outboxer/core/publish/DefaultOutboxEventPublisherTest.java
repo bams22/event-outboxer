@@ -16,16 +16,13 @@ import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.api.publish.PublishRequest;
-import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
 import io.github.bams22.outboxer.domain.exception.PublishValidationException;
-import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventSerializer;
-import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,19 +41,17 @@ class DefaultOutboxEventPublisherTest {
         InMemoryEventStore store = new InMemoryEventStore();
         AtomicReference<EventPublishedInfo> captured = new AtomicReference<>();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        TransactionContext.alwaysActive(),
-                        NoTransactionPolicy.FAIL,
-                        new OutboxListener() {
-                            @Override
-                            public void onEventPublished(EventPublishedInfo info) {
-                                captured.set(info);
-                            }
-                        },
-                        PollerWaker.NOOP);
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .listener(
+                                new OutboxListener() {
+                                    @Override
+                                    public void onEventPublished(EventPublishedInfo info) {
+                                        captured.set(info);
+                                    }
+                                })
+                        .build();
 
         UUID id = publisher.publish("T", "hello");
 
@@ -83,14 +78,11 @@ class DefaultOutboxEventPublisherTest {
     @Test
     void failsWhenNoTransactionActiveUnderFailPolicy() {
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        new InMemoryEventStore(),
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        TransactionContext.neverActive(),
-                        NoTransactionPolicy.FAIL,
-                        NOOP,
-                        PollerWaker.NOOP);
+                DefaultOutboxEventPublisher.builder()
+                        .store(new InMemoryEventStore())
+                        .serializer(new StringEventSerializer())
+                        .transactionContext(TransactionContext.neverActive())
+                        .build();
 
         assertThatThrownBy(() -> publisher.publish("T", "hello"))
                 .isInstanceOf(NoTransactionException.class);
@@ -100,14 +92,12 @@ class DefaultOutboxEventPublisherTest {
     void ignorePolicyAllowsPublishWithoutTransaction() {
         InMemoryEventStore store = new InMemoryEventStore();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        TransactionContext.neverActive(),
-                        NoTransactionPolicy.IGNORE,
-                        NOOP,
-                        PollerWaker.NOOP);
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .transactionContext(TransactionContext.neverActive())
+                        .noTransactionPolicy(NoTransactionPolicy.IGNORE)
+                        .build();
 
         UUID id = publisher.publish("T", "hello");
         assertThat(store.findById(id)).isPresent();
@@ -139,14 +129,12 @@ class DefaultOutboxEventPublisherTest {
                 };
         List<String> wakes = new ArrayList<>();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        buffering,
-                        NoTransactionPolicy.FAIL,
-                        NOOP,
-                        wakes::add);
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .transactionContext(buffering)
+                        .waker(wakes::add)
+                        .build();
 
         publisher.publishAll(
                 List.of(
@@ -168,16 +156,14 @@ class DefaultOutboxEventPublisherTest {
     void throwingWakerDoesNotBreakPublish() {
         InMemoryEventStore store = new InMemoryEventStore();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        TransactionContext.alwaysActive(),
-                        NoTransactionPolicy.FAIL,
-                        NOOP,
-                        type -> {
-                            throw new IllegalStateException("waker exploded");
-                        });
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .waker(
+                                type -> {
+                                    throw new IllegalStateException("waker exploded");
+                                })
+                        .build();
 
         UUID id = publisher.publish("T", "hello");
 
@@ -190,19 +176,18 @@ class DefaultOutboxEventPublisherTest {
         AtomicInteger published = new AtomicInteger();
         List<String> wakes = new ArrayList<>();
         DefaultOutboxEventPublisher publisher =
-                new DefaultOutboxEventPublisher(
-                        store,
-                        new StringEventSerializer(),
-                        Clock.system(),
-                        TransactionContext.alwaysActive(),
-                        NoTransactionPolicy.FAIL,
-                        new OutboxListener() {
-                            @Override
-                            public void onEventPublished(EventPublishedInfo info) {
-                                published.incrementAndGet();
-                            }
-                        },
-                        wakes::add);
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .listener(
+                                new OutboxListener() {
+                                    @Override
+                                    public void onEventPublished(EventPublishedInfo info) {
+                                        published.incrementAndGet();
+                                    }
+                                })
+                        .waker(wakes::add)
+                        .build();
         PublishOptions keyed = PublishOptions.builder().dedupKey("order-1").build();
 
         UUID first = publisher.publish("SYNC", "v1", keyed);
@@ -290,28 +275,47 @@ class DefaultOutboxEventPublisherTest {
                 }
             };
 
+    /**
+     * The builder's default path: only the two required collaborators, everything else substituted
+     * in the constructor.
+     */
+    @Test
+    void builderRequiresStoreAndSerializerAndDefaultsTheRest() {
+        assertThatThrownBy(() -> DefaultOutboxEventPublisher.builder().build())
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("store must not be null");
+        assertThatThrownBy(
+                        () ->
+                                DefaultOutboxEventPublisher.builder()
+                                        .store(new InMemoryEventStore())
+                                        .build())
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("serializer must not be null");
+
+        InMemoryEventStore store = new InMemoryEventStore();
+        DefaultOutboxEventPublisher minimal =
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .build();
+
+        UUID id = minimal.publish("T", "hello");
+        assertThat(store.findById(id)).isPresent();
+    }
+
     private static DefaultOutboxEventPublisher withOverride(
             InMemoryEventStore store, String overriddenType) {
-        return new DefaultOutboxEventPublisher(
-                store,
-                new StringEventSerializer(),
-                Map.of(overriddenType, ALT_SERIALIZER),
-                Clock.system(),
-                TransactionContext.alwaysActive(),
-                NoTransactionPolicy.FAIL,
-                NOOP,
-                PollerWaker.NOOP,
-                OutboxTracer.NOOP);
+        return DefaultOutboxEventPublisher.builder()
+                .store(store)
+                .serializer(new StringEventSerializer())
+                .writeSerializerOverrides(Map.of(overriddenType, ALT_SERIALIZER))
+                .build();
     }
 
     private static DefaultOutboxEventPublisher plain(InMemoryEventStore store) {
-        return new DefaultOutboxEventPublisher(
-                store,
-                new StringEventSerializer(),
-                Clock.system(),
-                TransactionContext.alwaysActive(),
-                NoTransactionPolicy.FAIL,
-                NOOP,
-                PollerWaker.NOOP);
+        return DefaultOutboxEventPublisher.builder()
+                .store(store)
+                .serializer(new StringEventSerializer())
+                .build();
     }
 }
