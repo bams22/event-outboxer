@@ -128,7 +128,7 @@ class LockAutoConfigurationSelectionTest {
                             assertThat(ctx).hasFailed();
                             assertThat(ctx.getStartupFailure())
                                     .hasStackTraceContaining("V005")
-                                    .hasStackTraceContaining("db/migration/outbox/lock")
+                                    .hasStackTraceContaining("event-outboxer/migration/lock")
                                     .hasStackTraceContaining("postgres-advisory");
                         });
     }

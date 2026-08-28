@@ -85,11 +85,20 @@ is an anti-pattern and is explicitly not supported.
 
 ```yaml
 # application.yml
-spring.flyway.locations:
-  - classpath:db/migration
-  - classpath:db/migration/outbox/core
-  - classpath:db/migration/outbox/lock   # only with event-outboxer.lock.type=postgres-lease
+event-outboxer:
+  storage:
+    type: postgres          # required — there is no default (ADR-0020)
+  lock:
+    type: postgres-lease    # only if handlers use extractLockKey; default is noop
 ```
+
+With `flyway-core` and `flyway-database-postgresql` on the classpath the
+starter migrates the outbox schema through **its own Flyway instance**
+(ADR-0028): every shipped migration is applied automatically, the
+history table lives inside `event_outboxer`, and nothing has to be
+added to `spring.flyway.locations`. Point it at a dedicated DDL role
+with `event-outboxer.flyway.url` / `user` / `password` if the
+application role must not own DDL.
 
 ```java
 @Service

@@ -8,14 +8,9 @@ spring:
     url: jdbc:postgresql://localhost:5432/outbox
     username: outbox
     password: outbox
-  flyway:
-    locations:
-      # Application migrations (the orders table).
-      - classpath:db/migration
-      # event-outboxer core schema — required.
-      - classpath:db/migration/outbox/core
-      # entity_locks lease table — required for lock.type=postgres-lease (ADR-0022).
-      - classpath:db/migration/outbox/lock
+  # spring.flyway.* is the application's own instance (db/migration: the orders
+  # table). The outbox schema is migrated by the starter's dedicated Flyway
+  # instance (ADR-0028) — its locations are fixed, nothing to list here.
 
 management:
   endpoints:
@@ -29,6 +24,10 @@ management:
 event-outboxer:
   storage:
     type: postgres
+  # flyway:                                   # optional: a dedicated DDL role
+  #   url: jdbc:postgresql://localhost:5432/outbox
+  #   user: outbox_migrator
+  #   password: secret
   lock:
     # Lease-table locker (ADR-0022): no pinned connections, pgBouncer-safe.
     type: postgres-lease

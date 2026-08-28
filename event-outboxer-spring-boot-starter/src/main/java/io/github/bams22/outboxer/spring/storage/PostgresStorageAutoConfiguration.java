@@ -117,9 +117,12 @@ public class PostgresStorageAutoConfiguration {
     }
 
     /**
-     * Feeds {@code event-outboxer.storage.schema} into Flyway as the {@code ${eventOutboxerSchema}}
-     * placeholder so the library's classpath migrations pick up the same schema name as the adapter
-     * at runtime.
+     * Feeds {@code event-outboxer.storage.schema} into the <em>application's</em> Flyway instance
+     * as the {@code ${eventOutboxerSchema}} placeholder. The starter normally migrates the outbox
+     * schema through its own instance ({@code OutboxFlywayAutoConfiguration}, ADR-0028), which sets
+     * the placeholder itself; this customizer keeps the opt-out path working — {@code
+     * event-outboxer.flyway.enabled=false} with the shipped locations listed in {@code
+     * spring.flyway.locations}.
      *
      * <p>Merges with any other placeholders the user has configured via {@code
      * spring.flyway.placeholders.*} — existing keys win on conflict, so users can always override

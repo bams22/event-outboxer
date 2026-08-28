@@ -22,7 +22,7 @@
 
     <changeSet id="outbox-archive-001" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/archive/V002__outbox_archive.sql"
+            path="event-outboxer/migration/archive/V002__outbox_archive.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"
@@ -31,7 +31,7 @@
 
     <changeSet id="outbox-archive-007-payload-format" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/archive/V007__outbox_archive_payload_format.sql"
+            path="event-outboxer/migration/archive/V007__outbox_archive_payload_format.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   event-outboxer core schema, Liquibase variant. Mirrors the Flyway migration at
-  db/migration/outbox/core/V001__outbox_core.sql by delegating to the same SQL file
+  event-outboxer/migration/core/V001__outbox_core.sql by delegating to the same SQL file
   via <sqlFile>. Liquibase and Flyway share the ${eventOutboxerSchema} placeholder
   syntax, so one SQL file works for both.
 
@@ -32,7 +32,7 @@
 
     <changeSet id="outbox-core-001" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/core/V001__outbox_core.sql"
+            path="event-outboxer/migration/core/V001__outbox_core.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"
@@ -41,7 +41,7 @@
 
     <changeSet id="outbox-core-003-admin-index" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/core/V003__outbox_admin_index.sql"
+            path="event-outboxer/migration/core/V003__outbox_admin_index.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"
@@ -50,7 +50,7 @@
 
     <changeSet id="outbox-core-004-dedup-key" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/core/V004__outbox_dedup_key.sql"
+            path="event-outboxer/migration/core/V004__outbox_dedup_key.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"
@@ -59,7 +59,7 @@
 
     <changeSet id="outbox-core-006-payload-format" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/core/V006__outbox_payload_format.sql"
+            path="event-outboxer/migration/core/V006__outbox_payload_format.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"

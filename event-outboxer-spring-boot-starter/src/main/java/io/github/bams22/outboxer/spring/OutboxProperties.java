@@ -37,6 +37,7 @@ public class OutboxProperties {
     private boolean enabled = true;
 
     private final Storage storage = new Storage();
+    private final Flyway flyway = new Flyway();
     private final Redis redis = new Redis();
     private final Lock lock = new Lock();
     private final Publisher publisher = new Publisher();
@@ -87,6 +88,61 @@ public class OutboxProperties {
 
     public enum StorageType {
         postgres
+    }
+
+    /**
+     * The starter-managed Flyway instance that applies the library's own schema migrations
+     * (ADR-0028). It is independent of the application's {@code spring.flyway.*} instance: its
+     * locations are fixed to the migrations shipped on the classpath, its history table lives
+     * inside {@code event-outboxer.storage.schema}, and it runs against the outbox {@code
+     * DataSource} unless {@code url} (and optionally {@code user} / {@code password}) point it at a
+     * dedicated connection — for example a role that owns DDL rights while the application role
+     * does not.
+     */
+    @Getter
+    @Setter
+    public static class Flyway {
+        /**
+         * Whether the starter runs the outbox migrations itself. Default {@code true} whenever
+         * Flyway is on the classpath; set to {@code false} to apply the shipped SQL through your
+         * own Flyway / Liquibase pipeline or by hand.
+         */
+        private boolean enabled = true;
+
+        /**
+         * JDBC URL of a dedicated migration connection. {@code null} (default): migrate through the
+         * outbox {@code DataSource} (the {@code @OutboxDataSource}-qualified bean, else the unique
+         * / {@code @Primary} one — ADR-0024).
+         */
+        private @Nullable String url;
+
+        /**
+         * Login user of the migration connection. With {@code url} unset, a non-null value derives
+         * a connection from the outbox {@code DataSource} with these credentials.
+         */
+        private @Nullable String user;
+
+        /** Login password of the migration connection. */
+        private @Nullable String password;
+
+        /**
+         * Fully qualified JDBC driver class for {@code url}; {@code null} = detected from the URL.
+         */
+        private @Nullable String driverClassName;
+
+        /**
+         * Flyway {@code baselineOnMigrate}: when the outbox schema already holds tables but no
+         * history table yet, record a baseline at {@link #baselineVersion} instead of failing.
+         * Needed once when upgrading from a release that applied the outbox migrations through the
+         * application's Flyway instance (see CHANGELOG / ADR-0028).
+         */
+        private boolean baselineOnMigrate = false;
+
+        /**
+         * Version recorded by the baseline; migrations at or below it are skipped. {@code 7} marks
+         * every migration shipped up to 0.4.0 as applied.
+         */
+        private String baselineVersion = "1";
     }
 
     /**

@@ -7,7 +7,56 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Breaking
+- **The outbox migrations moved out of `db/migration/` and are applied
+  by a starter-managed Flyway instance (ADR-0028).** Up to 0.4.0 the
+  SQL lived under `db/migration/outbox/{core,archive,lock}` and users
+  appended those directories to `spring.flyway.locations`. That never
+  worked as documented: Flyway scans `classpath:db/migration`
+  recursively, discards the sub-locations, applies every lane
+  regardless of the opt-in — and the library's `V001…V007` collide
+  with the application's own version numbers (`Found more than one
+  migration with version 001`; the shipped example was affected). The
+  SQL now lives under `classpath:event-outboxer/migration/{core,archive,lock}`
+  (content and checksums unchanged) and the starter applies it itself:
+  fixed locations, its own `flyway_schema_history` inside
+  `event-outboxer.storage.schema`, `outOfOrder` on so a lane adopted
+  later applies cleanly. The archive lane is now always applied;
+  `storage.archive-enabled` only governs runtime behaviour.
+  - Upgrading from ≤ 0.4.0 (outbox rows in the application's history
+    table):
+    1. remove the `db/migration/outbox/*` entries from
+       `spring.flyway.locations`;
+    2. let the application instance forget them:
+       `spring.flyway.ignore-migration-patterns: "*:missing"` (or
+       delete the `outbox_*` rows from `flyway_schema_history`);
+    3. for **one** deploy set `event-outboxer.flyway.baseline-on-migrate: true`
+       and `event-outboxer.flyway.baseline-version: 7` (the highest
+       outbox migration already applied — lower if you never adopted
+       the archive or lock lane; apply the missing SQL by hand first in
+       that case), then remove both properties. A `relation already
+       exists` failure on first start is rethrown with this recipe.
+  - To keep applying the SQL through your own tooling set
+    `event-outboxer.flyway.enabled: false` and point Flyway at the new
+    locations (the `${eventOutboxerSchema}` placeholder is still fed
+    into the application instance) or use the unchanged Liquibase
+    changelogs under `db/changelog/outbox/*`.
+
+### Added
+- `event-outboxer.flyway.*`: `enabled` (default `true`), `url`, `user`,
+  `password`, `driver-class-name` for a dedicated migration connection
+  (a DDL role separate from the application role), `baseline-on-migrate`
+  / `baseline-version` for the one-time upgrade. `user` without `url`
+  derives a connection from the outbox `DataSource` with the given
+  credentials; with several `DataSource` beans the
+  `@OutboxDataSource`-qualified one is used (ADR-0024).
+- `OutboxFlywayMigrationInitializer` is registered as a Spring Boot
+  database initializer, so `@DependsOnDatabaseInitialization` beans
+  (the lease-table probe) and JDBC consumers are created after the
+  outbox schema is migrated. Declare your own bean of that type to take
+  over the wiring.
+- Flyway 10+ without `flyway-database-postgresql` on the classpath
+  fails fast at startup naming the artifact.
 
 
 ## [0.4.0] — 2026-08-28

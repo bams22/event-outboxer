@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   event-outboxer entity-lock lease table, Liquibase variant. Mirrors the
-  Flyway migration at db/migration/outbox/lock/V005__outbox_entity_locks.sql
+  Flyway migration at event-outboxer/migration/lock/V005__outbox_entity_locks.sql
   by delegating to the same SQL file via <sqlFile>. Liquibase and Flyway
   share the ${eventOutboxerSchema} placeholder syntax, so one SQL file works
   for both.
@@ -34,7 +34,7 @@
 
     <changeSet id="outbox-lock-005-entity-locks" author="event-outboxer" dbms="postgresql">
         <sqlFile
-            path="db/migration/outbox/lock/V005__outbox_entity_locks.sql"
+            path="event-outboxer/migration/lock/V005__outbox_entity_locks.sql"
             relativeToChangelogFile="false"
             splitStatements="true"
             stripComments="false"

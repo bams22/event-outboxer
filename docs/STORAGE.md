@@ -315,44 +315,91 @@ locker.
 
 ## Migrations (Flyway)
 
-The library ships migrations as classpath resources
-(`event-outboxer-storage-postgres` for core/archive,
-`event-outboxer-lock-postgres-lease` for lock):
+The library ships migrations as classpath resources, deliberately
+**outside `db/migration/`** so the application's Flyway instance
+(which scans that tree recursively) never sees them (ADR-0028):
 
 ```
-event-outboxer-storage-postgres/src/main/resources/db/migration/outbox/
+event-outboxer-storage-postgres/src/main/resources/event-outboxer/migration/
 ├── core/
-│   ├── V001__outbox_core.sql            ← required: events + workers + indexes
-│   ├── V003__outbox_admin_index.sql     ← required: DISABLED-listing index (ADR-0019)
-│   ├── V004__outbox_dedup_key.sql       ← required: coalescing dedup key (ADR-0021)
-│   └── V006__outbox_payload_format.sql  ← required: dual payload lane + format (ADR-0025)
+│   ├── V001__outbox_core.sql            ← events + workers + indexes
+│   ├── V003__outbox_admin_index.sql     ← DISABLED-listing index (ADR-0019)
+│   ├── V004__outbox_dedup_key.sql       ← coalescing dedup key (ADR-0021)
+│   └── V006__outbox_payload_format.sql  ← dual payload lane + format (ADR-0025)
 └── archive/
-    ├── V002__outbox_archive.sql         ← opt-in: event_archive
-    └── V007__outbox_archive_payload_format.sql ← opt-in: archive payload lanes (ADR-0025)
+    ├── V002__outbox_archive.sql         ← event_archive
+    └── V007__outbox_archive_payload_format.sql ← archive payload lanes (ADR-0025)
 
-event-outboxer-lock-postgres-lease/src/main/resources/db/migration/outbox/
+event-outboxer-lock-postgres-lease/src/main/resources/event-outboxer/migration/
 └── lock/
-    └── V005__outbox_entity_locks.sql    ← opt-in: entity_locks (ADR-0022)
+    └── V005__outbox_entity_locks.sql    ← entity_locks (ADR-0022)
 ```
 
-Version numbers form one shared sequence across all locations (core:
-V001/V003/V004/V006, archive: V002/V007, lock: V005) so aggregated
-Flyway locations never collide. **Adopt opt-in locations at upgrade time**:
-enabling `archive/` or `lock/` after a later core migration has
-already been applied is an out-of-order migration and fails Flyway
-validation unless `spring.flyway.out-of-order=true`.
+Version numbers form one shared sequence across the lanes (core:
+V001/V003/V004/V006, archive: V002/V007, lock: V005); each lane touches
+only its own tables.
 
-The user configures `application.yml`:
+### Starter-managed instance (default)
+
+With `flyway-core` + `flyway-database-postgresql` on the classpath and
+`event-outboxer.storage.type=postgres`, the Spring Boot starter runs a
+**dedicated Flyway instance** for the outbox schema during context
+refresh — nothing to list in `spring.flyway.locations`:
+
+- locations are fixed: core + archive always, lock whenever
+  `event-outboxer-lock-postgres-lease` is on the classpath;
+- `schemas` = `event-outboxer.storage.schema`: the schema is created
+  when missing and the instance keeps its own `flyway_schema_history`
+  **inside it** — the application's history table and version sequence
+  are never touched;
+- `outOfOrder` is on, so adopting a lane later (adding the lease module
+  after core migrations already ran) applies cleanly;
+- it connects through the outbox `DataSource` (ADR-0024 resolution),
+  or through a dedicated connection when `event-outboxer.flyway.url`
+  (+ `user` / `password`) is set — e.g. a role that owns DDL while the
+  application role does not;
+- the `${eventOutboxerSchema}` placeholder is set automatically.
 
 ```yaml
+event-outboxer:
+  storage:
+    type: postgres
+  flyway:
+    enabled: true                     # default; false = you apply the SQL yourself
+    # url: jdbc:postgresql://db:5432/orders   # optional dedicated DDL connection
+    # user: outbox_migrator
+    # password: ${OUTBOX_MIGRATOR_PASSWORD}
+```
+
+Upgrading an installation that applied the outbox migrations through
+the application's instance (≤ 0.4.0) is a one-time baseline — see the
+CHANGELOG upgrade notes; the starter rethrows a `relation already
+exists` failure with the recipe.
+
+### Applying the SQL yourself
+
+Set `event-outboxer.flyway.enabled: false` and point your own Flyway at
+the new locations (the starter still feeds the placeholder into the
+application instance):
+
+```yaml
+event-outboxer:
+  flyway:
+    enabled: false
+
 spring:
   flyway:
     locations:
-      - classpath:db/migration                  # application migrations
-      - classpath:db/migration/outbox/core      # required
-      - classpath:db/migration/outbox/archive   # only if archive is enabled
-      - classpath:db/migration/outbox/lock      # only if lock.type=postgres-lease
+      - classpath:db/migration                          # application migrations
+      - classpath:event-outboxer/migration/core         # required
+      - classpath:event-outboxer/migration/archive      # optional
+      - classpath:event-outboxer/migration/lock         # only with lock.type=postgres-lease
 ```
+
+The library's versions then share the application's sequence — make
+sure your own migrations do not reuse `V001…V007`, and expect an
+out-of-order validation failure when adopting a lane after later core
+migrations unless `spring.flyway.out-of-order=true`.
 
 ### Configurable schema name
 
@@ -375,7 +422,9 @@ pass the placeholder themselves:
 ```java
 Flyway.configure()
     .dataSource(dataSource)
-    .locations("classpath:db/migration/outbox/core")
+    .locations(
+        "classpath:event-outboxer/migration/core",
+        "classpath:event-outboxer/migration/archive")
     .placeholders(Map.of("eventOutboxerSchema", "event_outboxer"))
     .load()
     .migrate();

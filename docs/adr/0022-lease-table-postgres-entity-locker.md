@@ -384,7 +384,9 @@ checked-out connections — and must be fixed in the implementation PR.)
 
 `V005__outbox_entity_locks.sql` ships in
 `event-outboxer-lock-postgres-lease` under a new opt-in location
-`classpath:db/migration/outbox/lock` (same `${eventOutboxerSchema}`
+`classpath:db/migration/outbox/lock` — since ADR-0028
+`classpath:event-outboxer/migration/lock`, applied automatically by
+the starter-managed Flyway instance — (same `${eventOutboxerSchema}`
 placeholder; V005 continues the shared numbering sequence — core:
 V001/V003/V004, archive: V002 — so aggregated Flyway locations never
 collide). A Liquibase wrapper

@@ -79,22 +79,24 @@ between minor versions.
 The full DDL, index rationale and every query are documented in
 [STORAGE.md](../STORAGE.md).
 
-### Schema and migrations — shipped, never auto-created
+### Schema and migrations — shipped, applied by the starter
 
 The module never issues DDL at runtime. It ships parameterized SQL
-(placeholder `${eventOutboxerSchema}`) as classpath resources, shared
-by Flyway and Liquibase:
+(placeholder `${eventOutboxerSchema}`) as classpath resources —
+outside `db/migration/`, so an application Flyway instance never scans
+them (ADR-0028):
 
-| Location | Contents | Required? |
+| Location | Contents | Applied by the starter? |
 |---|---|---|
-| `db/migration/outbox/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key), V006 (payload format) | **yes** |
-| `db/migration/outbox/archive` | V002, V007 (`event_archive`) | only with `storage.archive-enabled: true` |
-| `db/migration/outbox/lock` | V005 (`entity_locks`) | only with `lock.type: postgres-lease` — ships in [`event-outboxer-lock-postgres-lease`](event-outboxer-lock-postgres-lease.md) |
-| `db/changelog/outbox/{core,archive}/changelog.xml` | Liquibase changelogs delegating to the same SQL files | alternative to Flyway |
+| `event-outboxer/migration/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key), V006 (payload format) | always |
+| `event-outboxer/migration/archive` | V002, V007 (`event_archive`) | always (`storage.archive-enabled` only governs runtime) |
+| `event-outboxer/migration/lock` | V005 (`entity_locks`) | when [`event-outboxer-lock-postgres-lease`](event-outboxer-lock-postgres-lease.md) is on the classpath |
+| `db/changelog/outbox/{core,archive}/changelog.xml` | Liquibase changelogs delegating to the same SQL files | no — for `event-outboxer.flyway.enabled=false` setups |
 
-Adopting `archive/` or `lock/` after later core migrations already ran
-is an out-of-order migration — set `spring.flyway.out-of-order=true`
-for that one deploy (see [STORAGE.md §Migrations](../STORAGE.md#migrations-flyway)).
+The Spring Boot starter runs a **dedicated Flyway instance** for these
+locations with its own history table inside `storage.schema` (see
+[STORAGE.md §Migrations](../STORAGE.md#migrations-flyway) and
+[`event-outboxer.flyway.*`](../CONFIGURATION.md#event-outboxerflyway)).
 
 ## When to use it
 
@@ -124,27 +126,27 @@ in a different database than your default `DataSource`, see
 event-outboxer:
   storage:
     type: postgres            # required — there is no default (ADR-0020)
-    # schema: event_outboxer  # default; propagated into ${eventOutboxerSchema}
+    # schema: event_outboxer  # default; used by the SQL, the migrations and their history table
     # table-prefix: ""
     # archive-enabled: false
     # metrics-cache-ttl: 30s
-
-spring:
-  flyway:
-    locations:
-      - classpath:db/migration               # your own migrations
-      - classpath:db/migration/outbox/core   # required
-      # - classpath:db/migration/outbox/archive  # if archive-enabled
+  # flyway:                   # starter-managed instance — nothing to add to spring.flyway.locations
+  #   url: jdbc:postgresql://db:5432/orders   # optional dedicated DDL connection
+  #   user: outbox_migrator
+  #   password: ${OUTBOX_MIGRATOR_PASSWORD}
 ```
 
-The starter's `PostgresStorageAutoConfiguration` activates on
-`event-outboxer.storage.type=postgres` + a `DataSource` bean and
-registers `outboxConnectionSupplier` (transaction-aware, ADR-0002),
-`outboxEventStore`, `outboxWorkerRegistry`, `outboxAdmin`, and a
+`flyway-core` and `flyway-database-postgresql` on the classpath are
+enough for the schema: the starter's `OutboxFlywayAutoConfiguration`
+migrates it before the engine starts. `PostgresStorageAutoConfiguration`
+activates on `event-outboxer.storage.type=postgres` + a `DataSource`
+bean and registers `outboxConnectionSupplier` (transaction-aware,
+ADR-0002), `outboxEventStore`, `outboxWorkerRegistry`, `outboxAdmin`,
+and — for the `event-outboxer.flyway.enabled=false` path — a
 `FlywayConfigurationCustomizer` / Liquibase environment post-processor
 that feed `event-outboxer.storage.schema` into the
-`${eventOutboxerSchema}` placeholder automatically (your own
-placeholder value wins on conflict).
+`${eventOutboxerSchema}` placeholder of the application's instance
+(your own placeholder value wins on conflict).
 
 ### Without Spring
 
@@ -154,7 +156,9 @@ yourself, construct directly:
 ```java
 Flyway.configure()
     .dataSource(dataSource)
-    .locations("classpath:db/migration/outbox/core")
+    .locations(
+        "classpath:event-outboxer/migration/core",
+        "classpath:event-outboxer/migration/archive")
     .placeholders(Map.of("eventOutboxerSchema", "event_outboxer"))
     .load()
     .migrate();

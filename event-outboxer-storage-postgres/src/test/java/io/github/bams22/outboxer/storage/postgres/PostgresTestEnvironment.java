@@ -54,8 +54,8 @@ public final class PostgresTestEnvironment {
         Flyway.configure()
                 .dataSource(DATA_SOURCE)
                 .locations(
-                        "classpath:db/migration/outbox/core",
-                        "classpath:db/migration/outbox/archive")
+                        "classpath:event-outboxer/migration/core",
+                        "classpath:event-outboxer/migration/archive")
                 .placeholders(Map.of("eventOutboxerSchema", SCHEMA))
                 .load()
                 .migrate();

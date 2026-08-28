@@ -23,21 +23,19 @@ Minimal configuration for PostgreSQL:
 ```yaml
 event-outboxer:
   storage:
-    type: postgres      # default is inmemory — set explicitly for production
-
-spring:
-  flyway:
-    locations:
-      - classpath:db/migration
-      - classpath:db/migration/outbox/core
+    type: postgres      # required — there is no default (ADR-0020)
 ```
 
-Everything else comes from the defaults. To add the
-PostgreSQL-backed entity lock, set `event-outboxer.lock.type:
-postgres-lease` and include the `classpath:db/migration/outbox/lock` Flyway
-location; for the Redis/KeyDB lock, set `event-outboxer.lock.type:
-redis` and point `event-outboxer.redis.uri` (or `.host`) at your
-Redis — the starter creates the Lettuce connection itself (see
+Everything else comes from the defaults. The outbox schema is migrated
+by the starter's own Flyway instance as long as `flyway-core` and
+`flyway-database-postgresql` are on the classpath — nothing to add to
+`spring.flyway.locations` (see
+[`event-outboxer.flyway.*`](#event-outboxerflyway), ADR-0028). To add
+the PostgreSQL-backed entity lock, set `event-outboxer.lock.type:
+postgres-lease` (its migration is applied automatically); for the
+Redis/KeyDB lock, set `event-outboxer.lock.type: redis` and point
+`event-outboxer.redis.uri` (or `.host`) at your Redis — the starter
+creates the Lettuce connection itself (see
 [`event-outboxer.redis.*`](#event-outboxerredis) and
 [`event-outboxer.lock.*`](#event-outboxerlock)).
 
@@ -68,6 +66,15 @@ event-outboxer:
     table-prefix: ""                 # optional table-name prefix (event_outboxer.<prefix>events)
     archive-enabled: false           # move successful events to the archive table
     metrics-cache-ttl: 30s           # TTL of the metricsSnapshot() cache
+
+  flyway:                            # starter-managed Flyway instance (ADR-0028); locations are fixed
+    enabled: true                    # false = apply the shipped SQL through your own tooling
+    url: null                        # dedicated migration connection; null = the outbox DataSource
+    user: null                       # with url unset: derive a connection from the outbox DataSource
+    password: null
+    driver-class-name: null          # null = detected from url
+    baseline-on-migrate: false       # one-time upgrade from ≤ 0.4.0 installations (see CHANGELOG)
+    baseline-version: "1"            # version recorded by that baseline (7 = everything up to 0.4.0)
 
   redis:                             # starter-managed Lettuce connection (ADR-0027);
     uri: null                        # full RedisURI; wins over the discrete fields below
@@ -216,17 +223,75 @@ Storage adapter settings.
   [Testing without a database](#testing-without-a-database).
 - `schema` — schema name. **Default: `event_outboxer`** — a specific
   name chosen to avoid clashing with other libraries or application
-  tables in a shared database. The value is propagated into both the
-  adapter's SQL and the Flyway placeholder `${eventOutboxerSchema}`
-  used by the classpath migrations, so changing it once updates both.
+  tables in a shared database. The value is propagated into the
+  adapter's SQL, into the starter-managed Flyway instance (`schemas` +
+  the `${eventOutboxerSchema}` placeholder, so the history table lives
+  in this schema too) and into the application's Flyway/Liquibase
+  placeholder for the opt-out path, so changing it once updates all.
 - `table-prefix` — optional table prefix (e.g. `v1_` →
   `event_outboxer.v1_events`).
-- `archive-enabled` — enables archiving of successful events (requires
-  the archive migration; see ADR-0008).
+- `archive-enabled` — enables archiving of successful events (ADR-0008).
+  The archive table itself is always created by the starter-managed
+  migrations; the flag only governs runtime behaviour.
 - `metrics-cache-ttl` — TTL applied by the default in-memory cache and
   (when `event-outboxer.cache.type=redis`) as the PX expire on the Redis key.
   Ignored when `event-outboxer.cache.type=noop` or a custom
   `@Bean MetricsSnapshotCache` takes over.
+
+### `event-outboxer.flyway.*`
+
+The starter-managed Flyway instance that applies the library's own
+schema migrations (ADR-0028). Active when `flyway-core` (+
+`flyway-database-postgresql`) and `event-outboxer-storage-postgres`
+are on the classpath and `storage.type=postgres`. It is independent of
+the application's `spring.flyway.*` instance:
+
+- **locations are fixed** — `classpath:event-outboxer/migration/core`
+  and `/archive` always, `/lock` whenever
+  `event-outboxer-lock-postgres-lease` is present. They are not read
+  from properties and must not be added to `spring.flyway.locations`
+  (they live outside `db/migration/` precisely so the application's
+  instance never scans them);
+- **own history table** — `flyway_schema_history` inside
+  `event-outboxer.storage.schema`; the application's history table and
+  version sequence are untouched;
+- `outOfOrder` is on: a lane adopted later (the lease module added
+  after core migrations ran) applies without a validation error.
+
+Properties:
+
+- `enabled` — default `true`. `false` disables the instance; apply the
+  shipped SQL yourself (Flyway with the locations above — the
+  `${eventOutboxerSchema}` placeholder is still fed into the
+  application's instance — or the Liquibase changelogs under
+  `db/changelog/outbox/*`).
+- `url` — JDBC URL of a dedicated migration connection, e.g. for a DDL
+  role separate from the application role. Default `null`: migrate
+  through the outbox `DataSource` (`@OutboxDataSource`-qualified bean,
+  else the unique / `@Primary` one — ADR-0024; the transaction-aware
+  proxy is unwrapped).
+- `user`, `password` — credentials for `url`. With `url` unset, a
+  non-null `user` derives a connection from the outbox `DataSource`
+  with these credentials (same precedence as `spring.flyway.user`).
+- `driver-class-name` — driver for `url`; default detected from the URL.
+- `baseline-on-migrate`, `baseline-version` — one-time upgrade from an
+  installation that applied the outbox migrations through the
+  application's instance (≤ 0.4.0): set `baseline-on-migrate: true`
+  and `baseline-version: 7` (the highest outbox migration already
+  applied) for one deploy, then remove both. A first start against
+  such a schema fails with this recipe in the message. See the
+  CHANGELOG upgrade notes.
+
+```yaml
+event-outboxer:
+  flyway:
+    url: jdbc:postgresql://db:5432/orders
+    user: outbox_migrator
+    password: ${OUTBOX_MIGRATOR_PASSWORD}
+```
+
+Flyway 10+ without `flyway-database-postgresql` on the classpath fails
+fast at startup naming the artifact.
 
 ### `event-outboxer.redis.*`
 
@@ -269,11 +334,12 @@ default is `noop` and other backends are opt-in:
   `event-outboxer-lock-postgres-lease` on the classpath, a `DataSource`
   bean (with several, see
   [Selecting the DataSource](#selecting-the-datasource-outboxdatasource)),
-  and migration V005 (Flyway location
-  `classpath:db/migration/outbox/lock` or the Liquibase changelog
-  `db/changelog/outbox/lock/changelog.xml`) — the starter fail-fast
-  probes the table at startup and names the migration in the error if
-  it is missing. Holds **no** connection while the handler runs and is
+  and migration V005 — applied automatically by the starter-managed
+  Flyway instance (ADR-0028; with `event-outboxer.flyway.enabled=false`
+  use the location `classpath:event-outboxer/migration/lock` or the
+  Liquibase changelog `db/changelog/outbox/lock/changelog.xml`). The
+  starter fail-fast probes the table at startup and names the
+  migration in the error if it is missing. Holds **no** connection while the handler runs and is
   safe behind pgBouncer transaction pooling. TTL (`lock-ttl`) is
   honoured: crash release ≤ ttl.
 - `type: postgres-advisory` — the pre-ADR-0022 session-scoped

@@ -25,7 +25,10 @@
     <properties>
         <java.version>25</java.version>
         <maven.compiler.release>25</maven.compiler.release>
-        <outboxer.version>0.3.0</outboxer.version>
+        <!-- Tracks the main branch (starter-managed Flyway instance, ADR-0028); run
+             `./mvnw -DskipTests install` from the repository root first, or pin a
+             released version that ships it. -->
+        <outboxer.version>0.5.0-SNAPSHOT</outboxer.version>
     </properties>
 
     <dependencyManagement>

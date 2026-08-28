@@ -50,11 +50,14 @@ final class PgLeaseTableProbe implements InitializingBean {
             throw new IllegalStateException(
                     "event-outboxer.lock.type=postgres-lease requires the "
                             + schema
-                            + ".entity_locks lease table (migration V005__outbox_entity_locks.sql)."
-                            + " Add 'classpath:db/migration/outbox/lock' to spring.flyway.locations"
-                            + " (or the db/changelog/outbox/lock/changelog.xml Liquibase changelog)"
-                            + " and redeploy. To keep the pre-ADR-0022 advisory locker instead, set"
-                            + " event-outboxer.lock.type=postgres-advisory.",
+                            + ".entity_locks lease table (migration V005__outbox_entity_locks.sql,"
+                            + " shipped in event-outboxer-lock-postgres-lease). The starter applies"
+                            + " it through its own Flyway instance when Flyway is on the classpath"
+                            + " and event-outboxer.flyway.enabled is true (ADR-0028); otherwise"
+                            + " apply 'classpath:event-outboxer/migration/lock' (or the"
+                            + " db/changelog/outbox/lock/changelog.xml Liquibase changelog)"
+                            + " yourself and redeploy. To keep the pre-ADR-0022 advisory locker"
+                            + " instead, set event-outboxer.lock.type=postgres-advisory.",
                     ex);
         }
     }

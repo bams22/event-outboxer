@@ -7,3 +7,6 @@ org.springframework.boot.diagnostics.FailureAnalyzer=\
 io.github.bams22.outboxer.spring.storage.OutboxStorageFailureAnalyzer,\
 io.github.bams22.outboxer.spring.OutboxDataSourceFailureAnalyzer,\
 io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionFailureAnalyzer
+
+org.springframework.boot.sql.init.dependency.DatabaseInitializerDetector=\
+io.github.bams22.outboxer.spring.flyway.OutboxFlywayInitializerDetector

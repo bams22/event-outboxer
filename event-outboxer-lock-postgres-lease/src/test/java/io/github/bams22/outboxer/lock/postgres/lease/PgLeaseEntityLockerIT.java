@@ -231,7 +231,7 @@ class PgLeaseEntityLockerIT extends AbstractEntityLockerContractTest {
     }
 
     private static String migrationSql() throws IOException {
-        String resource = "/db/migration/outbox/lock/V005__outbox_entity_locks.sql";
+        String resource = "/event-outboxer/migration/lock/V005__outbox_entity_locks.sql";
         try (InputStream in = PgLeaseEntityLockerIT.class.getResourceAsStream(resource)) {
             if (in == null) {
                 throw new IllegalStateException("migration resource not found: " + resource);

@@ -50,8 +50,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
             // engine through an already-dead DB. With the default 30s the JVM sits idle for half a
             // minute while surefire patiently waits to kill the fork. 2s is enough for a genuine
             // drain when the DB is still reachable, and short enough not to hang cleanup.
-            "event-outboxer.maintenance.shutdown-timeout=2s",
-            "spring.flyway.locations=classpath:db/migration/outbox/core"
+            "event-outboxer.maintenance.shutdown-timeout=2s"
+            // No spring.flyway.locations: the outbox schema is migrated by the starter's own
+            // Flyway instance (ADR-0028); the application's instance only sees db/migration.
         })
 @Testcontainers
 class PostgresStarterIT {
@@ -142,7 +143,7 @@ class PostgresStarterIT {
     // by downstream users. That optional dep leaks onto the test classpath, activating Spring
     // Boot's LiquibaseAutoConfiguration which then looks for the stock
     // db/changelog/db.changelog-master.yaml and fails when it's absent. Exclude it — this test
-    // drives migrations through Flyway (see spring.flyway.locations above).
+    // drives migrations through the starter-managed Flyway instance.
     @EnableAutoConfiguration(exclude = LiquibaseAutoConfiguration.class)
     static class TestApp {
 

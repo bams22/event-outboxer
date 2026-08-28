@@ -13,7 +13,7 @@ transaction pooling.
 | Java package | `io.github.bams22.outboxer.lock.postgres.lease` |
 | Depends on | [`event-outboxer-api`](event-outboxer-api.md), [`event-outboxer-spi`](event-outboxer-spi.md), `org.postgresql:postgresql` |
 | Enable with | `event-outboxer.lock.type: postgres-lease` + migration **V005** |
-| Ships | `db/migration/outbox/lock/V005__outbox_entity_locks.sql` (+ Liquibase changelog) |
+| Ships | `event-outboxer/migration/lock/V005__outbox_entity_locks.sql` (+ Liquibase changelog) — applied automatically by the starter-managed Flyway instance (ADR-0028) |
 
 ## Why it exists
 
@@ -98,22 +98,19 @@ on the dead holder's key cycle claim → busy → release every
 event-outboxer:
   lock:
     type: postgres-lease
-
-spring:
-  flyway:
-    locations:
-      - classpath:db/migration
-      - classpath:db/migration/outbox/core
-      - classpath:db/migration/outbox/lock    # V005 — creates entity_locks
 ```
+
+Nothing else: with the module on the classpath the starter-managed
+Flyway instance applies V005 on the next start, whatever the state of
+the core migrations (ADR-0028).
 
 Notes:
 
 - The starter **fail-fast probes** the `entity_locks` table at startup
-  and names migration V005, the Flyway location and the Liquibase
-  changelog in the error if it is missing. Adopting the `lock/`
-  location after later core migrations already ran needs
-  `spring.flyway.out-of-order=true` for that deploy.
+  (ordered after the outbox migrations) and names migration V005, the
+  classpath location and the Liquibase changelog in the error if it is
+  missing — which can only happen with
+  `event-outboxer.flyway.enabled=false`.
 - The relevant TTL is the per-type
   `event-outboxer.event-types.*.lock-ttl` (default **10 m** = 2 ×
   `handler-max-runtime`; startup enforces `lock-ttl ≥

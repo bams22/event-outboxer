@@ -163,14 +163,12 @@ event-outboxer:
     type: postgres        # required — no default (ADR-0020)
   lock:
     type: postgres-lease  # only if you use entity locking; default is noop
-
-spring:
-  flyway:
-    locations:
-      - classpath:db/migration
-      - classpath:db/migration/outbox/core
-      - classpath:db/migration/outbox/lock   # only with lock.type=postgres-lease
 ```
+
+The outbox schema is migrated by the starter's own Flyway instance
+(`flyway-core` + `flyway-database-postgresql` on the classpath, ADR-0028)
+— nothing to add to `spring.flyway.locations`; a dedicated DDL
+connection is `event-outboxer.flyway.url` / `user` / `password`.
 
 Then inject `OutboxEventPublisher` into `@Transactional` services and
 declare `EventHandler` beans — see the
@@ -186,6 +184,7 @@ defaults and startup-validated invariants is
 | Section | Governs |
 |---|---|
 | `storage.*` | adapter selection, schema, archive, metrics-cache TTL |
+| `flyway.*` | the starter-managed Flyway instance: on/off, dedicated connection, one-time baseline ([ADR-0028](../adr/0028-starter-managed-flyway-instance.md)) |
 | `lock.*`, `cache.*` | `EntityLocker` / `MetricsSnapshotCache` backend selection |
 | `serializer.*` | write format + per-type overrides ([ADR-0025](../adr/0025-binary-capable-serializer-spi-and-payload-format.md)) |
 | `event-types.defaults` / `.overrides.<TYPE>` | per-type polling, pool, runtime and lock-TTL knobs — **thin merge**: overrides change only the fields they set |
@@ -212,6 +211,7 @@ the starter backs off:
 | Per-type failure chains | `@Bean("outboxPerTypeFailureHandlers") Map<String, FailureHandler<?>>` (or `EventHandler.failureHandler()`) |
 | Context propagation | `TaskDecorator` bean |
 | Locking / storage / cache / tracing | `EntityLocker`, `EventStore`, `WorkerRegistry`, `ConnectionSupplier`, `OutboxAdmin`, `MetricsSnapshotCache`, `OutboxTracer` beans |
+| Outbox schema migration | `OutboxFlywayMigrationInitializer` bean (or `event-outboxer.flyway.enabled=false` + your own pipeline) |
 | Time (tests) | `Clock` bean |
 | Worker identity | `event-outboxer.worker.id` or a `WorkerId` bean |
 
@@ -232,7 +232,9 @@ Worked snippets for each are in
 |---|---|
 | `storage.type` unset / adapter jar missing / no `DataSource` | startup fails with a `FailureAnalyzer` diagnosis naming the exact fix (ADR-0020) |
 | several `DataSource`s, none qualified (or two qualified) | fail fast listing candidate beans and the `@OutboxDataSource` fix (ADR-0024) |
-| `lock.type=postgres-lease` without migration V005 | fail-fast table probe naming the migration, the Flyway location and the escape hatch |
+| `lock.type=postgres-lease` without migration V005 (only with `flyway.enabled=false`) | fail-fast table probe naming the migration, the classpath location and the escape hatch |
+| outbox schema populated by a ≤ 0.4.0 install, no history table of its own | the outbox Flyway instance fails with the one-time `baseline-on-migrate` / `baseline-version` recipe |
+| Flyway 10+ without `flyway-database-postgresql` | fail fast naming the artifact |
 | old `lock.type=postgres` value | fails listing the valid values (`postgres-lease` / `postgres-advisory`) |
 | `write-format` matching no registered serializer, or several serializers with no designated writer | fail fast listing registered formats |
 | invariant violations (`dead-threshold < 3×heartbeat`, `lock-ttl < handler-max-runtime`, …) | config record constructors abort context refresh |

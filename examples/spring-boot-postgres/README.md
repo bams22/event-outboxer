@@ -8,6 +8,8 @@ Minimal demo showing the `@Transactional createOrder(...)` → `publisher.publis
 - JDK 25 or newer (library baseline)
 - Maven 3.9+ (or use the wrapper from the parent project)
 - Docker for the `docker-compose.yml` services (PostgreSQL 15, KeyDB 6)
+- The library installed locally (`./mvnw -DskipTests install` from the
+  repository root) — the example tracks the main branch version.
 
 ## Run
 
@@ -62,7 +64,9 @@ docker exec -it outboxer-example-pg psql -U outbox
 ```
 
 ```sql
-\dt event_outboxer.*   -- event_outboxer.events, event_outboxer.workers
+\dt event_outboxer.*   -- events, workers, event_archive, entity_locks + the outbox's
+                       -- own flyway_schema_history (ADR-0028); public.flyway_schema_history
+                       -- holds only the application's V001__orders
 SELECT event_type, status, attempts, run_at
   FROM event_outboxer.events
   ORDER BY created_at DESC LIMIT 5;
