@@ -12,9 +12,9 @@ correctness lives in [core](event-outboxer-core.md)
 |---|---|
 | Coordinates | `io.github.bams22:event-outboxer-spring-boot-starter` |
 | Java package | `io.github.bams22.outboxer.spring.*` |
-| Brings transitively | [`event-outboxer-api`](event-outboxer-api.md), [`event-outboxer-spi`](event-outboxer-spi.md), [`event-outboxer-core`](event-outboxer-core.md) |
-| Optional (you add what you use) | every adapter module: storage, serializers, locks, cache, metrics, tracing |
-| Requires at runtime | a storage adapter + `DataSource`, and a serializer (Jackson module or a custom `EventSerializer` bean) |
+| Brings transitively | [`event-outboxer-api`](event-outboxer-api.md), [`event-outboxer-spi`](event-outboxer-spi.md), [`event-outboxer-core`](event-outboxer-core.md), [`event-outboxer-serializer-jackson`](event-outboxer-serializer-jackson.md) (+ Jackson, Boot-managed versions) |
+| Optional (you add what you use) | every other adapter module: storage, protobuf serializer, locks, cache, metrics, tracing |
+| Requires at runtime | a storage adapter + `DataSource` (the serializer comes with the starter) |
 
 ## Why it exists
 
@@ -157,6 +157,9 @@ outside Spring.
 </dependency>
 ```
 
+JSON via Jackson comes with the starter — no serializer to add. For
+Protobuf see [serializer-protobuf](event-outboxer-serializer-protobuf.md).
+
 ```yaml
 event-outboxer:
   storage:
@@ -207,7 +210,7 @@ the starter backs off:
 | To customize | Provide |
 |---|---|
 | Jackson mapper | `@Bean("outboxObjectMapper") ObjectMapper` (else primary mapper, else library defaults) |
-| Serialization format | any `EventSerializer` bean(s); name one `outboxEventSerializer` or set `serializer.write-format` |
+| Serialization format | any `EventSerializer` bean(s); name one `outboxEventSerializer` or set `serializer.write-format`. Jackson JSON is the default — exclude `event-outboxer-serializer-jackson` from the starter for a Jackson-free classpath |
 | Global failure chain | `@Bean("outboxDefaultFailureHandler") FailureHandler<?>` |
 | Per-type failure chains | `@Bean("outboxPerTypeFailureHandlers") Map<String, FailureHandler<?>>` (or `EventHandler.failureHandler()`) |
 | Context propagation | `TaskDecorator` bean |
@@ -239,6 +242,7 @@ Worked snippets for each are in
 | Flyway 10+ without `flyway-database-postgresql` | fail fast naming the artifact |
 | old `lock.type=postgres` value | fails listing the valid values (`postgres-lease` / `postgres-advisory`) |
 | `write-format` matching no registered serializer, or several serializers with no designated writer | fail fast listing registered formats |
+| no `EventSerializer` bean (Jackson module excluded, nothing added) | startup fails with a diagnosis naming the exclusion, the protobuf module and `write-format` (ADR-0016 amendment) |
 | invariant violations (`dead-threshold < 3×heartbeat`, `lock-ttl < handler-max-runtime`, …) | config record constructors abort context refresh |
 | `postgres-advisory` with `Σ handler-pool-size ≥ hikari max-pool-size` | startup WARNING (self-deadlock risk) |
 

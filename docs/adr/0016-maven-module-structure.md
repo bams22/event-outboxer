@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-08-29 (the starter depends on the Jackson
+serializer non-optionally; see the Amendment section at the bottom)
 
 ## Date
 
@@ -94,12 +95,14 @@ Why `groupId=io.github.bams22` (rather than
 **Invariants**:
 - `core` does NOT depend on Spring (only `api` + `spi` + SLF4J).
 - Adapters do NOT depend on `core`.
-- `spring-boot-starter` pulls in core + optional adapters via
+- `spring-boot-starter` pulls in core + the Jackson serializer (the
+  default, amendment 2026-08-29); every other adapter is
   `<optional>true</optional>`.
 
 ### Starter strategy (Q34)
 
-A single starter with optional dependencies on adapters:
+A single starter with one default serializer and optional
+dependencies on every other adapter:
 
 ```xml
 <dependencies>
@@ -107,10 +110,13 @@ A single starter with optional dependencies on adapters:
         <artifactId>event-outboxer-core</artifactId>
     </dependency>
     <dependency>
-        <artifactId>event-outboxer-serializer-jackson</artifactId>
+        <artifactId>event-outboxer-serializer-jackson</artifactId>   <!-- default serializer, non-optional -->
+    </dependency>
+    <dependency>
+        <artifactId>event-outboxer-storage-postgres</artifactId>
         <optional>true</optional>
     </dependency>
-    <!-- and similarly for storage, lock, metrics -->
+    <!-- and similarly for lock, cache, metrics, tracing, protobuf -->
 
     <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -224,6 +230,44 @@ The BOM POM manages:
   PostgreSQL locker backend carries an explicit suffix — pre-1.0,
   no published consumers.)
 - An SPI breaking change requires updates to every adapter.
+
+## Amendment (2026-08-29): the Jackson serializer is a default starter dependency
+
+The original Q34 sample listed `event-outboxer-serializer-jackson` as
+the worked example of an optional adapter, so a Boot application with
+only the starter and a storage adapter failed at startup with "no
+EventSerializer beans registered" — and two of the three canonical
+snippets (README quick start, the starter's minimal setup) omitted the
+module. That contradicts how Spring Boot starters behave: a starter
+ships a sensible default and lets you swap it. For the one alternative
+format we ship (ADR-0026) the answer was "add a module and set one
+property" anyway.
+
+The starter now declares `event-outboxer-serializer-jackson` as a
+regular (non-optional) dependency:
+
+- JSON via Jackson is the zero-config write serializer; the ADR-0025
+  resolution rules are unchanged (still the bean named
+  `outboxEventSerializer`, still overridable, still read-only once
+  `event-outboxer.serializer.write-format` picks another format).
+- Protobuf users keep Jackson on the classpath and set
+  `write-format=protobuf` (Jackson stays registered for reads — the
+  migration-safe path), or exclude
+  `event-outboxer-serializer-jackson` from the starter in their pom
+  for a protobuf-only classpath (ADR-0025 rule 2 then applies).
+- Jackson (`jackson-databind` + `jsr310` / `jdk8` /
+  `parameter-names`, versions from the Spring Boot BOM) becomes a
+  transitive dependency of every starter consumer; in practice every
+  Boot web application already has it.
+- Excluding the module without registering another serializer is the
+  only way left to reach the "no serializer" failure; the starter
+  raises `NoEventSerializersException` and maps it to a
+  `FailureAnalyzer` diagnosis (`OutboxSerializerFailureAnalyzer`)
+  naming the three ways out.
+
+Storage, lock, cache, metrics and tracing adapters remain optional —
+there is no sensible default storage (ADR-0020), and the rest are
+opt-in features.
 
 ## Related decisions
 

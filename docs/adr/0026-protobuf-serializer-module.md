@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-08-29 (protobuf-only setups exclude the Jackson
+module from the starter; see the Amendment section at the bottom)
 
 ## Date
 
@@ -144,6 +145,28 @@ Tests that used `"protobuf"` as a deliberately-unknown format id
   (overridable via their own dependencyManagement).
 - Schema-first workflow: users must maintain `.proto` files and a
   protoc step in their own build.
+
+## Amendment (2026-08-29): protobuf-only means excluding the Jackson module
+
+ADR-0016 (amendment 2026-08-29) made `event-outboxer-serializer-jackson`
+a non-optional dependency of the starter, so "no Jackson module" is no
+longer the state a starter user starts from. The consequences in §5
+read as follows now:
+
+- Jackson + protobuf, no config → unchanged: Jackson writes, protobuf
+  registers read-only.
+- `write-format=protobuf` → unchanged, and now the **recommended**
+  protobuf setup: Jackson stays on the classpath as a read-only
+  serializer, which keeps ADR-0025's format-migration recipe (drain
+  old JSON events while new ones write protobuf) available.
+- Protobuf-only → exclude `event-outboxer-serializer-jackson` from
+  `event-outboxer-spring-boot-starter` in the application pom; the
+  single remaining bean writes with zero config (rule 2). The
+  "zero-config writer" in Consequences is thus "one exclusion, no
+  properties". Excluding it without adding this module fails startup
+  with a `FailureAnalyzer` diagnosis.
+
+Resolution rules, format id, and the module itself are unchanged.
 
 ## Related decisions
 

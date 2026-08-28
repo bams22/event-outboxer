@@ -94,8 +94,24 @@ migration recipe is in
 
 ### Protobuf-only setup
 
-Omit the Jackson serializer module; the single registered serializer
-writes with zero configuration.
+The starter brings the Jackson serializer by default; setting
+`write-format: protobuf` and keeping it as a read-only serializer is
+the recommended path (in-flight JSON events keep deserializing). For a
+Jackson-free classpath exclude the module from the starter — the
+single registered serializer then writes with zero configuration:
+
+```xml
+<dependency>
+    <groupId>io.github.bams22</groupId>
+    <artifactId>event-outboxer-spring-boot-starter</artifactId>
+    <exclusions>
+        <exclusion>
+            <groupId>io.github.bams22</groupId>
+            <artifactId>event-outboxer-serializer-jackson</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+```
 
 ### Customization
 

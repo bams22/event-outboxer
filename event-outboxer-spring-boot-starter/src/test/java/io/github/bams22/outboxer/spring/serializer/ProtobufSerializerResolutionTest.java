@@ -127,7 +127,8 @@ class ProtobufSerializerResolutionTest {
     }
 
     @Test
-    @DisplayName("protobuf-only setup → the single bean writes with zero config")
+    @DisplayName(
+            "protobuf-only setup (Jackson module excluded from the starter) → zero-config writer")
     void protobufOnlySetupWritesProtobufZeroConfig() {
         new ApplicationContextRunner()
                 .withConfiguration(

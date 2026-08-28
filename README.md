@@ -92,6 +92,10 @@ event-outboxer:
     type: postgres-lease    # only if handlers use extractLockKey; default is noop
 ```
 
+JSON via Jackson comes with the starter — nothing to add for
+serialization; for Protobuf see
+[`event-outboxer-serializer-protobuf`](docs/modules/event-outboxer-serializer-protobuf.md).
+
 With `flyway-core` and `flyway-database-postgresql` on the classpath the
 starter migrates the outbox schema through **its own Flyway instance**
 (ADR-0028): every shipped migration is applied automatically, the

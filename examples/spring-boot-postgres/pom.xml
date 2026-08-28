@@ -44,7 +44,8 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Outboxer: starter + PG storage + Jackson serializer + PG advisory lock. -->
+        <!-- Outboxer: starter (brings the Jackson JSON serializer) + PG storage + PG lease
+             lock + Micrometer metrics. -->
         <dependency>
             <groupId>io.github.bams22</groupId>
             <artifactId>event-outboxer-spring-boot-starter</artifactId>
@@ -52,10 +53,6 @@
         <dependency>
             <groupId>io.github.bams22</groupId>
             <artifactId>event-outboxer-storage-postgres</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.github.bams22</groupId>
-            <artifactId>event-outboxer-serializer-jackson</artifactId>
         </dependency>
         <dependency>
             <groupId>io.github.bams22</groupId>

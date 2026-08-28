@@ -60,14 +60,22 @@ canonicalized).
 
 ### With Spring Boot
 
-Add the module (the starter treats it as optional) — no properties
-needed; `JacksonSerializerAutoConfiguration` activates on classpath
-presence and registers the bean **`outboxEventSerializer`**:
+Nothing to add — the starter brings this module (ADR-0016, amendment
+2026-08-29); `JacksonSerializerAutoConfiguration` registers the bean
+**`outboxEventSerializer`** with no properties needed. Add the
+coordinates directly only in plain-Java setups. To run without Jackson
+(protobuf-only), exclude it from the starter:
 
 ```xml
 <dependency>
     <groupId>io.github.bams22</groupId>
-    <artifactId>event-outboxer-serializer-jackson</artifactId>
+    <artifactId>event-outboxer-spring-boot-starter</artifactId>
+    <exclusions>
+        <exclusion>
+            <groupId>io.github.bams22</groupId>
+            <artifactId>event-outboxer-serializer-jackson</artifactId>
+        </exclusion>
+    </exclusions>
 </dependency>
 ```
 

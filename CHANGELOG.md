@@ -8,6 +8,20 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Breaking
+- **`event-outboxer-spring-boot-starter` now depends on
+  `event-outboxer-serializer-jackson` non-optionally (amends ADR-0016
+  and ADR-0026).** JSON via Jackson is the zero-config default
+  serializer, the way any Boot starter ships a default; Jackson
+  (`jackson-databind` + datatype modules, Boot-managed versions)
+  becomes transitive for starter users. Protobuf-only applications that
+  relied on *omitting* the Jackson module must now either set
+  `event-outboxer.serializer.write-format=protobuf` (Jackson stays
+  registered read-only — recommended) or exclude
+  `event-outboxer-serializer-jackson` from the starter in their pom.
+  Explicit `event-outboxer-serializer-jackson` dependencies next to the
+  starter are redundant and can be removed. The README quick start and
+  the starter's minimal setup, which omitted the module, now work as
+  written.
 - **The outbox migrations moved out of `db/migration/` and are applied
   by a starter-managed Flyway instance (ADR-0028).** Up to 0.4.0 the
   SQL lived under `db/migration/outbox/{core,archive,lock}` and users
@@ -55,6 +69,11 @@ All notable changes to this project are documented here. Format follows
   `FailureAnalyzer` diagnosis naming both ways out.
 
 ### Added
+- `NoEventSerializersException` (`ConfigurationException`) replaces the
+  `InvariantViolationException` thrown when no `EventSerializer` bean is
+  registered; the starter maps it to a `FailureAnalyzer` diagnosis
+  (`OutboxSerializerFailureAnalyzer`) naming the exclusion, the protobuf
+  module and `write-format`.
 - `event-outboxer.flyway.*`: `enabled` (default `true`), `url`, `user`,
   `password`, `driver-class-name` for a dedicated migration connection
   (a DDL role separate from the application role), `baseline-on-migrate`

@@ -735,8 +735,9 @@ For plain-Java (non-Spring) tests use the testkit's
 ### Serialization
 
 The library ships two serializers: Jackson JSON (`jackson-json`, text
-lane, ADR-0011) and Protobuf (`protobuf`, bytes lane, ADR-0026). Each
-activates automatically when its module (and format library) is on the
+lane, ADR-0011) — **included with the starter** and the zero-config
+writer — and Protobuf (`protobuf`, bytes lane, ADR-0026), an opt-in
+module that activates when it and `protobuf-java` are on the
 classpath. Customise Jackson by providing an `ObjectMapper` bean named
 `outboxObjectMapper` (falls back to the primary `ObjectMapper`, then
 to library defaults). Customise Protobuf by providing an
@@ -766,12 +767,31 @@ event-outboxer:
       ORDER_CREATED: protobuf     # this type writes protobuf; every other type keeps the default
 ```
 
-With both shipped modules on the classpath and no `write-format`,
-Jackson keeps writing (rule 3 — its auto-configured bean carries the
-`outboxEventSerializer` name) and `protobuf` registers read-only; set
-`write-format: protobuf` to switch the writer. In a protobuf-only
-setup (no Jackson serializer module) the single bean writes with zero
-config (rule 2).
+With the starter's Jackson serializer and the protobuf module on the
+classpath and no `write-format`, Jackson keeps writing (rule 3 — its
+auto-configured bean carries the `outboxEventSerializer` name) and
+`protobuf` registers read-only; set `write-format: protobuf` to switch
+the writer — the recommended protobuf setup, since Jackson stays
+read-only for in-flight JSON events. For a protobuf-only classpath
+exclude the Jackson module from the starter; the single bean then
+writes with zero config (rule 2):
+
+```xml
+<dependency>
+    <groupId>io.github.bams22</groupId>
+    <artifactId>event-outboxer-spring-boot-starter</artifactId>
+    <exclusions>
+        <exclusion>
+            <groupId>io.github.bams22</groupId>
+            <artifactId>event-outboxer-serializer-jackson</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+```
+
+Excluding it without another serializer fails startup with a
+`FailureAnalyzer` diagnosis (`NoEventSerializersException`) naming the
+exclusion, the protobuf module and `write-format`.
 
 `write-format-per-type` maps event types to the format that writes
 them instead of the default — each listed format must belong to a

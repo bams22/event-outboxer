@@ -23,8 +23,8 @@ import org.springframework.context.annotation.Bean;
  * Jackson autoconfiguration this bean is deliberately NOT named {@code outboxEventSerializer}:
  * protobuf registers as an extra serializer, so ADR-0025 write-resolution rule 3 keeps the
  * Jackson-named bean as the default writer. Set {@code
- * event-outboxer.serializer.write-format=protobuf} to write protobuf; in protobuf-only setups (no
- * Jackson module) the single bean writes with zero config (rule 2).
+ * event-outboxer.serializer.write-format=protobuf} to write protobuf; in protobuf-only setups (the
+ * Jackson module excluded from the starter) the single bean writes with zero config (rule 2).
  *
  * <p>Backs off when the user registers their own {@link ProtobufEventSerializer} bean (e.g. with a
  * populated {@link ExtensionRegistryLite}) — two beans with the same {@code format()} id would fail

@@ -10,7 +10,7 @@ The table below is the quickest way to decide what to add to your `pom.xml`.
 
 | Goal | Modules to add | Transitive runtime cost |
 |---|---|---|
-| Spring Boot + PostgreSQL (typical production) | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-postgres-lease` <br> `event-outboxer-metrics-micrometer` (optional) | Spring Boot 3.5, PostgreSQL JDBC, HikariCP (via your `spring-boot-starter-jdbc`), Micrometer. |
+| Spring Boot + PostgreSQL (typical production) | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-postgres-lease` <br> `event-outboxer-metrics-micrometer` (optional) | Spring Boot 3.5, Jackson (JSON serializer comes with the starter), PostgreSQL JDBC, HikariCP (via your `spring-boot-starter-jdbc`), Micrometer. |
 | Spring Boot + PG with Redis-coordinated locks | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-redis` | Additional: Lettuce 6. |
 | Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` (or `-serializer-protobuf`) <br> `event-outboxer-lock-postgres-lease` (or postgres-advisory / redis / noop) | SLF4J, Jackson (or protobuf-java), adapter dependencies. |
 | Unit / integration tests for your handlers | `event-outboxer-testkit` (test scope) | Transitively brings in-memory adapter + Jackson. |
@@ -41,8 +41,8 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-core` | Engine: poller, dispatcher, in-flight registry, maintenance tasks, default publisher. **Spring-free.** | `event-outboxer-api`, `event-outboxer-spi`. | Transitive when using the starter. Plain-Java users add it directly. |
 | `event-outboxer-storage-inmemory` | Thread-safe in-process `EventStore` / `WorkerRegistry` / `EntityLocker`. | `event-outboxer-api`, `event-outboxer-spi`. | Tests, dev setups, experimentation. Do NOT use in production. |
 | `event-outboxer-storage-postgres` | PG 15+ backend with CTE + `SKIP LOCKED` claim, optional archive. Ships Flyway migrations. | `event-outboxer-api`, `event-outboxer-spi`, `postgresql` JDBC, `flyway-core` (optional). | Production default. |
-| `event-outboxer-serializer-jackson` | `JacksonEventSerializer` + `JacksonObjectMapperFactory.defaults()`. | Jackson databind + JavaTime + Jdk8 + ParameterNames. | Transitive via the starter; add directly in plain-Java setups. |
-| `event-outboxer-serializer-protobuf` | `ProtobufEventSerializer` (format `protobuf`, bytes lane; payloads are protoc-generated `Message` classes, ADR-0026). | `protobuf-java`. | Opt-in: add next to the starter and set `write-format=protobuf`, or as the sole serializer in protobuf-only setups. |
+| `event-outboxer-serializer-jackson` | `JacksonEventSerializer` + `JacksonObjectMapperFactory.defaults()`. | Jackson databind + JavaTime + Jdk8 + ParameterNames. | Transitive via the starter (exclude it from the starter for a protobuf-only classpath); add directly in plain-Java setups. |
+| `event-outboxer-serializer-protobuf` | `ProtobufEventSerializer` (format `protobuf`, bytes lane; payloads are protoc-generated `Message` classes, ADR-0026). | `protobuf-java`. | Opt-in: add next to the starter and set `write-format=protobuf` (recommended), or as the sole serializer after excluding `-serializer-jackson` from the starter. |
 | `event-outboxer-lock-postgres-lease` | Lease-table `EntityLocker` (`entity_locks`, ADR-0022) — no pinned connections, pgBouncer-safe, TTL honoured. Ships migration V005. | PostgreSQL JDBC. | Recommended PostgreSQL locker (`lock.type=postgres-lease`). |
 | `event-outboxer-lock-postgres-advisory` | `pg_advisory_lock`-backed `EntityLocker` (session-scoped; pins one pooled connection per held lock, incompatible with pgBouncer transaction pooling). | PostgreSQL JDBC. | Opt-out (`lock.type=postgres-advisory`) for immediate clean-crash release. |
 | `event-outboxer-lock-redis` | Redis/KeyDB `EntityLocker` with fencing-token unlock. | Lettuce 6. | Multi-region or cross-DB deployments. |
@@ -53,7 +53,7 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-admin-actuator` | Actuator endpoint (`outboxadmin`) over the `OutboxAdmin` SPI. | Spring Boot Actuator. | Ops surface via the management port (ADR-0019). |
 | `event-outboxer-admin-rest` | Opt-in REST controller over `OutboxAdmin` with configurable `@PreAuthorize` authority. | Spring Web (+ optional Spring Security). | Ops surface on the app port when Actuator is not exposed (ADR-0019). |
 | `event-outboxer-testkit` | `SettableClock`, `ManualEngine`, `OutboxTestContext`, `RecordingOutboxListener`, fluent assertions, JUnit 5 extension. | `event-outboxer-core`, in-memory adapter, Jackson serializer. | Test-scope dependency for handler tests. |
-| `event-outboxer-spring-boot-starter` | Auto-configuration, property binding, `SmartLifecycle`, `TransactionAwareDataSourceProxy` wiring, actuator health. | Spring Boot auto-configure, jdbc, validation, Actuator (optional), every adapter (optional). | Any Spring Boot 3.5+ app. |
+| `event-outboxer-spring-boot-starter` | Auto-configuration, property binding, `SmartLifecycle`, `TransactionAwareDataSourceProxy` wiring, actuator health. | Spring Boot auto-configure, jdbc, validation, `event-outboxer-serializer-jackson` (default serializer), Actuator (optional), every other adapter (optional). | Any Spring Boot 3.5+ app. |
 
 ## Compatibility
 

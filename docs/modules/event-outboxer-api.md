@@ -164,7 +164,7 @@ carry an `OUTBOX-XXX` code constant:
 | `HandleException` → `UnknownEventTypeException`, `PayloadDeserializationException`, `UnknownPayloadFormatException` | 201–203 | engine-side; never thrown back to application code — routed through the failure chain |
 | `StorageException` → `EventStoreException`, `WorkerRegistryException` | 302–303 | adapters must wrap native errors into these; OCC conflicts are `false` returns, not exceptions |
 | `LockException` → `LockAcquisitionException`, `LockReleaseException` | 401–402 | "busy" is `Optional.empty()`, not an exception |
-| `ConfigurationException` → `DuplicateHandlerException`, `InvalidEventTypeConfigException`, `InvariantViolationException` | — | fail-fast at startup |
+| `ConfigurationException` → `DuplicateHandlerException`, `InvalidEventTypeConfigException`, `InvariantViolationException`, `NoEventHandlersException`, `NoEventSerializersException` | — | fail-fast at startup |
 | `EngineLifecycleException` → `EngineNotStartedException` | — | lifecycle misuse |
 
 ## When to use it

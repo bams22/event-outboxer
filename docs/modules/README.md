@@ -62,7 +62,7 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ## Which modules do I need?
 
-- **Spring Boot + PostgreSQL (typical production)**: `spring-boot-starter` + `storage-postgres` (+ `lock-postgres-lease` if handlers use `extractLockKey`, + `metrics-micrometer`, + a tracing adapter).
+- **Spring Boot + PostgreSQL (typical production)**: `spring-boot-starter` + `storage-postgres` (+ `lock-postgres-lease` if handlers use `extractLockKey`, + `metrics-micrometer`, + a tracing adapter). JSON via Jackson comes with the starter; add `serializer-protobuf` for Protobuf.
 - **Plain Java**: `core` + `storage-postgres` + `serializer-jackson` (or `-protobuf`) + a locker if needed.
 - **Tests**: `testkit` (test scope); `storage-inmemory` + `@Import(OutboxInMemoryTestConfiguration.class)` for DB-less Spring tests.
 - **Custom adapter**: `spi` + its `tests`-classifier contract tests.

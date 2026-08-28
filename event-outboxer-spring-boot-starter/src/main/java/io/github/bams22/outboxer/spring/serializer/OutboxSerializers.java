@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.spring.serializer;
 
 import io.github.bams22.outboxer.domain.exception.InvariantViolationException;
+import io.github.bams22.outboxer.domain.exception.NoEventSerializersException;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventSerializerRegistry;
 import java.util.LinkedHashMap;
@@ -46,6 +47,8 @@ public record OutboxSerializers(
      * Resolve the write serializer from the registered beans (keyed by bean name):
      *
      * <ol>
+     *   <li>no bean at all → {@link NoEventSerializersException} (Jackson ships with the starter,
+     *       so this means it was excluded without a replacement);
      *   <li>{@code event-outboxer.serializer.write-format} set → the serializer with that format
      *       (fail-fast if absent);
      *   <li>exactly one bean → it (the zero-config default);
@@ -65,9 +68,12 @@ public record OutboxSerializers(
             @Nullable String writeFormat,
             Map<String, String> writeFormatPerType) {
         if (beansByName.isEmpty()) {
-            throw new InvariantViolationException(
-                    "no EventSerializer beans registered — add event-outboxer-serializer-jackson or"
-                            + " register an EventSerializer bean");
+            throw new NoEventSerializersException(
+                    "no EventSerializer beans registered — the starter's default Jackson serializer"
+                            + " (event-outboxer-serializer-jackson) is excluded or its"
+                            + " auto-configuration is disabled; restore it, add"
+                            + " event-outboxer-serializer-protobuf, or register an EventSerializer"
+                            + " bean");
         }
         EventSerializerRegistry registry = EventSerializerRegistry.of(beansByName.values());
         EventSerializer write = resolveWrite(beansByName, registry, writeFormat);
