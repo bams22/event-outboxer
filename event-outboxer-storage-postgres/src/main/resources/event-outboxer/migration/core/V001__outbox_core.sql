@@ -1,12 +1,13 @@
 -- event-outboxer core schema. See docs/STORAGE.md for rationale.
--- This migration is idempotent per Flyway checksum; run it once with
--- spring.flyway.locations=classpath:db/migration/outbox/core.
+-- Location: classpath:event-outboxer/migration/core — applied by the Spring
+-- Boot starter's own Flyway instance (ADR-0028); plain-Java users point
+-- their Flyway at the location themselves.
 --
 -- Schema name is parameterised so the library does not conflict with other
--- tables or libraries already living in the caller's database. The Spring
--- Boot starter auto-wires the placeholder from outbox.storage.schema
--- (default: event_outboxer). Plain-Java Flyway users set the placeholder
--- themselves via Flyway's placeholders(Map) API or -Dflyway.placeholders.*.
+-- tables or libraries already living in the caller's database. The starter
+-- sets the placeholder from event-outboxer.storage.schema (default:
+-- event_outboxer). Plain-Java Flyway users set the placeholder themselves
+-- via Flyway's placeholders(Map) API or -Dflyway.placeholders.*.
 
 CREATE SCHEMA IF NOT EXISTS ${eventOutboxerSchema};
 

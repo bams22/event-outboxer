@@ -7,8 +7,8 @@
 -- row; the dispatcher selects the deserializer by this value, which keeps
 -- rolling deploys and format migrations safe.
 --
--- Versions V003-V005 are taken (V005 by the lock-postgres-lease module — Flyway
--- versions are global across configured locations), hence V006 here.
+-- Versions V003-V005 are taken (V005 by the lock-postgres-lease module — all
+-- lanes share one version sequence in the outbox's history table), hence V006.
 
 ALTER TABLE ${eventOutboxerSchema}.events ALTER COLUMN payload DROP NOT NULL;
 

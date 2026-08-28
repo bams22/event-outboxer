@@ -1,15 +1,15 @@
 -- event-outboxer entity-lock lease table (ADR-0022). See docs/STORAGE.md.
--- Opt-in: apply only when event-outboxer.lock.type=postgres-lease, via
--- spring.flyway.locations=classpath:db/migration/outbox/lock (in addition
--- to the core location).
+-- Location: classpath:event-outboxer/migration/lock, shipped in
+-- event-outboxer-lock-postgres-lease — the starter's Flyway instance applies
+-- it whenever the module is on the classpath (ADR-0028).
 --
--- V005 continues the shared numbering sequence (core: V001/V003/V004,
--- archive: V002) so aggregated Flyway locations never collide. Adopt this
--- location at upgrade time: enabling it after a later core migration has
--- been applied is an out-of-order migration for Flyway.
+-- V005 continues the shared numbering sequence (core: V001/V003/V004/V006,
+-- archive: V002/V007). The lanes touch disjoint tables and the starter runs
+-- with outOfOrder on, so adopting this lane after later core migrations have
+-- been applied is fine.
 --
 -- Schema name is parameterised the same way as the core migrations; the
--- Spring Boot starter auto-wires the placeholder from
+-- Spring Boot starter sets the placeholder from
 -- event-outboxer.storage.schema (default: event_outboxer).
 
 CREATE SCHEMA IF NOT EXISTS ${eventOutboxerSchema};

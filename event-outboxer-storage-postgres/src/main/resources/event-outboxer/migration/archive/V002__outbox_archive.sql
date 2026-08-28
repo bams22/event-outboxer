@@ -1,10 +1,10 @@
--- Optional archive table for successfully-processed events.
--- Applied only when the application configures
---   spring.flyway.locations=classpath:db/migration/outbox/core,classpath:db/migration/outbox/archive
--- See docs/STORAGE.md and ADR-0008.
+-- Archive table for successfully-processed events (ADR-0008). Location:
+-- classpath:event-outboxer/migration/archive — always applied by the starter's
+-- Flyway instance (ADR-0028); event-outboxer.storage.archive-enabled decides
+-- whether the engine writes to it. See docs/STORAGE.md.
 --
 -- Schema name comes from the ${eventOutboxerSchema} Flyway placeholder,
--- auto-wired by the starter from outbox.storage.schema (default:
+-- set by the starter from event-outboxer.storage.schema (default:
 -- event_outboxer).
 
 CREATE TABLE ${eventOutboxerSchema}.event_archive (

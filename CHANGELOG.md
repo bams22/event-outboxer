@@ -18,7 +18,7 @@ All notable changes to this project are documented here. Format follows
   with the application's own version numbers (`Found more than one
   migration with version 001`; the shipped example was affected). The
   SQL now lives under `classpath:event-outboxer/migration/{core,archive,lock}`
-  (content and checksums unchanged) and the starter applies it itself:
+  (header comments refreshed, DDL unchanged) and the starter applies it itself:
   fixed locations, its own `flyway_schema_history` inside
   `event-outboxer.storage.schema`, `outOfOrder` on so a lane adopted
   later applies cleanly. The archive lane is now always applied;
