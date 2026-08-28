@@ -183,8 +183,10 @@ The full knob-by-knob reference (defaults, invariants) is in
 </dependency>
 ```
 
-Minimal assembly — `eventStore`, `workerRegistry`, `eventSerializer`
-and at least one handler are required, everything else has defaults:
+Minimal assembly — `eventStore`, `workerRegistry` and `eventSerializer`
+are required, everything else has defaults. An engine with no handlers
+is a *publish-only* node: it registers its worker and runs maintenance
+but polls nothing (a warning is logged at build time).
 
 ```java
 OutboxEngine engine = new OutboxEngineBuilder()

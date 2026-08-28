@@ -42,6 +42,16 @@ All notable changes to this project are documented here. Format follows
     into the application instance) or use the unchanged Liquibase
     changelogs under `db/changelog/outbox/*`.
 
+### Changed
+- **An engine with no `EventHandler` starts as a publish-only node**
+  instead of failing with `at least one EventHandler must be
+  registered`. It registers its worker, runs heartbeat / orphan
+  recovery / retention and exposes `OutboxEventPublisher`, but creates
+  no pollers; a warning is logged by `OutboxEngineBuilder` and by the
+  starter. This lets a service that only emits events — or an
+  application whose handlers live in a separate deployment — boot with
+  the starter on the classpath.
+
 ### Added
 - `event-outboxer.flyway.*`: `enabled` (default `true`), `url`, `user`,
   `password`, `driver-class-name` for a dedicated migration connection

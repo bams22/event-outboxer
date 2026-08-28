@@ -78,15 +78,23 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Plain-Java builder for {@link OutboxEngine} — the only way to assemble one; the Spring Boot
  * starter feeds its Spring-managed collaborators through this builder as well.
  *
- * <p>Required collaborators: {@link EventStore}, {@link WorkerRegistry}, {@link EventSerializer},
- * and at least one {@link EventHandler}. Every other knob has a default.
+ * <p>Required collaborators: {@link EventStore}, {@link WorkerRegistry} and {@link
+ * EventSerializer}. Every other knob has a default — including the handler set: an engine built
+ * without any {@link EventHandler} starts as a <em>publish-only</em> node (registers its worker,
+ * runs heartbeat / orphan recovery / retention, exposes the publisher) but polls nothing; events it
+ * persists wait for an instance that registers the matching handler. The builder logs a warning for
+ * that configuration so an accidentally empty handler set is visible at startup.
  */
 public final class OutboxEngineBuilder {
+
+    private static final Logger log = LoggerFactory.getLogger(OutboxEngineBuilder.class);
 
     private @Nullable EventStore store;
     private @Nullable WorkerRegistry registry;
@@ -355,7 +363,10 @@ public final class OutboxEngineBuilder {
         WorkerRegistry workerRegistry = require(registry, "workerRegistry");
         EventSerializer eventSerializer = require(serializer, "eventSerializer");
         if (handlers.isEmpty()) {
-            throw new IllegalStateException("at least one EventHandler must be registered");
+            log.warn(
+                    "no EventHandler registered: this instance will publish events but process"
+                            + " none — register handlers here or on another instance sharing the"
+                            + " outbox");
         }
 
         List<EventSerializer> allSerializers = new ArrayList<>();

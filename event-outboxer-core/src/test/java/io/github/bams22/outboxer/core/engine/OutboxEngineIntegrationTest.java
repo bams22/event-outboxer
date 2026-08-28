@@ -23,6 +23,7 @@ import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
+import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -332,6 +333,25 @@ class OutboxEngineIntegrationTest {
             sleepQuietly(20);
             return delegate.markProcessedAll(marks, workerId);
         }
+    }
+
+    @Test
+    void startsPublishOnlyWithoutHandlers() {
+        engine = fastEngine().build(); // no handler(...) at all
+        engine.start();
+
+        assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);
+        assertThat(registry.findAll()).hasSize(1); // the worker still registers itself
+
+        UUID id = engine.publisher().publish("ORDER", "order-1");
+        sleepQuietly(150); // long enough for a poller to have claimed it, had one existed
+        assertThat(store.findById(id))
+                .isPresent()
+                .get()
+                .satisfies(e -> assertThat(e.status()).isEqualTo(EventStatus.PENDING));
+
+        engine.stop(Duration.ofSeconds(2));
+        assertThat(engine.state()).isEqualTo(OutboxEngine.State.STOPPED);
     }
 
     private OutboxEngineBuilder fastEngine() {
