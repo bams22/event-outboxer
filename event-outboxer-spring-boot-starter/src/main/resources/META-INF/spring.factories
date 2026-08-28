@@ -6,6 +6,7 @@ io.github.bams22.outboxer.spring.metrics.OutboxMetricsDefaultsEnvironmentPostPro
 org.springframework.boot.diagnostics.FailureAnalyzer=\
 io.github.bams22.outboxer.spring.storage.OutboxStorageFailureAnalyzer,\
 io.github.bams22.outboxer.spring.OutboxDataSourceFailureAnalyzer,\
+io.github.bams22.outboxer.spring.OutboxHandlersFailureAnalyzer,\
 io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionFailureAnalyzer
 
 org.springframework.boot.sql.init.dependency.DatabaseInitializerDetector=\

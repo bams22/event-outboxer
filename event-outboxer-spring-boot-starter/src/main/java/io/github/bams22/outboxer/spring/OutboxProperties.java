@@ -36,6 +36,14 @@ public class OutboxProperties {
     /** Master switch; set to {@code false} to disable all auto-configuration. */
     private boolean enabled = true;
 
+    /**
+     * Declares this application instance publish-only (ADR-0029): the engine registers its worker,
+     * runs maintenance and exposes {@code OutboxEventPublisher}, but starts no pollers — any {@code
+     * EventHandler} beans are ignored. Default {@code false}: at least one {@code EventHandler}
+     * bean is then required and startup fails with an actionable diagnosis without one.
+     */
+    private boolean publishOnly = false;
+
     private final Storage storage = new Storage();
     private final Flyway flyway = new Flyway();
     private final Redis redis = new Redis();

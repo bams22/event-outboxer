@@ -46,6 +46,7 @@ creates the Lettuce connection itself (see
 ```yaml
 event-outboxer:
   enabled: true                      # master switch, default=true
+  publish-only: false                # true = no pollers on this instance; EventHandler beans optional (ADR-0029)
 
   worker:
     id: null                         # override WorkerId; null = {hostname}-{pid}-{uuid8}
@@ -205,6 +206,21 @@ active transaction:
   accidentally publishing without atomicity.
 - `IGNORE` — writes without a surrounding transaction. Unsafe, for
   tests only.
+
+### `event-outboxer.publish-only`
+
+Default `false`: the engine requires at least one `EventHandler` bean
+and otherwise fails at startup with a `FailureAnalyzer` diagnosis —
+events persisted by an application that never processes them are
+almost always a wiring mistake (handlers outside component scan, wrong
+profile, missing `@Component`).
+
+`true` declares the instance **publish-only** (ADR-0029): the engine
+registers its worker, runs heartbeat / orphan recovery / retention and
+exposes `OutboxEventPublisher`, but starts no pollers; any
+`EventHandler` beans present are ignored. Use it for a service that
+only emits events, or to run one code base as API nodes
+(`publish-only: true`) and worker nodes (`publish-only: false`).
 
 ### `event-outboxer.storage.*`
 

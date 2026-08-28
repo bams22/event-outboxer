@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.core.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import io.github.bams22.outboxer.api.handle.EventContext;
@@ -27,6 +28,7 @@ import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.domain.exception.NoEventHandlersException;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
@@ -336,8 +338,41 @@ class OutboxEngineIntegrationTest {
     }
 
     @Test
+    void refusesToBuildWithoutHandlersUnlessPublishOnly() {
+        assertThatThrownBy(() -> fastEngine().build())
+                .isInstanceOf(NoEventHandlersException.class)
+                .hasMessageContaining("publishOnly(true)");
+    }
+
+    @Test
+    void publishOnlyIgnoresRegisteredHandlers() {
+        AtomicInteger invocations = new AtomicInteger();
+        engine =
+                fastEngine()
+                        .publishOnly(true)
+                        .handler(
+                                recordingHandler(
+                                        "ORDER",
+                                        (ctx, payload) -> {
+                                            invocations.incrementAndGet();
+                                            return EventOutcome.Success.INSTANCE;
+                                        }))
+                        .build();
+        engine.start();
+
+        UUID id = engine.publisher().publish("ORDER", "order-1");
+        sleepQuietly(150);
+
+        assertThat(invocations).hasValue(0);
+        assertThat(store.findById(id))
+                .isPresent()
+                .get()
+                .satisfies(e -> assertThat(e.status()).isEqualTo(EventStatus.PENDING));
+    }
+
+    @Test
     void startsPublishOnlyWithoutHandlers() {
-        engine = fastEngine().build(); // no handler(...) at all
+        engine = fastEngine().publishOnly(true).build(); // no handler(...) at all
         engine.start();
 
         assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);

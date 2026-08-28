@@ -238,11 +238,9 @@ public class OutboxEngineAutoConfiguration {
         java.util.List<EventHandler<?>> handlers = new java.util.ArrayList<>();
         handlerProvider.forEach(handlers::add);
         handlers.forEach(builder::handler);
-        if (handlers.isEmpty()) {
-            log.warn(
-                    "no EventHandler beans found: the outbox starts publish-only — events are"
-                            + " persisted but not processed by this application instance");
-        }
+        // An empty handler set without the flag is rejected by the builder; the starter turns the
+        // NoEventHandlersException into a FailureAnalysis (OutboxHandlersFailureAnalyzer).
+        builder.publishOnly(properties.isPublishOnly());
         warnIfPgLockCanExhaustPool(
                 properties,
                 resolvedDefaults,

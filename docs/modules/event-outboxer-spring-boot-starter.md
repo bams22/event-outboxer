@@ -183,6 +183,7 @@ defaults and startup-validated invariants is
 
 | Section | Governs |
 |---|---|
+| `publish-only` | `true` = no pollers on this instance, `EventHandler` beans optional / ignored ([ADR-0029](../adr/0029-publish-only-is-explicit.md)) |
 | `storage.*` | adapter selection, schema, archive, metrics-cache TTL |
 | `flyway.*` | the starter-managed Flyway instance: on/off, dedicated connection, one-time baseline ([ADR-0028](../adr/0028-starter-managed-flyway-instance.md)) |
 | `lock.*`, `cache.*` | `EntityLocker` / `MetricsSnapshotCache` backend selection |
@@ -231,6 +232,7 @@ Worked snippets for each are in
 | Misconfiguration | What happens |
 |---|---|
 | `storage.type` unset / adapter jar missing / no `DataSource` | startup fails with a `FailureAnalyzer` diagnosis naming the exact fix (ADR-0020) |
+| no `EventHandler` bean and `publish-only` unset | startup fails with a diagnosis naming the handler contract and `event-outboxer.publish-only=true` (ADR-0029) |
 | several `DataSource`s, none qualified (or two qualified) | fail fast listing candidate beans and the `@OutboxDataSource` fix (ADR-0024) |
 | `lock.type=postgres-lease` without migration V005 (only with `flyway.enabled=false`) | fail-fast table probe naming the migration, the classpath location and the escape hatch |
 | outbox schema populated by a ≤ 0.4.0 install, no history table of its own | the outbox Flyway instance fails with the one-time `baseline-on-migrate` / `baseline-version` recipe |

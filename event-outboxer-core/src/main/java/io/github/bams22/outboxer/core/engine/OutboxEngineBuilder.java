@@ -46,6 +46,7 @@ import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.core.workerid.WorkerIdFactory;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
+import io.github.bams22.outboxer.domain.exception.NoEventHandlersException;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
@@ -85,12 +86,16 @@ import org.slf4j.LoggerFactory;
  * Plain-Java builder for {@link OutboxEngine} — the only way to assemble one; the Spring Boot
  * starter feeds its Spring-managed collaborators through this builder as well.
  *
- * <p>Required collaborators: {@link EventStore}, {@link WorkerRegistry} and {@link
- * EventSerializer}. Every other knob has a default — including the handler set: an engine built
- * without any {@link EventHandler} starts as a <em>publish-only</em> node (registers its worker,
- * runs heartbeat / orphan recovery / retention, exposes the publisher) but polls nothing; events it
- * persists wait for an instance that registers the matching handler. The builder logs a warning for
- * that configuration so an accidentally empty handler set is visible at startup.
+ * <p>Required collaborators: {@link EventStore}, {@link WorkerRegistry}, {@link EventSerializer},
+ * and at least one {@link EventHandler} — unless the engine is declared {@link
+ * #publishOnly(boolean) publish-only}. Every other knob has a default.
+ *
+ * <p>A publish-only engine (ADR-0029) registers its worker, runs heartbeat / orphan recovery /
+ * retention and exposes the publisher, but starts no pollers: events it persists wait for an
+ * instance that processes them. Handlers registered on a publish-only engine are ignored, which
+ * lets one code base run as API nodes and worker nodes. Without the flag an empty handler set is
+ * rejected with {@link NoEventHandlersException} — persisting events nobody processes is almost
+ * always a wiring mistake.
  */
 public final class OutboxEngineBuilder {
 
@@ -106,6 +111,7 @@ public final class OutboxEngineBuilder {
     private TransactionContext txContext = TransactionContext.alwaysActive();
     private NoTransactionPolicy noTxPolicy = NoTransactionPolicy.IGNORE;
     private final List<EventHandler<?>> handlers = new ArrayList<>();
+    private boolean publishOnly = false;
     private @Nullable FailureHandler<?> defaultFailureHandler;
     private final Map<String, FailureHandler<?>> perTypeFailureHandlers = new HashMap<>();
     private EventTypeConfig defaultEventTypeConfig = EventTypeConfig.defaults();
@@ -217,6 +223,16 @@ public final class OutboxEngineBuilder {
         for (EventHandler<?> h : list) {
             handler(h);
         }
+        return this;
+    }
+
+    /**
+     * Declares the engine publish-only (ADR-0029): no pollers are started, registered handlers are
+     * ignored, everything else (worker registration, maintenance, publisher) runs as usual. Default
+     * {@code false} — then at least one handler is required.
+     */
+    public OutboxEngineBuilder publishOnly(boolean publishOnly) {
+        this.publishOnly = publishOnly;
         return this;
     }
 
@@ -362,11 +378,12 @@ public final class OutboxEngineBuilder {
         EventStore eventStore = require(store, "eventStore");
         WorkerRegistry workerRegistry = require(registry, "workerRegistry");
         EventSerializer eventSerializer = require(serializer, "eventSerializer");
-        if (handlers.isEmpty()) {
-            log.warn(
-                    "no EventHandler registered: this instance will publish events but process"
-                            + " none — register handlers here or on another instance sharing the"
-                            + " outbox");
+        if (handlers.isEmpty() && !publishOnly) {
+            throw new NoEventHandlersException(
+                    "no EventHandler registered — events would be persisted but never processed."
+                            + " Register at least one handler, or declare the engine publish-only"
+                            + " (OutboxEngineBuilder.publishOnly(true)) for an instance whose"
+                            + " handlers run elsewhere.");
         }
 
         List<EventSerializer> allSerializers = new ArrayList<>();
@@ -442,16 +459,24 @@ public final class OutboxEngineBuilder {
         Function<EventTypeConfig, ExecutorService> executorFactory =
                 handlerExecutorFactory != null ? handlerExecutorFactory : defaultExecutorFactory();
 
+        // Publish-only: no executors and no pollers; registered handlers are deliberately ignored.
+        List<EventHandler<?>> polledHandlers = publishOnly ? List.of() : handlers;
+        if (publishOnly) {
+            log.info(
+                    "publish-only engine: {} handler(s) registered but no pollers will start on"
+                            + " this instance",
+                    handlers.size());
+        }
         Map<String, EventTypeConfig> executorConfigs = new LinkedHashMap<>();
-        for (EventHandler<?> h : handlers) {
+        for (EventHandler<?> h : polledHandlers) {
             executorConfigs.put(h.eventType(), typeConfig.forType(h.eventType()));
         }
         HandlerExecutorManager executors =
                 new HandlerExecutorManager(executorFactory, executorConfigs);
 
         PollerWakeHub hub = wakeHub != null ? wakeHub : new PollerWakeHub();
-        List<Poller> pollers = new ArrayList<>(handlers.size());
-        for (EventHandler<?> h : handlers) {
+        List<Poller> pollers = new ArrayList<>(polledHandlers.size());
+        for (EventHandler<?> h : polledHandlers) {
             String type = h.eventType();
             EventTypeConfig cfg =
                     Objects.requireNonNull(

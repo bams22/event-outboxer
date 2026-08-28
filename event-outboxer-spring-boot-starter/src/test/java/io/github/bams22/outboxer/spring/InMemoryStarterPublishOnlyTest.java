@@ -34,11 +34,12 @@ import org.springframework.context.annotation.Import;
 /**
  * An application with the starter on the classpath but no {@code EventHandler} bean — a service
  * that only emits events, or one whose handlers are deployed elsewhere — boots as a publish-only
- * node instead of failing at startup.
+ * node once it says so with {@code event-outboxer.publish-only=true} (ADR-0029).
  */
 @SpringBootTest(
         classes = InMemoryStarterPublishOnlyTest.TestApp.class,
         properties = {
+            "event-outboxer.publish-only=true",
             "event-outboxer.publisher.no-transaction-policy=IGNORE",
             "event-outboxer.event-types.defaults.poll-min-interval=20ms",
             "event-outboxer.event-types.defaults.poll-max-interval=50ms"

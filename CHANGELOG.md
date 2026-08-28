@@ -43,14 +43,16 @@ All notable changes to this project are documented here. Format follows
     changelogs under `db/changelog/outbox/*`.
 
 ### Changed
-- **An engine with no `EventHandler` starts as a publish-only node**
-  instead of failing with `at least one EventHandler must be
-  registered`. It registers its worker, runs heartbeat / orphan
-  recovery / retention and exposes `OutboxEventPublisher`, but creates
-  no pollers; a warning is logged by `OutboxEngineBuilder` and by the
-  starter. This lets a service that only emits events — or an
-  application whose handlers live in a separate deployment — boot with
-  the starter on the classpath.
+- **Publish-only mode is an explicit opt-in (ADR-0029).**
+  `OutboxEngineBuilder.publishOnly(true)` / `event-outboxer.publish-only=true`
+  start the engine without pollers: it registers its worker, runs
+  heartbeat / orphan recovery / retention and exposes
+  `OutboxEventPublisher`; any handlers it was given are ignored, so one
+  code base can run as API nodes and worker nodes. Without the flag an
+  empty handler set is still rejected — now with the dedicated
+  `NoEventHandlersException` (`ConfigurationException`) instead of a
+  bare `IllegalStateException`, and the starter turns it into a
+  `FailureAnalyzer` diagnosis naming both ways out.
 
 ### Added
 - `event-outboxer.flyway.*`: `enabled` (default `true`), `url`, `user`,

@@ -51,6 +51,7 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0024: Outbox DataSource selection via the @OutboxDataSource qualifier](0024-outbox-datasource-selection.md)
 - [ADR-0027: Starter-managed Redis connection and the @OutboxRedisConnection qualifier](0027-starter-managed-redis-connection.md)
 - [ADR-0028: Starter-managed Flyway instance for the outbox schema](0028-starter-managed-flyway-instance.md)
+- [ADR-0029: Publish-only mode is an explicit opt-in](0029-publish-only-is-explicit.md)
 
 ### Operations
 
