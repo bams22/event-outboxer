@@ -140,6 +140,13 @@ event-outboxer:
     # Auto-detection of the OutboxTracer adapters (ADR-0023). false disables
     # both; a user-defined OutboxTracer bean is honoured regardless.
     enabled: true
+    # Span shape of a deferred event (runAt further ahead than link-threshold
+    # at publish time). link = the consumer span starts a new trace and links
+    # to the producer span; child = always parent-child, however far ahead.
+    deferred-propagation: link
+    # How far ahead runAt must lie for an event to count as deferred.
+    # 0s links every event with an explicit future runAt.
+    link-threshold: 1m
 
   health:
     # Merge the outbox indicator into these Actuator health groups. Default
@@ -537,6 +544,35 @@ meters with a `MeterFilter`, never with that property. See
   **Default: `true`.** With no adapter module on the classpath the
   engine uses a zero-cost no-op tracer either way. A user-defined
   `OutboxTracer` bean always wins, regardless of this flag.
+- `deferred-propagation` — span shape of a *deferred* event, i.e. one
+  published with a `runAt` further ahead than `link-threshold`
+  (ADR-0023, 2026-08-28 amendment). `link` (default): the CONSUMER span
+  is a new root that carries a span link to the PRODUCER span, and
+  both spans are tagged `event_outboxer.propagation=link` — a
+  scheduled event does not stretch one trace across the delay, which
+  keeps time-range search, tail-based sampling and retention sane.
+  `child`: every event keeps parent-child continuity however far
+  ahead it is scheduled (the pre-0.4.0 behaviour). The decision is
+  taken once, at publish time, from the publisher's intent — backlog
+  and retry backoff never change a trace's shape. It is carried in the
+  event row's `trace_context` as the extra key
+  `event_outboxer.propagation=link`, which the engine strips before
+  the carrier reaches a tracing adapter or `EventContext`.
+  **Default: `link`.**
+- `link-threshold` — how far ahead of the publish-time clock `runAt`
+  must lie for the event to count as deferred. `0s` links every event
+  with an explicit future `runAt`; immediate publishes (no `runAt`)
+  never link. One minute clears every debounce-style `runAt` and the
+  decision window of tail-based samplers while anything a human would
+  call "scheduled" exceeds it. Ignored under
+  `deferred-propagation: child`. **Default: `1m`.**
+- On the Micrometer adapter the linked shape needs the starter's
+  `OutboxReceiverTracingObservationHandler` bean ahead of Boot's own
+  receiver handler (registered automatically, order 900 vs Boot's
+  1000); the Brave bridge cannot detach a parent, so on Brave deferred
+  events stay parent-child and get the link as tags. Custom
+  propagation formats (anything but W3C `traceparent`, `b3`,
+  `X-B3-*`) produce an unlinked root span.
 
 ### `event-outboxer.health.*`
 

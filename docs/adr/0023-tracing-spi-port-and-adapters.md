@@ -4,7 +4,9 @@
 
 Accepted (amended 2026-08-16: the Micrometer adapter instruments
 through the Observation API instead of `Tracer` / `Propagator`
-directly — see the amendment section under Decision).
+directly; amended 2026-08-28: deferred events get a linked root
+consumer span instead of a child — see the amendment sections under
+Decision).
 
 ## Date
 
@@ -276,6 +278,118 @@ drives Micrometer's Observation API and lets the registered
   and one more reason the starter prefers the Micrometer adapter when
   both are wireable.
 
+### Deferred events link instead of parenting (amendment, 2026-08-28)
+
+**Problem.** The consumer span is always a child of the stored
+context, so a trace lasts as long as the outbox hop — fine when the
+hop is seconds, wrong when it is scheduled: `publish(..., runAt = now
++ 2 days)` produces a two-day trace with a hole in it. The root ended
+long ago; time-range search never finds the late span; a tail-based
+sampler decided the trace within seconds and now sees an orphan whose
+parent it may already have dropped; delays past the backend's
+retention leave a child with no parent at all. Nothing is lost (the
+trace id is in the row and every span carries
+`messaging.message.id`), but the shape lies about causality: a
+deliberate deferral is a new unit of work that *follows from* the
+publish, not part of it. OTel messaging semconv recommends a span
+link for exactly this case, and the job-queue instrumentations where
+delay is the norm (Sidekiq / ActiveJob OTel, X-Ray for SQS) default to
+links.
+
+**Decision.** The propagation shape is chosen **at publish time**,
+from the publisher's intent, and travels with the event:
+
+- `DefaultOutboxEventPublisher` compares `runAt - clock.now()` with a
+  **link threshold** (`OutboxEngineBuilder.tracingLinkThreshold`,
+  starter `event-outboxer.tracing.link-threshold`, default 1 minute;
+  `event-outboxer.tracing.deferred-propagation: child` or a `null`
+  threshold disables the rule). Beyond the threshold the event is
+  *deferred*: the producer span is told (`PublishSpan.linked()`, which
+  tags it `event_outboxer.propagation=link`) and the stored carrier
+  gets the extra entry `event_outboxer.propagation=link` next to the
+  propagator's keys. An empty carrier stays empty — there is nothing to
+  link to. The explicit `PublishOptions.traceContext` override gets
+  the same marker.
+- The marker lives in `trace_context` on purpose: it is the only place
+  a publish-time decision can survive until a claim days later without
+  a schema change, and the carrier is already ours to define (flat
+  string map, propagator-defined keys). `HandlerDispatcher` reads it,
+  strips it, and hands `ProcessSpanInfo.propagation()` (`CHILD` |
+  `LINK`) plus the stripped carrier to the tracer — and the stripped
+  carrier to `EventContext`, so neither adapters, propagators nor
+  handler code ever see the marker.
+- With `LINK` the consumer span is a **new root** carrying a span link
+  to the stored producer context and the attribute
+  `event_outboxer.propagation=link`; baggage is still restored from
+  the carrier. `ProcessSpanInfo` grows a sixth component with a
+  five-argument compatibility constructor defaulting to `CHILD`;
+  `PublishSpan.linked()` is a default no-op, so third-party tracers
+  keep compiling and simply keep the child shape.
+
+Why publish time and not claim time: `now - createdAt` at claim would
+also split traces during a backlog — exactly when continuity matters
+most for debugging — and `runAt - createdAt` at claim would flip
+mid-retry-chain because `markForRetry` rewrites `run_at` with the
+backoff. Intent is stable; lag and backoff are not. Retries therefore
+inherit the publish-time decision: a deferred event's attempts are
+all linked roots, an immediate event's attempts are all children, and
+a long retry chain of an immediate event still stretches its trace
+(a known trade-off, unchanged from before).
+
+Adapter mechanics:
+
+- **OTel adapter**: `setNoParent()` + `addLink(SpanContext)` from the
+  extracted context; the scope parent becomes
+  `Context.root().with(Baggage.fromContext(extracted))`, so only the
+  span parent is dropped.
+- **Micrometer adapter**: Micrometer's `Propagator` extracts into a
+  `Span.Builder` only — the parent's ids are not readable from it and
+  Boot's `PropagatingReceiverTracingObservationHandler` always
+  parents the span. The adapter therefore starts the handle-side
+  observation over its own `OutboxReceiverContext` (a
+  `ReceiverContext` carrying the propagation) and ships
+  `OutboxReceiverTracingObservationHandler`, a subclass of the generic
+  receiver handler that claims only that context and, for `LINK`,
+  calls `setNoParent()` and adds a `Link` whose target is parsed from
+  the carrier (`traceparent`, single-header `b3`, multi-header
+  `X-B3-*` — every format Boot can be configured to emit; anything
+  else yields an unlinked root). The starter registers it as a bean
+  ordered *before* Boot's receiver handler
+  (`MicrometerTracingAutoConfiguration.RECEIVER_HANDLER_ORDER = 900`
+  vs Boot's 1000) so it wins Boot's first-matching tracing composite;
+  a hand-built registry lists it first. Without it the generic handler
+  claims the context and the span silently stays a child — the
+  `event_outboxer.propagation=link` tag then documents an intent the
+  span does not honour, which is what makes the mis-wiring visible.
+  On the OTel bridge `setNoParent()` after the propagator's
+  `setParent()` keeps the extracted context attached to the new span,
+  so baggage, the current observation and handler-side nesting all
+  hold — verified against the real bridge in
+  `MicrometerOutboxTracerOtelBridgeTest`. The Brave bridge ignores
+  `setNoParent()` (and renders links as `LinkUtils` tags), so on Brave
+  a deferred event keeps the parent-child shape.
+
+Considered for this amendment:
+
+- **Decide at claim time from `claimedAt - createdAt` or from the
+  row's `run_at - created_at`.** Rejected for the reasons above: lag
+  and backoff would make the trace shape depend on operational state
+  rather than on intent.
+- **Persist the decision in a new column.** Rejected: a schema
+  migration, a `ClaimedEvent` component change (its canonical
+  constructor is public API for storage adapters) and claim-query
+  changes, for one bit of information the carrier can already hold.
+- **Learn the Micrometer link target by starting and abandoning a
+  probe span from the extracted builder.** Rejected: it works on both
+  bridges, but leaves a started-never-ended SDK span behind on every
+  deferred event; on OTel-API-over-vendor-agent setups an unfinished
+  span can pin the whole pending trace in memory. Parsing three
+  well-defined formats has no runtime footprint.
+- **Threshold on the actual delay for retries too** (link any attempt
+  whose backoff pushed it far out). Deferred to a later change: it
+  needs `runAt` on `ClaimedEvent`, and the value of splitting a retry
+  chain is less clear than the value of not splitting a backlog.
+
 ## Alternatives considered
 
 1. **`OutboxListener`-based tracing** (the reuse ADR-0013
@@ -335,3 +449,18 @@ Considered for the 2026-08-16 amendment:
   need stronger correlation.
 - The poller, maintenance tasks and finalize path remain untraced by
   design (ADR-0009: background operations must not pollute traces).
+- (2026-08-28) Deferred events — `runAt` more than
+  `event-outboxer.tracing.link-threshold` (1 minute) ahead at publish
+  — start a new trace whose consumer span links to the producer span;
+  both spans carry `event_outboxer.propagation=link`. The stored
+  carrier of such events holds the extra key
+  `event_outboxer.propagation=link` (STORAGE.md), stripped before it
+  reaches adapters and handlers. This changes the default trace shape
+  for scheduled events; `deferred-propagation: child` restores the
+  previous behaviour. Additive API: `OutboxTracer.Propagation`,
+  `PublishSpan.linked()` (default), `ProcessSpanInfo.propagation()`
+  with a compatibility constructor, `OutboxTraceAttributes.PROPAGATION`
+  / `PROPAGATION_LINK`, `OutboxEngineBuilder.tracingLinkThreshold`,
+  a `DefaultOutboxEventPublisher` overload, and in the Micrometer
+  module `OutboxReceiverContext` +
+  `OutboxReceiverTracingObservationHandler`.

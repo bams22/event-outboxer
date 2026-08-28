@@ -26,6 +26,13 @@ import java.util.UUID;
  * values, or whatever the configured propagator emits) persisted with the event row and read back
  * on claim. Values must be plain strings: the PostgreSQL adapter rejects nested structures.
  *
+ * <p>How the CONSUMER span relates to the stored context is decided by the engine at publish time
+ * and handed to the adapter as {@link ProcessSpanInfo#propagation()}: {@link Propagation#CHILD} for
+ * events processed soon after publication, {@link Propagation#LINK} for events scheduled far enough
+ * into the future that a parent-child relationship would stretch one trace across the delay
+ * (ADR-0023, 2026-08-28 amendment). Adapters never see the marker the engine persists to carry that
+ * decision — they only see the outcome.
+ *
  * <p>Implementations MUST be thread-safe and SHOULD be cheap when no trace is active. The engine
  * additionally shields itself from implementation failures (every call is routed through a
  * defensive wrapper in core), but adapters should still not throw.
@@ -42,15 +49,30 @@ public interface OutboxTracer {
     PublishSpan startPublishSpan(UUID eventId, String eventType);
 
     /**
-     * Extracts the parent context from {@link ProcessSpanInfo#storedContext()}, starts a CONSUMER
-     * span (conventionally named {@code "outbox process <eventType>"}) as its child, and makes it —
-     * along with any extracted baggage — current on the calling thread until {@link
-     * ProcessSpan#close()}.
+     * Starts a CONSUMER span (conventionally named {@code "outbox process <eventType>"}) and makes
+     * it — along with any baggage extracted from {@link ProcessSpanInfo#storedContext()} — current
+     * on the calling thread until {@link ProcessSpan#close()}.
+     *
+     * <p>With {@link Propagation#CHILD} the span is a child of the stored context. With {@link
+     * Propagation#LINK} it is a new root span carrying a span link to the stored context (where the
+     * backend supports links) and the attribute {@link OutboxTraceAttributes#PROPAGATION} {@code =}
+     * {@link OutboxTraceAttributes#PROPAGATION_LINK}; baggage is restored either way.
      */
     ProcessSpan startProcessSpan(ProcessSpanInfo info);
 
     /** No-op tracer used when no tracing adapter is wired. */
     OutboxTracer NOOP = new NoopOutboxTracer();
+
+    /** How the CONSUMER span relates to the context stored at publish time. */
+    enum Propagation {
+        /** The consumer span is a child of the stored context — one trace across the outbox hop. */
+        CHILD,
+        /**
+         * The consumer span is a new root that links to the stored context. Chosen by the engine
+         * when the event was scheduled further into the future than the configured link threshold.
+         */
+        LINK
+    }
 
     /**
      * Handle for the publish-side PRODUCER span. The engine closes it exactly once via
@@ -72,6 +94,15 @@ public interface OutboxTracer {
          * this span's child. Not an error outcome.
          */
         void coalesced(UUID existingEventId);
+
+        /**
+         * The event was scheduled beyond the engine's link threshold, so its consumer span will
+         * {@linkplain Propagation#LINK link} to this span instead of descending from it.
+         * Implementations should tag the span {@link OutboxTraceAttributes#PROPAGATION} {@code =}
+         * {@link OutboxTraceAttributes#PROPAGATION_LINK} so operators can see why this producer has
+         * no consumer child. Called at most once, before {@link #close()}. Default: no-op.
+         */
+        default void linked() {}
 
         /** Records a publish failure on the span (exception plus ERROR status). */
         void error(Throwable error);
@@ -105,22 +136,36 @@ public interface OutboxTracer {
      * @param eventType the event type (span name suffix and {@code messaging.destination.name})
      * @param attempt 1-based number of the current processing attempt
      * @param workerId the worker executing the handler
-     * @param storedContext raw flat carrier map read from the event row; never null (empty map
-     *     allowed)
+     * @param storedContext flat carrier map read from the event row, with engine-internal markers
+     *     already removed; never null (empty map allowed)
+     * @param propagation how the span relates to {@code storedContext}; decided by the engine at
+     *     publish time
      */
     record ProcessSpanInfo(
             UUID eventId,
             String eventType,
             int attempt,
             WorkerId workerId,
-            Map<String, String> storedContext) {
+            Map<String, String> storedContext,
+            Propagation propagation) {
 
         public ProcessSpanInfo {
             Objects.requireNonNull(eventId, "eventId must not be null");
             Objects.requireNonNull(eventType, "eventType must not be null");
             Objects.requireNonNull(workerId, "workerId must not be null");
             Objects.requireNonNull(storedContext, "storedContext must not be null");
+            Objects.requireNonNull(propagation, "propagation must not be null");
             storedContext = Map.copyOf(storedContext);
+        }
+
+        /** Pre-0.4.0 shape: {@link Propagation#CHILD}. */
+        public ProcessSpanInfo(
+                UUID eventId,
+                String eventType,
+                int attempt,
+                WorkerId workerId,
+                Map<String, String> storedContext) {
+            this(eventId, eventType, attempt, workerId, storedContext, Propagation.CHILD);
         }
     }
 }

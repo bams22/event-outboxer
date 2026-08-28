@@ -30,6 +30,7 @@ import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
+import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.Clock;
@@ -40,6 +41,7 @@ import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
@@ -468,6 +470,10 @@ public final class HandlerDispatcher {
         // The CONSUMER span (ADR-0023) wraps only the handler invocation: it restores the trace
         // stored at publish time as the current context, and it must close on this worker thread
         // before outcome routing — finalize may group-commit on a different thread.
+        // The stored carrier may hold the publish-time propagation marker (2026-08-28 amendment);
+        // it is read here and stripped before the map reaches the tracer or the handler.
+        Map<String, String> stored = claimed.traceContext();
+        Map<String, String> carrier = TracePropagationMarker.strip(stored);
         try (OutboxTracer.ProcessSpan span =
                 tracer.startProcessSpan(
                         new OutboxTracer.ProcessSpanInfo(
@@ -475,7 +481,8 @@ public final class HandlerDispatcher {
                                 claimed.eventType(),
                                 claimed.attempts() + 1,
                                 workerId,
-                                claimed.traceContext()))) {
+                                carrier,
+                                TracePropagationMarker.propagationOf(stored)))) {
             try {
                 EventContext ctx =
                         new EventContext(
@@ -485,7 +492,7 @@ public final class HandlerDispatcher {
                                 claimed.createdAt(),
                                 claimed.claimedAt(),
                                 workerId,
-                                claimed.traceContext());
+                                carrier);
                 return invokeHandlerTyped(handler, ctx, payload);
             } catch (RuntimeException ex) {
                 span.error(ex);

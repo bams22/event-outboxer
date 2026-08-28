@@ -395,6 +395,25 @@ The trace active at `publish()` continues into handler execution
    ...) nest under it automatically. Each retry attempt gets a fresh
    span in the same trace; a handler exception is recorded on the span
    (exception event + ERROR status).
+3. **Deferred events link instead of parenting** (ADR-0023, 2026-08-28
+   amendment). An event published with a `runAt` further ahead than
+   `event-outboxer.tracing.link-threshold` (default 1 minute) would
+   otherwise stretch one trace across the whole delay — a two-day
+   trace with a hole in it that time-range search never finds and
+   tail-based samplers have long since forgotten. So for such events
+   the CONSUMER span is a **new root carrying a span link** to the
+   PRODUCER span; both spans are tagged
+   `event_outboxer.propagation=link`, baggage is still restored, and
+   every retry attempt of that event is a linked root too. The
+   decision is made once at publish time from the publisher's intent
+   (backlog and retry backoff never change a trace's shape) and rides
+   in the row's `trace_context` as the extra key
+   `event_outboxer.propagation=link`, which the engine strips before
+   the carrier reaches an adapter or `EventContext`.
+   `event-outboxer.tracing.deferred-propagation: child` restores
+   unconditional parent-child continuity. In Grafana Tempo / Jaeger
+   the linked trace shows up through the link on the consumer span
+   and, in both directions, through `messaging.message.id`.
 
 ### Span attributes
 
@@ -407,6 +426,7 @@ The trace active at `publish()` continues into handler execution
 | `event_outboxer.attempt` | consumer | 1-based attempt number |
 | `event_outboxer.worker.id` | consumer | worker executing the handler |
 | `event_outboxer.coalesced_into` | producer | id of the existing PENDING event this publish coalesced into (ADR-0021); the surviving row keeps the first publish's context |
+| `event_outboxer.propagation` | both | `link` on the spans of a deferred event — the consumer is a new root with a span link to the producer instead of its child; absent otherwise |
 
 ### Choosing an adapter
 
@@ -449,6 +469,17 @@ type lands on them as a real Micrometer tag
 (`messaging.destination.name`), which makes this adapter share the
 metrics module's assumption that event types are a bounded,
 code-defined set — never a per-tenant or per-entity string.
+
+For deferred events the Micrometer adapter needs its own receiver
+handler — `OutboxReceiverTracingObservationHandler`, which the starter
+registers ahead of Boot's generic one (bean order 900 vs Boot's 1000).
+Without it Boot's handler claims the context and the consumer span
+silently stays a child; the `event_outboxer.propagation=link` tag on
+such a span is the tell-tale. The link target is read from the
+carrier in the formats Boot can emit (`traceparent`, `b3`, `X-B3-*`);
+a custom propagator yields an unlinked root. The Brave bridge cannot
+detach a parent (`setNoParent()` is a no-op there) and renders links
+as tags, so on Brave deferred events keep the parent-child shape.
 
 Adapter failures never affect delivery: the engine wraps the tracer
 defensively (`SafeOutboxTracer`), so a throwing tracing backend

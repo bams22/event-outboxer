@@ -32,6 +32,21 @@ Practical deltas:
   `management.tracing.baggage.remote-fields` controls baggage — the
   outbox hop behaves exactly like every other outbound call in the
   app.
+- **Deferred events get a linked root span** (ADR-0023, 2026-08-28
+  amendment). The handle-side observation runs over the module's own
+  `OutboxReceiverContext`, and `OutboxReceiverTracingObservationHandler`
+  — a subclass of Boot's receiver handler that claims only that
+  context — turns the span of an event the engine marked `LINK` into
+  a new root with a `Link` to the stored producer context. The link
+  target is parsed from the carrier (`traceparent`, single-header
+  `b3`, multi-header `X-B3-*`; any other format yields an unlinked
+  root). The starter registers the handler ahead of Boot's own
+  (`MicrometerTracingAutoConfiguration.RECEIVER_HANDLER_ORDER = 900`
+  vs Boot's 1000). Without it the generic handler wins and the span
+  silently stays a child — the `event_outboxer.propagation=link` tag
+  then betrays the mis-wiring. Brave ignores `setNoParent()`, so on
+  the Brave bridge deferred events keep the parent-child shape and
+  get the link as tags.
 - **The current *observation* is set around the handler**, not just
   the current span. That is what `ContextPropagatingTaskDecorator`,
   Reactor's `contextCapture()` and `@Async` copy, so a handler that
@@ -109,6 +124,10 @@ would emit timers and no spans, and the OTel adapter takes over.
 
 - `event-outboxer.tracing.enabled: false` disables adapter
   auto-detection (both modules).
+- `event-outboxer.tracing.deferred-propagation` (`link` | `child`)
+  and `event-outboxer.tracing.link-threshold` (default `1m`) decide
+  which events get the linked root span; see
+  [CONFIGURATION.md §tracing](../CONFIGURATION.md#event-outboxertracing).
 - `event-outboxer.metrics.prefix` renames the observations — and with
   them the four meters above — exactly as it renames the listener's
   metrics. The starter binds it for both modules.
@@ -125,20 +144,25 @@ new OutboxEngineBuilder()
 
 The registry must carry the tracing `ObservationHandler`s, grouped in
 an `ObservationHandler.FirstMatchingCompositeObservationHandler` the
-way Boot does — the propagating pair first, the default one last:
+way Boot does — the outbox receiver handler first, then the
+propagating pair, the default one last:
 
 ```java
 registry.observationConfig()
     .observationHandler(new FirstMatchingCompositeObservationHandler(
+        new OutboxReceiverTracingObservationHandler(tracer, propagator),
         new PropagatingReceiverTracingObservationHandler<>(tracer, propagator),
         new PropagatingSenderTracingObservationHandler<>(tracer, propagator),
         new DefaultTracingObservationHandler(tracer)));
 ```
 
-Order matters: `DefaultTracingObservationHandler` matches every
+Order matters twice: `DefaultTracingObservationHandler` matches every
 context, so if it came first the carrier would silently stay empty and
 the span names would be mangled through `SpanNameUtil.toLowerHyphen`
-(`outbox publish -order-created`). The three-argument constructor
+(`outbox publish -order-created`); and the generic receiver handler
+also matches the outbox context, so if it preceded
+`OutboxReceiverTracingObservationHandler` deferred events would
+silently keep the parent-child shape. The three-argument constructor
 `MicrometerOutboxTracer(registry, tracer, prefix)` sets the
 observation/meter prefix outside Spring.
 

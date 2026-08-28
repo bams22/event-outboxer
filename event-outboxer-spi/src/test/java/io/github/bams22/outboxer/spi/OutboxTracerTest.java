@@ -38,6 +38,7 @@ class OutboxTracerTest {
             assertThatCode(
                             () -> {
                                 span.coalesced(UUID.randomUUID());
+                                span.linked();
                                 span.error(new RuntimeException("x"));
                                 span.close();
                                 span.close(); // idempotent
@@ -110,6 +111,34 @@ class OutboxTracerTest {
                             () -> new OutboxTracer.ProcessSpanInfo(id, null, 1, WORKER, Map.of()));
             assertThatNullPointerException()
                     .isThrownBy(() -> new OutboxTracer.ProcessSpanInfo(id, "T", 1, null, Map.of()));
+            assertThatNullPointerException()
+                    .isThrownBy(
+                            () ->
+                                    new OutboxTracer.ProcessSpanInfo(
+                                            id, "T", 1, WORKER, Map.of(), null))
+                    .withMessageContaining("propagation");
+        }
+
+        @Test
+        void fiveArgumentConstructorDefaultsToChildPropagation() {
+            var info =
+                    new OutboxTracer.ProcessSpanInfo(UUID.randomUUID(), "T", 1, WORKER, Map.of());
+
+            assertThat(info.propagation()).isEqualTo(OutboxTracer.Propagation.CHILD);
+        }
+
+        @Test
+        void propagationIsCarriedThrough() {
+            var info =
+                    new OutboxTracer.ProcessSpanInfo(
+                            UUID.randomUUID(),
+                            "T",
+                            1,
+                            WORKER,
+                            Map.of(),
+                            OutboxTracer.Propagation.LINK);
+
+            assertThat(info.propagation()).isEqualTo(OutboxTracer.Propagation.LINK);
         }
     }
 }

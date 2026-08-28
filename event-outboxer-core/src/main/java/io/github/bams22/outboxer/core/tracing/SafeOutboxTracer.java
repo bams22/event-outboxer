@@ -100,6 +100,15 @@ public final class SafeOutboxTracer implements OutboxTracer {
         }
 
         @Override
+        public void linked() {
+            try {
+                delegate.linked();
+            } catch (RuntimeException ex) {
+                log.debug("PublishSpan.linked failed: {}", ex.toString());
+            }
+        }
+
+        @Override
         public void error(Throwable error) {
             try {
                 delegate.error(error);

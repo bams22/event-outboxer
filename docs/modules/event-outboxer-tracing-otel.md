@@ -36,6 +36,14 @@ SDKs alike.
   `event_outboxer.attempt` (1-based) and `event_outboxer.worker.id`.
   Each retry gets a fresh span in the same trace. Handler exceptions
   are recorded (`recordException` + ERROR status).
+- **Deferred events** (ADR-0023, 2026-08-28 amendment) — when the
+  engine hands over `Propagation.LINK` (the event was published with
+  a `runAt` further ahead than `event-outboxer.tracing.link-threshold`,
+  default 1 minute), the consumer span is instead a **new root with a
+  span link** to the stored producer span, tagged
+  `event_outboxer.propagation=link`; baggage is still restored from
+  the stored map. The producer span of such an event carries the same
+  tag.
 
 The engine wraps whatever tracer it gets in `SafeOutboxTracer`, so a
 broken tracing backend can never fail a publish or strand an event.
@@ -87,6 +95,10 @@ activates when the OTel API is on the classpath, using an
 
 - `event-outboxer.tracing.enabled: false` disables auto-detection of
   both tracing adapters.
+- `event-outboxer.tracing.deferred-propagation` (`link` | `child`)
+  and `event-outboxer.tracing.link-threshold` (default `1m`) decide
+  which events get the linked root span; see
+  [CONFIGURATION.md §tracing](../CONFIGURATION.md#event-outboxertracing).
 - A user-defined `OutboxTracer` bean always wins:
 
   ```java

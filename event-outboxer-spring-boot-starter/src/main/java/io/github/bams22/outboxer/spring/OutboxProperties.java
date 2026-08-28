@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.spring;
 
+import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -385,6 +386,33 @@ public class OutboxProperties {
          * user-defined {@code OutboxTracer} bean is always honoured regardless of this flag.
          */
         private boolean enabled = true;
+
+        /**
+         * Span shape of a deferred event (ADR-0023, 2026-08-28 amendment). {@code LINK} (default):
+         * an event whose {@code runAt} lies further than {@link #linkThreshold} ahead of the
+         * publish-time clock gets a CONSUMER span that is a new root <em>linking</em> to the
+         * PRODUCER span, so a deliberately scheduled event does not stretch one trace across the
+         * delay. {@code CHILD}: every event keeps parent-child continuity however far ahead it is
+         * scheduled — the pre-0.4.0 behaviour. Decided once at publish; retries and backlog never
+         * revisit it.
+         */
+        private OutboxTracer.Propagation deferredPropagation = OutboxTracer.Propagation.LINK;
+
+        /**
+         * How far ahead of the publish-time clock {@code runAt} must lie for the event to count as
+         * deferred under {@link #deferredPropagation}. {@code PT0S} links every event with an
+         * explicit future {@code runAt}. Default: 1 minute — beyond any debounce-style {@code
+         * runAt} and beyond the decision window of tail-based samplers.
+         */
+        private Duration linkThreshold = Duration.ofMinutes(1);
+
+        /**
+         * The threshold the engine is given: {@link #linkThreshold} under {@code LINK}, {@code
+         * null} (rule disabled) under {@code CHILD}.
+         */
+        public @Nullable Duration resolveLinkThreshold() {
+            return deferredPropagation == OutboxTracer.Propagation.LINK ? linkThreshold : null;
+        }
     }
 
     @Getter

@@ -18,6 +18,7 @@ import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanId;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -28,6 +29,7 @@ import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.util.List;
@@ -71,6 +73,12 @@ class OtelOutboxTracerTest {
     private static OutboxTracer.ProcessSpanInfo processInfo(
             UUID eventId, Map<String, String> stored) {
         return new OutboxTracer.ProcessSpanInfo(eventId, "T", 1, WORKER, stored);
+    }
+
+    private static OutboxTracer.ProcessSpanInfo linkedInfo(
+            UUID eventId, Map<String, String> stored) {
+        return new OutboxTracer.ProcessSpanInfo(
+                eventId, "T", 1, WORKER, stored, OutboxTracer.Propagation.LINK);
     }
 
     @Test
@@ -212,6 +220,90 @@ class OtelOutboxTracerTest {
         SpanData data = exporter.getFinishedSpanItems().get(0);
         assertThat(data.getParentSpanId()).isEqualTo("0000000000000000"); // root span
         assertThat(data.getKind()).isEqualTo(SpanKind.CONSUMER);
+    }
+
+    /**
+     * Deferred event (ADR-0023, 2026-08-28 amendment): the consumer span starts a new trace and
+     * carries a span link to the producer instead of descending from it.
+     */
+    @Test
+    void linkedProcessSpanIsARootThatLinksToTheProducerSpan() {
+        UUID id = UUID.randomUUID();
+        OutboxTracer.PublishSpan publish = tracer.startPublishSpan(id, "T");
+        Map<String, String> stored = publish.contextToStore();
+        publish.close();
+
+        tracer.startProcessSpan(linkedInfo(id, stored)).close();
+
+        List<SpanData> finished = exporter.getFinishedSpanItems();
+        SpanData producer =
+                finished.stream().filter(s -> s.getKind() == SpanKind.PRODUCER).findFirst().get();
+        SpanData consumer =
+                finished.stream().filter(s -> s.getKind() == SpanKind.CONSUMER).findFirst().get();
+        assertThat(consumer.getParentSpanId()).isEqualTo(SpanId.getInvalid());
+        assertThat(consumer.getTraceId()).isNotEqualTo(producer.getTraceId());
+        assertThat(consumer.getLinks()).hasSize(1);
+        LinkData link = consumer.getLinks().get(0);
+        assertThat(link.getSpanContext().getTraceId()).isEqualTo(producer.getTraceId());
+        assertThat(link.getSpanContext().getSpanId()).isEqualTo(producer.getSpanId());
+        assertThat(
+                        consumer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isEqualTo("link");
+        // The regular child mode never carries the attribute.
+        assertThat(
+                        producer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isNull();
+    }
+
+    @Test
+    void linkedProcessSpanStillRestoresBaggageAndBecomesCurrent() {
+        Map<String, String> stored;
+        try (Scope baggageScope = Baggage.builder().put("tenant", "acme").build().makeCurrent()) {
+            OutboxTracer.PublishSpan publish = tracer.startPublishSpan(UUID.randomUUID(), "T");
+            stored = publish.contextToStore();
+            publish.close();
+        }
+
+        Span before = Span.current();
+        OutboxTracer.ProcessSpan process =
+                tracer.startProcessSpan(linkedInfo(UUID.randomUUID(), stored));
+        Span during = Span.current();
+        String tenantDuring = Baggage.current().getEntryValue("tenant");
+        process.close();
+
+        assertThat(during.getSpanContext().isValid()).isTrue();
+        assertThat(during).isNotEqualTo(before);
+        assertThat(tenantDuring).isEqualTo("acme");
+        assertThat(Span.current()).isEqualTo(before);
+        SpanData consumer = exporter.getFinishedSpanItems().get(1);
+        assertThat(consumer.getKind()).isEqualTo(SpanKind.CONSUMER);
+        assertThat(consumer.getParentSpanId()).isEqualTo(SpanId.getInvalid());
+    }
+
+    @Test
+    void linkedProcessSpanWithEmptyStoredContextIsAPlainRoot() {
+        tracer.startProcessSpan(linkedInfo(UUID.randomUUID(), Map.of())).close();
+
+        SpanData consumer = exporter.getFinishedSpanItems().get(0);
+        assertThat(consumer.getParentSpanId()).isEqualTo(SpanId.getInvalid());
+        assertThat(consumer.getLinks()).isEmpty();
+        assertThat(
+                        consumer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isEqualTo("link");
+    }
+
+    @Test
+    void linkedTagsTheProducerSpan() {
+        OutboxTracer.PublishSpan span = tracer.startPublishSpan(UUID.randomUUID(), "T");
+        span.linked();
+        span.close();
+
+        SpanData data = exporter.getFinishedSpanItems().get(0);
+        assertThat(data.getAttributes().get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isEqualTo("link");
     }
 
     @Test

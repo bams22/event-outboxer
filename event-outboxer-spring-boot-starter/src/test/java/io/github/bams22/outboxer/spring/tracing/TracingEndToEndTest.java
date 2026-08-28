@@ -24,6 +24,7 @@ import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanId;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
@@ -33,9 +34,11 @@ import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -65,6 +68,9 @@ import org.springframework.context.annotation.Import;
             "spring.autoconfigure.exclude="
                     + "io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration",
             "event-outboxer.publisher.no-transaction-policy=IGNORE",
+            // Any explicit future runAt counts as deferred, so the deferred-event test below does
+            // not have to wait a minute for the default threshold.
+            "event-outboxer.tracing.link-threshold=0s",
             "event-outboxer.event-types.defaults.poll-min-interval=20ms",
             "event-outboxer.event-types.defaults.poll-max-interval=50ms",
             "event-outboxer.event-types.defaults.handler-pool-size=2",
@@ -80,6 +86,7 @@ class TracingEndToEndTest {
     @Autowired OpenTelemetry openTelemetry;
     @Autowired InMemorySpanExporter exporter;
     @Autowired FailOnceHandler handler;
+    @Autowired DeferredHandler deferredHandler;
 
     @Test
     void traceContinuesFromCallerThroughProducerToConsumerSpansAcrossRetries() {
@@ -171,7 +178,97 @@ class TracingEndToEndTest {
         assertThat(secondAttempt.getStatus().getStatusCode()).isNotEqualTo(StatusCode.ERROR);
     }
 
+    /**
+     * A deferred event (ADR-0023, 2026-08-28 amendment) travels through the real row and the real
+     * claim: the marker written at publish time turns the consumer span into a new root linked to
+     * the producer, and the handler still sees the stored carrier without the marker.
+     */
+    @Test
+    void deferredEventStartsANewTraceLinkedToTheProducerSpan() {
+        Span caller = openTelemetry.getTracer("test-caller").spanBuilder("schedule-op").startSpan();
+        UUID id;
+        try (Scope scope = caller.makeCurrent()) {
+            id = publisher.publish("DEFERRED", new Payload("p-2"), Instant.now().plusMillis(300));
+        }
+        caller.end();
+
+        await().atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(20))
+                .until(() -> deferredHandler.seenTraceContext.get() != null);
+        await().atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(20))
+                .until(
+                        () ->
+                                exporter.getFinishedSpanItems().stream()
+                                        .anyMatch(
+                                                s ->
+                                                        s.getName()
+                                                                .equals(
+                                                                        "outbox process"
+                                                                                + " DEFERRED")));
+
+        List<SpanData> spans = exporter.getFinishedSpanItems();
+        SpanData scheduleOp =
+                spans.stream().filter(s -> s.getName().equals("schedule-op")).findFirst().get();
+        SpanData producer =
+                spans.stream()
+                        .filter(s -> s.getName().equals("outbox publish DEFERRED"))
+                        .findFirst()
+                        .get();
+        SpanData consumer =
+                spans.stream()
+                        .filter(s -> s.getName().equals("outbox process DEFERRED"))
+                        .findFirst()
+                        .get();
+
+        assertThat(producer.getTraceId()).isEqualTo(scheduleOp.getTraceId());
+        assertThat(producer.getAttributes().get(AttributeKey.stringKey("messaging.message.id")))
+                .isEqualTo(id.toString());
+        assertThat(
+                        producer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isEqualTo("link");
+
+        assertThat(consumer.getKind()).isEqualTo(SpanKind.CONSUMER);
+        assertThat(consumer.getTraceId()).isNotEqualTo(producer.getTraceId());
+        assertThat(consumer.getParentSpanId()).isEqualTo(SpanId.getInvalid());
+        assertThat(consumer.getLinks()).hasSize(1);
+        LinkData link = consumer.getLinks().get(0);
+        assertThat(link.getSpanContext().getTraceId()).isEqualTo(producer.getTraceId());
+        assertThat(link.getSpanContext().getSpanId()).isEqualTo(producer.getSpanId());
+        assertThat(
+                        consumer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isEqualTo("link");
+
+        // The marker never reaches handler code; the propagator's own keys do.
+        assertThat(deferredHandler.seenTraceContext.get())
+                .containsKey("traceparent")
+                .doesNotContainKey("event_outboxer.propagation");
+    }
+
     record Payload(String value) {}
+
+    static class DeferredHandler implements EventHandler<Payload> {
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, String>>
+                seenTraceContext = new java.util.concurrent.atomic.AtomicReference<>();
+
+        @Override
+        public String eventType() {
+            return "DEFERRED";
+        }
+
+        @Override
+        public Class<Payload> payloadType() {
+            return Payload.class;
+        }
+
+        @Override
+        public EventOutcome handle(EventContext ctx, Payload payload) {
+            seenTraceContext.set(ctx.traceContext());
+            return EventOutcome.Success.INSTANCE;
+        }
+    }
 
     static class FailOnceHandler implements EventHandler<Payload> {
         final AtomicInteger attempts = new AtomicInteger();
@@ -207,6 +304,11 @@ class TracingEndToEndTest {
         @Bean
         FailOnceHandler failOnceHandler() {
             return new FailOnceHandler();
+        }
+
+        @Bean
+        DeferredHandler deferredHandler() {
+            return new DeferredHandler();
         }
 
         @Bean

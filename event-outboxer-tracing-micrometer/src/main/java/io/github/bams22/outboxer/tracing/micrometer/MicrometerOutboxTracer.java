@@ -15,7 +15,6 @@ import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.transport.Kind;
 import io.micrometer.observation.transport.Propagator;
-import io.micrometer.observation.transport.ReceiverContext;
 import io.micrometer.observation.transport.SenderContext;
 import io.micrometer.tracing.Tracer;
 import java.util.HashMap;
@@ -34,12 +33,21 @@ import org.jspecify.annotations.Nullable;
  * "outbox publish <eventType>"} and injects into the flat string carrier persisted in the event
  * row. The observation is started but never scoped — the caller's own context stays current.
  *
- * <p>Handle side: starts an observation over a {@link ReceiverContext} ({@link Kind#CONSUMER})
- * carrying the stored map, so {@code PropagatingReceiverTracingObservationHandler} extracts the
- * parent and creates the consumer span {@code "outbox process <eventType>"}. The observation scope
- * is opened on the worker thread and closed with the handle, which makes both the span and the
- * observation current — the latter is what {@code ContextPropagatingTaskDecorator} / {@code
- * ContextSnapshot} carry when handler code hops threads.
+ * <p>Handle side: starts an observation over an {@link OutboxReceiverContext} ({@link
+ * Kind#CONSUMER}) carrying the stored map, so the receiver tracing handler extracts the parent and
+ * creates the consumer span {@code "outbox process <eventType>"}. The observation scope is opened
+ * on the worker thread and closed with the handle, which makes both the span and the observation
+ * current — the latter is what {@code ContextPropagatingTaskDecorator} / {@code ContextSnapshot}
+ * carry when handler code hops threads.
+ *
+ * <p>Deferred events (ADR-0023, 2026-08-28 amendment) arrive with {@link
+ * OutboxTracer.Propagation#LINK}: the consumer span should then be a new root that <em>links</em>
+ * to the stored producer context instead of descending from it. That shape is produced by {@link
+ * OutboxReceiverTracingObservationHandler}, which must be registered ahead of Micrometer's generic
+ * {@code PropagatingReceiverTracingObservationHandler} (the Spring Boot starter does this). Without
+ * it the generic handler claims the context and the span stays a child — a graceful fallback, but
+ * the {@code event_outboxer.propagation=link} tag then documents an intent the span does not
+ * honour.
  *
  * <p>Going through the Observation API rather than {@link Tracer} directly is deliberate: the
  * registered {@code ObservationHandler}s own span kind, parent extraction, carrier injection and
@@ -191,8 +199,8 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
     @Override
     public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
         Objects.requireNonNull(info, "info must not be null");
-        ReceiverContext<Map<String, String>> context =
-                new ReceiverContext<>(MapGetter.INSTANCE, Kind.CONSUMER);
+        OutboxReceiverContext context =
+                new OutboxReceiverContext(MapGetter.INSTANCE, info.propagation());
         context.setCarrier(info.storedContext());
         Observation observation =
                 Observation.createNotStarted(
@@ -216,6 +224,12 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
                                 OutboxTraceAttributes.ATTEMPT, String.valueOf(info.attempt()))
                         .highCardinalityKeyValue(
                                 OutboxTraceAttributes.WORKER_ID, info.workerId().value());
+        if (info.propagation() == Propagation.LINK) {
+            // The span shape itself (root + link) is OutboxReceiverTracingObservationHandler's job;
+            // the observation only carries the breadcrumb.
+            observation.lowCardinalityKeyValue(
+                    OutboxTraceAttributes.PROPAGATION, OutboxTraceAttributes.PROPAGATION_LINK);
+        }
         // Detach the worker thread before the parent is resolved. Micrometer's Propagator.extract
         // falls back to the thread's current context on both bridges, so an ambient span (a leaked
         // scope, a decorated task) would silently adopt this consumer span. The parent must come
@@ -280,6 +294,12 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
         public void coalesced(UUID existingEventId) {
             observation.highCardinalityKeyValue(
                     OutboxTraceAttributes.COALESCED_INTO, existingEventId.toString());
+        }
+
+        @Override
+        public void linked() {
+            observation.lowCardinalityKeyValue(
+                    OutboxTraceAttributes.PROPAGATION, OutboxTraceAttributes.PROPAGATION_LINK);
         }
 
         @Override

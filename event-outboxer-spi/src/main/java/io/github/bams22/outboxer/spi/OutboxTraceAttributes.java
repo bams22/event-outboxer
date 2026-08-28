@@ -51,5 +51,21 @@ public final class OutboxTraceAttributes {
      */
     public static final String COALESCED_INTO = "event_outboxer.coalesced_into";
 
+    /**
+     * How the consumer span relates to the context stored at publish time (ADR-0023, 2026-08-28
+     * amendment). Set on both spans of a deferred event, always with the value {@link
+     * #PROPAGATION_LINK}; absent on events that keep the default parent-child continuity. The same
+     * string is the key of the marker the engine persists in the event row's {@code trace_context}
+     * carrier to transport that decision — the engine strips it before the map reaches an adapter
+     * or a handler.
+     */
+    public static final String PROPAGATION = "event_outboxer.propagation";
+
+    /**
+     * Value of {@link #PROPAGATION} (span attribute and stored marker alike) for a deferred event
+     * whose consumer span links to the producer span instead of descending from it.
+     */
+    public static final String PROPAGATION_LINK = "link";
+
     private OutboxTraceAttributes() {}
 }

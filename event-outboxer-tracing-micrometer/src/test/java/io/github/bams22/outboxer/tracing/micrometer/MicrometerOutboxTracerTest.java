@@ -59,14 +59,22 @@ class MicrometerOutboxTracerTest {
      */
     @BeforeEach
     void registerTracingHandlers() {
-        registry.observationConfig()
-                .observationHandler(
-                        new ObservationHandler.FirstMatchingCompositeObservationHandler(
-                                new PropagatingReceiverTracingObservationHandler<>(
-                                        tracer, propagator),
-                                new PropagatingSenderTracingObservationHandler<>(
-                                        tracer, propagator),
-                                new DefaultTracingObservationHandler(tracer)));
+        registry.observationConfig().observationHandler(tracingHandlers(true));
+    }
+
+    /**
+     * Boot's tracing group, optionally led by the adapter's own receiver handler — the position the
+     * starter gives it (ADR-0023, 2026-08-28 amendment).
+     */
+    private ObservationHandler<?> tracingHandlers(boolean withOutboxReceiverHandler) {
+        List<ObservationHandler<?>> handlers = new ArrayList<>();
+        if (withOutboxReceiverHandler) {
+            handlers.add(new OutboxReceiverTracingObservationHandler(tracer, propagator));
+        }
+        handlers.add(new PropagatingReceiverTracingObservationHandler<>(tracer, propagator));
+        handlers.add(new PropagatingSenderTracingObservationHandler<>(tracer, propagator));
+        handlers.add(new DefaultTracingObservationHandler(tracer));
+        return new ObservationHandler.FirstMatchingCompositeObservationHandler(handlers);
     }
 
     /**
@@ -117,6 +125,11 @@ class MicrometerOutboxTracerTest {
 
     private static OutboxTracer.ProcessSpanInfo processInfo(Map<String, String> stored) {
         return new OutboxTracer.ProcessSpanInfo(UUID.randomUUID(), "T", 3, WORKER, stored);
+    }
+
+    private static OutboxTracer.ProcessSpanInfo linkedInfo(Map<String, String> stored) {
+        return new OutboxTracer.ProcessSpanInfo(
+                UUID.randomUUID(), "T", 3, WORKER, stored, OutboxTracer.Propagation.LINK);
     }
 
     @Test
@@ -296,6 +309,93 @@ class MicrometerOutboxTracerTest {
                 .hasObservationWithNameEqualTo(outboxTracer.publishObservationName())
                 .that()
                 .hasParentObservationEqualTo(caller);
+    }
+
+    /**
+     * Deferred event (ADR-0023, 2026-08-28 amendment): the dedicated receiver handler turns the
+     * extracted child into a root that links to the stored context.
+     */
+    @Test
+    void linkedProcessSpanIsARootWithALinkToTheStoredContext() {
+        Map<String, String> stored =
+                Map.of("traceparent", "00-11111111111111111111111111111111-2222222222222222-01");
+
+        OutboxTracer.ProcessSpan span = outboxTracer.startProcessSpan(linkedInfo(stored));
+        assertThat(registry.getCurrentObservation()).isNotNull();
+        assertThat(tracer.currentSpan()).isNotNull();
+        span.close();
+
+        SimpleSpan finished = tracer.onlySpan();
+        assertThat(finished.getKind()).isEqualTo(Span.Kind.CONSUMER);
+        assertThat(finished.getName()).isEqualTo("outbox process T");
+        assertThat(finished.context().traceId()).isNotEqualTo("11111111111111111111111111111111");
+        assertThat(finished.getParentId()).isNullOrEmpty();
+        assertThat(finished.getLinks()).hasSize(1);
+        assertThat(finished.getLinks().get(0).getTraceContext().traceId())
+                .isEqualTo("11111111111111111111111111111111");
+        assertThat(finished.getLinks().get(0).getTraceContext().spanId())
+                .isEqualTo("2222222222222222");
+        assertThat(finished.getTags()).containsEntry("event_outboxer.propagation", "link");
+        assertThat(propagator.extractedCarriers).containsExactly(stored);
+    }
+
+    @Test
+    void childPropagationCarriesNoPropagationTag() {
+        Map<String, String> stored =
+                Map.of("traceparent", "00-11111111111111111111111111111111-2222222222222222-01");
+
+        outboxTracer.startProcessSpan(processInfo(stored)).close();
+
+        SimpleSpan finished = tracer.onlySpan();
+        assertThat(finished.getParentId()).isEqualTo("2222222222222222");
+        assertThat(finished.getLinks()).isEmpty();
+        assertThat(finished.getTags()).doesNotContainKey("event_outboxer.propagation");
+    }
+
+    @Test
+    void linkedProcessSpanWithUnparseableCarrierIsAnUnlinkedRoot() {
+        Map<String, String> stored = Map.of("uber-trace-id", "x:y:z:1");
+
+        outboxTracer.startProcessSpan(linkedInfo(stored)).close();
+
+        SimpleSpan finished = tracer.onlySpan();
+        assertThat(finished.getParentId()).isNullOrEmpty();
+        assertThat(finished.getLinks()).isEmpty();
+        assertThat(finished.getTags()).containsEntry("event_outboxer.propagation", "link");
+    }
+
+    /**
+     * Without the dedicated handler the generic receiver handler claims the context: the span
+     * silently stays a child. The tag still records the engine's intent, which is what makes the
+     * mis-wiring visible in a trace.
+     */
+    @Test
+    void withoutTheDedicatedHandlerALinkedEventStaysAChild() {
+        TestObservationRegistry plain = TestObservationRegistry.create();
+        plain.observationConfig().observationHandler(tracingHandlers(false));
+        MicrometerOutboxTracer fallback = new MicrometerOutboxTracer(plain, tracer);
+        Map<String, String> stored =
+                Map.of("traceparent", "00-11111111111111111111111111111111-2222222222222222-01");
+
+        fallback.startProcessSpan(linkedInfo(stored)).close();
+
+        SimpleSpan finished = tracer.onlySpan();
+        assertThat(finished.getParentId()).isEqualTo("2222222222222222");
+        assertThat(finished.getLinks()).isEmpty();
+        assertThat(finished.getTags()).containsEntry("event_outboxer.propagation", "link");
+    }
+
+    @Test
+    void linkedTagsThePublishSpan() {
+        OutboxTracer.PublishSpan span = outboxTracer.startPublishSpan(UUID.randomUUID(), "T");
+        span.linked();
+        span.close();
+
+        assertThat(tracer.onlySpan().getTags()).containsEntry("event_outboxer.propagation", "link");
+        TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo(outboxTracer.publishObservationName())
+                .that()
+                .hasLowCardinalityKeyValue("event_outboxer.propagation", "link");
     }
 
     /**

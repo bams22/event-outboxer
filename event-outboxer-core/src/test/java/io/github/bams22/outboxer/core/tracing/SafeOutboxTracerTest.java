@@ -56,6 +56,11 @@ class SafeOutboxTracerTest {
                         }
 
                         @Override
+                        public void linked() {
+                            throw new IllegalStateException("linked exploded");
+                        }
+
+                        @Override
                         public void error(Throwable error) {
                             throw new IllegalStateException("error exploded");
                         }
@@ -119,6 +124,7 @@ class SafeOutboxTracerTest {
         assertThatCode(
                         () -> {
                             publish.coalesced(UUID.randomUUID());
+                            publish.linked();
                             publish.error(new RuntimeException("x"));
                             publish.close();
                             OutboxTracer.ProcessSpan process = safe.startProcessSpan(INFO);
@@ -142,5 +148,17 @@ class SafeOutboxTracerTest {
         assertThat(recording.publishSpans.get(0).eventId).isEqualTo(id);
         assertThat(context).containsKey("traceparent");
         assertThat(recording.publishSpans.get(0).closeCount).hasValue(1);
+    }
+
+    @Test
+    void linkedIsDelegated() {
+        RecordingOutboxTracer recording = new RecordingOutboxTracer();
+        OutboxTracer safe = SafeOutboxTracer.wrap(recording);
+
+        OutboxTracer.PublishSpan span = safe.startPublishSpan(UUID.randomUUID(), "T");
+        span.linked();
+        span.close();
+
+        assertThat(recording.publishSpans.get(0).linked).isTrue();
     }
 }

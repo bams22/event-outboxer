@@ -14,8 +14,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.tracing.micrometer.MicrometerOutboxTracer;
+import io.github.bams22.outboxer.tracing.micrometer.OutboxReceiverTracingObservationHandler;
+import io.opentelemetry.api.trace.SpanId;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SpanProcessor;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.util.List;
@@ -87,6 +90,66 @@ class MicrometerTracingBootWiringTest {
                     SpanData consumer = span("outbox process ORDER_CREATED");
                     assertThat(consumer.getTraceId()).isEqualTo(producer.getTraceId());
                     assertThat(consumer.getParentSpanId()).isEqualTo(producer.getSpanId());
+                });
+    }
+
+    /**
+     * The starter's receiver handler must be asked before Boot's generic one, or a deferred event
+     * (ADR-0023, 2026-08-28 amendment) silently keeps the parent-child shape. Bean order is what
+     * decides the position inside Boot's first-matching tracing composite, so this checks both the
+     * declared order and the resulting span shape against Boot's real registry.
+     */
+    @Test
+    void bootAsksTheOutboxReceiverHandlerBeforeItsOwn() {
+        assertThat(MicrometerTracingAutoConfiguration.RECEIVER_HANDLER_ORDER)
+                .isLessThan(
+                        org.springframework.boot.actuate.autoconfigure.tracing
+                                .MicrometerTracingAutoConfiguration
+                                .RECEIVER_TRACING_OBSERVATION_HANDLER_ORDER);
+        runner.run(
+                context -> {
+                    assertThat(context)
+                            .hasSingleBean(OutboxReceiverTracingObservationHandler.class);
+                    OutboxTracer tracer = context.getBean(OutboxTracer.class);
+
+                    Map<String, String> stored;
+                    try (OutboxTracer.PublishSpan publish =
+                            tracer.startPublishSpan(UUID.randomUUID(), "ORDER_CREATED")) {
+                        publish.linked();
+                        stored = publish.contextToStore();
+                    }
+                    tracer.startProcessSpan(
+                                    new OutboxTracer.ProcessSpanInfo(
+                                            UUID.randomUUID(),
+                                            "ORDER_CREATED",
+                                            1,
+                                            WORKER,
+                                            stored,
+                                            OutboxTracer.Propagation.LINK))
+                            .close();
+
+                    SpanData producer = span("outbox publish ORDER_CREATED");
+                    SpanData consumer = span("outbox process ORDER_CREATED");
+                    assertThat(consumer.getParentSpanId()).isEqualTo(SpanId.getInvalid());
+                    assertThat(consumer.getTraceId()).isNotEqualTo(producer.getTraceId());
+                    assertThat(consumer.getLinks()).hasSize(1);
+                    LinkData link = consumer.getLinks().get(0);
+                    assertThat(link.getSpanContext().getTraceId()).isEqualTo(producer.getTraceId());
+                    assertThat(link.getSpanContext().getSpanId()).isEqualTo(producer.getSpanId());
+                    assertThat(
+                                    consumer.getAttributes()
+                                            .get(
+                                                    io.opentelemetry.api.common.AttributeKey
+                                                            .stringKey(
+                                                                    "event_outboxer.propagation")))
+                            .isEqualTo("link");
+                    assertThat(
+                                    producer.getAttributes()
+                                            .get(
+                                                    io.opentelemetry.api.common.AttributeKey
+                                                            .stringKey(
+                                                                    "event_outboxer.propagation")))
+                            .isEqualTo("link");
                 });
     }
 

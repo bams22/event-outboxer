@@ -12,7 +12,10 @@ package io.github.bams22.outboxer.tracing.otel;
 import io.github.bams22.outboxer.spi.OutboxTraceAttributes;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -37,8 +40,11 @@ import org.jspecify.annotations.Nullable;
  * persistence in the event row. Nothing is made current; the caller's own span stays active.
  *
  * <p>Handle side: extracts the stored map, starts a {@link SpanKind#CONSUMER} span {@code "outbox
- * process <eventType>"} as its child and makes it (baggage included) current on the worker thread
- * until the handle closes.
+ * process <eventType>"} and makes it (baggage included) current on the worker thread until the
+ * handle closes. With {@link OutboxTracer.Propagation#CHILD} the span is a child of the extracted
+ * context; with {@link OutboxTracer.Propagation#LINK} — a deferred event, ADR-0023 2026-08-28
+ * amendment — it is a new root carrying a span link to the extracted producer span, tagged {@code
+ * event_outboxer.propagation=link}. Baggage is restored from the stored map in both modes.
  *
  * <p>Propagation format follows the {@link OpenTelemetry} instance's configured propagators
  * (default: W3C tracecontext + baggage), so the stored keys match every other carrier the
@@ -88,11 +94,12 @@ public final class OtelOutboxTracer implements OutboxTracer {
     @Override
     public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
         Objects.requireNonNull(info, "info must not be null");
-        Context parent =
+        // Context.root(), never current(): the parent comes from the stored carrier or from
+        // nowhere — an ambient span on the worker thread must not adopt this consumer span.
+        Context extracted =
                 propagator.extract(Context.root(), info.storedContext(), MapGetter.INSTANCE);
-        Span span =
+        SpanBuilder builder =
                 tracer.spanBuilder("outbox process " + info.eventType())
-                        .setParent(parent)
                         .setSpanKind(SpanKind.CONSUMER)
                         .setAttribute(
                                 OutboxTraceAttributes.MESSAGING_SYSTEM,
@@ -106,11 +113,28 @@ public final class OtelOutboxTracer implements OutboxTracer {
                                 OutboxTraceAttributes.MESSAGING_MESSAGE_ID,
                                 info.eventId().toString())
                         .setAttribute(OutboxTraceAttributes.ATTEMPT, (long) info.attempt())
-                        .setAttribute(OutboxTraceAttributes.WORKER_ID, info.workerId().value())
-                        .startSpan();
-        // parent.with(span), NOT current().with(span): restores the extracted baggage for the
+                        .setAttribute(OutboxTraceAttributes.WORKER_ID, info.workerId().value());
+        Context scopeParent;
+        if (info.propagation() == Propagation.LINK) {
+            // Deferred event (ADR-0023, 2026-08-28 amendment): a new root that links to the stored
+            // producer context. The extracted context is still the baggage source — only the span
+            // parent is dropped, so the handler sees the publisher's baggage either way.
+            SpanContext linkTarget = Span.fromContext(extracted).getSpanContext();
+            builder.setNoParent();
+            if (linkTarget.isValid()) {
+                builder.addLink(linkTarget);
+            }
+            builder.setAttribute(
+                    OutboxTraceAttributes.PROPAGATION, OutboxTraceAttributes.PROPAGATION_LINK);
+            scopeParent = Context.root().with(Baggage.fromContext(extracted));
+        } else {
+            builder.setParent(extracted);
+            scopeParent = extracted;
+        }
+        Span span = builder.startSpan();
+        // scopeParent.with(span), NOT current().with(span): restores the extracted baggage for the
         // handler alongside the new span.
-        Scope scope = parent.with(span).makeCurrent();
+        Scope scope = scopeParent.with(span).makeCurrent();
         return new OtelProcessSpan(span, scope);
     }
 
@@ -133,6 +157,12 @@ public final class OtelOutboxTracer implements OutboxTracer {
         @Override
         public void coalesced(UUID existingEventId) {
             span.setAttribute(OutboxTraceAttributes.COALESCED_INTO, existingEventId.toString());
+        }
+
+        @Override
+        public void linked() {
+            span.setAttribute(
+                    OutboxTraceAttributes.PROPAGATION, OutboxTraceAttributes.PROPAGATION_LINK);
         }
 
         @Override

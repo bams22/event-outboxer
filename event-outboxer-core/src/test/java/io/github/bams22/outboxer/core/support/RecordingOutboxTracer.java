@@ -62,6 +62,7 @@ public final class RecordingOutboxTracer implements OutboxTracer {
         public final String eventType;
         public final Map<String, String> context;
         public volatile UUID coalescedInto;
+        public volatile boolean linked;
         public volatile Throwable error;
         public final AtomicInteger closeCount = new AtomicInteger();
 
@@ -79,6 +80,11 @@ public final class RecordingOutboxTracer implements OutboxTracer {
         @Override
         public void coalesced(UUID existingEventId) {
             this.coalescedInto = existingEventId;
+        }
+
+        @Override
+        public void linked() {
+            this.linked = true;
         }
 
         @Override

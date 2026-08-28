@@ -120,7 +120,7 @@ microseconds.
 | `status VARCHAR(16)` | `'PROCESSING'` is 10 characters, with margin |
 | `claimed_by VARCHAR(64)` | WorkerId format: `{hostname}-{pid}-{uuid8}` |
 | `last_fail_reason TEXT` | Stack traces; the application trims to ~10 KB so rows do not bloat |
-| `trace_context JSONB` | Flat string→string carrier written by the `OutboxTracer` producer span (ADR-0023): `{"traceparent": "00-...", "tracestate": "...", "baggage": "k1=v1,k2=v2"}`. Values are always plain strings (`FlatMapJson` rejects nested objects); the key set follows the configured propagator (`b3`, ...) |
+| `trace_context JSONB` | Flat string→string carrier written by the `OutboxTracer` producer span (ADR-0023): `{"traceparent": "00-...", "tracestate": "...", "baggage": "k1=v1,k2=v2"}`. Values are always plain strings (`FlatMapJson` rejects nested objects); the key set follows the configured propagator (`b3`, ...). A *deferred* event — `run_at` further ahead than `event-outboxer.tracing.link-threshold` at publish — additionally carries the engine's own marker `"event_outboxer.propagation": "link"` (ADR-0023, 2026-08-28 amendment): its consumer span links to the producer instead of descending from it. The engine strips the marker before the carrier reaches a tracing adapter or the handler |
 | `version BIGINT` | Optimistic locking (see ADR-0014); BIGINT for human-scale durability |
 
 ### CHECK `events_processing_has_claim`

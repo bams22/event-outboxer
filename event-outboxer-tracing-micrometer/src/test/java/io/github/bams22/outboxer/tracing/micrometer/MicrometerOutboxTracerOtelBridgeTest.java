@@ -24,7 +24,9 @@ import io.micrometer.tracing.handler.PropagatingSenderTracingObservationHandler;
 import io.micrometer.tracing.otel.bridge.OtelCurrentTraceContext;
 import io.micrometer.tracing.otel.bridge.OtelPropagator;
 import io.micrometer.tracing.otel.bridge.OtelTracer;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanId;
 import io.opentelemetry.api.trace.SpanKind;
@@ -35,6 +37,7 @@ import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.util.List;
@@ -88,6 +91,7 @@ class MicrometerOutboxTracerOtelBridgeTest {
         registry.observationConfig()
                 .observationHandler(
                         new ObservationHandler.FirstMatchingCompositeObservationHandler(
+                                new OutboxReceiverTracingObservationHandler(tracer, propagator),
                                 new PropagatingReceiverTracingObservationHandler<>(
                                         tracer, propagator),
                                 new PropagatingSenderTracingObservationHandler<>(
@@ -176,6 +180,58 @@ class MicrometerOutboxTracerOtelBridgeTest {
         // The insert belongs to the caller's span, not to the producer span (SPI contract).
         assertThat(span("jdbc.insert").getParentSpanId())
                 .isEqualTo(caller.getSpanContext().getSpanId());
+    }
+
+    /**
+     * Deferred event (ADR-0023, 2026-08-28 amendment) on the real OTel bridge: {@code
+     * setNoParent()} after the propagator's {@code setParent()} yields a root span that still
+     * carries the extracted context — so the link, the baggage, the current observation and
+     * handler-side nesting all hold at once.
+     */
+    @Test
+    void deferredEventGetsARootConsumerSpanLinkedToTheProducer() {
+        Map<String, String> stored;
+        Span caller = otelTracer.spanBuilder("business-op").startSpan();
+        try (Scope ignored = caller.makeCurrent();
+                Scope baggage = Baggage.builder().put("tenant", "acme").build().makeCurrent();
+                OutboxTracer.PublishSpan publish =
+                        outboxTracer.startPublishSpan(UUID.randomUUID(), "T")) {
+            stored = publish.contextToStore();
+        }
+        caller.end();
+        assertThat(stored).containsKey("baggage");
+
+        String tenantDuring;
+        try (OutboxTracer.ProcessSpan ignored =
+                outboxTracer.startProcessSpan(
+                        new OutboxTracer.ProcessSpanInfo(
+                                UUID.randomUUID(),
+                                "T",
+                                1,
+                                WORKER,
+                                stored,
+                                OutboxTracer.Propagation.LINK))) {
+            tenantDuring = Baggage.current().getEntryValue("tenant");
+            assertThat(registry.getCurrentObservation()).isNotNull();
+            Observation.createNotStarted("jdbc.query", registry).observe(() -> {});
+        }
+
+        SpanData producer = span("outbox publish T");
+        SpanData consumer = span("outbox process T");
+        SpanData jdbc = span("jdbc.query");
+        assertThat(consumer.getParentSpanId()).isEqualTo(SpanId.getInvalid());
+        assertThat(consumer.getTraceId()).isNotEqualTo(producer.getTraceId());
+        assertThat(consumer.getLinks()).hasSize(1);
+        LinkData link = consumer.getLinks().get(0);
+        assertThat(link.getSpanContext().getTraceId()).isEqualTo(producer.getTraceId());
+        assertThat(link.getSpanContext().getSpanId()).isEqualTo(producer.getSpanId());
+        assertThat(
+                        consumer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.propagation")))
+                .isEqualTo("link");
+        assertThat(tenantDuring).isEqualTo("acme");
+        assertThat(jdbc.getTraceId()).isEqualTo(consumer.getTraceId());
+        assertThat(jdbc.getParentSpanId()).isEqualTo(consumer.getSpanId());
     }
 
     private Map<String, String> publishAndCaptureContext() {

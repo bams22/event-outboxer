@@ -7,7 +7,31 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- **Deferred events start a new trace linked to the producer span
+  (amends ADR-0023).** An event published with a `runAt` further ahead
+  than `event-outboxer.tracing.link-threshold` (new, default `1m`) no
+  longer gets a CONSUMER span parented by the publish-time context —
+  which stretched one trace across the whole delay — but a new root
+  span carrying a span link to the PRODUCER span; both are tagged
+  `event_outboxer.propagation=link`, baggage is still restored. The
+  decision is made once at publish time and stored with the event as
+  the extra `trace_context` key `event_outboxer.propagation=link`,
+  stripped before the carrier reaches adapters or `EventContext`.
+  `event-outboxer.tracing.deferred-propagation: child` (new) restores
+  the previous behaviour. On Micrometer Tracing the linked shape
+  requires the starter's new `OutboxReceiverTracingObservationHandler`
+  bean (auto-registered ahead of Boot's receiver handler); the Brave
+  bridge keeps the parent-child shape and renders the link as tags.
+
+### Added
+- `OutboxTracer.Propagation`, `PublishSpan.linked()` (default no-op),
+  `ProcessSpanInfo.propagation()` with a five-argument compatibility
+  constructor, `OutboxTraceAttributes.PROPAGATION` /
+  `PROPAGATION_LINK`, `OutboxEngineBuilder.tracingLinkThreshold(...)`
+  and a matching `DefaultOutboxEventPublisher` overload; in the
+  Micrometer module `OutboxReceiverContext` and
+  `OutboxReceiverTracingObservationHandler`. All additive.
 
 
 ## [0.3.0] — 2026-08-16

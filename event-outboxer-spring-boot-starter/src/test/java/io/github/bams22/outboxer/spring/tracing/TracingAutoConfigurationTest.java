@@ -13,12 +13,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import io.github.bams22.outboxer.spi.OutboxTracer;
+import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.github.bams22.outboxer.tracing.micrometer.MicrometerOutboxTracer;
+import io.github.bams22.outboxer.tracing.micrometer.OutboxReceiverTracingObservationHandler;
 import io.github.bams22.outboxer.tracing.otel.OtelOutboxTracer;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import io.opentelemetry.api.OpenTelemetry;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
@@ -129,6 +132,86 @@ class TracingAutoConfigurationTest {
                 .withPropertyValues("event-outboxer.tracing.enabled=false")
                 .withBean(OpenTelemetry.class, OpenTelemetry::noop)
                 .run(context -> assertThat(context).doesNotHaveBean(OutboxTracer.class));
+    }
+
+    /**
+     * The receiver handler that gives deferred events their root-plus-link span (ADR-0023,
+     * 2026-08-28 amendment) ships with the Micrometer adapter and only with it.
+     */
+    @Test
+    void micrometerBeansAlsoRegisterTheOutboxReceiverHandler() {
+        withMicrometerTracingBeans(runner)
+                .withClassLoader(new FilteredClassLoader(OpenTelemetry.class))
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .hasSingleBean(
+                                                OutboxReceiverTracingObservationHandler.class));
+    }
+
+    @Test
+    void otelOnlySetupRegistersNoReceiverHandler() {
+        runner.withBean(OpenTelemetry.class, OpenTelemetry::noop)
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .doesNotHaveBean(
+                                                OutboxReceiverTracingObservationHandler.class));
+    }
+
+    @Test
+    void userDefinedReceiverHandlerBeanWins() {
+        withMicrometerTracingBeans(runner)
+                .withBean(
+                        "customReceiverHandler",
+                        OutboxReceiverTracingObservationHandler.class,
+                        () ->
+                                new OutboxReceiverTracingObservationHandler(
+                                        mock(Tracer.class), mock(Propagator.class)))
+                .run(
+                        context ->
+                                assertThat(context)
+                                        .hasSingleBean(
+                                                OutboxReceiverTracingObservationHandler.class)
+                                        .hasBean("customReceiverHandler"));
+    }
+
+    @Test
+    void deferredEventsLinkBeyondOneMinuteByDefault() {
+        withMicrometerTracingBeans(runner)
+                .run(
+                        context -> {
+                            OutboxProperties.Tracing tracing =
+                                    context.getBean(OutboxProperties.class).getTracing();
+                            assertThat(tracing.getDeferredPropagation())
+                                    .isEqualTo(OutboxTracer.Propagation.LINK);
+                            assertThat(tracing.getLinkThreshold()).isEqualTo(Duration.ofMinutes(1));
+                            assertThat(tracing.resolveLinkThreshold())
+                                    .isEqualTo(Duration.ofMinutes(1));
+                        });
+    }
+
+    @Test
+    void linkThresholdBindsAndChildPropagationDisablesTheRule() {
+        withMicrometerTracingBeans(runner)
+                .withPropertyValues("event-outboxer.tracing.link-threshold=0s")
+                .run(
+                        context ->
+                                assertThat(
+                                                context.getBean(OutboxProperties.class)
+                                                        .getTracing()
+                                                        .resolveLinkThreshold())
+                                        .isEqualTo(Duration.ZERO));
+        withMicrometerTracingBeans(runner)
+                .withPropertyValues("event-outboxer.tracing.deferred-propagation=child")
+                .run(
+                        context -> {
+                            OutboxProperties.Tracing tracing =
+                                    context.getBean(OutboxProperties.class).getTracing();
+                            assertThat(tracing.getDeferredPropagation())
+                                    .isEqualTo(OutboxTracer.Propagation.CHILD);
+                            assertThat(tracing.resolveLinkThreshold()).isNull();
+                        });
     }
 
     @Test

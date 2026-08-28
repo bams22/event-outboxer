@@ -16,6 +16,7 @@ import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
+import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
@@ -27,6 +28,7 @@ import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EventSerializer;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -70,6 +72,15 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     private final OutboxListener listener;
     private final PollerWaker waker;
     private final OutboxTracer tracer;
+    private final @Nullable Duration linkThreshold;
+
+    /**
+     * Default {@code linkThreshold}: an event scheduled more than one minute ahead gets a linked
+     * consumer span instead of a child one (ADR-0023, 2026-08-28 amendment). One minute is
+     * comfortably beyond every debounce-style {@code runAt} and beyond the decision window of
+     * tail-based samplers, while anything a human would call "scheduled" clears it.
+     */
+    public static final Duration DEFAULT_LINK_THRESHOLD = Duration.ofMinutes(1);
 
     public DefaultOutboxEventPublisher(
             EventStore store,
@@ -110,6 +121,37 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
             OutboxListener listener,
             PollerWaker waker,
             OutboxTracer tracer) {
+        this(
+                store,
+                serializer,
+                writeSerializerOverrides,
+                clock,
+                txContext,
+                noTxPolicy,
+                listener,
+                waker,
+                tracer,
+                DEFAULT_LINK_THRESHOLD);
+    }
+
+    /**
+     * Full variant. {@code linkThreshold} is the trace-propagation link threshold (ADR-0023,
+     * 2026-08-28 amendment): an event whose {@code runAt} lies further than this ahead of the
+     * publish-time clock is stored with the {@code link} marker, so its consumer span links to the
+     * producer span instead of descending from it. {@code null} disables the rule — every event
+     * keeps parent-child continuity regardless of how far ahead it is scheduled.
+     */
+    public DefaultOutboxEventPublisher(
+            EventStore store,
+            EventSerializer serializer,
+            Map<String, EventSerializer> writeSerializerOverrides,
+            Clock clock,
+            TransactionContext txContext,
+            NoTransactionPolicy noTxPolicy,
+            OutboxListener listener,
+            PollerWaker waker,
+            OutboxTracer tracer,
+            @Nullable Duration linkThreshold) {
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.serializer = Objects.requireNonNull(serializer, "serializer must not be null");
         this.writeSerializerOverrides =
@@ -124,6 +166,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         this.waker = Objects.requireNonNull(waker, "waker must not be null");
         this.tracer =
                 SafeOutboxTracer.wrap(Objects.requireNonNull(tracer, "tracer must not be null"));
+        if (linkThreshold != null && linkThreshold.isNegative()) {
+            throw new IllegalArgumentException(
+                    "linkThreshold must not be negative, got " + linkThreshold);
+        }
+        this.linkThreshold = linkThreshold;
     }
 
     @Override
@@ -154,14 +201,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         SerializedPayload serialized = serialize(eventType, payload);
         UUID id = UUID.randomUUID();
         try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
-            PendingEvent pending =
-                    buildPending(
-                            id,
-                            eventType,
-                            payload,
-                            serialized,
-                            resolved,
-                            traceContext(resolved, span));
+            PendingEvent pending = buildPending(id, eventType, payload, serialized, resolved, span);
             try {
                 if (pending.dedupKey() != null) {
                     CoalescingResult result = saveCoalescing(pending);
@@ -284,12 +324,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                             tracer.startPublishSpan(id, r.eventType())) {
                         PendingEvent pe =
                                 buildPending(
-                                        id,
-                                        r.eventType(),
-                                        r.payload(),
-                                        serialized,
-                                        opts,
-                                        traceContext(opts, span));
+                                        id, r.eventType(), r.payload(), serialized, opts, span);
                         try {
                             CoalescingResult result = saveCoalescing(pe);
                             if (result.inserted()) {
@@ -313,13 +348,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                     OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType());
                     batchSpans.add(span);
                     PendingEvent pe =
-                            buildPending(
-                                    id,
-                                    r.eventType(),
-                                    r.payload(),
-                                    serialized,
-                                    opts,
-                                    traceContext(opts, span));
+                            buildPending(id, r.eventType(), r.payload(), serialized, opts, span);
                     batch.add(pe);
                     ids.add(pe.id());
                 }
@@ -396,24 +425,29 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
 
     /**
-     * An explicit {@code PublishOptions.traceContext} override always wins over the ambient context
-     * captured by the producer span (ADR-0023).
+     * Builds the row to insert. Resolves {@code runAt}, the carrier to store and the propagation
+     * decision (ADR-0023). An explicit {@code PublishOptions.traceContext} override always wins
+     * over the ambient context captured by the producer span; either way, an event scheduled
+     * further ahead than the link threshold is stored with the {@code link} marker and the producer
+     * span is told about it (2026-08-28 amendment). The decision is made here, once, against the
+     * publish-time clock — retries and backlog never revisit it.
      */
-    private static Map<String, String> traceContext(
-            PublishOptions options, OutboxTracer.PublishSpan span) {
-        Map<String, String> explicit = options.traceContext();
-        return explicit != null ? explicit : span.contextToStore();
-    }
-
     private PendingEvent buildPending(
             UUID id,
             String eventType,
             Object payload,
             SerializedPayload serialized,
             PublishOptions options,
-            Map<String, String> traceContext) {
-        Instant runAt = options.runAt() != null ? options.runAt() : clock.now();
+            OutboxTracer.PublishSpan span) {
+        Instant now = clock.now();
+        Instant runAt = options.runAt() != null ? options.runAt() : now;
         short priority = options.priority() != null ? options.priority() : (short) 0;
+        Map<String, String> explicit = options.traceContext();
+        Map<String, String> traceContext = explicit != null ? explicit : span.contextToStore();
+        if (isDeferredBeyondLinkThreshold(runAt, now)) {
+            span.linked();
+            traceContext = TracePropagationMarker.markLinked(traceContext);
+        }
         return PendingEvent.builder()
                 .id(id)
                 .eventType(eventType)
@@ -425,6 +459,10 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                 .traceContext(traceContext)
                 .dedupKey(options.dedupKey())
                 .build();
+    }
+
+    private boolean isDeferredBeyondLinkThreshold(Instant runAt, Instant now) {
+        return linkThreshold != null && Duration.between(now, runAt).compareTo(linkThreshold) > 0;
     }
 
     private void emitPublished(PendingEvent pe) {

@@ -161,7 +161,8 @@ public class OutboxEngineAutoConfiguration {
                 policy,
                 fanout,
                 wakeHub,
-                resolveTracer(tracerProvider));
+                resolveTracer(tracerProvider),
+                properties.getTracing().resolveLinkThreshold());
     }
 
     @Bean
@@ -205,6 +206,7 @@ public class OutboxEngineAutoConfiguration {
                         .workerIdSupplier(() -> workerId)
                         .wakeHub(wakeHub)
                         .tracer(resolveTracer(tracerProvider))
+                        .tracingLinkThreshold(properties.getTracing().resolveLinkThreshold())
                         .maintenance(mapMaintenance(properties.getMaintenance()))
                         .retention(mapRetention(properties.getRetention()))
                         .dispatcher(mapDispatcher(properties.getDispatcher()));

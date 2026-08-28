@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.spring.tracing;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.github.bams22.outboxer.tracing.micrometer.MicrometerOutboxTracer;
+import io.github.bams22.outboxer.tracing.micrometer.OutboxReceiverTracingObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
@@ -22,6 +23,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.annotation.Order;
 
 /**
  * Registers a {@link MicrometerOutboxTracer} when the {@code event-outboxer-tracing-micrometer}
@@ -58,11 +60,33 @@ import org.springframework.context.annotation.Bean;
 @EnableConfigurationProperties(OutboxProperties.class)
 public class MicrometerTracingAutoConfiguration {
 
+    /**
+     * Bean order of {@link #outboxReceiverTracingObservationHandler}. Boot groups every {@code
+     * TracingObservationHandler} bean into one first-matching composite in bean order, and its own
+     * receiver handler sits at {@code RECEIVER_TRACING_OBSERVATION_HANDLER_ORDER} (1000). Ours only
+     * claims the adapter's {@code OutboxReceiverContext} but must be asked first, or the generic
+     * handler wins and deferred events silently keep the parent-child span shape.
+     */
+    public static final int RECEIVER_HANDLER_ORDER = 900;
+
     @Bean
     @ConditionalOnMissingBean(OutboxTracer.class)
     public OutboxTracer outboxMicrometerTracer(
             ObservationRegistry observationRegistry, Tracer tracer, OutboxProperties properties) {
         return new MicrometerOutboxTracer(
                 observationRegistry, tracer, properties.getMetrics().getPrefix());
+    }
+
+    /**
+     * Handler that gives deferred events their root-plus-link consumer span (ADR-0023, 2026-08-28
+     * amendment). Registered unconditionally alongside the adapter so that a user-defined {@code
+     * OutboxTracer} built on {@code MicrometerOutboxTracer} gets the same behaviour.
+     */
+    @Bean
+    @Order(RECEIVER_HANDLER_ORDER)
+    @ConditionalOnMissingBean(OutboxReceiverTracingObservationHandler.class)
+    public OutboxReceiverTracingObservationHandler outboxReceiverTracingObservationHandler(
+            Tracer tracer, Propagator propagator) {
+        return new OutboxReceiverTracingObservationHandler(tracer, propagator);
     }
 }

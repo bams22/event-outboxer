@@ -107,6 +107,8 @@ public final class OutboxEngineBuilder {
     private final List<OutboxListener> listeners = new ArrayList<>();
     private boolean includeLoggingListener = true;
     private OutboxTracer tracer = OutboxTracer.NOOP;
+    private @Nullable Duration tracingLinkThreshold =
+            DefaultOutboxEventPublisher.DEFAULT_LINK_THRESHOLD;
     private Supplier<WorkerId> workerIdSupplier = WorkerIdFactory.defaultGenerator();
     private @Nullable String host;
     private final Map<String, String> workerMetadata = new LinkedHashMap<>();
@@ -260,6 +262,19 @@ public final class OutboxEngineBuilder {
      */
     public OutboxEngineBuilder tracer(OutboxTracer tracer) {
         this.tracer = Objects.requireNonNull(tracer);
+        return this;
+    }
+
+    /**
+     * Trace-propagation link threshold (ADR-0023, 2026-08-28 amendment): an event whose {@code
+     * runAt} lies further than this ahead of the publish-time clock gets a CONSUMER span that
+     * <em>links</em> to the PRODUCER span instead of descending from it, so a deliberately deferred
+     * event does not stretch one trace across days. Decided once at publish time; retries and
+     * backlog never revisit it. Default: {@link DefaultOutboxEventPublisher#DEFAULT_LINK_THRESHOLD}
+     * (one minute). {@code null} disables the rule — every event keeps parent-child continuity.
+     */
+    public OutboxEngineBuilder tracingLinkThreshold(@Nullable Duration threshold) {
+        this.tracingLinkThreshold = threshold;
         return this;
     }
 
@@ -435,7 +450,8 @@ public final class OutboxEngineBuilder {
                         noTxPolicy,
                         listener,
                         hub,
-                        safeTracer);
+                        safeTracer,
+                        tracingLinkThreshold);
 
         HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
         OrphanRecoveryTask orphanTask =
