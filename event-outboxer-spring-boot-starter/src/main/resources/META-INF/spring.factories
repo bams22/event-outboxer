@@ -7,6 +7,7 @@ org.springframework.boot.diagnostics.FailureAnalyzer=\
 io.github.bams22.outboxer.spring.storage.OutboxStorageFailureAnalyzer,\
 io.github.bams22.outboxer.spring.OutboxDataSourceFailureAnalyzer,\
 io.github.bams22.outboxer.spring.OutboxHandlersFailureAnalyzer,\
+io.github.bams22.outboxer.spring.OutboxFailureHandlerFailureAnalyzer,\
 io.github.bams22.outboxer.spring.serializer.OutboxSerializerFailureAnalyzer,\
 io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionFailureAnalyzer
 

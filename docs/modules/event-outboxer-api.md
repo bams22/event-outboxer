@@ -107,11 +107,16 @@ Build custom chains fluently:
 
 ```java
 FailureHandler<PaymentPayload> fh = FailureHandlers.<PaymentPayload>builder()
-    .withLogging(Level.WARN)
+    .withLogging(Level.WARN)                 // org.slf4j.event.Level
     .withMaxAttempts(5, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
-    .withExponentialBackoff(Duration.ofSeconds(30), 2.0, Duration.ofHours(2), 0.2)
-    .build();   // terminators: withExponentialBackoff / withFixedDelay / withNoRetry
+    .withExponentialBackoff(Duration.ofSeconds(30), 2.0, Duration.ofHours(2), 0.2);
+    // the terminator (withExponentialBackoff / withFixedDelay / withNoRetry)
+    // returns the chain — there is no build()
 ```
+
+With the Spring Boot starter the same knobs are available as YAML
+(`event-outboxer.event-types.*.failure.*`) and beans are registered
+with `@OutboxFailureHandler` (ADR-0030).
 
 Notes: an explicit `EventOutcome.Fail` bypasses the retry budget and
 finalizes immediately; `Retry.delayOverride` wins over any computed

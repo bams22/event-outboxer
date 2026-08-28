@@ -27,8 +27,9 @@ Transactional Outbox pattern.
 - **At-least-once**: handlers must be idempotent. Exponential backoff with
   jitter, attempt limits, DISABLED status for poison events.
 - **Composable failure handling**: `FailureHandler<T>` chain (log →
-  max-retries → backoff → listener-notify) — each handler type may have its
-  own policy.
+  max-retries → backoff) — configured per event type in YAML
+  (`event-outboxer.event-types.*.failure.*`) or as `@OutboxFailureHandler`
+  beans; each handler type may have its own policy.
 - **End-to-end trace continuity**: the trace active at `publish()` continues
   into handler execution — a PRODUCER span per insert, its W3C context stored
   with the event, a CONSUMER span per handler attempt. Optional adapters for

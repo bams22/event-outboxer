@@ -3,7 +3,9 @@
 ## Status
 
 Accepted — amended 2026-07-26 (deserialization failures now route
-through the chain; see the Amendment section at the bottom)
+through the chain) and 2026-08-29 (YAML binding lives under
+`event-types`, precedence fixed by ADR-0030); see the Amendment
+sections at the bottom
 
 ## Date
 
@@ -98,11 +100,20 @@ FailureHandlers.defaults() =
 
 ### Per-type resolution priority
 
+*Superseded by the 2026-08-29 amendment — the six-level order lives in
+ADR-0030. `EventTypeConfig.failureHandler` never existed; the per-type
+chain is held by `FailureHandlerResolver` in core.*
+
 1. `EventHandler.failureHandler()` default method (handler-level override).
 2. `EventTypeConfig.failureHandler` (bean in the Spring starter).
 3. Global `FailureHandlers.defaults()`.
 
 ### YAML configuration
+
+*Superseded by the 2026-08-29 amendment: the tree below was never
+implemented; the starter binds
+`event-outboxer.event-types.defaults.failure.*` /
+`...overrides.<TYPE>.failure.*` instead.*
 
 For 80% of cases the chain is built by the starter from properties:
 ```yaml
@@ -128,25 +139,23 @@ Per-type thin merge: `event-outboxer.handlers.types.SEND_EMAIL.failure.max-attem
 Any combination of real needs is expressible as a single chain:
 
 ```java
-// "fail fast" for validation handlers
+// "fail fast" for validation handlers — the terminator returns the chain, no build()
 FailureHandlers.<ValidationPayload>builder()
-    .withNoRetry()
-    .build();
+    .withNoRetry();
 
 // "long retry with custom exception handling"
 FailureHandlers.<BulkImportPayload>builder()
-    .withLogging(LogLevel.ERROR)
-    .withMaxAttempts(50, DELETE)
-    .withExponentialBackoff(Duration.ofMinutes(1), 2.0, Duration.ofHours(6), 0.1)
-    .build();
+    .withLogging(Level.ERROR)                       // org.slf4j.event.Level
+    .withMaxAttempts(50, ExhaustedAction.DELETE)
+    .withExponentialBackoff(Duration.ofMinutes(1), 2.0, Duration.ofHours(6), 0.1);
 
-// "different strategy for transient vs permanent"
-new LogFailureHandler<>(
-    new ConditionalFailureHandler<>(
-        ctx -> ctx.cause() instanceof HttpTimeoutException,
-        transientHandler,   // short retry
-        permanentHandler    // Disable immediately
-    ));
+// "different strategy for transient vs permanent" — a hand-written decorator
+// (no ConditionalFailureHandler ships in builtin)
+FailureHandler<HttpPayload> byCause =
+    ctx -> ctx.cause() instanceof HttpTimeoutException
+        ? transientHandler.onFailure(ctx)   // short retry
+        : permanentHandler.onFailure(ctx);  // Disable immediately
+new LogFailureHandler<>(byCause);
 ```
 
 ### YAML-binding in the starter (not in the core)
@@ -200,9 +209,11 @@ dispatcher rather than by a chain decorator.
 
 - Handlers can override the `FailureHandler` via the `failureHandler()`
   default method.
-- Per-type configuration through YAML covers most cases.
-- For complex cases — `@Bean FailureHandler<MyPayload>` in the Spring
-  context.
+- Per-type configuration through YAML covers most cases
+  (`event-outboxer.event-types.*.failure.*`, since the 2026-08-29
+  amendment).
+- For complex cases — a `@Bean @OutboxFailureHandler(...) FailureHandler`
+  in the Spring context (ADR-0030).
 - Javadoc explicitly states: "any uncaught exception becomes `Retry`
   through the FailureHandler chain".
 
@@ -246,6 +257,36 @@ deserialization") and `outcome = null`. Consequences:
   but only after `MaxRetriesFailureHandler`'s budget.
 - `OutboxListener.onEventSerializationError` still fires on every
   failed deserialization, before the chain runs.
+
+## Amendment (2026-08-29): YAML lives under event-types, precedence fixed
+
+The `event-outboxer.handlers.defaults.failure.*` tree sketched in
+§YAML configuration was never implemented — until now the starter only
+accepted two beans with fixed names (`outboxDefaultFailureHandler`,
+`outboxPerTypeFailureHandlers`), the samples above used a `build()`
+method and a `LogLevel` type that do not exist, and a plain `@Bean
+FailureHandler` was ignored without a trace.
+
+ADR-0030 closes the gap:
+
+- the starter binds `event-outboxer.event-types.defaults.failure.*` and
+  `event-outboxer.event-types.overrides.<TYPE>.failure.*` — the same
+  tree and the same thin merge as every other per-type knob — and
+  builds the chain through `FailureHandlers.builder()` in
+  `FailurePolicyFactory`; bad values fail startup naming the property;
+- Java beans are registered through the `@OutboxFailureHandler`
+  qualifier (global without a value, per type with values); the two
+  legacy bean names keep working;
+- §Per-type resolution priority is superseded by the six-level order
+  in ADR-0030: `EventHandler.failureHandler()` → per-type bean →
+  per-type YAML → global bean → YAML defaults →
+  `FailureHandlers.defaults()`;
+- `EventTypeConfig.failureHandler` does not exist; the per-type chain is
+  held by `FailureHandlerResolver` in core, which is what
+  `OutboxEngineBuilder.failureHandlerFor(...)` feeds.
+
+The chain model, the sealed `FailureDecision`, and the "core takes
+pre-built chains, the starter binds YAML" split are unchanged.
 
 ## Related decisions
 

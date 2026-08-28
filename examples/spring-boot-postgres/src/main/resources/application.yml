@@ -47,6 +47,15 @@ event-outboxer:
       claim-batch-size: 10
       handler-pool-size: 3
       handler-max-runtime: 1m
+      # Retry policy (ADR-0030) — thin merge: only the keys you set change.
+      failure:
+        max-attempts: 5
+        base-delay: 10s
+    overrides:
+      SEND_ORDER_CONFIRMATION:
+        failure:
+          strategy: fixed       # retry every 30s, still 5 attempts (from defaults.failure)
+          fixed-delay: 30s
 
 logging:
   level:

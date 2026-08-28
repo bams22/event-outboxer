@@ -105,7 +105,7 @@ See [ADR-0012](adr/0012-extract-lock-key-on-handler.md).
 ## F
 
 **FailureContext** — record passed to `FailureHandler.onFailure()`.
-Contains ClaimedEvent, payload, outcome, cause, attempts, now.
+Contains ClaimedEvent, payload, outcome, cause, attempt, now.
 
 **FailureDecision** — sealed interface of the FailureHandler decision:
 `RetryAt(when, reason)` | `Disable(reason)` | `Delete(reason)`.

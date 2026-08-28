@@ -47,12 +47,13 @@ import io.github.bams22.outboxer.spring.serializer.OutboxSerializers;
 import io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration;
 import io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration;
 import io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -183,10 +184,7 @@ public class OutboxEngineAutoConfiguration {
             @OutboxDataSource ObjectProvider<DataSource> qualifiedDataSourceProvider,
             ObjectProvider<DataSource> dataSourceProvider,
             ObjectProvider<EventHandler<?>> handlerProvider,
-            @Qualifier("outboxDefaultFailureHandler")
-                    ObjectProvider<FailureHandler<?>> defaultFailureHandlerProvider,
-            @Qualifier("outboxPerTypeFailureHandlers")
-                    ObjectProvider<Map<String, FailureHandler<?>>> perTypeFailureHandlersProvider,
+            ListableBeanFactory beanFactory,
             ObjectProvider<PollStrategy> pollStrategyProvider,
             ObjectProvider<TaskDecorator> taskDecoratorProvider,
             ObjectProvider<OutboxTracer> tracerProvider,
@@ -217,7 +215,8 @@ public class OutboxEngineAutoConfiguration {
 
         // Thin merge (CONFIGURATION.md §Per-type override): user defaults overlay the library
         // defaults, and each per-type override overlays the resolved defaults field by field —
-        // an override that sets only handler-pool-size keeps every other default intact.
+        // an override that sets only handler-pool-size keeps every other default intact. The
+        // failure policy (failure.*) merges the same way, see wireFailureHandlers below.
         EventTypeConfig resolvedDefaults =
                 mergeEventType(
                         properties.getEventTypes().getDefaults(), EventTypeConfig.defaults());
@@ -247,8 +246,7 @@ public class OutboxEngineAutoConfiguration {
                 handlers,
                 qualifiedDataSourceProvider,
                 dataSourceProvider);
-        defaultFailureHandlerProvider.ifAvailable(builder::defaultFailureHandler);
-        perTypeFailureHandlersProvider.ifAvailable(map -> map.forEach(builder::failureHandlerFor));
+        wireFailureHandlers(builder, properties, beanFactory);
         pollStrategyProvider.ifAvailable(builder::pollStrategy);
         for (OutboxListener l : listeners) {
             builder.listener(l);
@@ -279,6 +277,43 @@ public class OutboxEngineAutoConfiguration {
     // ---------------------------------------------------------------------------------------------
     // helpers
     // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Failure-chain wiring (ADR-0030). Most specific wins, Java beats YAML at equal specificity:
+     * {@code EventHandler.failureHandler()} (resolved in core) → per-type bean → per-type YAML →
+     * global bean → YAML defaults → library chain. A per-type YAML override always layers on the
+     * YAML defaults, never on a global bean (which is opaque). Beans that claim no slot are
+     * reported, not silently dropped.
+     */
+    private static void wireFailureHandlers(
+            OutboxEngineBuilder builder,
+            OutboxProperties properties,
+            ListableBeanFactory beanFactory) {
+        FailureHandlerBeans beans = FailureHandlerBeans.collect(beanFactory);
+        OutboxProperties.EventTypes eventTypes = properties.getEventTypes();
+
+        FailureHandler<?> globalBean = beans.global();
+        FailureHandler<?> yamlDefault = FailurePolicyFactory.defaultChain(eventTypes);
+        if (globalBean != null) {
+            builder.defaultFailureHandler(globalBean);
+            if (yamlDefault != null) {
+                log.info(
+                        "FailureHandler bean '{}' is the global outbox failure chain; {}.* is not"
+                                + " applied globally but still seeds the per-type YAML overrides",
+                        beans.globalSource(),
+                        FailurePolicyFactory.DEFAULTS_PATH);
+            }
+        } else if (yamlDefault != null) {
+            builder.defaultFailureHandler(yamlDefault);
+        }
+
+        Map<String, FailureHandler<?>> perType =
+                new LinkedHashMap<>(FailurePolicyFactory.perTypeChains(eventTypes));
+        perType.putAll(beans.perType()); // a per-type bean beats the per-type YAML override
+        perType.forEach(builder::failureHandlerFor);
+
+        beans.unregisteredWarning().ifPresent(log::warn);
+    }
 
     /**
      * Resolves the tracing port (ADR-0023): a user-defined or auto-configured {@code OutboxTracer}

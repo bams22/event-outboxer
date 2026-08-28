@@ -199,8 +199,12 @@ defaults and startup-validated invariants is
 | `metrics.*`, `tracing.*`, `health.probe-groups` | observability |
 | `retention.*` | opt-in archive/`DISABLED` cleanup (off by default) |
 
-Note: **retry/backoff policy is configured in Java, not YAML** —
-`FailureHandler` beans (below), per ADR-0007.
+The retry/backoff policy lives in the same tree —
+`event-types.defaults.failure.*` / `event-types.overrides.<TYPE>.failure.*`
+(strategy, max-attempts, exhausted-action, delays, log-level) — with
+the same thin merge; `@OutboxFailureHandler` beans take precedence
+([ADR-0030](../adr/0030-failure-policy-yaml-thin-merge-and-outbox-failure-handler-qualifier.md),
+[CONFIGURATION.md §Failure handling](../CONFIGURATION.md#failure-handling)).
 
 ### Customization points
 
@@ -211,8 +215,8 @@ the starter backs off:
 |---|---|
 | Jackson mapper | `@Bean("outboxObjectMapper") ObjectMapper` (else primary mapper, else library defaults) |
 | Serialization format | any `EventSerializer` bean(s); name one `outboxEventSerializer` or set `serializer.write-format`. Jackson JSON is the default — exclude `event-outboxer-serializer-jackson` from the starter for a Jackson-free classpath |
-| Global failure chain | `@Bean("outboxDefaultFailureHandler") FailureHandler<?>` |
-| Per-type failure chains | `@Bean("outboxPerTypeFailureHandlers") Map<String, FailureHandler<?>>` (or `EventHandler.failureHandler()`) |
+| Global failure chain | `@Bean @OutboxFailureHandler FailureHandler<?>` — or YAML `event-types.defaults.failure.*` (legacy: a bean named `outboxDefaultFailureHandler`) |
+| Per-type failure chains | `@Bean @OutboxFailureHandler({"A", "B"}) FailureHandler<?>` — or YAML `event-types.overrides.<TYPE>.failure.*`, or `EventHandler.failureHandler()` (legacy: `@Bean("outboxPerTypeFailureHandlers") Map<String, FailureHandler<?>>`) |
 | Context propagation | `TaskDecorator` bean |
 | Locking / storage / cache / tracing | `EntityLocker`, `EventStore`, `WorkerRegistry`, `ConnectionSupplier`, `OutboxAdmin`, `MetricsSnapshotCache`, `OutboxTracer` beans |
 | Outbox schema migration | `OutboxFlywayMigrationInitializer` bean (or `event-outboxer.flyway.enabled=false` + your own pipeline) |
@@ -236,6 +240,9 @@ Worked snippets for each are in
 |---|---|
 | `storage.type` unset / adapter jar missing / no `DataSource` | startup fails with a `FailureAnalyzer` diagnosis naming the exact fix (ADR-0020) |
 | no `EventHandler` bean and `publish-only` unset | startup fails with a diagnosis naming the handler contract and `event-outboxer.publish-only=true` (ADR-0029) |
+| two beans claiming the same failure-chain slot (global, or one event type) | startup fails with a diagnosis naming both beans and the one-bean-per-slot rule (ADR-0030) |
+| a `FailureHandler` bean with neither `@OutboxFailureHandler` nor a legacy name | startup WARNING listing the beans the engine does not use |
+| a bad `event-types.*.failure.*` value | fail fast naming the exact property path |
 | several `DataSource`s, none qualified (or two qualified) | fail fast listing candidate beans and the `@OutboxDataSource` fix (ADR-0024) |
 | `lock.type=postgres-lease` without migration V005 (only with `flyway.enabled=false`) | fail-fast table probe naming the migration, the classpath location and the escape hatch |
 | outbox schema populated by a ≤ 0.4.0 install, no history table of its own | the outbox Flyway instance fails with the one-time `baseline-on-migrate` / `baseline-version` recipe |

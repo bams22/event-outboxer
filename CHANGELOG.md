@@ -57,6 +57,15 @@ All notable changes to this project are documented here. Format follows
     changelogs under `db/changelog/outbox/*`.
 
 ### Changed
+- **Failure-chain precedence is defined and enforced (ADR-0030):**
+  `EventHandler.failureHandler()` → per-type bean → per-type YAML →
+  global bean → YAML defaults → `FailureHandlers.defaults()`. The bean
+  names `outboxDefaultFailureHandler` / `outboxPerTypeFailureHandlers`
+  keep working as the documented legacy form; two beans claiming the
+  same slot now fail startup (`AmbiguousOutboxFailureHandlerException`
+  + `FailureAnalyzer`) instead of one silently winning, and a
+  `FailureHandler` bean that claims no slot is listed in a startup WARN
+  instead of being ignored.
 - **Publish-only mode is an explicit opt-in (ADR-0029).**
   `OutboxEngineBuilder.publishOnly(true)` / `event-outboxer.publish-only=true`
   start the engine without pollers: it registers its worker, runs
@@ -69,6 +78,20 @@ All notable changes to this project are documented here. Format follows
   `FailureAnalyzer` diagnosis naming both ways out.
 
 ### Added
+- **Retry policy in YAML (ADR-0030, delivers ADR-0007 §YAML):**
+  `event-outboxer.event-types.defaults.failure.*` and
+  `event-outboxer.event-types.overrides.<TYPE>.failure.*` — `strategy`
+  (`exponential` / `fixed` / `none`), `max-attempts`,
+  `exhausted-action` (`DISABLE` / `DELETE`), `base-delay`, `multiplier`,
+  `max-delay`, `jitter`, `fixed-delay`, `log-level` (`OFF` drops the
+  per-failure log line) — thin-merged like the other per-type knobs
+  onto `FailureHandlers.defaults()`; bad values fail startup naming
+  the exact property path.
+- `@OutboxFailureHandler` qualifier for `FailureHandler` beans: no
+  value = the global chain, `{"A", "B"}` = the chain for those event
+  types.
+- `FailureHandlerResolverTest` covers the core resolution order
+  (handler override → per-type → default), previously untested.
 - `NoEventSerializersException` (`ConfigurationException`) replaces the
   `InvariantViolationException` thrown when no `EventSerializer` bean is
   registered; the starter maps it to a `FailureAnalyzer` diagnosis

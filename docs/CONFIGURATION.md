@@ -108,10 +108,23 @@ event-outboxer:
       handler-max-runtime: 5m        # watchdog threshold for a stuck handler
       interrupt-stuck-handler: true  # interrupt the handler thread after force-reclaim
       lock-ttl: 10m                  # entity-lock TTL; must be >= handler-max-runtime (2x recommended)
+      failure:                       # retry policy — thin merge like the fields above (ADR-0030)
+        strategy: exponential        # exponential (default) | fixed | none
+        max-attempts: 10             # then exhausted-action; ignored for strategy none
+        exhausted-action: DISABLE    # DISABLE | DELETE
+        base-delay: 5s               # exponential: delay before the first retry
+        multiplier: 2.0              # exponential: growth per attempt, > 1.0
+        max-delay: 1h                # exponential: cap, >= base-delay
+        jitter: 0.2                  # exponential: random fraction in [0, 1]
+        fixed-delay: 30s             # fixed only
+        log-level: WARN              # TRACE..FATAL | OFF (no log line per failure)
     overrides:                       # thin merge: set only the fields you change
       SEND_EMAIL:
         handler-pool-size: 20
         poll-min-interval: 2s
+        failure:
+          max-attempts: 5            # only this key changes; the rest comes from defaults.failure
+          base-delay: 30s
       UPDATE_CACHE:
         handler-pool-size: 30
         poll-min-interval: 500ms
@@ -477,6 +490,16 @@ per-type overrides adjust individual fields (see
   reclaim is reported as abandoned; the callback's `interrupted` flag
   (and the log level) says whether the thread ignored an interrupt or
   was never asked to stop.
+- `failure.*` — the retry policy of the type (ADR-0007, ADR-0030):
+  `strategy` (`exponential` — the library default — / `fixed` / `none`
+  = disable on the first failure), `max-attempts` + `exhausted-action`
+  (`DISABLE` / `DELETE`), the exponential knobs `base-delay`,
+  `multiplier`, `max-delay`, `jitter`, the `fixed-delay` of the fixed
+  strategy, and `log-level` (`OFF` drops the per-failure log line).
+  Every key merges independently: a per-type `failure.max-attempts: 5`
+  keeps the exponential delays of `defaults.failure` (or of the library
+  chain when nothing is set there). Java beans take precedence — see
+  [Failure handling](#failure-handling).
 - `lock-ttl` — entity-lock TTL passed to `EntityLocker.tryLock()`.
   **Must be `>= handler-max-runtime`** (validated at startup): for
   TTL-honouring lockers (Redis, the PG lease locker) a shorter TTL
@@ -854,14 +877,38 @@ attempt. Strict deserialization can be restored by supplying a strict
 
 ### Failure handling
 
-Retry/backoff policy is configured **in Java, not YAML**: provide a
-`@Bean` `FailureHandler` (qualifier `outboxDefaultFailureHandler` for
-the global default, or the `outboxPerTypeFailureHandlers` map for
-per-type chains), or override `EventHandler.failureHandler()` on a
-specific handler. The default chain is
-`FailureHandlers.defaults()` — logging + max-attempts (10, then
-DISABLE) + exponential backoff. See ADR-0007 and
-[Overriding through Java code](#overriding-through-java-code).
+The retry/backoff policy has three sources (ADR-0007, ADR-0030):
+
+- **YAML** — `event-outboxer.event-types.defaults.failure.*` and
+  `event-outboxer.event-types.overrides.<TYPE>.failure.*`, thin-merged
+  key by key onto the library chain `FailureHandlers.defaults()`
+  (logging at WARN → max-attempts 10, then DISABLE → exponential
+  backoff 5s ×2 capped at 1h, jitter 0.2). Bad values fail startup
+  naming the property (see [Invariant validation](#invariant-validation)).
+- **Java beans** — a `FailureHandler` bean annotated
+  `@OutboxFailureHandler` (global) or `@OutboxFailureHandler({"A", "B"})`
+  (per type); see
+  [Custom FailureHandler](#custom-failurehandler-global-or-per-type).
+  The pre-ADR-0030 forms — a bean named `outboxDefaultFailureHandler`
+  and a `Map<String, FailureHandler<?>>` bean named
+  `outboxPerTypeFailureHandlers` — keep working. Two beans claiming the
+  same slot fail startup with a diagnosis; a `FailureHandler` bean that
+  claims no slot is **not** used and is listed in a startup WARN.
+- **The handler itself** — `EventHandler.failureHandler()`.
+
+Precedence — the most specific source wins, and Java beats YAML at
+equal specificity:
+
+1. `EventHandler.failureHandler()`;
+2. a per-type bean;
+3. `overrides.<TYPE>.failure.*`;
+4. the global bean;
+5. `defaults.failure.*`;
+6. `FailureHandlers.defaults()`.
+
+A per-type YAML override always builds its full chain from YAML layers
+(override → `defaults.failure` → library) — never from a global Java
+bean, which is opaque to the merge.
 
 ---
 
@@ -890,7 +937,10 @@ Effective configuration for `SEND_EMAIL`:
 - everything else — library defaults.
 
 The merge is performed by the starter when it maps `OutboxProperties`
-to the core `EventTypeConfig` objects.
+to the core `EventTypeConfig` objects. The nested `failure.*` group
+merges the same way, independently of the other fields: an override
+that sets only `failure.max-attempts` keeps every other retry knob of
+`defaults.failure` (or of the library chain).
 
 ---
 
@@ -909,6 +959,8 @@ refresh:
 | `handler-max-runtime > 0`, `lock-ttl > 0` | `EventTypeConfig` | Sanity |
 | `abandoned-handler-grace >= 0` | `MaintenanceConfig` | Sanity |
 | retry delays not negative | `DispatcherConfig` | Sanity |
+| `failure.max-attempts >= 1`, `failure.base-delay > 0`, `failure.multiplier > 1.0`, `failure.max-delay > 0`, `failure.jitter` in `[0, 1]`, `failure.fixed-delay > 0` | `FailurePolicyFactory` (starter) | Each checked on the layer that sets it — the error names the exact property, e.g. `event-outboxer.event-types.overrides.SEND_EMAIL.failure.multiplier must be > 1.0` |
+| `failure.max-delay >= failure.base-delay` | `FailurePolicyFactory` (starter) | Checked on the merged policy; the error names both keys |
 
 ---
 
@@ -1024,19 +1076,43 @@ public TaskDecorator myOutboxTaskDecorator() {
 }
 ```
 
-### Custom FailureHandler per type
+### Custom FailureHandler (global or per type)
+
+Register the chain with `@OutboxFailureHandler` (ADR-0030). The
+builder's terminators (`withExponentialBackoff`, `withFixedDelay`,
+`withNoRetry`) return the chain — there is no `build()`:
 
 ```java
+import org.slf4j.event.Level;
+import io.github.bams22.outboxer.api.handle.builtin.MaxRetriesFailureHandler.ExhaustedAction;
+
 @Bean
-public FailureHandler<SendEmailPayload> sendEmailFailureHandler() {
-    return FailureHandlers.<SendEmailPayload>builder()
-        .withLogging(LogLevel.WARN)
-        .withMaxAttempts(5, DISABLE)
+@OutboxFailureHandler                       // global chain (precedence 4)
+FailureHandler<Object> outboxFailures() {
+    return FailureHandlers.builder()
+        .withLogging(Level.WARN)
+        .withMaxAttempts(5, ExhaustedAction.DISABLE)
         .withExponentialBackoff(
-            Duration.ofSeconds(30), 2.0, Duration.ofHours(2), 0.2)
-        .build();
+            Duration.ofSeconds(30), 2.0, Duration.ofHours(2), 0.2);
+}
+
+@Bean
+@OutboxFailureHandler({"SEND_EMAIL", "SEND_SMS"})   // per-type chain (precedence 2)
+FailureHandler<Object> notificationFailures() {
+    return FailureHandlers.builder()
+        .withMaxAttempts(20, ExhaustedAction.DELETE)
+        .withFixedDelay(Duration.ofMinutes(1));
 }
 ```
+
+Exactly one bean may claim a slot (the global chain, or one event
+type); a second claim fails startup naming both beans. The legacy
+forms still work: a bean named `outboxDefaultFailureHandler` for the
+global chain and a `@Bean("outboxPerTypeFailureHandlers")
+Map<String, FailureHandler<?>>` for per-type chains. A `FailureHandler`
+bean without the annotation or a legacy name is not registered — the
+starter logs a WARN listing such beans (ignore it when the bean is
+returned from `EventHandler.failureHandler()`).
 
 ### Custom OutboxListener
 
@@ -1066,6 +1142,8 @@ public class ValidationHandler implements EventHandler<ValidationPayload> {
     // ...
 }
 ```
+
+This level wins over every bean and every YAML key (precedence 1).
 
 ### Custom OutboxTracer
 

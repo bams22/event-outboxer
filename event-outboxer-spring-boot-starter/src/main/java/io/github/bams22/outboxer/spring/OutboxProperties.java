@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.spring;
 
+import io.github.bams22.outboxer.api.handle.builtin.MaxRetriesFailureHandler;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.logging.LogLevel;
 
 /**
  * Root {@code @ConfigurationProperties} for {@code event-outboxer.*}. See CONFIGURATION.md for the
@@ -403,6 +405,79 @@ public class OutboxProperties {
         private @Nullable Boolean interruptStuckHandler;
 
         private @Nullable Duration lockTtl;
+
+        /**
+         * Retry / failure policy for this type (ADR-0030). Thin merge like the fields above: a
+         * per-type entry overrides only the {@code failure.*} keys it sets, everything else comes
+         * from {@code defaults.failure.*} and then from the library chain {@code
+         * FailureHandlers.defaults()}.
+         */
+        private final Failure failure = new Failure();
+    }
+
+    /**
+     * Retry / failure policy knobs (ADR-0007, ADR-0030). All fields nullable: {@code null} means
+     * "not set at this level". With every field unset at the {@code defaults} level the starter
+     * leaves the engine's library chain untouched. Java beans ({@code @OutboxFailureHandler}) and
+     * {@code EventHandler.failureHandler()} take precedence over these properties — see
+     * CONFIGURATION.md §Failure handling.
+     */
+    @Getter
+    @Setter
+    public static class Failure {
+        /**
+         * Retry strategy: {@code exponential} (library default), {@code fixed}, or {@code none}
+         * (disable on the first failure).
+         */
+        private @Nullable FailureStrategy strategy;
+
+        /**
+         * Attempts before {@code exhausted-action} applies (&gt;= 1). Library default 10; ignored
+         * with strategy {@code none}.
+         */
+        private @Nullable Integer maxAttempts;
+
+        /**
+         * {@code DISABLE} (library default) or {@code DELETE} once {@code max-attempts} is
+         * exhausted.
+         */
+        private MaxRetriesFailureHandler.@Nullable ExhaustedAction exhaustedAction;
+
+        /** {@code exponential}: delay before the first retry (&gt; 0). Library default 5s. */
+        private @Nullable Duration baseDelay;
+
+        /** {@code exponential}: growth factor per attempt (&gt; 1.0). Library default 2.0. */
+        private @Nullable Double multiplier;
+
+        /**
+         * {@code exponential}: upper bound of the backoff (&gt;= base-delay). Library default 1h.
+         */
+        private @Nullable Duration maxDelay;
+
+        /**
+         * {@code exponential}: random jitter as a fraction of the delay, in [0, 1]. Library default
+         * 0.2.
+         */
+        private @Nullable Double jitter;
+
+        /** {@code fixed}: constant delay between attempts (&gt; 0). Library default 30s. */
+        private @Nullable Duration fixedDelay;
+
+        /**
+         * Level of the log line written per failure; {@code OFF} removes the logging decorator.
+         * Library default WARN.
+         */
+        private @Nullable LogLevel logLevel;
+    }
+
+    /** Retry strategy of a failure policy — the leaf of the chain built from {@code failure.*}. */
+    public enum FailureStrategy {
+        /** Exponential backoff with jitter and an upper bound (the library default). */
+        exponential,
+        /** A constant delay between attempts. */
+        fixed,
+        /** No retry: the first failure applies {@code exhausted-action} immediately. */
+        none
     }
 
     @Getter

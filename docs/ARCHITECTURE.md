@@ -559,8 +559,11 @@ a fresh orphan-recovery cycle on restart — is correct but wastes work).
 - All `EventHandler<?>` beans are automatically collected into
   `DefaultEventHandlerResolver`.
 - All `OutboxListener` beans are registered in `OutboxListenerRegistry`.
-- `FailureHandler<MyPayload>` beans are picked per type via
-  `ResolvableType`.
+- `FailureHandler` beans are registered through the
+  `@OutboxFailureHandler` qualifier — global without a value, per event
+  type with values — or built from `event-outboxer.event-types.*.failure.*`
+  (ADR-0030); beans with neither are reported at startup, never
+  silently used or ignored.
 
 ### 5. @ConfigurationProperties
 
@@ -604,7 +607,7 @@ other) has been a real source of bugs.
 | Maintenance (heartbeat / orphan / watchdog / crash-check) | `ScheduledExecutorService` owned by `MaintenanceScheduler` | inherited from core |
 | Handler executor shape | `Function<EventTypeConfig, ExecutorService>` supplied to `OutboxEngineBuilder` | `HandlerExecutorFactory.platform()` / `.virtual()` picked by `event-outboxer.handler-executor.type`; Spring `ThreadPoolTaskExecutor` exposed as `ExecutorService` via `SpringTaskExecutorAdapter` |
 | Context propagation (MDC / Observation / Security) | none built-in — caller decorates their own `Executor` | `ContextPropagatingTaskDecorator` default; user can swap via `@Bean TaskDecorator` |
-| Failure-chain default | `FailureHandlers.defaults()` = `Log → MaxRetries → ExponentialBackoff` | identical — starter does not re-wrap |
+| Failure-chain default | `FailureHandlers.defaults()` = `Log → MaxRetries → ExponentialBackoff` | identical when `event-types.*.failure.*` is unset; otherwise the starter builds the chain from YAML through the same `FailureHandlers.builder()` (thin merge, ADR-0030) — never re-wraps a user bean |
 | Retry / disable / delete listener emission | `HandlerDispatcher` fires listener callbacks after storage commit | identical — starter adds no second emission path (see [ADR-0007](adr/0007-failure-handler-chain-of-responsibility.md) §Q25) |
 | `LoggingOutboxListener` | auto-added by `OutboxEngineBuilder` (plain-Java default) | explicitly opted out (`includeLoggingListener(false)`) to avoid double-logging with the engine's own SLF4J calls |
 | `MicrometerOutboxListener` | separate module; caller registers manually | auto-registered by `MicrometerAutoConfiguration` when Micrometer is on the classpath |
