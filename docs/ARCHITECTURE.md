@@ -378,22 +378,29 @@ Startup:
                                last_heartbeat, graceful_stop=FALSE)
 
 Running:
-  every heartbeatInterval (default 30s):
+  every heartbeatInterval (default 5s):
     UPDATE event_outboxer.workers SET last_heartbeat = now() WHERE worker_id = ?
     ← O(1) write, independent of the number of in-flight events
 
-Graceful shutdown:
-  1. UPDATE event_outboxer.workers SET graceful_stop = TRUE
+Graceful shutdown (see §SmartLifecycle phases for the full sequence):
+  1. Poller.stop() — stop claiming
+
+  2. wait for in-flight handlers (up to shutdown-timeout), then
+     interrupt whatever is still running
+
+  3. UPDATE event_outboxer.events SET status = PENDING, claimed_by = NULL ...
+     WHERE claimed_by = ? AND status = PROCESSING
+     ← unfinished claims go back without burning an attempt
+
+  4. UPDATE event_outboxer.workers SET graceful_stop = TRUE
      ← signal to orphan detection: "don't touch me"
+     ← heartbeat kept running until here, so peers never saw us as dead
 
-  2. Poller.stop() — stop claiming
+  5. stop the maintenance executor (heartbeat / orphan-recovery / watchdog)
 
-  3. wait for in-flight handlers (up to awaitTermination)
-
-  4. MaintenanceExecutor stays alive until the end — heartbeat keeps running
-     while any events are still in flight
-
-  5. DELETE FROM event_outboxer.workers WHERE worker_id = ?
+  6. DELETE FROM event_outboxer.workers WHERE worker_id = ?
+     ← skipped if step 3 failed: the graceful_stop row then stays so a
+       peer reclaims the leftovers and removes it
 
 Crash:
   DELETE does not execute → the row remains with a stale last_heartbeat
@@ -523,37 +530,105 @@ The internal order of the stop sequence — executed by
 `OutboxEngine.stop(Duration)` — is:
 
 ```
+0. state = STOPPING
+   → OutboxEventPublisher keeps working: publish() never consults the
+     engine state, so events written by the last in-flight requests are
+     persisted and picked up by a peer replica or by this instance
+     after restart.
+
 1. Poller.stop() on every per-type poller
-   → stop claiming new events
-   → interrupt + join on the dedicated platform thread
+   → stop claiming new events: flip the running flag, interrupt the
+     dedicated platform thread, join it (the join budget is
+     shutdown-timeout split evenly across pollers).
+   → a claim statement interrupted mid-flight rolls back with its
+     transaction; a claim that completed while the executor was
+     already closed is rejected on submit and released straight back
+     to PENDING (Poller.submit → HandlerDispatcher.releaseRejected).
 
-2. Drain handler executors
-   → executor.shutdown() on every per-type ExecutorService
-   → awaitTermination per type against the configured shutdown-timeout
-   → if the timeout is exceeded, executor.shutdownNow() cancels
-     remaining handlers. Those events stay in PROCESSING and are
-     recovered on the next start by OrphanRecoveryTask — this is the
-     at-least-once safety net (ADR-0015).
+2. Drain handler executors — HandlerExecutorManager.drain(timeout)
+   → executor.shutdown() on every per-type ExecutorService: no new
+     tasks are accepted, running handlers finish normally.
+   → awaitTermination against ONE shared deadline (shutdown-timeout
+     from the start of the drain, not per type).
+   → if the deadline passes, executor.shutdownNow(): queued-but-never-
+     started tasks are dropped and still-running handlers are
+     interrupted. This interrupt is unconditional — the per-type
+     interrupt-stuck-handler flag governs the watchdog only, not the
+     shutdown drain.
 
-3. WorkerRegistry.markGracefulStop(workerId)
+3. EventStore.releaseClaimed(workerId)
+   → every row still PROCESSING under this worker (dropped from the
+     queue or interrupted by the drain) goes back to PENDING WITHOUT
+     incrementing attempts. Nothing waits for orphan recovery: the
+     events become claimable by peers immediately.
+   → if this statement fails, the worker row is kept (flagged
+     graceful_stop) so a peer's orphan recovery reclaims the leftovers
+     — the row must outlive its claims.
+
+4. WorkerRegistry.markGracefulStop(workerId)
    → signal to peer replicas' orphan-recovery: "don't reclaim me,
      I'm shutting down cleanly" (graceful_stop=TRUE excludes the row
      from the findDead partial index; see ADR-0005).
+   → fire OutboxListener.onWorkerGracefulStop.
 
-4. MaintenanceScheduler.stop(timeout)
-   → shutdown() the 3-thread ScheduledExecutorService that drives
-     heartbeat / orphan-recovery / watchdog tasks.
+5. MaintenanceScheduler.stop(timeout)
+   → shutdown() + awaitTermination on the ScheduledExecutorService
+     that drives heartbeat / orphan-recovery / watchdog tasks;
+     shutdownNow() if the timeout is exceeded.
 
-5. WorkerRegistry.deregister(workerId)
+6. WorkerRegistry.deregister(workerId)   (skipped when step 3 failed)
    → DELETE FROM event_outboxer.workers WHERE worker_id = ?
+   → fire OutboxListener.onWorkerDeregistered.
 
-6. Fire OutboxListener.onWorkerDeregistered.
+7. state = STOPPED
 ```
 
+A handler interrupted in step 2 after it already applied its side
+effect is redelivered — this is the at-least-once contract
+(ADR-0015) and the reason handlers must be idempotent. Handlers that
+are not interrupt-safe (long JDBC work, where `pgjdbc` may close the
+connection on interrupt) should finish within `shutdown-timeout`.
+
+#### Sizing the shutdown budget
+
 The default `shutdown-timeout` is 30 seconds, tuned via
-`event-outboxer.maintenance.shutdown-timeout`. If your handlers may legitimately
-run longer than 30 s, raise it (the alternative — `shutdownNow()` plus
-a fresh orphan-recovery cycle on restart — is correct but wastes work).
+`event-outboxer.maintenance.shutdown-timeout`. If your handlers may
+legitimately run longer than 30 s, raise it — the alternative
+(`shutdownNow()` plus redelivery) is correct but wastes work.
+
+`shutdown-timeout` is not a single budget for the whole sequence: it
+bounds the poller join (step 1), the handler drain (step 2) and the
+maintenance stop (step 5) separately. Pollers and maintenance threads
+react to `interrupt()` immediately, so the observed stop time is
+normally ≈ the drain time, but the worst case is roughly
+**3 × shutdown-timeout**. Size the orchestrator's grace period
+(`terminationGracePeriodSeconds` on k8s) accordingly.
+
+#### Ordering with Spring Boot's web graceful shutdown
+
+With `server.shutdown: graceful`, the embedded web server stops at
+phase `SmartLifecycle.DEFAULT_PHASE - 1024` — far above the engine's
+20000. Boot stops phases in descending order, so on SIGTERM:
+
+1. the web server stops accepting connections and drains in-flight
+   requests (`spring.lifecycle.timeout-per-shutdown-phase`, default
+   30 s) — their `@Transactional publish()` calls complete and commit;
+2. only then does the outbox engine stop polling and drain its
+   handlers;
+3. afterwards Boot closes connection pools and the DataSource.
+
+`spring.lifecycle.timeout-per-shutdown-phase` does not cut the engine
+short: `OutboxSmartLifecycle.stop(Runnable)` runs `OutboxEngine.stop()`
+synchronously on the calling thread. The total shutdown time is
+therefore the web drain plus the outbox drain — budget the grace
+period as `timeout-per-shutdown-phase + shutdown-timeout` (plus the
+worst-case margin above).
+
+Readiness: `/actuator/health/outbox` reports `DOWN` as soon as the
+engine leaves RUNNING; it affects `/actuator/health/readiness` only
+when `event-outboxer.health.probe-groups` lists `readiness`. Boot
+itself flips the readiness state to `REFUSING_TRAFFIC` on context
+close regardless, so the pod leaves the Service endpoints either way.
 
 ### 4. Bean autowiring
 
