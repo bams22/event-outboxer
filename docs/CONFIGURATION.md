@@ -480,7 +480,11 @@ per-type overrides adjust individual fields (see
   `handler-queue-capacity` makes dispatch a synchronous handoff. A
   rejected dispatch (rare capacity race) is not lost: the event is
   released back to `PENDING` (without consuming an attempt) and retried
-  after `dispatcher.dispatch-rejected-retry-delay`.
+  after `dispatcher.dispatch-rejected-retry-delay`. The queue is a
+  *prefetch*, not a buffer — the default 100 suits millisecond
+  handlers; for handlers that run seconds, read
+  [Sizing the handler queue](#sizing-the-handler-queue) before keeping
+  it.
 - `handler-max-runtime` — watchdog threshold. A handler running longer
   is force-reclaimed (see ADR-0005).
 - `interrupt-stuck-handler` — whether the watchdog also interrupts the
@@ -521,6 +525,73 @@ per-type overrides adjust individual fields (see
   starter warns when `Σ handler-pool-size >=
   spring.datasource.hikari.maximum-pool-size` (self-deadlock risk;
   does not apply to the default lease locker).
+
+#### Sizing the handler queue
+
+`handler-queue-capacity` decides how far ahead a JVM claims. The
+poller fills the whole in-flight budget as fast as the store answers
+(a full batch re-polls immediately, so 100 events take ~10 claim
+round-trips, not 10 poll intervals), and every claimed row is
+`PROCESSING` with `claimed_by = this worker` — invisible to every
+other instance until this JVM gets to it. Two consequences follow for
+handlers that take seconds rather than milliseconds.
+
+**Uneven sharing across instances.** With the defaults (3 threads +
+100 queued) and a 10-second handler, one instance grabs 103 events and
+needs `103 / 3 × 10s ≈ 5.7 min` to work through them while its peers
+idle on an empty `PENDING` set. The worst-case wait of the last queued
+event is
+
+```
+(handler-pool-size + handler-queue-capacity) / handler-pool-size × t_handler
+```
+
+and that is the pickup latency you should expect for the tail of a
+burst, whatever the poll intervals say.
+
+**Stale-claim sweeps of events that never started.** A queued dispatch
+is not in flight: the watchdog only sees handlers that have started,
+so a row waiting in the queue is protected by nothing but the
+stale-claim sweeper, which returns any `PROCESSING` row older than
+[`maintenance.stale-claim-threshold`](#event-outboxermaintenance)
+(default 2 × the largest `handler-max-runtime`, i.e. 10 min) to
+`PENDING` with `attempts + 1`. The sweep does not remove the event
+from the local queue, and the dispatcher does not re-check the claim
+before invoking the handler — the handler runs, and only its finalize
+is rejected by the version check (ADR-0014). The result is a second,
+wasted execution of an event that was never late. Keep
+
+```
+(handler-pool-size + handler-queue-capacity) / handler-pool-size × t_handler
+    <  stale-claim-threshold
+```
+
+with margin. The defaults hold for a 10-second handler (5.7 min < 10
+min) and break for a 30-second one (17 min).
+
+Guidance:
+
+- `handler-queue-capacity: 0` — synchronous handoff: the poller claims
+  only what a free thread can start right now (`free = handler-pool-size
+  − in-flight`). The extra claim round-trip when a slot frees (the
+  poller is woken by the executor, it does not wait for the next poll)
+  is noise next to a multi-second handler, and events spread evenly
+  over the fleet. This is the right setting for slow handlers.
+- A queue about the size of the pool keeps threads busy across the
+  claim round-trip without prefetching more than ~2× the parallelism.
+- The default 100 pays off only for fast handlers, where it amortises
+  claim statements and drains in well under a second.
+- Parallelism comes from `handler-pool-size` (mind
+  `spring.datasource.hikari.maximum-pool-size`), or from
+  `handler-executor.type: virtual` with `handler-pool-size` set to the
+  wanted concurrency and `handler-queue-capacity: 0` — for virtual
+  threads the sum is only a soft in-flight cap, there is no real pool
+  to keep fed.
+
+Rule of thumb: size the queue to the number of events of that type the
+pool completes within one poll interval, then check the worst-case
+wait above against both your latency target and
+`stale-claim-threshold`.
 
 ### `event-outboxer.dispatcher.*`
 
@@ -594,6 +665,10 @@ Maintenance-process parameters.
   explicit value must exceed every `handler-max-runtime` — validated
   at startup. Heterogeneous fleets (a rolling deploy raising
   `handler-max-runtime`) should set it explicitly with headroom.
+  Dispatches waiting in a handler queue are claims too and are not
+  watched by the watchdog — a deep queue behind slow handlers can push
+  them past this threshold; see
+  [Sizing the handler queue](#sizing-the-handler-queue).
 - `stale-claim-sweep-interval` — cadence of the sweeper (default 5m).
 
 Note on `handler-max-runtime` semantics: since the in-flight bracket
