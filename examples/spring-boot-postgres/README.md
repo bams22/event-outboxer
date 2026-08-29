@@ -8,8 +8,6 @@ Minimal demo showing the `@Transactional createOrder(...)` → `publisher.publis
 - JDK 25 or newer (library baseline)
 - Maven 3.9+ (or use the wrapper from the parent project)
 - Docker for the `docker-compose.yml` services (PostgreSQL 15, KeyDB 6)
-- The library installed locally (`./mvnw -DskipTests install` from the
-  repository root) — the example tracks the main branch version.
 
 ## Run
 
