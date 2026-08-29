@@ -3,7 +3,8 @@
 ## Status
 
 Accepted — amended 2026-07-26 (claiming is now capacity-coupled to the
-per-type executor; see the Amendment section at the bottom)
+per-type executor) and 2026-08-29 (the refill is gated on a free-capacity
+watermark); see the Amendment sections at the bottom
 
 ## Date
 
@@ -145,6 +146,58 @@ for virtual executors, leaving in-flight growth unbounded.
 Dispatch rejection (`RejectedExecutionException` → release back to
 PENDING without an attempts bump) remains as a safety net for capacity
 races, but is no longer a steady-state occurrence.
+
+## Amendment (2026-08-29): watermark-gated refill
+
+The capacity-coupled claim above tops the executor up as soon as a
+single slot frees: the capacity-available wake fires on the
+saturated→free edge and the poller claims `min(claimBatchSize, 1)`.
+Under sustained load that is **one claim statement per handler
+completion** regardless of `handlerQueueCapacity` — the queue only
+decides how many rows this JVM holds in `PROCESSING` ahead of time (see
+CONFIGURATION.md §Sizing the handler queue); it never amortises claims.
+The natural batching that does occur (several completions landing
+before the poller wakes, claimed together) is incidental and vanishes
+exactly when handlers are slow enough for the queue to matter.
+
+`EventTypeConfig.claimMinFree` (default `1`, i.e. the behaviour above
+unchanged) turns the queue into a real prefetch:
+
+- **Watermark-gated claim**: the poller claims only when
+  `freeCapacity >= claimMinFree`, and the check runs on every loop
+  iteration — a partial batch that drops free capacity below the
+  threshold waits for the threshold again instead of trickling one-row
+  claims on the adaptive timer. Below the threshold the poller parks
+  exactly as it does when saturated (bounded fallback of
+  `pollMinInterval`); `onPollerSaturated` still fires only at zero free
+  capacity.
+- **Threshold wake**: `HandlerExecutorGate.onCapacityAvailable` fires on
+  the edge where free capacity reaches `claimMinFree` (the
+  saturated→free edge when it is 1). Completions decrement in-flight one
+  at a time, so the edge cannot be skipped.
+- **Bounds**: `1 <= claimMinFree <= handlerPoolSize +
+  handlerQueueCapacity`, validated in the record. With a platform
+  executor a threshold above `handlerQueueCapacity` idles handler
+  threads while the poller waits for the refill — the starter warns at
+  startup. For the virtual-thread executor, where the budget is a soft
+  in-flight cap and there is no queue, the same setting is a deliberate
+  concurrency-for-batching trade and stays silent.
+
+With `handlerPoolSize 3`, `handlerQueueCapacity 30`, `claimMinFree 30`
+and `claimBatchSize 30` the type claims once per 30 events instead of
+once per event; the worst-case wait of the last claimed row
+(`(pool + queue) / pool × t_handler`) and the stale-claim bound are
+unchanged.
+
+What the amendment does not change: the in-flight budget and its
+hoarding semantics, the after-commit wake (a locally published event
+still wakes the poller, which then applies the threshold — under load
+the event would have queued behind the prefetched rows anyway, and
+waiting in the store instead of the local FIFO lets `priority` order it
+correctly), and the light-load regime — with the store nearly empty the
+poller keeps polling on the adaptive timer whenever free capacity is at
+or above the threshold; batching there is a latency trade governed by
+`pollMinInterval`, not by this setting.
 
 ## Related decisions
 

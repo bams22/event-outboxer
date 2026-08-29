@@ -39,14 +39,17 @@ correctness is implemented exactly once, here
   [Usage](#usage-without-spring) below).
 - **`HandlerExecutorManager`** — owns one `ExecutorService` per event
   type; exposes free capacity to the poller through
-  `HandlerExecutorGate` and wakes the poller the moment a handler slot
-  frees.
+  `HandlerExecutorGate` and wakes the poller the moment free capacity
+  reaches the type's `claimMinFree` refill threshold (a freed slot with
+  the default of 1).
 
 ### Polling (`polling`)
 
 One `Poller` per event type on a dedicated daemon thread
 (`outbox-poller-<eventType>`). Each tick claims
-`min(claimBatchSize, freeCapacity)` events via `PollStrategy`
+`min(claimBatchSize, freeCapacity)` events — and only once
+`freeCapacity >= claimMinFree` (1 by default; a higher threshold refills
+the handler queue in bulk, ADR-0004 amendment) — via `PollStrategy`
 (default `LockAndFetchStrategy` — a single
 `EventStore.claim(...)` call, `FOR UPDATE SKIP LOCKED` in the
 PostgreSQL adapter). `AdaptiveWaiter` grows the wait after empty polls

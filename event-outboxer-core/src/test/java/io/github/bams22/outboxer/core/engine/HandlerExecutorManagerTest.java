@@ -41,10 +41,15 @@ class HandlerExecutorManagerTest {
     private HandlerExecutorManager manager;
 
     private HandlerExecutorManager manager(int poolSize, int queueCapacity) {
+        return manager(poolSize, queueCapacity, 1);
+    }
+
+    private HandlerExecutorManager manager(int poolSize, int queueCapacity, int claimMinFree) {
         EventTypeConfig cfg =
                 EventTypeConfig.defaults().toBuilder()
                         .handlerPoolSize(poolSize)
                         .handlerQueueCapacity(queueCapacity)
+                        .claimMinFree(claimMinFree)
                         .build();
         manager =
                 new HandlerExecutorManager(
@@ -188,6 +193,42 @@ class HandlerExecutorManagerTest {
         release.countDown();
         await().atMost(Duration.ofSeconds(2)).until(() -> gate.freeCapacity() == 2);
         assertThat(wakes.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("capacity callback fires exactly when free capacity reaches claimMinFree")
+    void wakeOnRefillThreshold() throws Exception {
+        // Four slots, refill threshold 3: completions 1 and 2 free capacity 1 and 2 → no wake;
+        // completion 3 crosses the threshold → exactly one wake; completion 4 → still one.
+        HandlerExecutorManager m = manager(4, 0, 3);
+        HandlerExecutorGate gate = m.executorFor(TYPE);
+        AtomicInteger wakes = new AtomicInteger();
+        gate.onCapacityAvailable(wakes::incrementAndGet);
+        m.start();
+
+        CountDownLatch[] release = new CountDownLatch[4];
+        CountDownLatch allStarted = new CountDownLatch(4);
+        for (int i = 0; i < 4; i++) {
+            release[i] = new CountDownLatch(1);
+            CountDownLatch mine = release[i];
+            gate.execute(
+                    () -> {
+                        allStarted.countDown();
+                        awaitQuietly(mine);
+                    });
+        }
+        allStarted.await();
+        assertThat(gate.freeCapacity()).isZero();
+
+        int[] expectedWakes = {0, 0, 1, 1};
+        for (int i = 0; i < 4; i++) {
+            release[i].countDown();
+            int expectedFree = i + 1;
+            await().atMost(Duration.ofSeconds(2)).until(() -> gate.freeCapacity() == expectedFree);
+            assertThat(wakes.get())
+                    .as("wakes after %d completion(s)", expectedFree)
+                    .isEqualTo(expectedWakes[i]);
+        }
     }
 
     @Test

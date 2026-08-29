@@ -246,6 +246,7 @@ public class OutboxEngineAutoConfiguration {
                 handlers,
                 qualifiedDataSourceProvider,
                 dataSourceProvider);
+        warnIfRefillThresholdIdlesThreads(properties, resolvedDefaults, handlers);
         wireFailureHandlers(builder, properties, beanFactory);
         pollStrategyProvider.ifAvailable(builder::pollStrategy);
         for (OutboxListener l : listeners) {
@@ -409,6 +410,54 @@ public class OutboxEngineAutoConfiguration {
         pgLockPoolWarning(totalHandlerThreads, maxPoolSize).ifPresent(log::warn);
     }
 
+    /**
+     * With a platform executor, {@code claim-min-free} above {@code handler-queue-capacity} means
+     * the poller keeps waiting for the refill threshold after the queue is already empty — up to
+     * {@code claim-min-free - handler-queue-capacity} handler threads idle until then. Valid (the
+     * hard bound is {@code pool + queue}, checked by {@code EventTypeConfig}) but almost never
+     * intended; for the virtual-thread executor the same setting is a deliberate concurrency /
+     * batching trade and stays silent.
+     */
+    private void warnIfRefillThresholdIdlesThreads(
+            OutboxProperties properties,
+            EventTypeConfig resolvedDefaults,
+            java.util.List<EventHandler<?>> handlers) {
+        if (properties.getHandlerExecutor().getType() != OutboxProperties.ExecutorType.platform) {
+            return;
+        }
+        for (EventHandler<?> h : handlers) {
+            OutboxProperties.EventType override =
+                    properties.getEventTypes().getOverrides().get(h.eventType());
+            EventTypeConfig cfg =
+                    override != null
+                            ? mergeEventType(override, resolvedDefaults)
+                            : resolvedDefaults;
+            refillThresholdWarning(h.eventType(), cfg).ifPresent(log::warn);
+        }
+    }
+
+    /** Package-private for tests. */
+    static java.util.Optional<String> refillThresholdWarning(
+            String eventType, EventTypeConfig cfg) {
+        if (cfg.claimMinFree() <= cfg.handlerQueueCapacity()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(
+                "event type '"
+                        + eventType
+                        + "': claim-min-free ("
+                        + cfg.claimMinFree()
+                        + ") exceeds handler-queue-capacity ("
+                        + cfg.handlerQueueCapacity()
+                        + ") with handler-executor.type=platform — the poller waits for the refill"
+                        + " threshold after the queue is already empty, leaving up to "
+                        + (cfg.claimMinFree() - cfg.handlerQueueCapacity())
+                        + " of the "
+                        + cfg.handlerPoolSize()
+                        + " handler thread(s) idle until then. Lower claim-min-free to at most the"
+                        + " queue capacity, or raise handler-queue-capacity.");
+    }
+
     /** Package-private for tests. */
     static java.util.Optional<String> pgLockPoolWarning(int totalHandlerThreads, int maxPoolSize) {
         if (totalHandlerThreads < maxPoolSize) {
@@ -470,6 +519,8 @@ public class OutboxEngineAutoConfiguration {
                         e.getClaimBatchSize() != null
                                 ? e.getClaimBatchSize()
                                 : base.claimBatchSize())
+                .claimMinFree(
+                        e.getClaimMinFree() != null ? e.getClaimMinFree() : base.claimMinFree())
                 .handlerPoolSize(
                         e.getHandlerPoolSize() != null
                                 ? e.getHandlerPoolSize()

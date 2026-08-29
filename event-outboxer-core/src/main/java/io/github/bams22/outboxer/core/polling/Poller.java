@@ -35,6 +35,12 @@ import org.slf4j.LoggerFactory;
  * EventHandler}; it runs on a dedicated platform thread and claims events for the configured type,
  * dispatching each one to the handler executor.
  *
+ * <p>Claiming is gated on the executor's free in-flight capacity: a tick claims {@code
+ * min(claimBatchSize, free)} and only when {@code free >= claimMinFree} — with the default of 1
+ * that is "whenever a slot is free"; a larger threshold turns {@code handlerQueueCapacity} into a
+ * real prefetch that is refilled in bulk once the queue has drained to the low watermark (ADR-0004
+ * amendment).
+ *
  * <p>Lifecycle: {@link #start()} spawns the thread; {@link #stop()} flips the running flag and
  * interrupts the thread so an in-progress {@code Thread.sleep} returns immediately. Waiting for
  * in-flight handlers to drain is done separately by the caller (see the engine's {@code
@@ -170,12 +176,18 @@ public final class Poller {
             while (running) {
                 try {
                     int free = handlerExecutor.freeCapacity();
-                    if (free <= 0) {
-                        listener.onPollerSaturated(new PollerSaturatedInfo(eventType));
-                        // Executor saturated: claiming now would only produce rejected dispatches
-                        // and
-                        // claim/release churn. Park with a bounded fallback — the gate's
-                        // capacity-available callback wakes us the moment a slot frees.
+                    if (free < config.claimMinFree()) {
+                        if (free <= 0) {
+                            listener.onPollerSaturated(new PollerSaturatedInfo(eventType));
+                        }
+                        // Below the refill threshold — either saturated (claiming now would only
+                        // produce rejected dispatches and claim/release churn) or still above the
+                        // low watermark (claiming now would top up one row at a time instead of
+                        // refilling in bulk). Park with a bounded fallback; the gate's
+                        // capacity-available callback wakes us the moment free capacity reaches
+                        // claimMinFree. Checked on every iteration, so a partial batch that drops
+                        // free capacity below the threshold waits for the threshold again rather
+                        // than trickling claims on the adaptive timer.
                         parkUnlessWoken(config.pollMinInterval());
                         continue;
                     }

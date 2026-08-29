@@ -13,10 +13,11 @@ import java.util.concurrent.Executor;
 
 /**
  * The poller's view of a per-type handler executor: submission plus the two capacity signals that
- * couple claiming to processing. The poller claims {@code min(claimBatchSize, freeCapacity())} so
- * it never claims rows it cannot dispatch (avoiding claim/release churn under overload), and {@link
- * #onCapacityAvailable(Runnable)} wakes it the moment a saturated executor frees a slot (instead of
- * sleeping out the poll interval).
+ * couple claiming to processing. The poller claims {@code min(claimBatchSize, freeCapacity())}, and
+ * only once {@code freeCapacity() >= claimMinFree}, so it never claims rows it cannot dispatch
+ * (avoiding claim/release churn under overload) and can refill a prefetch queue in bulk; {@link
+ * #onCapacityAvailable(Runnable)} wakes it the moment free capacity reaches that threshold (instead
+ * of sleeping out the poll interval).
  */
 public interface HandlerExecutorGate extends Executor {
 
@@ -29,8 +30,9 @@ public interface HandlerExecutorGate extends Executor {
     int freeCapacity();
 
     /**
-     * Register the single listener invoked when the executor transitions from saturated (zero free
-     * capacity) back to having room. Deliberately transition-edged — firing on every task
+     * Register the single listener invoked when free capacity reaches the type's {@code
+     * claimMinFree} refill threshold — with the default of 1, the transition from saturated (zero
+     * free capacity) back to having room. Deliberately edge-triggered — firing on every task
      * completion would trigger one claim query per completion under load instead of letting free
      * slots accumulate into a batch.
      */

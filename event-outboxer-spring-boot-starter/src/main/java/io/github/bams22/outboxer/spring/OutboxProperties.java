@@ -394,6 +394,15 @@ public class OutboxProperties {
         private @Nullable Duration pollMaxInterval;
         private @Nullable Double pollMultiplier;
         private @Nullable Integer claimBatchSize;
+
+        /**
+         * Free in-flight capacity the poller waits for before it claims again (low-watermark
+         * refill). Library default {@code 1}: claim as soon as one slot frees. Raise it to refill
+         * the handler queue in bulk; must stay within {@code [1, handler-pool-size +
+         * handler-queue-capacity]}.
+         */
+        private @Nullable Integer claimMinFree;
+
         private @Nullable Integer handlerPoolSize;
         private @Nullable Integer handlerQueueCapacity;
         private @Nullable Duration handlerMaxRuntime;

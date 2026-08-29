@@ -108,6 +108,7 @@ event-outboxer:
       poll-max-interval: 10s         # ceiling of the adaptive poll interval
       poll-multiplier: 1.5           # growth factor after an empty poll; must be > 1.0
       claim-batch-size: 10           # events claimed per poll
+      claim-min-free: 1              # free in-flight slots the poller waits for before claiming again
       handler-pool-size: 3           # fixed per-type thread pool (core == max, no scaling)
       handler-queue-capacity: 100    # bounded queue; 0 = synchronous handoff (fail fast)
       handler-max-runtime: 5m        # watchdog threshold for a stuck handler
@@ -467,6 +468,23 @@ per-type overrides adjust individual fields (see
   the publishing transaction commits, so same-JVM latency is
   milliseconds regardless of the poll intervals (ADR-0006 amendment).
 - `claim-batch-size` — how many events to claim per poll.
+- `claim-min-free` — free in-flight capacity (`handler-pool-size +
+  handler-queue-capacity − in-flight`) the poller waits for before it
+  claims again — a low-watermark refill (ADR-0004 amendment). Default
+  `1`: claim as soon as a slot frees. A larger value lets the handler
+  queue drain to a low watermark and then refills it with one claim
+  (`claim-batch-size` permitting), cutting claim statements under
+  sustained load from one per handler completion to one per
+  `claim-min-free` completions; the executor's capacity wake fires on
+  that threshold, and a partial batch that drops free capacity below
+  it waits for the threshold again rather than trickling one-row
+  claims. Must be within `[1, handler-pool-size +
+  handler-queue-capacity]` (validated). With `handler-executor.type:
+  platform` keep it at or below `handler-queue-capacity` — above that
+  the handler threads idle until the refill (the starter warns); for
+  `virtual`, where there is no queue, it deliberately trades in-flight
+  concurrency for batching. See
+  [Sizing the handler queue](#sizing-the-handler-queue).
 - `handler-pool-size`, `handler-queue-capacity` — fixed-size
   executor per event type (`core == max`, no scaling). Their sum is the
   type's **in-flight budget**: the poller claims at most
@@ -569,6 +587,20 @@ wasted execution of an event that was never late. Keep
 with margin. The defaults hold for a 10-second handler (5.7 min < 10
 min) and break for a 30-second one (17 min).
 
+**Refilling in bulk.** By default (`claim-min-free: 1`) the poller
+tops the executor up as soon as a single slot frees, so under sustained
+load a deep queue does not save claim statements either — it is one
+claim per handler completion, only with more rows hoarded. Set
+`claim-min-free` to make the queue a real prefetch: the poller waits
+until that many slots are free and refills them with one claim.
+`handler-pool-size: 3`, `handler-queue-capacity: 30`, `claim-min-free:
+30`, `claim-batch-size: 30` claims once per 30 events instead of once
+per event; the worst-case wait and the stale-claim bound above are
+unchanged, so size the queue by those first and the threshold second.
+Keep `claim-min-free <= handler-queue-capacity` on a platform executor
+(the starter warns otherwise) — above that the threads idle while the
+poller waits.
+
 Guidance:
 
 - `handler-queue-capacity: 0` — synchronous handoff: the poller claims
@@ -579,8 +611,12 @@ Guidance:
   over the fleet. This is the right setting for slow handlers.
 - A queue about the size of the pool keeps threads busy across the
   claim round-trip without prefetching more than ~2× the parallelism.
-- The default 100 pays off only for fast handlers, where it amortises
-  claim statements and drains in well under a second.
+- The default 100 pays off only for fast handlers, where completions
+  land faster than the poller wakes and get claimed together, and the
+  queue drains in well under a second.
+- A slow-handler type that must not claim one row at a time: a queue of
+  N with `claim-min-free: N` and `claim-batch-size: N` — one claim per
+  N events, at the price of the hoarding described above.
 - Parallelism comes from `handler-pool-size` (mind
   `spring.datasource.hikari.maximum-pool-size`), or from
   `handler-executor.type: virtual` with `handler-pool-size` set to the
@@ -1036,6 +1072,7 @@ refresh:
 | `poll-min-interval > 0`, `poll-max-interval >= poll-min-interval` | `EventTypeConfig` | Adaptive backoff needs a sane range |
 | `poll-multiplier > 1.0` | `EventTypeConfig` | Adaptive backoff needs growth |
 | `claim-batch-size > 0`, `handler-pool-size > 0`, `handler-queue-capacity >= 0` | `EventTypeConfig` | Pool is fixed-size and bounded |
+| `claim-min-free` in `[1, handler-pool-size + handler-queue-capacity]` | `EventTypeConfig` | A refill threshold above the in-flight budget would never be reached |
 | `handler-max-runtime > 0`, `lock-ttl > 0` | `EventTypeConfig` | Sanity |
 | `abandoned-handler-grace >= 0` | `MaintenanceConfig` | Sanity |
 | retry delays not negative | `DispatcherConfig` | Sanity |

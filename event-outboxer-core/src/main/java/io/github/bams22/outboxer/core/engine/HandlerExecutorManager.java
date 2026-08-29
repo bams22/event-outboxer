@@ -34,10 +34,11 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Each per-type slot doubles as the poller-facing {@link HandlerExecutorGate}: it tracks the
  * number of in-flight tasks against a capacity budget of {@code handlerPoolSize +
- * handlerQueueCapacity} and reports the saturated→free transition, so the poller claims only what
- * the executor can actually absorb and wakes up the moment a slot frees. For the virtual-thread
- * executor flavour the same budget acts as a soft in-flight cap (the underlying executor itself is
- * unbounded).
+ * handlerQueueCapacity} and reports the edge where free capacity reaches the type's {@code
+ * claimMinFree} refill threshold (the saturated→free transition with the default of 1), so the
+ * poller claims only what the executor can actually absorb and wakes up the moment a refill is due.
+ * For the virtual-thread executor flavour the same budget acts as a soft in-flight cap (the
+ * underlying executor itself is unbounded).
  *
  * <p>In-flight accounting is generation-scoped: every {@code start()} creates a fresh counter
  * captured by the tasks submitted to that generation's pool, so a handler that outlives a
@@ -67,7 +68,10 @@ public final class HandlerExecutorManager {
             EventTypeConfig cfg = e.getValue();
             s.put(
                     e.getKey(),
-                    new Slot(e.getKey(), cfg.handlerPoolSize() + cfg.handlerQueueCapacity()));
+                    new Slot(
+                            e.getKey(),
+                            cfg.handlerPoolSize() + cfg.handlerQueueCapacity(),
+                            cfg.claimMinFree()));
         }
         this.slots = s;
     }
@@ -178,13 +182,15 @@ public final class HandlerExecutorManager {
 
         private final String eventType;
         private final int capacityLimit;
+        private final int wakeThreshold;
         private volatile @Nullable Generation current;
         private @Nullable Generation drained;
         private volatile @Nullable Runnable capacityCallback;
 
-        private Slot(String eventType, int capacityLimit) {
+        private Slot(String eventType, int capacityLimit, int wakeThreshold) {
             this.eventType = eventType;
             this.capacityLimit = capacityLimit;
+            this.wakeThreshold = wakeThreshold;
         }
 
         private void install(ExecutorService exec) {
@@ -265,9 +271,12 @@ public final class HandlerExecutorManager {
 
         private void completeTask(Generation gen) {
             int remaining = gen.inFlight.decrementAndGet();
-            // Fire only on the saturated→free edge, and only for the LIVE generation — completions
-            // of abandoned tasks from a drained generation must not wake anyone.
-            if (remaining == capacityLimit - 1 && gen == current) {
+            // Fire only on the edge where free capacity reaches the poller's refill threshold
+            // (claimMinFree; the saturated→free edge when it is 1), and only for the LIVE
+            // generation — completions of abandoned tasks from a drained generation must not wake
+            // anyone. Completions decrement one at a time, so the equality check cannot skip the
+            // edge.
+            if (remaining == capacityLimit - wakeThreshold && gen == current) {
                 Runnable callback = capacityCallback;
                 if (callback != null) {
                     try {

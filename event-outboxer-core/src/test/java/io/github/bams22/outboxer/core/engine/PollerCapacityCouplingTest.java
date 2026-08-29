@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
@@ -29,6 +30,7 @@ import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -194,6 +196,76 @@ class PollerCapacityCouplingTest {
         await().atMost(Duration.ofSeconds(3)).until(() -> done.get() >= 2);
         long tookMillis = (System.nanoTime() - start) / 1_000_000;
         assertThat(tookMillis).isLessThan(3000);
+    }
+
+    @Test
+    @DisplayName(
+            "claimMinFree: the poller does not top up the queue until free capacity reaches the"
+                    + " refill threshold, then refills in one claim")
+    void refillThresholdGatesClaiming() throws Exception {
+        // 1 thread + 4 queued = budget 5; refill only once 4 slots are free (queue drained).
+        Semaphore permits = new Semaphore(0);
+        AtomicInteger done = new AtomicInteger();
+        AtomicInteger polls = new AtomicInteger();
+        OutboxListener pollCounter =
+                new OutboxListener() {
+                    @Override
+                    public void onPollCompleted(PollCompletedInfo info) {
+                        if (info.claimed() > 0) {
+                            polls.incrementAndGet();
+                        }
+                    }
+                };
+        engine =
+                engineWith(
+                                cfg ->
+                                        cfg.claimBatchSize(10)
+                                                .handlerPoolSize(1)
+                                                .handlerQueueCapacity(4)
+                                                .claimMinFree(4)
+                                                .pollMinInterval(Duration.ofMillis(10))
+                                                .pollMaxInterval(Duration.ofMillis(50)))
+                        .listener(pollCounter)
+                        .handler(
+                                handler(
+                                        "REFILL",
+                                        (ctx, payload) -> {
+                                            permits.acquireUninterruptibly();
+                                            done.incrementAndGet();
+                                            return EventOutcome.success();
+                                        }))
+                        .build();
+        // Publish before starting so the per-publish after-commit wake cannot split the first
+        // claim: on start the idle executor has free = 5 >= 4 → the first 5 events are claimed in
+        // one go (1 running, 4 queued); the remaining 3 stay PENDING because free capacity is 0.
+        for (int i = 0; i < 8; i++) {
+            engine.publisher().publish(EventType.of("REFILL", String.class), "r-" + i);
+        }
+        engine.start();
+        await().atMost(Duration.ofSeconds(2))
+                .until(() -> store.metricsSnapshot().totalProcessing() == 5);
+        assertThat(store.metricsSnapshot().totalPending()).isEqualTo(3);
+        assertThat(polls.get()).isEqualTo(1);
+
+        // Three completions free 3 slots — below the threshold of 4 — so across many poll
+        // intervals nothing is claimed: no one-row top-ups while the queue is still above the
+        // low watermark.
+        permits.release(3);
+        await().atMost(Duration.ofSeconds(2)).until(() -> done.get() == 3);
+        Thread.sleep(300);
+        assertThat(store.metricsSnapshot().totalPending()).isEqualTo(3);
+        assertThat(store.metricsSnapshot().totalProcessing()).isEqualTo(2);
+        assertThat(polls.get()).isEqualTo(1);
+
+        // The fourth completion crosses the threshold: one refill claim takes all 3 at once.
+        permits.release(1);
+        await().atMost(Duration.ofSeconds(2))
+                .until(() -> store.metricsSnapshot().totalPending() == 0);
+        assertThat(polls.get()).isEqualTo(2);
+
+        permits.release(4);
+        await().atMost(Duration.ofSeconds(5)).until(() -> done.get() >= 8);
+        assertThat(store.metricsSnapshot().totalProcessing()).isZero();
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -14,8 +14,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Startup-time failure: a per-event-type configuration block is invalid. Examples: non-positive
  * {@code handler-pool-size} or {@code claim-batch-size}, negative {@code handler-queue-capacity},
- * {@code poll-multiplier <= 1.0}, or {@code poll-max-interval} smaller than {@code
- * poll-min-interval}.
+ * {@code claim-min-free} outside {@code [1, handler-pool-size + handler-queue-capacity]}, {@code
+ * poll-multiplier <= 1.0}, or {@code poll-max-interval} smaller than {@code poll-min-interval}.
  */
 public final class InvalidEventTypeConfigException extends ConfigurationException {
 

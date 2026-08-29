@@ -43,6 +43,30 @@ class EventTypeConfigTest {
     }
 
     @Test
+    void claimMinFreeDefaultsToOneAndStaysWithinTheInFlightBudget() {
+        EventTypeConfig d = EventTypeConfig.defaults();
+        assertThat(d.claimMinFree()).isEqualTo(1);
+
+        assertThatThrownBy(() -> d.toBuilder().claimMinFree(0).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("claimMinFree");
+        // Hard bound: waiting for more free capacity than pool + queue would never claim again.
+        assertThatThrownBy(
+                        () ->
+                                d.toBuilder()
+                                        .handlerPoolSize(3)
+                                        .handlerQueueCapacity(30)
+                                        .claimMinFree(34)
+                                        .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("claimMinFree");
+        // Equality is allowed: refill only when the executor is completely idle.
+        EventTypeConfig full =
+                d.toBuilder().handlerPoolSize(3).handlerQueueCapacity(30).claimMinFree(33).build();
+        assertThat(full.claimMinFree()).isEqualTo(33);
+    }
+
+    @Test
     void lockTtlMustCoverHandlerMaxRuntime() {
         // Shorter TTL than the handler budget → the entity lock could expire mid-handler.
         assertThatThrownBy(

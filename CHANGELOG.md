@@ -7,7 +7,24 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **Low-watermark claim refill — `claim-min-free` (ADR-0004
+  amendment).** New per-type setting
+  `event-outboxer.event-types.{defaults,overrides.<TYPE>}.claim-min-free`
+  (core: `EventTypeConfig.claimMinFree`): the poller claims only once
+  that many in-flight slots are free, and the executor's capacity wake
+  fires on that threshold. The default `1` keeps the previous behaviour
+  (claim as soon as a slot frees). A larger value lets the handler
+  queue drain to a low watermark and refills it with one claim, so
+  under sustained load a queue of N costs one claim statement per N
+  handler completions instead of one per completion — previously
+  `handler-queue-capacity` only decided how many rows a JVM hoarded,
+  never how often it claimed. Validated to `[1, handler-pool-size +
+  handler-queue-capacity]`; the starter warns at startup when the
+  threshold exceeds the queue capacity on a platform executor (idle
+  handler threads). `EventTypeConfig.builder()` gains the required
+  `claimMinFree` field — callers building the record from scratch must
+  set it (`defaults().toBuilder()` is unaffected).
 
 
 ## [0.5.0] — 2026-08-29

@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import java.time.Duration;
@@ -49,6 +50,7 @@ class EventTypeThinMergeTest {
         assertThat(merged.pollMaxInterval()).isEqualTo(base.pollMaxInterval());
         assertThat(merged.pollMultiplier()).isEqualTo(base.pollMultiplier());
         assertThat(merged.claimBatchSize()).isEqualTo(base.claimBatchSize());
+        assertThat(merged.claimMinFree()).isEqualTo(base.claimMinFree());
         assertThat(merged.handlerQueueCapacity()).isEqualTo(base.handlerQueueCapacity());
         assertThat(merged.handlerMaxRuntime()).isEqualTo(base.handlerMaxRuntime());
         assertThat(merged.interruptStuckHandler()).isEqualTo(base.interruptStuckHandler());
@@ -95,5 +97,45 @@ class EventTypeThinMergeTest {
         assertThat(merged.pollMinInterval()).isEqualTo(Duration.ofMillis(250));
         assertThat(merged.pollMaxInterval())
                 .isEqualTo(EventTypeConfig.defaults().pollMaxInterval());
+    }
+
+    @Test
+    @DisplayName("claim-min-free merges like every other field and is bounded by pool + queue")
+    void claimMinFreeMerge() {
+        EventTypeConfig base = EventTypeConfig.defaults(); // pool 3 + queue 100
+        OutboxProperties.EventType override = new OutboxProperties.EventType();
+        override.setClaimMinFree(50);
+
+        assertThat(OutboxEngineAutoConfiguration.mergeEventType(override, base).claimMinFree())
+                .isEqualTo(50);
+
+        OutboxProperties.EventType tooHigh = new OutboxProperties.EventType();
+        tooHigh.setHandlerQueueCapacity(0);
+        tooHigh.setClaimMinFree(4);
+        assertThatThrownBy(() -> OutboxEngineAutoConfiguration.mergeEventType(tooHigh, base))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("claimMinFree");
+    }
+
+    @Test
+    @DisplayName("platform executor warns when claim-min-free exceeds the queue capacity")
+    void refillThresholdWarning() {
+        EventTypeConfig fine =
+                EventTypeConfig.defaults().toBuilder()
+                        .handlerPoolSize(3)
+                        .handlerQueueCapacity(30)
+                        .claimMinFree(30)
+                        .build();
+        assertThat(OutboxEngineAutoConfiguration.refillThresholdWarning("T", fine)).isEmpty();
+
+        EventTypeConfig idling = fine.toBuilder().claimMinFree(32).build();
+        assertThat(OutboxEngineAutoConfiguration.refillThresholdWarning("T", idling))
+                .hasValueSatisfying(
+                        msg ->
+                                assertThat(msg)
+                                        .contains("'T'")
+                                        .contains("claim-min-free (32)")
+                                        .contains("handler-queue-capacity (30)")
+                                        .contains("up to 2 of the 3"));
     }
 }

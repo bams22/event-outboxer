@@ -26,6 +26,14 @@ import lombok.Builder;
  * @param pollMultiplier per-empty-batch multiplier applied to the current wait; must be {@code >
  *     1.0}
  * @param claimBatchSize maximum number of events claimed per poll
+ * @param claimMinFree free in-flight capacity ({@code handlerPoolSize + handlerQueueCapacity -
+ *     inFlight}) the poller waits for before it claims again — a low-watermark refill. {@code 1}
+ *     (the default) claims as soon as a single slot frees; a larger value lets slots accumulate so
+ *     one claim statement refills the executor in bulk instead of one row per handler completion.
+ *     Must be in {@code [1, handlerPoolSize + handlerQueueCapacity]} (validated). With a platform
+ *     executor a value above {@code handlerQueueCapacity} idles handler threads while the poller
+ *     waits for the threshold — keep it at or below the queue size there; for the virtual-thread
+ *     executor it deliberately trades in-flight concurrency for batching
  * @param handlerPoolSize size of the per-type handler executor thread pool
  * @param handlerQueueCapacity bounded queue size for the handler executor; zero means a synchronous
  *     handoff that fails fast (triggers {@code onDispatchRejected})
@@ -48,6 +56,7 @@ public record EventTypeConfig(
         Duration pollMaxInterval,
         double pollMultiplier,
         int claimBatchSize,
+        int claimMinFree,
         int handlerPoolSize,
         int handlerQueueCapacity,
         Duration handlerMaxRuntime,
@@ -86,6 +95,18 @@ public record EventTypeConfig(
             throw new IllegalArgumentException(
                     "handlerQueueCapacity must not be negative, got " + handlerQueueCapacity);
         }
+        if (claimMinFree < 1) {
+            throw new IllegalArgumentException("claimMinFree must be >= 1, got " + claimMinFree);
+        }
+        if (claimMinFree > handlerPoolSize + handlerQueueCapacity) {
+            throw new IllegalArgumentException(
+                    "claimMinFree ("
+                            + claimMinFree
+                            + ") must not exceed handlerPoolSize + handlerQueueCapacity ("
+                            + (handlerPoolSize + handlerQueueCapacity)
+                            + "): the poller would wait for more free capacity than the executor"
+                            + " can ever have and never claim again.");
+        }
         if (handlerMaxRuntime.isNegative() || handlerMaxRuntime.isZero()) {
             throw new IllegalArgumentException(
                     "handlerMaxRuntime must be positive, got " + handlerMaxRuntime);
@@ -116,6 +137,7 @@ public record EventTypeConfig(
                 .pollMaxInterval(Duration.ofSeconds(10))
                 .pollMultiplier(1.5)
                 .claimBatchSize(10)
+                .claimMinFree(1)
                 .handlerPoolSize(3)
                 .handlerQueueCapacity(100)
                 .handlerMaxRuntime(Duration.ofMinutes(5))

@@ -506,6 +506,7 @@ public final class OutboxTestContext {
                     .pollMaxInterval(Duration.ofMillis(50))
                     .pollMultiplier(1.5)
                     .claimBatchSize(50)
+                    .claimMinFree(1)
                     .handlerPoolSize(1)
                     .handlerQueueCapacity(100)
                     .handlerMaxRuntime(Duration.ofMinutes(1))

@@ -228,7 +228,8 @@ the poll interval; cross-pod pickup and delayed events remain poll-bound
 Poller[SEND_EMAIL] (adaptive timer / after-commit wake / capacity-available wake)
     │
     │ batchSize = min(claimBatchSize, executor.freeCapacity())
-    │   freeCapacity == 0 → no claim at all (park until a handler slot frees)
+    │   freeCapacity < claimMinFree → no claim at all (park until free capacity reaches the
+    │     refill threshold — with the default claimMinFree = 1, until a handler slot frees)
     │   full batch claimed → immediate re-poll (throughput bound by handlers, not the timer)
     ▼
 PollStrategy.runOnce()
