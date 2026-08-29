@@ -65,7 +65,14 @@ for admin operations (findById, findAll).
 id, attempts, createdAt, claimedAt, trace_context.
 
 **EventHandler<T>** — user contract. Registered as a Spring bean, picked
-up automatically by the core engine via `eventType()`.
+up automatically by the core engine via `type().name()`.
+
+**EventType<T>** — typed key of an event type: the stable `event_type`
+name plus the payload class, `EventType.of("SEND_EMAIL", SendEmailPayload.class)`.
+Declared once as a constant and shared by the handler (`type()`) and the
+producer (`publish(type, payload)`), so the pair is never spelled twice.
+`EventType.untyped(name)` is the runtime-only escape hatch. See
+[ADR-0031](adr/0031-typed-event-key.md).
 
 **EventOutcome** — sealed interface of the processing result: `Success` |
 `Retry(reason, delayOverride, cause)` | `Fail(reason, cause)` |
@@ -95,7 +102,7 @@ PostgreSQL (lease table `entity_locks`, ADR-0022; session-scoped
 NoOp.
 
 **event_type** — string identifier of the event type. Connects the payload
-in the DB to `EventHandler.eventType()`. Must stay stable across releases.
+in the DB to `EventHandler.type().name()`. Must stay stable across releases.
 
 **extractLockKey** — default method on `EventHandler<T>` that returns an
 optional lockKey to serialize processing by business key. Null means "no
@@ -224,7 +231,8 @@ Implementations: `LockAndFetchStrategy`, `FetchThenLockStrategy`.
 **PROCESSING** — event status while it is being processed. Has
 `claimed_by` and `claimed_at` set.
 
-**publish** — call to `OutboxEventPublisher.publish(eventType, payload)`.
+**publish** — call to `OutboxEventPublisher.publish(type, payload)` with a
+typed `EventType<T>` key.
 MUST execute within the caller's transaction. See
 [ADR-0002](adr/0002-participate-in-client-transaction.md).
 

@@ -9,12 +9,25 @@
  */
 package io.github.bams22.outboxer.api.handle;
 
+import io.github.bams22.outboxer.domain.EventType;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Business handler for a specific event type. Implementations are typically registered as Spring
  * beans and discovered automatically at application startup; in plain-Java setups they are passed
  * to the engine builder.
+ *
+ * <h2>Registration key</h2>
+ *
+ * A handler declares its event type once, as an {@link EventType} constant that the producer side
+ * reuses for {@code publish(...)} — the name and the payload class are never spelled twice:
+ *
+ * <pre>{@code
+ * public static final EventType<SendEmailPayload> SEND_EMAIL =
+ *         EventType.of("SEND_EMAIL", SendEmailPayload.class);
+ *
+ * @Override public EventType<SendEmailPayload> type() { return SEND_EMAIL; }
+ * }</pre>
  *
  * <h2>Idempotency contract</h2>
  *
@@ -36,7 +49,7 @@ import org.jspecify.annotations.Nullable;
  * <h2>Exception handling</h2>
  *
  * Any uncaught exception thrown by {@link #handle(EventContext, Object)} is treated by the engine
- * as {@code EventOutcome.Retry(e.getMessage(), null, e)} and routed through the configured {@code
+ * as {@code EventOutcome.retry(e.getMessage(), e)} and routed through the configured {@code
  * FailureHandler} chain. Handlers therefore do not need to wrap everything in try/catch — return
  * {@code Success}/{@code Skip} on the happy path, and let the engine handle the rest.
  *
@@ -45,17 +58,29 @@ import org.jspecify.annotations.Nullable;
 public interface EventHandler<T> {
 
     /**
-     * Stable string identifier of the event type. Used to bind the handler to events stored with
-     * the same {@code event_type} value. Must not change between releases — it is a natural key in
-     * the database.
+     * Typed key of the event type this handler processes (ADR-0031) — the same constant the
+     * producer passes to {@code OutboxEventPublisher.publish(type, payload)}. {@code type().name()}
+     * binds the handler to events stored with that {@code event_type} value and is a natural key in
+     * the database: it must not change between releases. {@code type().payloadType()} drives the
+     * strict deserialization of the stored payload.
      */
-    String eventType();
+    EventType<T> type();
 
     /**
-     * Java class of the payload. The engine uses this to drive strict deserialization of the JSON
-     * stored alongside the event.
+     * Stable string identifier of the event type, {@code type().name()}. Derived from {@link
+     * #type()} — do not override.
      */
-    Class<T> payloadType();
+    default String eventType() {
+        return type().name();
+    }
+
+    /**
+     * Java class of the payload, {@code type().payloadType()}. Derived from {@link #type()} — do
+     * not override.
+     */
+    default Class<T> payloadType() {
+        return type().payloadType();
+    }
 
     /**
      * Process the event. See {@linkplain EventHandler class-level Javadoc} for the idempotency

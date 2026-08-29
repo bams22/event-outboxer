@@ -1134,6 +1134,14 @@ public class AuditListener implements OutboxListener {
 ```java
 @Component
 public class ValidationHandler implements EventHandler<ValidationPayload> {
+    public static final EventType<ValidationPayload> VALIDATE =
+        EventType.of("VALIDATE", ValidationPayload.class);
+
+    @Override
+    public EventType<ValidationPayload> type() {
+        return VALIDATE;
+    }
+
     @Override
     public FailureHandler<ValidationPayload> failureHandler() {
         // validation is not retried

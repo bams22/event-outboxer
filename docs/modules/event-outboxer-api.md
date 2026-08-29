@@ -25,12 +25,20 @@ nullness checkers work out of the box.
 
 ### Publishing (`api.publish`)
 
+- **`EventType<T>`** (`domain`) — the typed key shared by producer and
+  handler ([ADR-0031](../adr/0031-typed-event-key.md)): `EventType.of("SEND_EMAIL", SendEmailPayload.class)`
+  carries the stable `event_type` name (≤ 128 characters) and the payload
+  class; declare it once as a constant. `EventType.untyped(name)` is the
+  escape hatch for producers that only know the name at runtime.
 - **`OutboxEventPublisher`** — the entry point you inject and call:
-  - `UUID publish(String eventType, Object payload)`
-  - `UUID publish(String eventType, Object payload, Instant runAt)` — delayed events
-  - `UUID publish(String eventType, Object payload, PublishOptions options)`
-  - `List<UUID> publishAll(Collection<PublishRequest> requests)` — fail-fast,
-    all-or-nothing; result ids match request order.
+  - `<T> UUID publish(EventType<T> type, T payload)`
+  - `<T> UUID publish(EventType<T> type, T payload, Instant runAt)` — delayed events
+  - `<T> UUID publish(EventType<T> type, T payload, PublishOptions options)`
+  - `List<UUID> publishAll(Collection<? extends PublishRequest<?>> requests)` — fail-fast,
+    all-or-nothing; result ids match request order (`PublishRequest.of(type, payload[, options])`).
+
+  A payload that is not an instance of `type.payloadType()` is rejected
+  with `PublishValidationException` — reachable only by defeating generics.
 
   Contract: `publish` **participates in the caller's current
   transaction** ([ADR-0002](../adr/0002-participate-in-client-transaction.md))
@@ -55,13 +63,15 @@ nullness checkers work out of the box.
   ```java
   @Component
   public class SendEmailHandler implements EventHandler<SendEmailPayload> {
-      @Override public String eventType() { return "SEND_EMAIL"; }
-      @Override public Class<SendEmailPayload> payloadType() { return SendEmailPayload.class; }
+      public static final EventType<SendEmailPayload> SEND_EMAIL =
+          EventType.of("SEND_EMAIL", SendEmailPayload.class);   // reused by publisher.publish(SEND_EMAIL, ...)
+
+      @Override public EventType<SendEmailPayload> type() { return SEND_EMAIL; }
 
       @Override
       public EventOutcome handle(EventContext ctx, SendEmailPayload payload) {
           mailer.send(payload.email());
-          return EventOutcome.Success.INSTANCE;
+          return EventOutcome.success();
       }
 
       @Override
@@ -71,7 +81,7 @@ nullness checkers work out of the box.
   }
   ```
 
-  Contracts: `eventType()` is a stable natural key in the database —
+  Contracts: `type().name()` is a stable natural key in the database —
   never rename it once events exist. **Handlers must be idempotent**
   (at-least-once, [ADR-0015](../adr/0015-at-least-once-semantics.md)).
   An uncaught exception is treated as
@@ -86,10 +96,14 @@ nullness checkers work out of the box.
 
   | Outcome | Meaning |
   |---|---|
-  | `Success.INSTANCE` | done; event is deleted (or archived) |
-  | `Retry(reason, delayOverride, cause)` | transient failure; chain (or the override) picks the delay |
-  | `Fail(reason, cause)` | permanent failure; straight to `DISABLED`, no retries |
-  | `Skip(reason)` | successful no-op (idempotency short-circuit); stored like success, reported separately |
+  | `success()` | done; event is deleted (or archived) |
+  | `retry(reason[, delay][, cause])` | transient failure; chain (or the explicit delay) picks the delay |
+  | `fail(reason[, cause])` | permanent failure; straight to `DISABLED`, no retries |
+  | `skip(reason)` | successful no-op (idempotency short-circuit); stored like success, reported separately |
+
+  The static factories are the idiomatic way to produce an outcome; the
+  records (`Success`, `Retry`, `Fail`, `Skip`) stay public for pattern
+  matching.
 
 - **`FailureHandler<T>`** / **`FailureContext<T>`** / **`FailureDecision`**
   — the chain-of-responsibility that turns a failure into

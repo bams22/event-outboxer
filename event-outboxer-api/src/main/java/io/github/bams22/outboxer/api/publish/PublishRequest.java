@@ -9,28 +9,39 @@
  */
 package io.github.bams22.outboxer.api.publish;
 
+import io.github.bams22.outboxer.domain.EventType;
 import java.util.Objects;
 import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Single request in a batch {@link OutboxEventPublisher#publishAll(java.util.Collection)}
- * invocation. Carries the same data as a scalar {@code publish(...)} call: event type, payload, and
- * optional overrides.
+ * invocation. Carries the same data as a scalar {@code publish(...)} call: the typed event key, the
+ * payload, and optional overrides.
  *
- * @param eventType non-blank event-type identifier
- * @param payload DTO payload (not null)
+ * @param type typed event key (ADR-0031); its name is validated by {@link EventType} itself
+ * @param payload DTO payload (not null); must be an instance of {@code type.payloadType()}, which
+ *     the publisher checks
  * @param options optional per-request overrides; {@code null} is treated as {@link
  *     PublishOptions#defaults()}
+ * @param <T> payload type
  */
 @Builder
-public record PublishRequest(String eventType, Object payload, @Nullable PublishOptions options) {
+public record PublishRequest<T>(EventType<T> type, T payload, @Nullable PublishOptions options) {
 
     public PublishRequest {
-        Objects.requireNonNull(eventType, "eventType must not be null");
-        if (eventType.isBlank()) {
-            throw new IllegalArgumentException("eventType must not be blank");
-        }
+        Objects.requireNonNull(type, "type must not be null");
         Objects.requireNonNull(payload, "payload must not be null");
+    }
+
+    /** Request with default options. */
+    public static <T> PublishRequest<T> of(EventType<T> type, T payload) {
+        return new PublishRequest<>(type, payload, null);
+    }
+
+    /** Request with explicit options ({@code null} = defaults). */
+    public static <T> PublishRequest<T> of(
+            EventType<T> type, T payload, @Nullable PublishOptions options) {
+        return new PublishRequest<>(type, payload, options);
     }
 }

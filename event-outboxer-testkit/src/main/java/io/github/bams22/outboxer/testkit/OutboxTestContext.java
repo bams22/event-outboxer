@@ -31,6 +31,7 @@ import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.serializer.jackson.JacksonEventSerializer;
@@ -227,6 +228,12 @@ public final class OutboxTestContext {
          * OutboxEngineBuilder.writeSerializerOverride} (ADR-0025 amendment) for per-type
          * format-migration tests. The override serializer is registered for reads automatically.
          */
+        /** Typed variant of {@link #writeSerializerOverride(String, EventSerializer)}. */
+        public Builder writeSerializerOverride(EventType<?> type, EventSerializer serializer) {
+            return writeSerializerOverride(
+                    Objects.requireNonNull(type, "type must not be null").name(), serializer);
+        }
+
         public Builder writeSerializerOverride(String eventType, EventSerializer serializer) {
             Objects.requireNonNull(eventType, "eventType must not be null");
             if (eventType.isBlank()) {
@@ -274,6 +281,12 @@ public final class OutboxTestContext {
             return this;
         }
 
+        /** Typed variant of {@link #failureHandlerFor(String, FailureHandler)} (ADR-0031). */
+        public <T> Builder failureHandlerFor(EventType<T> type, FailureHandler<T> fh) {
+            return failureHandlerFor(
+                    Objects.requireNonNull(type, "type must not be null").name(), fh);
+        }
+
         public Builder defaultEventTypeConfig(EventTypeConfig config) {
             this.defaultEventTypeConfig = Objects.requireNonNull(config);
             return this;
@@ -282,6 +295,12 @@ public final class OutboxTestContext {
         public Builder eventTypeConfig(String eventType, EventTypeConfig config) {
             perTypeOverrides.put(Objects.requireNonNull(eventType), Objects.requireNonNull(config));
             return this;
+        }
+
+        /** Typed variant of {@link #eventTypeConfig(String, EventTypeConfig)}. */
+        public Builder eventTypeConfig(EventType<?> type, EventTypeConfig config) {
+            return eventTypeConfig(
+                    Objects.requireNonNull(type, "type must not be null").name(), config);
         }
 
         public Builder maintenance(MaintenanceConfig cfg) {

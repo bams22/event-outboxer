@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoEventSerializersException;
 import io.github.bams22.outboxer.serializer.jackson.JacksonEventSerializer;
@@ -121,18 +122,13 @@ class NoSerializersStartupTest {
         EventHandler<String> noopHandler() {
             return new EventHandler<>() {
                 @Override
-                public String eventType() {
-                    return "NOOP";
-                }
-
-                @Override
-                public Class<String> payloadType() {
-                    return String.class;
+                public EventType<String> type() {
+                    return EventType.of("NOOP", String.class);
                 }
 
                 @Override
                 public EventOutcome handle(EventContext ctx, String payload) {
-                    return EventOutcome.Success.INSTANCE;
+                    return EventOutcome.success();
                 }
             };
         }

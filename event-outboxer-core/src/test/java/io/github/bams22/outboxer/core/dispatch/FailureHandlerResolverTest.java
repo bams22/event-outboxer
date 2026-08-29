@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
+import io.github.bams22.outboxer.domain.EventType;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -70,18 +71,13 @@ class FailureHandlerResolverTest {
             String type, @Nullable FailureHandler<String> failureHandler) {
         return new EventHandler<>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<String> payloadType() {
-                return String.class;
+            public EventType<String> type() {
+                return EventType.of(type, String.class);
             }
 
             @Override
             public EventOutcome handle(EventContext ctx, String payload) {
-                return EventOutcome.Success.INSTANCE;
+                return EventOutcome.success();
             }
 
             @Override

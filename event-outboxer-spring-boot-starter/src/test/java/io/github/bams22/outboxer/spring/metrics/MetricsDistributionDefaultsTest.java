@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.domain.EventType;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.distribution.CountAtBucket;
@@ -125,18 +126,13 @@ class MetricsDistributionDefaultsTest {
 
     static class OrderHandler implements EventHandler<OrderCreated> {
         @Override
-        public String eventType() {
-            return "ORDER";
-        }
-
-        @Override
-        public Class<OrderCreated> payloadType() {
-            return OrderCreated.class;
+        public EventType<OrderCreated> type() {
+            return EventType.of("ORDER", OrderCreated.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, OrderCreated payload) {
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
     }
 

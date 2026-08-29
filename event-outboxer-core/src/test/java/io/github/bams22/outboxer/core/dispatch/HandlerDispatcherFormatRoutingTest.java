@@ -20,6 +20,7 @@ import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -53,19 +54,14 @@ class HandlerDispatcherFormatRoutingTest {
         EventHandler<String> handler =
                 new EventHandler<String>() {
                     @Override
-                    public String eventType() {
-                        return "FMT";
-                    }
-
-                    @Override
-                    public Class<String> payloadType() {
-                        return String.class;
+                    public EventType<String> type() {
+                        return EventType.of("FMT", String.class);
                     }
 
                     @Override
                     public EventOutcome handle(EventContext ctx, String payload) {
                         handled.set(payload);
-                        return EventOutcome.Success.INSTANCE;
+                        return EventOutcome.success();
                     }
                 };
         OutboxListener listener =

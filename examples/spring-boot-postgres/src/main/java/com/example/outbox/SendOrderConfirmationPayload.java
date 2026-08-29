@@ -9,11 +9,16 @@
  */
 package com.example.outbox;
 
+import io.github.bams22.outboxer.domain.EventType;
 import java.util.UUID;
 
 /** Event payload — serialized as JSON and stored in {@code event_outboxer.events.payload}. */
 public record SendOrderConfirmationPayload(UUID orderId, String email, long totalCents) {
 
-  /** Event type string — must match the handler's {@code eventType()}. */
-  public static final String EVENT_TYPE = "SEND_ORDER_CONFIRMATION";
+  /**
+   * Typed event key shared by the handler ({@code type()}) and the publisher ({@code
+   * publisher.publish(EVENT_TYPE, payload)}) — the name and the payload class are spelled once.
+   */
+  public static final EventType<SendOrderConfirmationPayload> EVENT_TYPE =
+      EventType.of("SEND_ORDER_CONFIRMATION", SendOrderConfirmationPayload.class);
 }

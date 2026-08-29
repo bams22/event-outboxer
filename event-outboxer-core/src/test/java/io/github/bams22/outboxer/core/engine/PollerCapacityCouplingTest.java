@@ -22,6 +22,7 @@ import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
@@ -78,13 +79,13 @@ class PollerCapacityCouplingTest {
                                         "BULK",
                                         (ctx, payload) -> {
                                             done.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
         for (int i = 0; i < 20; i++) {
-            engine.publisher().publish("BULK", "e-" + i);
+            engine.publisher().publish(EventType.of("BULK", String.class), "e-" + i);
         }
 
         await().atMost(Duration.ofSeconds(3)).until(() -> done.get() >= 20);
@@ -119,14 +120,14 @@ class PollerCapacityCouplingTest {
                                         (ctx, payload) -> {
                                             awaitQuietly(gate);
                                             done.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
         java.util.List<UUID> ids = new java.util.ArrayList<>();
         for (int i = 0; i < 5; i++) {
-            ids.add(engine.publisher().publish("SAT", "s-" + i));
+            ids.add(engine.publisher().publish(EventType.of("SAT", String.class), "s-" + i));
         }
 
         // Give the poller many poll cycles worth of time while the single slot is blocked.
@@ -179,14 +180,14 @@ class PollerCapacityCouplingTest {
                                         (ctx, payload) -> {
                                             sleepQuietly(200);
                                             done.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
         long start = System.nanoTime();
-        engine.publisher().publish("CHAIN", "first");
-        engine.publisher().publish("CHAIN", "second");
+        engine.publisher().publish(EventType.of("CHAIN", String.class), "first");
+        engine.publisher().publish(EventType.of("CHAIN", String.class), "second");
 
         // Two sequential 200ms handlers through a single slot. Timer-only polling would need a
         // full 5s interval between them; the capacity wake must chain them back to back.
@@ -239,13 +240,8 @@ class PollerCapacityCouplingTest {
     private static EventHandler<String> handler(String type, HandleFn fn) {
         return new EventHandler<String>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<String> payloadType() {
-                return String.class;
+            public EventType<String> type() {
+                return EventType.of(type, String.class);
             }
 
             @Override

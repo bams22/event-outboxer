@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.core.polling.PollStrategy;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spring.health.OutboxHealthIndicator;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import io.github.bams22.outboxer.testkit.RecordingOutboxListener;
@@ -111,18 +112,13 @@ class InMemoryStarterCrashTest {
 
     static class NoopHandler implements EventHandler<String> {
         @Override
-        public String eventType() {
-            return "NOOP";
-        }
-
-        @Override
-        public Class<String> payloadType() {
-            return String.class;
+        public EventType<String> type() {
+            return EventType.of("NOOP", String.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, String payload) {
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
     }
 

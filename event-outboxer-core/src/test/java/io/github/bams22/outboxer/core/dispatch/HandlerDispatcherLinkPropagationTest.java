@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -53,19 +54,14 @@ class HandlerDispatcherLinkPropagationTest {
         EventHandler<String> handler =
                 new EventHandler<>() {
                     @Override
-                    public String eventType() {
-                        return "T";
-                    }
-
-                    @Override
-                    public Class<String> payloadType() {
-                        return String.class;
+                    public EventType<String> type() {
+                        return EventType.of("T", String.class);
                     }
 
                     @Override
                     public EventOutcome handle(EventContext ctx, String payload) {
                         seenByHandler.set(ctx.traceContext());
-                        return EventOutcome.Success.INSTANCE;
+                        return EventOutcome.success();
                     }
                 };
         return HandlerDispatcher.builder()

@@ -68,9 +68,11 @@ per-type serializer tests.
 @ExtendWith(OutboxExtension.class)
 class OrderHandlerTest {
 
+  static final EventType<EmailRequest> SEND_EMAIL = EventType.of("SEND_EMAIL", EmailRequest.class);
+
   @Test
   void sendsConfirmationEmail(OutboxTestContext outbox) {
-    outbox.publisher().publish("SEND_EMAIL", new EmailRequest("me@x.io"));
+    outbox.publisher().publish(SEND_EMAIL, new EmailRequest("me@x.io"));
 
     int dispatched = outbox.manualEngine().tick();   // synchronous, this thread
 
@@ -98,11 +100,11 @@ OutboxTestContext ctx = OutboxTestContext.builder()
     .defaultFailureHandler(FailureHandlers.<Object>builder()
         .withMaxAttempts(3, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
         .withFixedDelay(Duration.ofSeconds(1)))
-    .handler(simpleHandler("FLAKY", p -> { throw new RuntimeException("nope"); }))
+    .handler(simpleHandler(FLAKY, p -> { throw new RuntimeException("nope"); }))   // FLAKY = EventType.of("FLAKY", String.class)
     .clock(SettableClock.atEpoch())
     .build();
 
-UUID id = ctx.publisher().publish("FLAKY", "payload");
+UUID id = ctx.publisher().publish(FLAKY, "payload");
 for (int i = 0; i < 3; i++) {
   ctx.manualEngine().tick();                       // one attempt
   ctx.clock().advance(Duration.ofSeconds(2));      // make the retry eligible

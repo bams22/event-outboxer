@@ -8,6 +8,29 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Breaking
+- **Typed event key (ADR-0031).** `EventHandler` declares
+  `EventType<T> type()`; `eventType()` / `payloadType()` are now
+  derived default methods. `OutboxEventPublisher.publish(String, Object, …)`
+  is replaced by `<T> publish(EventType<T>, T, …)`; `PublishRequest` is
+  `PublishRequest<T>(EventType<T>, T, PublishOptions)` and `publishAll`
+  takes `Collection<? extends PublishRequest<?>>`. A payload that is not
+  an instance of the key's payload class is rejected at publish with
+  `PublishValidationException` (`OUTBOX-101`); event names are limited
+  to 128 characters at construction. Migration — one constant per event
+  type, shared by both sides:
+  ```java
+  // before
+  @Override public String eventType() { return "SEND_EMAIL"; }
+  @Override public Class<SendEmailPayload> payloadType() { return SendEmailPayload.class; }
+  publisher.publish("SEND_EMAIL", payload);
+  // after
+  public static final EventType<SendEmailPayload> SEND_EMAIL =
+          EventType.of("SEND_EMAIL", SendEmailPayload.class);
+  @Override public EventType<SendEmailPayload> type() { return SEND_EMAIL; }
+  publisher.publish(SendEmailHandler.SEND_EMAIL, payload);
+  ```
+  Producers that only know the name at runtime use
+  `EventType.untyped(name)`.
 - **`event-outboxer-spring-boot-starter` now depends on
   `event-outboxer-serializer-jackson` non-optionally (amends ADR-0016
   and ADR-0026).** JSON via Jackson is the zero-config default
@@ -78,6 +101,15 @@ All notable changes to this project are documented here. Format follows
   `FailureAnalyzer` diagnosis naming both ways out.
 
 ### Added
+- `EventType<T>` (`domain`): `of(name, class)`, `untyped(name)`,
+  `MAX_NAME_LENGTH`; `PublishRequest.of(type, payload[, options])`;
+  `EventType<?>` overloads of `OutboxEngineBuilder.eventTypeConfig` /
+  `failureHandlerFor` / `writeSerializerOverride`,
+  `OutboxTestContext.Builder` (same three) and `ManualEngine.tick`.
+- `EventOutcome` static factories: `success()`, `skip(reason)`,
+  `retry(reason)`, `retry(reason, cause)`, `retry(reason, delay)`,
+  `retry(reason, delay, cause)`, `fail(reason)`, `fail(reason, cause)`.
+  `Success.INSTANCE` is what `success()` returns.
 - **Retry policy in YAML (ADR-0030, delivers ADR-0007 §YAML):**
   `event-outboxer.event-types.defaults.failure.*` and
   `event-outboxer.event-types.overrides.<TYPE>.failure.*` — `strategy`

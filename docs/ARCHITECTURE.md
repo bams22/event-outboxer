@@ -193,10 +193,11 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 Client code
     │
     │ @Transactional
-    │ publisher.publish("TYPE", payload);
+    │ publisher.publish(TYPE, payload);          // TYPE = EventType.of("TYPE", Payload.class), shared with the handler
     ▼
 DefaultOutboxEventPublisher
     │
+    ├─▶ validate: payload instanceof TYPE.payloadType() (ADR-0031)
     ├─▶ EventSerializer.serialize(payload) → SerializedPayload (text | bytes)
     │     + format id stamped into payload_format (ADR-0025)
     │

@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -57,7 +58,7 @@ class InMemoryStarterPublishOnlyTest {
     void publishOnlyNode() throws InterruptedException {
         assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);
 
-        UUID id = publisher.publish("ORDER", "order-1");
+        UUID id = publisher.publish(EventType.of("ORDER", String.class), "order-1");
         Thread.sleep(150); // several poll intervals — nothing must claim it
 
         assertThat(store.findById(id))

@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.api.handle;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.bams22.outboxer.domain.EventType;
 import org.junit.jupiter.api.Test;
 
 class EventHandlerDefaultsTest {
@@ -18,18 +19,13 @@ class EventHandlerDefaultsTest {
     private static final EventHandler<String> MINIMAL =
             new EventHandler<>() {
                 @Override
-                public String eventType() {
-                    return "TEST";
-                }
-
-                @Override
-                public Class<String> payloadType() {
-                    return String.class;
+                public EventType<String> type() {
+                    return EventType.of("TEST", String.class);
                 }
 
                 @Override
                 public EventOutcome handle(EventContext ctx, String payload) {
-                    return EventOutcome.Success.INSTANCE;
+                    return EventOutcome.success();
                 }
             };
 

@@ -12,8 +12,9 @@ package io.github.bams22.outboxer.domain.exception;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Publish call was rejected because of invalid input — for example a blank {@code eventType}, a
- * {@code null} payload, or a {@code runAt} in the past when the configuration forbids it.
+ * Publish call was rejected because of invalid input — a {@code null} event type or payload, a
+ * payload that is not an instance of the {@code EventType}'s payload class (ADR-0031), or a {@code
+ * runAt} in the past when the configuration forbids it.
  */
 public final class PublishValidationException extends PublishException {
 

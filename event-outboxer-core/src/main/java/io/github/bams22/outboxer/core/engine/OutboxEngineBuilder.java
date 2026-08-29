@@ -44,6 +44,7 @@ import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.core.workerid.WorkerIdFactory;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.domain.exception.NoEventHandlersException;
@@ -175,6 +176,13 @@ public final class OutboxEngineBuilder {
      * Useful for a gradual format migration one event type at a time; the override serializer is
      * registered for reads automatically.
      */
+    /** Typed variant of {@link #writeSerializerOverride(String, EventSerializer)}. */
+    public OutboxEngineBuilder writeSerializerOverride(
+            EventType<?> type, EventSerializer serializer) {
+        return writeSerializerOverride(
+                Objects.requireNonNull(type, "type must not be null").name(), serializer);
+    }
+
     public OutboxEngineBuilder writeSerializerOverride(
             String eventType, EventSerializer serializer) {
         Objects.requireNonNull(eventType, "eventType must not be null");
@@ -248,6 +256,14 @@ public final class OutboxEngineBuilder {
         return this;
     }
 
+    /**
+     * Typed variant of {@link #failureHandlerFor(String, FailureHandler)}: the chain's payload type
+     * is tied to the key's (ADR-0031).
+     */
+    public <T> OutboxEngineBuilder failureHandlerFor(EventType<T> type, FailureHandler<T> fh) {
+        return failureHandlerFor(Objects.requireNonNull(type, "type must not be null").name(), fh);
+    }
+
     public OutboxEngineBuilder defaultEventTypeConfig(EventTypeConfig cfg) {
         this.defaultEventTypeConfig = Objects.requireNonNull(cfg);
         return this;
@@ -258,6 +274,11 @@ public final class OutboxEngineBuilder {
         Objects.requireNonNull(cfg, "cfg must not be null");
         perTypeOverrides.put(eventType, cfg);
         return this;
+    }
+
+    /** Typed variant of {@link #eventTypeConfig(String, EventTypeConfig)}. */
+    public OutboxEngineBuilder eventTypeConfig(EventType<?> type, EventTypeConfig cfg) {
+        return eventTypeConfig(Objects.requireNonNull(type, "type must not be null").name(), cfg);
     }
 
     public OutboxEngineBuilder maintenance(MaintenanceConfig cfg) {

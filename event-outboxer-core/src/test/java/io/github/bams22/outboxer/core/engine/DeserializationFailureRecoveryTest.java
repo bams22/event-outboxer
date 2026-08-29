@@ -24,6 +24,7 @@ import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
@@ -118,12 +119,12 @@ class DeserializationFailureRecoveryTest {
                                         "ROLL",
                                         (ctx, payload) -> {
                                             handled.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("ROLL", "payload-v2");
+        UUID id = engine.publisher().publish(EventType.of("ROLL", String.class), "payload-v2");
 
         await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
         assertThat(handled).hasValue(1);
@@ -162,11 +163,11 @@ class DeserializationFailureRecoveryTest {
                                         .withMaxAttempts(
                                                 3, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
                                         .withFixedDelay(Duration.ofMillis(30)))
-                        .handler(handler("POISON", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+                        .handler(handler("POISON", (ctx, payload) -> EventOutcome.success()))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("POISON", "garbage");
+        UUID id = engine.publisher().publish(EventType.of("POISON", String.class), "garbage");
 
         await().atMost(Duration.ofSeconds(10))
                 .until(
@@ -237,12 +238,12 @@ class DeserializationFailureRecoveryTest {
                                         "FINFLAKY",
                                         (ctx, payload) -> {
                                             handled.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("FINFLAKY", "payload");
+        UUID id = engine.publisher().publish(EventType.of("FINFLAKY", String.class), "payload");
 
         // Release path → re-claim → deserialization succeeds → handled. Nothing stays PROCESSING.
         await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
@@ -291,13 +292,8 @@ class DeserializationFailureRecoveryTest {
     private static EventHandler<String> handler(String type, HandleFn fn) {
         return new EventHandler<String>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<String> payloadType() {
-                return String.class;
+            public EventType<String> type() {
+                return EventType.of(type, String.class);
             }
 
             @Override

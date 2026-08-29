@@ -19,6 +19,7 @@ import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
 import io.github.bams22.outboxer.domain.exception.PublishValidationException;
@@ -53,7 +54,7 @@ class DefaultOutboxEventPublisherTest {
                                 })
                         .build();
 
-        UUID id = publisher.publish("T", "hello");
+        UUID id = publisher.publish(EventType.of("T", String.class), "hello");
 
         Optional<Event> saved = store.findById(id);
         assertThat(saved).isPresent();
@@ -70,7 +71,7 @@ class DefaultOutboxEventPublisherTest {
         DefaultOutboxEventPublisher publisher = plain(store);
 
         Instant future = Instant.now().plusSeconds(3600);
-        UUID id = publisher.publish("T", "payload", future);
+        UUID id = publisher.publish(EventType.of("T", String.class), "payload", future);
 
         assertThat(store.findById(id).orElseThrow().runAt()).isEqualTo(future);
     }
@@ -84,7 +85,7 @@ class DefaultOutboxEventPublisherTest {
                         .transactionContext(TransactionContext.neverActive())
                         .build();
 
-        assertThatThrownBy(() -> publisher.publish("T", "hello"))
+        assertThatThrownBy(() -> publisher.publish(EventType.of("T", String.class), "hello"))
                 .isInstanceOf(NoTransactionException.class);
     }
 
@@ -99,15 +100,42 @@ class DefaultOutboxEventPublisherTest {
                         .noTransactionPolicy(NoTransactionPolicy.IGNORE)
                         .build();
 
-        UUID id = publisher.publish("T", "hello");
+        UUID id = publisher.publish(EventType.of("T", String.class), "hello");
         assertThat(store.findById(id)).isPresent();
     }
 
     @Test
-    void rejectsBlankEventType() {
+    void rejectsNullType() {
         DefaultOutboxEventPublisher publisher = plain(new InMemoryEventStore());
-        assertThatThrownBy(() -> publisher.publish("", "hello"))
-                .isInstanceOf(PublishValidationException.class);
+        assertThatThrownBy(() -> publisher.publish((EventType<String>) null, "hello"))
+                .isInstanceOf(PublishValidationException.class)
+                .hasMessageContaining("type must not be null");
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void rejectsPayloadThatIsNotAnInstanceOfTheKeysClass() {
+        DefaultOutboxEventPublisher publisher = plain(new InMemoryEventStore());
+        // Only reachable by defeating generics (raw types, unchecked casts) — the typed API
+        // catches this at compile time; the runtime check is the safety net (ADR-0031).
+        EventType<Object> wrong = (EventType) EventType.of("T", Integer.class);
+
+        assertThatThrownBy(() -> publisher.publish(wrong, "hello"))
+                .isInstanceOf(PublishValidationException.class)
+                .hasMessageContaining("java.lang.Integer")
+                .hasMessageContaining("java.lang.String");
+    }
+
+    @Test
+    void untypedKeyAcceptsAnyPayload() {
+        InMemoryEventStore store = new InMemoryEventStore();
+        DefaultOutboxEventPublisher publisher = plain(store);
+
+        UUID id =
+                publisher.publish(
+                        EventType.untyped("DYNAMIC"), "any payload the serializer accepts");
+
+        assertThat(store.findById(id)).isPresent();
     }
 
     @Test
@@ -138,10 +166,10 @@ class DefaultOutboxEventPublisherTest {
 
         publisher.publishAll(
                 List.of(
-                        new PublishRequest("A", "a1", null),
-                        new PublishRequest("A", "a2", null),
-                        new PublishRequest("B", "b1", null)));
-        publisher.publish("C", "c1");
+                        new PublishRequest<>(EventType.of("A", String.class), "a1", null),
+                        new PublishRequest<>(EventType.of("A", String.class), "a2", null),
+                        new PublishRequest<>(EventType.of("B", String.class), "b1", null)));
+        publisher.publish(EventType.of("C", String.class), "c1");
 
         // Nothing may be woken before the surrounding transaction commits.
         assertThat(wakes).isEmpty();
@@ -165,7 +193,7 @@ class DefaultOutboxEventPublisherTest {
                                 })
                         .build();
 
-        UUID id = publisher.publish("T", "hello");
+        UUID id = publisher.publish(EventType.of("T", String.class), "hello");
 
         assertThat(store.findById(id)).isPresent();
     }
@@ -190,11 +218,13 @@ class DefaultOutboxEventPublisherTest {
                         .build();
         PublishOptions keyed = PublishOptions.builder().dedupKey("order-1").build();
 
-        UUID first = publisher.publish("SYNC", "v1", keyed);
-        UUID second = publisher.publish("SYNC", "v2", keyed);
+        UUID first = publisher.publish(EventType.of("SYNC", String.class), "v1", keyed);
+        UUID second = publisher.publish(EventType.of("SYNC", String.class), "v2", keyed);
         UUID third =
                 publisher.publish(
-                        "SYNC", "v3", PublishOptions.builder().dedupKey("order-2").build());
+                        EventType.of("SYNC", String.class),
+                        "v3",
+                        PublishOptions.builder().dedupKey("order-2").build());
 
         assertThat(second).isEqualTo(first); // coalesced into the existing pending event
         assertThat(third).isNotEqualTo(first);
@@ -212,9 +242,10 @@ class DefaultOutboxEventPublisherTest {
         List<UUID> ids =
                 publisher.publishAll(
                         List.of(
-                                new PublishRequest("A", "a1", keyed),
-                                new PublishRequest("A", "a2", keyed),
-                                new PublishRequest("A", "plain", null)));
+                                new PublishRequest<>(EventType.of("A", String.class), "a1", keyed),
+                                new PublishRequest<>(EventType.of("A", String.class), "a2", keyed),
+                                new PublishRequest<>(
+                                        EventType.of("A", String.class), "plain", null)));
 
         assertThat(ids).hasSize(3);
         assertThat(ids.get(1)).isEqualTo(ids.get(0)); // second keyed request coalesced
@@ -228,8 +259,8 @@ class DefaultOutboxEventPublisherTest {
         InMemoryEventStore store = new InMemoryEventStore();
         DefaultOutboxEventPublisher publisher = withOverride(store, "B");
 
-        UUID plain = publisher.publish("A", "hello");
-        UUID overridden = publisher.publish("B", "hello");
+        UUID plain = publisher.publish(EventType.of("A", String.class), "hello");
+        UUID overridden = publisher.publish(EventType.of("B", String.class), "hello");
 
         assertThat(store.findById(plain).orElseThrow().payloadFormat())
                 .isEqualTo(StringEventSerializer.FORMAT);
@@ -246,8 +277,9 @@ class DefaultOutboxEventPublisherTest {
         List<UUID> ids =
                 publisher.publishAll(
                         List.of(
-                                new PublishRequest("A", "one", null),
-                                new PublishRequest("B", "two", null)));
+                                new PublishRequest<>(EventType.of("A", String.class), "one", null),
+                                new PublishRequest<>(
+                                        EventType.of("B", String.class), "two", null)));
 
         assertThat(store.findById(ids.get(0)).orElseThrow().payloadFormat())
                 .isEqualTo(StringEventSerializer.FORMAT);
@@ -299,7 +331,7 @@ class DefaultOutboxEventPublisherTest {
                         .serializer(new StringEventSerializer())
                         .build();
 
-        UUID id = minimal.publish("T", "hello");
+        UUID id = minimal.publish(EventType.of("T", String.class), "hello");
         assertThat(store.findById(id)).isPresent();
     }
 

@@ -24,6 +24,7 @@ import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
@@ -87,13 +88,13 @@ class OutboxEngineRecoveryTest {
                                         (ctx, payload) -> {
                                             awaitQuietly(gate);
                                             done.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
         for (int i = 0; i < 5; i++) {
-            engine.publisher().publish("BURST", "burst-" + i);
+            engine.publisher().publish(EventType.of("BURST", String.class), "burst-" + i);
         }
 
         // Give the poller time to claim the batch and reject 4 of the 5 dispatches, then let the
@@ -121,13 +122,13 @@ class OutboxEngineRecoveryTest {
                                         (ctx, payload) -> {
                                             started.set(true);
                                             sleepIgnoringInterrupts(10_000);
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
         for (int i = 0; i < 3; i++) {
-            engine.publisher().publish("STUCK", "stuck-" + i);
+            engine.publisher().publish(EventType.of("STUCK", String.class), "stuck-" + i);
         }
         await().atMost(Duration.ofSeconds(5)).untilTrue(started);
 
@@ -173,12 +174,12 @@ class OutboxEngineRecoveryTest {
                                                             "handler interrupted", e);
                                                 }
                                             }
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("HANG", "payload");
+        UUID id = engine.publisher().publish(EventType.of("HANG", String.class), "payload");
 
         await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
         assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
@@ -210,12 +211,12 @@ class OutboxEngineRecoveryTest {
                                         "ZOMBIE",
                                         (ctx, payload) -> {
                                             sleepIgnoringInterrupts(3_000);
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        engine.publisher().publish("ZOMBIE", "payload");
+        engine.publisher().publish(EventType.of("ZOMBIE", String.class), "payload");
 
         // watchdog 200ms + abandonedHandlerGrace 1s: the thread is interrupted, ignores it, and is
         // reported as lost to the ZOMBIE pool.
@@ -236,18 +237,18 @@ class OutboxEngineRecoveryTest {
                                         "CYCLE",
                                         (ctx, payload) -> {
                                             done.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
 
         engine.start();
-        UUID first = engine.publisher().publish("CYCLE", "one");
+        UUID first = engine.publisher().publish(EventType.of("CYCLE", String.class), "one");
         await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(first).isEmpty());
 
         engine.stop(Duration.ofSeconds(2));
         engine.start();
 
-        UUID second = engine.publisher().publish("CYCLE", "two");
+        UUID second = engine.publisher().publish(EventType.of("CYCLE", String.class), "two");
         await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(second).isEmpty());
         assertThat(done).hasValueGreaterThanOrEqualTo(2);
     }
@@ -264,12 +265,12 @@ class OutboxEngineRecoveryTest {
                                         "FINFAIL",
                                         (ctx, payload) -> {
                                             handled.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("FINFAIL", "payload");
+        UUID id = engine.publisher().publish(EventType.of("FINFAIL", String.class), "payload");
 
         // First markProcessed throws → dispatcher releases the row → poller re-claims → second
         // markProcessed succeeds. At-least-once: the handler runs (at least) twice.
@@ -291,13 +292,8 @@ class OutboxEngineRecoveryTest {
                         .handler(
                                 new EventHandler<String>() {
                                     @Override
-                                    public String eventType() {
-                                        return "LOCKED";
-                                    }
-
-                                    @Override
-                                    public Class<String> payloadType() {
-                                        return String.class;
+                                    public EventType<String> type() {
+                                        return EventType.of("LOCKED", String.class);
                                     }
 
                                     @Override
@@ -308,13 +304,13 @@ class OutboxEngineRecoveryTest {
                                     @Override
                                     public EventOutcome handle(EventContext ctx, String payload) {
                                         observedAttempts.set(ctx.attempt());
-                                        return EventOutcome.Success.INSTANCE;
+                                        return EventOutcome.success();
                                     }
                                 })
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("LOCKED", "payload");
+        UUID id = engine.publisher().publish(EventType.of("LOCKED", String.class), "payload");
 
         await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
         // Three lock-busy passes must not increment attempts: the one real execution is attempt 1.
@@ -327,7 +323,7 @@ class OutboxEngineRecoveryTest {
     void heartbeatReRegistersReapedWorker() {
         engine =
                 fastEngine(cfg -> cfg)
-                        .handler(handler("NOOP", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+                        .handler(handler("NOOP", (ctx, payload) -> EventOutcome.success()))
                         .build();
         engine.start();
         WorkerId id = engine.workerId();
@@ -393,13 +389,8 @@ class OutboxEngineRecoveryTest {
     private static EventHandler<String> handler(String type, HandleFn fn) {
         return new EventHandler<String>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<String> payloadType() {
-                return String.class;
+            public EventType<String> type() {
+                return EventType.of(type, String.class);
             }
 
             @Override

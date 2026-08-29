@@ -16,6 +16,7 @@ import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.EventStore;
 import java.time.Duration;
 import java.util.UUID;
@@ -79,7 +80,9 @@ class PostgresStarterIT {
     @Test
     @Transactional
     void publishWithinTransactionCommitsAndProcesses() {
-        UUID id = publisher.publish("ORDER", new OrderCreated("ord-1", 3));
+        UUID id =
+                publisher.publish(
+                        EventType.of("ORDER", OrderCreated.class), new OrderCreated("ord-1", 3));
         // Inside @Transactional: the row is visible to our own connection but not committed yet.
         // Awaitility here would hang because SmartLifecycle's engine is polling on a DIFFERENT
         // connection and sees nothing. So just verify our own view.
@@ -103,19 +106,14 @@ class PostgresStarterIT {
         private final AtomicInteger invocations = new AtomicInteger();
 
         @Override
-        public String eventType() {
-            return "ORDER";
-        }
-
-        @Override
-        public Class<OrderCreated> payloadType() {
-            return OrderCreated.class;
+        public EventType<OrderCreated> type() {
+            return EventType.of("ORDER", OrderCreated.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, OrderCreated payload) {
             invocations.incrementAndGet();
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
 
         int invocationCount() {
@@ -133,7 +131,8 @@ class PostgresStarterIT {
 
         @Transactional
         UUID publishCommitted(String orderId, int count) {
-            return publisher.publish("ORDER", new OrderCreated(orderId, count));
+            return publisher.publish(
+                    EventType.of("ORDER", OrderCreated.class), new OrderCreated(orderId, count));
         }
     }
 

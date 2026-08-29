@@ -16,6 +16,7 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
@@ -183,18 +184,13 @@ class FailureHandlerBeansTest {
         EventHandler<String> orderHandler() {
             return new EventHandler<>() {
                 @Override
-                public String eventType() {
-                    return "ORDER";
-                }
-
-                @Override
-                public Class<String> payloadType() {
-                    return String.class;
+                public EventType<String> type() {
+                    return EventType.of("ORDER", String.class);
                 }
 
                 @Override
                 public EventOutcome handle(EventContext ctx, String payload) {
-                    return EventOutcome.Success.INSTANCE;
+                    return EventOutcome.success();
                 }
             };
         }

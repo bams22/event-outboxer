@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.OrphanRecoveryTask;
 import io.github.bams22.outboxer.core.maintenance.WatchdogTask;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.EventStore;
@@ -73,6 +74,11 @@ public final class ManualEngine {
             total += tick(type, defaultBatchSize);
         }
         return total;
+    }
+
+    /** Typed variant of {@link #tick(String, int)} (ADR-0031). */
+    public int tick(EventType<?> type, int batchSize) {
+        return tick(Objects.requireNonNull(type, "type must not be null").name(), batchSize);
     }
 
     /** Claim + dispatch up to {@code batchSize} events of {@code eventType}. */

@@ -199,7 +199,7 @@ OutboxEngine engine = new OutboxEngineBuilder()
 
 engine.start();
 OutboxEventPublisher publisher = engine.publisher();
-publisher.publish("SEND_EMAIL", new SendEmailPayload("me@x.io"));
+publisher.publish(SendEmailHandler.SEND_EMAIL, new SendEmailPayload("me@x.io")); // typed key (ADR-0031)
 // ...
 engine.stop();                          // graceful drain, default 30s timeout
 ```

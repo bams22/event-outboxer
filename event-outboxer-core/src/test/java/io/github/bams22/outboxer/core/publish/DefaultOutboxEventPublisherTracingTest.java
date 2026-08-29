@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.domain.exception.PublishFailedException;
@@ -52,7 +53,7 @@ class DefaultOutboxEventPublisherTracingTest {
         InMemoryEventStore store = new InMemoryEventStore();
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-        UUID id = publisher(store, tracer).publish("T", "hello");
+        UUID id = publisher(store, tracer).publish(EventType.of("T", String.class), "hello");
 
         assertThat(tracer.publishSpans).hasSize(1);
         RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
@@ -72,7 +73,7 @@ class DefaultOutboxEventPublisherTracingTest {
         UUID id =
                 publisher(store, tracer)
                         .publish(
-                                "T",
+                                EventType.of("T", String.class),
                                 "hello",
                                 PublishOptions.builder().traceContext(explicit).build());
 
@@ -93,7 +94,10 @@ class DefaultOutboxEventPublisherTracingTest {
                 };
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-        assertThatThrownBy(() -> publisher(failing, tracer).publish("T", "hello"))
+        assertThatThrownBy(
+                        () ->
+                                publisher(failing, tracer)
+                                        .publish(EventType.of("T", String.class), "hello"))
                 .isInstanceOf(PublishFailedException.class);
 
         RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
@@ -108,8 +112,8 @@ class DefaultOutboxEventPublisherTracingTest {
         DefaultOutboxEventPublisher publisher = publisher(store, tracer);
         PublishOptions keyed = PublishOptions.builder().dedupKey("order-1").build();
 
-        UUID first = publisher.publish("SYNC", "v1", keyed);
-        UUID second = publisher.publish("SYNC", "v2", keyed);
+        UUID first = publisher.publish(EventType.of("SYNC", String.class), "v1", keyed);
+        UUID second = publisher.publish(EventType.of("SYNC", String.class), "v2", keyed);
 
         assertThat(second).isEqualTo(first);
         assertThat(tracer.publishSpans).hasSize(2);
@@ -132,9 +136,12 @@ class DefaultOutboxEventPublisherTracingTest {
                 publisher(store, tracer)
                         .publishAll(
                                 List.of(
-                                        new PublishRequest("A", "a1", keyed),
-                                        new PublishRequest("A", "plain1", null),
-                                        new PublishRequest("B", "plain2", null)));
+                                        new PublishRequest<>(
+                                                EventType.of("A", String.class), "a1", keyed),
+                                        new PublishRequest<>(
+                                                EventType.of("A", String.class), "plain1", null),
+                                        new PublishRequest<>(
+                                                EventType.of("B", String.class), "plain2", null)));
 
         assertThat(tracer.publishSpans).hasSize(3);
         assertThat(tracer.publishSpans).allSatisfy(span -> assertThat(span.closeCount).hasValue(1));
@@ -165,8 +172,14 @@ class DefaultOutboxEventPublisherTracingTest {
                                 publisher(failing, tracer)
                                         .publishAll(
                                                 List.of(
-                                                        new PublishRequest("A", "a1", null),
-                                                        new PublishRequest("B", "b1", null))))
+                                                        new PublishRequest<>(
+                                                                EventType.of("A", String.class),
+                                                                "a1",
+                                                                null),
+                                                        new PublishRequest<>(
+                                                                EventType.of("B", String.class),
+                                                                "b1",
+                                                                null))))
                 .isInstanceOf(PublishFailedException.class);
 
         assertThat(tracer.publishSpans).hasSize(2);
@@ -184,7 +197,7 @@ class DefaultOutboxEventPublisherTracingTest {
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
         tracer.throwOnStart = true;
 
-        UUID id = publisher(store, tracer).publish("T", "hello");
+        UUID id = publisher(store, tracer).publish(EventType.of("T", String.class), "hello");
 
         assertThat(store.findById(id)).isPresent();
         assertThat(store.findById(id).orElseThrow().traceContext()).isEmpty();

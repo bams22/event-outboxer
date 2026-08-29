@@ -116,7 +116,7 @@ public class OrderService {
     public void createOrder(CreateOrderCommand cmd) {
         Order order = orderRepository.save(Order.from(cmd));
         publisher.publish(
-            "SEND_ORDER_CONFIRMATION",
+            SendOrderConfirmationHandler.SEND_ORDER_CONFIRMATION,   // typed key: name + payload class
             new SendOrderConfirmationPayload(order.id(), order.email())
         );
         // if the transaction rolls back, the event is NOT persisted
@@ -128,17 +128,17 @@ public class OrderService {
 public class SendOrderConfirmationHandler
         implements EventHandler<SendOrderConfirmationPayload> {
 
+    public static final EventType<SendOrderConfirmationPayload> SEND_ORDER_CONFIRMATION =
+        EventType.of("SEND_ORDER_CONFIRMATION", SendOrderConfirmationPayload.class);
+
     private final EmailService emailService;
 
-    @Override public String eventType() { return "SEND_ORDER_CONFIRMATION"; }
-    @Override public Class<SendOrderConfirmationPayload> payloadType() {
-        return SendOrderConfirmationPayload.class;
-    }
+    @Override public EventType<SendOrderConfirmationPayload> type() { return SEND_ORDER_CONFIRMATION; }
 
     @Override
     public EventOutcome handle(EventContext ctx, SendOrderConfirmationPayload p) {
         emailService.send(p.email(), "Order " + p.orderId() + " confirmed");
-        return EventOutcome.Success.INSTANCE;
+        return EventOutcome.success();
     }
 }
 ```

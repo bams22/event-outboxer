@@ -8,7 +8,9 @@ mention below was contradictory and is corrected; see the Amendment
 section at the bottom); amended 2026-07-27 (the default PostgreSQL
 locker is now the lease table of
 [ADR-0022](0022-lease-table-postgres-entity-locker.md); the guarantee
-table below is updated accordingly)
+table below is updated accordingly); amended 2026-08-29 (interface shape: `EventType<T> type()`
+replaces the two abstract accessors — ADR-0031; see the Amendment
+section at the bottom)
 
 ## Date
 
@@ -63,6 +65,9 @@ Three options were considered:
 **Option C was chosen**.
 
 ### API
+
+*(pre-2026-08-29 shape — the accessor pair is now the single typed
+descriptor `EventType<T> type()`, see the amendment at the bottom)*
 
 ```java
 public interface EventHandler<T> {
@@ -251,6 +256,27 @@ Consequences and the measures added:
    the ADR-0022 lease table, which holds no connection during the
    handler and makes the scenario structurally impossible; the WARNING
    is re-gated accordingly.)*
+
+## Amendment (2026-08-29): typed event key
+
+ADR-0031 replaces the two abstract accessors with one typed descriptor;
+the lock-key decision of this ADR is unchanged:
+
+```java
+public interface EventHandler<T> {
+    EventType<T> type();                       // name + payload class, shared with the publisher
+    EventOutcome handle(EventContext ctx, T payload);
+
+    default String eventType() { return type().name(); }           // derived — do not override
+    default Class<T> payloadType() { return type().payloadType(); } // derived — do not override
+    default @Nullable String extractLockKey(T payload) { return null; }
+    default @Nullable FailureHandler<T> failureHandler() { return null; }
+}
+```
+
+The worker-side flow quoted above still resolves the handler by the
+stored `event_type` string and deserializes into `handler.payloadType()`
+— both now derived from `type()`.
 
 ## Related decisions
 

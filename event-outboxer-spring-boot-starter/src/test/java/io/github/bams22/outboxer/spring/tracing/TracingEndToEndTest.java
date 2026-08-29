@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import io.opentelemetry.api.OpenTelemetry;
@@ -93,7 +94,7 @@ class TracingEndToEndTest {
         Span caller = openTelemetry.getTracer("test-caller").spanBuilder("business-op").startSpan();
         UUID id;
         try (Scope scope = caller.makeCurrent()) {
-            id = publisher.publish("TRACED", new Payload("p-1"));
+            id = publisher.publish(EventType.of("TRACED", Payload.class), new Payload("p-1"));
         }
         caller.end();
 
@@ -188,7 +189,11 @@ class TracingEndToEndTest {
         Span caller = openTelemetry.getTracer("test-caller").spanBuilder("schedule-op").startSpan();
         UUID id;
         try (Scope scope = caller.makeCurrent()) {
-            id = publisher.publish("DEFERRED", new Payload("p-2"), Instant.now().plusMillis(300));
+            id =
+                    publisher.publish(
+                            EventType.of("DEFERRED", Payload.class),
+                            new Payload("p-2"),
+                            Instant.now().plusMillis(300));
         }
         caller.end();
 
@@ -254,19 +259,14 @@ class TracingEndToEndTest {
                 seenTraceContext = new java.util.concurrent.atomic.AtomicReference<>();
 
         @Override
-        public String eventType() {
-            return "DEFERRED";
-        }
-
-        @Override
-        public Class<Payload> payloadType() {
-            return Payload.class;
+        public EventType<Payload> type() {
+            return EventType.of("DEFERRED", Payload.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, Payload payload) {
             seenTraceContext.set(ctx.traceContext());
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
     }
 
@@ -274,13 +274,8 @@ class TracingEndToEndTest {
         final AtomicInteger attempts = new AtomicInteger();
 
         @Override
-        public String eventType() {
-            return "TRACED";
-        }
-
-        @Override
-        public Class<Payload> payloadType() {
-            return Payload.class;
+        public EventType<Payload> type() {
+            return EventType.of("TRACED", Payload.class);
         }
 
         @Override
@@ -288,7 +283,7 @@ class TracingEndToEndTest {
             if (attempts.incrementAndGet() == 1) {
                 throw new IllegalStateException("first attempt fails");
             }
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
     }
 

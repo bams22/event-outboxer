@@ -25,6 +25,7 @@ import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -80,12 +81,12 @@ class OutboxEngineIntegrationTest {
                                         (ctx, payload) -> {
                                             invoked.incrementAndGet();
                                             seen.add(payload);
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("ORDER", "order-1");
+        UUID id = engine.publisher().publish(EventType.of("ORDER", String.class), "order-1");
 
         await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(id).isEmpty());
         assertThat(invoked).hasValueGreaterThanOrEqualTo(1);
@@ -105,21 +106,21 @@ class OutboxEngineIntegrationTest {
                                         (ctx, payload) -> {
                                             sleepQuietly(500);
                                             slowDone.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .handler(
                                 recordingHandler(
                                         "FAST",
                                         (ctx, payload) -> {
                                             fastDone.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
         // Saturate the slow type with one event, then publish a fast one.
-        engine.publisher().publish("SLOW", "slow-1");
-        UUID fastId = engine.publisher().publish("FAST", "fast-1");
+        engine.publisher().publish(EventType.of("SLOW", String.class), "slow-1");
+        UUID fastId = engine.publisher().publish(EventType.of("FAST", String.class), "fast-1");
 
         await().atMost(Duration.ofSeconds(2))
                 .until(() -> fastDone.get() >= 1 && store.findById(fastId).isEmpty());
@@ -140,12 +141,12 @@ class OutboxEngineIntegrationTest {
                                                 throw new RuntimeException(
                                                         "transient failure #" + n);
                                             }
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("FLAKY", "payload");
+        UUID id = engine.publisher().publish(EventType.of("FLAKY", String.class), "payload");
 
         await().atMost(Duration.ofSeconds(10)).until(() -> store.findById(id).isEmpty());
         assertThat(attempts).hasValueGreaterThanOrEqualTo(2);
@@ -165,9 +166,7 @@ class OutboxEngineIntegrationTest {
 
         engine =
                 fastEngine()
-                        .handler(
-                                recordingHandler(
-                                        "BOOM", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+                        .handler(recordingHandler("BOOM", (ctx, payload) -> EventOutcome.success()))
                         .pollStrategy(
                                 (eventType, workerId, batchSize) -> {
                                     // Uncaught Error — bypasses Poller.tick()'s RuntimeException
@@ -220,7 +219,7 @@ class OutboxEngineIntegrationTest {
                                         "WAKE",
                                         (ctx, payload) -> {
                                             handled.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
@@ -229,7 +228,7 @@ class OutboxEngineIntegrationTest {
         sleepQuietly(300);
 
         long publishedAt = System.nanoTime();
-        UUID id = engine.publisher().publish("WAKE", "payload");
+        UUID id = engine.publisher().publish(EventType.of("WAKE", String.class), "payload");
 
         await().atMost(Duration.ofMillis(1500)).until(() -> store.findById(id).isEmpty());
         long tookMillis = (System.nanoTime() - publishedAt) / 1_000_000;
@@ -244,8 +243,7 @@ class OutboxEngineIntegrationTest {
         engine =
                 fastEngine()
                         .handler(
-                                recordingHandler(
-                                        "KNOWN", (ctx, payload) -> EventOutcome.Success.INSTANCE))
+                                recordingHandler("KNOWN", (ctx, payload) -> EventOutcome.success()))
                         .build();
         engine.start();
 
@@ -294,14 +292,12 @@ class OutboxEngineIntegrationTest {
                                         processedCallbacks.incrementAndGet();
                                     }
                                 })
-                        .handler(
-                                recordingHandler(
-                                        "BATCHY", (ctx, p) -> EventOutcome.Success.INSTANCE))
+                        .handler(recordingHandler("BATCHY", (ctx, p) -> EventOutcome.success()))
                         .build();
         engine.start();
 
         for (int i = 0; i < events; i++) {
-            engine.publisher().publish("BATCHY", "e-" + i);
+            engine.publisher().publish(EventType.of("BATCHY", String.class), "e-" + i);
         }
 
         await().atMost(Duration.ofSeconds(10)).until(() -> processedCallbacks.get() == events);
@@ -355,12 +351,12 @@ class OutboxEngineIntegrationTest {
                                         "ORDER",
                                         (ctx, payload) -> {
                                             invocations.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("ORDER", "order-1");
+        UUID id = engine.publisher().publish(EventType.of("ORDER", String.class), "order-1");
         sleepQuietly(150);
 
         assertThat(invocations).hasValue(0);
@@ -378,7 +374,7 @@ class OutboxEngineIntegrationTest {
         assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);
         assertThat(registry.findAll()).hasSize(1); // the worker still registers itself
 
-        UUID id = engine.publisher().publish("ORDER", "order-1");
+        UUID id = engine.publisher().publish(EventType.of("ORDER", String.class), "order-1");
         sleepQuietly(150); // long enough for a poller to have claimed it, had one existed
         assertThat(store.findById(id))
                 .isPresent()
@@ -428,13 +424,8 @@ class OutboxEngineIntegrationTest {
     private static EventHandler<String> recordingHandler(String type, HandleFn fn) {
         return new EventHandler<String>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<String> payloadType() {
-                return String.class;
+            public EventType<String> type() {
+                return EventType.of(type, String.class);
             }
 
             @Override

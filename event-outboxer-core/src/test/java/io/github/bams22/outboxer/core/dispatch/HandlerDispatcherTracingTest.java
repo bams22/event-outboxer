@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -55,13 +56,8 @@ class HandlerDispatcherTracingTest {
         }
 
         @Override
-        public String eventType() {
-            return "T";
-        }
-
-        @Override
-        public Class<String> payloadType() {
-            return String.class;
+        public EventType<String> type() {
+            return EventType.of("T", String.class);
         }
 
         @Override
@@ -110,7 +106,7 @@ class HandlerDispatcherTracingTest {
                                 (ctx, payload) -> {
                                     closeCountDuringHandle.set(
                                             tracer.processSpans.get(0).closeCount.get());
-                                    return EventOutcome.Success.INSTANCE;
+                                    return EventOutcome.success();
                                 }));
         ClaimedEvent claimed = saveAndClaim(store);
 
@@ -140,7 +136,7 @@ class HandlerDispatcherTracingTest {
                         new TestHandler(
                                 (ctx, payload) -> {
                                     seenByHandler.set(ctx.traceContext());
-                                    return EventOutcome.Success.INSTANCE;
+                                    return EventOutcome.success();
                                 }));
 
         dispatcher.dispatch(saveAndClaim(store));
@@ -183,7 +179,7 @@ class HandlerDispatcherTracingTest {
                 dispatcher(store, tracer, new TestHandler((ctx, payload) -> nextOutcome.get()));
 
         dispatcher.dispatch(saveAndClaim(store));
-        nextOutcome.set(EventOutcome.Success.INSTANCE);
+        nextOutcome.set(EventOutcome.success());
         // Retry with delayOverride ZERO is immediately claimable again.
         ClaimedEvent second = store.claim(new ClaimRequest("T", WORKER, 10)).get(0);
         dispatcher.dispatch(second);
@@ -211,7 +207,7 @@ class HandlerDispatcherTracingTest {
                 dispatcher(
                         observing,
                         tracer,
-                        new TestHandler((ctx, payload) -> EventOutcome.Success.INSTANCE));
+                        new TestHandler((ctx, payload) -> EventOutcome.success()));
 
         dispatcher.dispatch(saveAndClaim(inner));
 
@@ -231,7 +227,7 @@ class HandlerDispatcherTracingTest {
                         new TestHandler(
                                 (ctx, payload) -> {
                                     handled.set(payload);
-                                    return EventOutcome.Success.INSTANCE;
+                                    return EventOutcome.success();
                                 }));
 
         dispatcher.dispatch(saveAndClaim(store));

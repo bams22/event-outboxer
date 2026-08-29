@@ -20,6 +20,7 @@ import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import java.time.Duration;
@@ -69,7 +70,7 @@ class FailurePolicyEndToEndTest {
     @Test
     @DisplayName("strategy none → DISABLED after a single attempt")
     void noneDisablesImmediately() {
-        UUID id = publisher.publish("ORDER", "o-1");
+        UUID id = publisher.publish(EventType.of("ORDER", String.class), "o-1");
 
         await().atMost(Duration.ofSeconds(5)).until(() -> status(id) == EventStatus.DISABLED);
         assertThat(orderHandler.attempts()).isEqualTo(1);
@@ -78,7 +79,7 @@ class FailurePolicyEndToEndTest {
     @Test
     @DisplayName("strategy fixed with max-attempts 2 → DISABLED after exactly two attempts")
     void fixedRetriesThenDisables() {
-        UUID id = publisher.publish("NOTIFY", "n-1");
+        UUID id = publisher.publish(EventType.of("NOTIFY", String.class), "n-1");
 
         await().atMost(Duration.ofSeconds(5)).until(() -> status(id) == EventStatus.DISABLED);
         assertThat(notifyHandler.attempts()).isEqualTo(2);
@@ -87,7 +88,7 @@ class FailurePolicyEndToEndTest {
     @Test
     @DisplayName("a per-type @OutboxFailureHandler bean wins over the YAML override for its type")
     void perTypeBeanBeatsYaml() {
-        UUID id = publisher.publish("AUDIT", "a-1");
+        UUID id = publisher.publish(EventType.of("AUDIT", String.class), "a-1");
 
         // Delete, not Disable: the bean's decision, not the YAML strategy=none.
         await().atMost(Duration.ofSeconds(5)).until(() -> store.findById(id).isEmpty());
@@ -108,13 +109,8 @@ class FailurePolicyEndToEndTest {
         }
 
         @Override
-        public String eventType() {
-            return type;
-        }
-
-        @Override
-        public Class<String> payloadType() {
-            return String.class;
+        public EventType<String> type() {
+            return EventType.of(type, String.class);
         }
 
         @Override

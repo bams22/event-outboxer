@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.contracts.support.BinaryTestEventSerializer;
 import io.github.bams22.outboxer.spi.contracts.support.BinaryTestPayload;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -79,27 +80,24 @@ class BinaryPayloadDispatchTest {
                         .handler(
                                 new EventHandler<BinaryTestPayload>() {
                                     @Override
-                                    public String eventType() {
-                                        return "BINARY";
-                                    }
-
-                                    @Override
-                                    public Class<BinaryTestPayload> payloadType() {
-                                        return BinaryTestPayload.class;
+                                    public EventType<BinaryTestPayload> type() {
+                                        return EventType.of("BINARY", BinaryTestPayload.class);
                                     }
 
                                     @Override
                                     public EventOutcome handle(
                                             EventContext ctx, BinaryTestPayload payload) {
                                         received.set(payload);
-                                        return EventOutcome.Success.INSTANCE;
+                                        return EventOutcome.success();
                                     }
                                 })
                         .build();
         engine.start();
 
         BinaryTestPayload original = new BinaryTestPayload("bin-раунд-трип", 4242);
-        UUID id = engine.publisher().publish("BINARY", original);
+        UUID id =
+                engine.publisher()
+                        .publish(EventType.of("BINARY", BinaryTestPayload.class), original);
 
         assertThat(
                         store.findById(id)

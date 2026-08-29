@@ -12,6 +12,7 @@ package com.example.outbox;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.domain.EventType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -27,13 +28,8 @@ public class SendOrderConfirmationHandler implements EventHandler<SendOrderConfi
   private static final Logger log = LoggerFactory.getLogger(SendOrderConfirmationHandler.class);
 
   @Override
-  public String eventType() {
-    return SendOrderConfirmationPayload.EVENT_TYPE;
-  }
-
-  @Override
-  public Class<SendOrderConfirmationPayload> payloadType() {
-    return SendOrderConfirmationPayload.class;
+  public EventType<SendOrderConfirmationPayload> type() {
+    return SendOrderConfirmationPayload.EVENT_TYPE; // shared with OrderService.publish(...)
   }
 
   /**
@@ -54,6 +50,6 @@ public class SendOrderConfirmationHandler implements EventHandler<SendOrderConfi
         ctx.attempt());
     // In a real app: call SMTP / message broker / CRM.
     // Throw on transient errors; return Fail for permanent ones.
-    return EventOutcome.Success.INSTANCE;
+    return EventOutcome.success();
   }
 }

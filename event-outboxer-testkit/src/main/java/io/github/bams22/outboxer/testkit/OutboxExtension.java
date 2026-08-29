@@ -23,9 +23,11 @@ import org.junit.jupiter.api.extension.ParameterResolver;
  * @ExtendWith(OutboxExtension.class)
  * class OrderHandlerTest {
  *
+ *   static final EventType<OrderCreated> ORDER = EventType.of("ORDER", OrderCreated.class);
+ *
  *   @Test
  *   void processesOrder(OutboxTestContext outbox) {
- *     outbox.publisher().publish("ORDER", new OrderCreated(...));
+ *     outbox.publisher().publish(ORDER, new OrderCreated(...));
  *     outbox.manualEngine().tick();
  *     assertThatStore(outbox.eventStore()).hasTotalPending(0);
  *   }

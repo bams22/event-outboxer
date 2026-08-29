@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -94,7 +95,7 @@ class HandlerDispatcherInterruptTest {
                                 Thread.currentThread().interrupt();
                                 throw new IllegalStateException("handler interrupted", e);
                             }
-                            return EventOutcome.Success.INSTANCE;
+                            return EventOutcome.success();
                         });
 
         ClaimedEvent claimed = saveAndClaim();
@@ -128,13 +129,8 @@ class HandlerDispatcherInterruptTest {
         EventHandler<String> handler =
                 new EventHandler<String>() {
                     @Override
-                    public String eventType() {
-                        return TYPE;
-                    }
-
-                    @Override
-                    public Class<String> payloadType() {
-                        return String.class;
+                    public EventType<String> type() {
+                        return EventType.of(TYPE, String.class);
                     }
 
                     @Override

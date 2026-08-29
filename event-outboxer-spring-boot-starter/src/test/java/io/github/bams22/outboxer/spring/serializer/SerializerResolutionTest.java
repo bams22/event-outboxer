@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.serializer.jackson.JacksonEventSerializer;
 import io.github.bams22.outboxer.spi.EventSerializer;
@@ -228,18 +229,13 @@ class SerializerResolutionTest {
         EventHandler<String> handler() {
             return new EventHandler<String>() {
                 @Override
-                public String eventType() {
-                    return "T";
-                }
-
-                @Override
-                public Class<String> payloadType() {
-                    return String.class;
+                public EventType<String> type() {
+                    return EventType.of("T", String.class);
                 }
 
                 @Override
                 public EventOutcome handle(EventContext ctx, String payload) {
-                    return EventOutcome.Success.INSTANCE;
+                    return EventOutcome.success();
                 }
             };
         }

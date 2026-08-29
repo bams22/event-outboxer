@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.lock.postgres.advisory.PgAdvisoryLocker;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
@@ -289,18 +290,13 @@ class OutboxDataSourceSelectionTest {
     static final class NoopHandler implements EventHandler<String> {
 
         @Override
-        public String eventType() {
-            return "TEST";
-        }
-
-        @Override
-        public Class<String> payloadType() {
-            return String.class;
+        public EventType<String> type() {
+            return EventType.of("TEST", String.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, String payload) {
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
     }
 

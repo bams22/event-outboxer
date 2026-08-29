@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.support.RecordingOutboxTracer;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -68,7 +69,8 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
         UUID id =
-                publisher(store, tracer, Duration.ofMinutes(1)).publish("T", "hello", inTwoDays());
+                publisher(store, tracer, Duration.ofMinutes(1))
+                        .publish(EventType.of("T", String.class), "hello", inTwoDays());
 
         RecordingOutboxTracer.RecordedPublishSpan span = tracer.publishSpans.get(0);
         assertThat(span.linked).isTrue();
@@ -87,7 +89,10 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
 
         UUID id =
                 publisher(store, tracer, Duration.ofMinutes(1))
-                        .publish("T", "hello", Instant.now().plusSeconds(10));
+                        .publish(
+                                EventType.of("T", String.class),
+                                "hello",
+                                Instant.now().plusSeconds(10));
 
         assertThat(tracer.publishSpans.get(0).linked).isFalse();
         assertThat(store.findById(id).orElseThrow().traceContext())
@@ -99,7 +104,9 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
         InMemoryEventStore store = new InMemoryEventStore();
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
 
-        UUID id = publisher(store, tracer, Duration.ZERO).publish("T", "hello");
+        UUID id =
+                publisher(store, tracer, Duration.ZERO)
+                        .publish(EventType.of("T", String.class), "hello");
 
         assertThat(tracer.publishSpans.get(0).linked).isFalse();
         assertThat(store.findById(id).orElseThrow().traceContext())
@@ -113,7 +120,10 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
 
         UUID id =
                 publisher(store, tracer, Duration.ZERO)
-                        .publish("T", "hello", Instant.now().plusSeconds(30));
+                        .publish(
+                                EventType.of("T", String.class),
+                                "hello",
+                                Instant.now().plusSeconds(30));
 
         assertThat(tracer.publishSpans.get(0).linked).isTrue();
         assertThat(store.findById(id).orElseThrow().traceContext())
@@ -127,7 +137,7 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
 
         UUID id =
                 publisher(store, tracer, OutboxTracer.Propagation.CHILD, Duration.ofMinutes(1))
-                        .publish("T", "hello", inTwoDays());
+                        .publish(EventType.of("T", String.class), "hello", inTwoDays());
 
         assertThat(tracer.publishSpans.get(0).linked).isFalse();
         assertThat(store.findById(id).orElseThrow().traceContext())
@@ -145,8 +155,14 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
                         .tracer(tracer)
                         .build();
 
-        UUID soon = publisher.publish("T", "a", Instant.now().plusSeconds(30));
-        UUID later = publisher.publish("T", "b", Instant.now().plus(Duration.ofMinutes(2)));
+        UUID soon =
+                publisher.publish(
+                        EventType.of("T", String.class), "a", Instant.now().plusSeconds(30));
+        UUID later =
+                publisher.publish(
+                        EventType.of("T", String.class),
+                        "b",
+                        Instant.now().plus(Duration.ofMinutes(2)));
 
         assertThat(DefaultOutboxEventPublisher.DEFAULT_LINK_THRESHOLD)
                 .isEqualTo(Duration.ofMinutes(1));
@@ -168,7 +184,7 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
         UUID id =
                 publisher(store, tracer, Duration.ofMinutes(1))
                         .publish(
-                                "T",
+                                EventType.of("T", String.class),
                                 "hello",
                                 PublishOptions.builder()
                                         .runAt(inTwoDays())
@@ -191,7 +207,7 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
                         .linkThreshold(Duration.ofMinutes(1))
                         .build();
 
-        UUID id = publisher.publish("T", "hello", inTwoDays());
+        UUID id = publisher.publish(EventType.of("T", String.class), "hello", inTwoDays());
 
         // No stored context means nothing to link to; a marker-only map would be noise.
         assertThat(store.findById(id).orElseThrow().traceContext()).isEmpty();
@@ -206,15 +222,18 @@ class DefaultOutboxEventPublisherLinkThresholdTest {
                 publisher(store, tracer, Duration.ofMinutes(1))
                         .publishAll(
                                 List.of(
-                                        new PublishRequest("T", "now", PublishOptions.defaults()),
-                                        new PublishRequest(
-                                                "T",
+                                        new PublishRequest<>(
+                                                EventType.of("T", String.class),
+                                                "now",
+                                                PublishOptions.defaults()),
+                                        new PublishRequest<>(
+                                                EventType.of("T", String.class),
                                                 "later",
                                                 PublishOptions.builder()
                                                         .runAt(inTwoDays())
                                                         .build()),
-                                        new PublishRequest(
-                                                "T",
+                                        new PublishRequest<>(
+                                                EventType.of("T", String.class),
                                                 "later-coalesced",
                                                 PublishOptions.builder()
                                                         .runAt(inTwoDays())

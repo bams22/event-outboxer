@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,11 +35,15 @@ class OutboxTestContextSmokeTest {
                                         "ORDER",
                                         (c, p) -> {
                                             invoked.incrementAndGet();
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
 
-        UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 3));
+        UUID id =
+                ctx.publisher()
+                        .publish(
+                                EventType.of("ORDER", OrderCreated.class),
+                                new OrderCreated("ord-1", 3));
 
         // Before tick, event is PENDING.
         assertThatStore(ctx.eventStore())
@@ -68,7 +73,11 @@ class OutboxTestContextSmokeTest {
                                                         "transient", Duration.ofMinutes(1), null)))
                         .build();
 
-        UUID id = ctx.publisher().publish("ORDER", new OrderCreated("ord-1", 1));
+        UUID id =
+                ctx.publisher()
+                        .publish(
+                                EventType.of("ORDER", OrderCreated.class),
+                                new OrderCreated("ord-1", 1));
         ctx.manualEngine().tick();
 
         assertThatStore(ctx.eventStore())
@@ -94,12 +103,16 @@ class OutboxTestContextSmokeTest {
                                         (c, p) -> {
                                             // Simulate stuck handler — but return to avoid blocking
                                             // the test.
-                                            return EventOutcome.Success.INSTANCE;
+                                            return EventOutcome.success();
                                         }))
                         .build();
 
         // Manually mark a claimed event as in-flight past maxRuntime via clock advance.
-        UUID id = ctx.publisher().publish("SLOW", new OrderCreated("ord-1", 1));
+        UUID id =
+                ctx.publisher()
+                        .publish(
+                                EventType.of("SLOW", OrderCreated.class),
+                                new OrderCreated("ord-1", 1));
         // Process the event normally first to cover the full flow.
         ctx.manualEngine().tick();
         assertThatStore(ctx.eventStore()).hasNoEvent(id);
@@ -127,13 +140,8 @@ class OutboxTestContextSmokeTest {
     private static EventHandler<OrderCreated> stringHandler(String type, HandleFn fn) {
         return new EventHandler<OrderCreated>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<OrderCreated> payloadType() {
-                return OrderCreated.class;
+            public EventType<OrderCreated> type() {
+                return EventType.of(type, OrderCreated.class);
             }
 
             @Override

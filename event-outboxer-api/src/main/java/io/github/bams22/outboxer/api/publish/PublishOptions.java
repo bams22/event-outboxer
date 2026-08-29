@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.publish;
 
+import io.github.bams22.outboxer.domain.EventType;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
@@ -16,7 +17,7 @@ import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Optional per-call tuning for {@link OutboxEventPublisher#publish(String, Object,
+ * Optional per-call tuning for {@link OutboxEventPublisher#publish(EventType, Object,
  * PublishOptions)}. All fields are nullable; {@code null} means "use the engine default".
  *
  * <p>There is no {@code lockKey} field here on purpose: lock keys are derived from the payload at

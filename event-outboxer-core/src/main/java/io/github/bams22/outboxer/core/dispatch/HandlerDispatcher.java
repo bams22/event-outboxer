@@ -517,8 +517,7 @@ public final class HandlerDispatcher {
                     new HandlerErrorInfo(
                             claimed.id(), claimed.eventType(), claimed.attempts() + 1, ex));
             String msg = ex.getMessage();
-            return new EventOutcome.Retry(
-                    msg != null ? msg : ex.getClass().getSimpleName(), null, ex);
+            return EventOutcome.retry(msg != null ? msg : ex.getClass().getSimpleName(), ex);
         }
     }
 

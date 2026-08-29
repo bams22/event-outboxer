@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.core.engine.OutboxEngine;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -61,7 +62,9 @@ class InMemoryStarterSmokeTest {
     void publishedEventIsProcessed() {
         assertThat(engine.state()).isEqualTo(OutboxEngine.State.RUNNING);
 
-        UUID id = publisher.publish("ORDER", new OrderCreated("ord-1", 3));
+        UUID id =
+                publisher.publish(
+                        EventType.of("ORDER", OrderCreated.class), new OrderCreated("ord-1", 3));
 
         await().atMost(Duration.ofSeconds(5))
                 .pollInterval(Duration.ofMillis(20))
@@ -173,20 +176,15 @@ class InMemoryStarterSmokeTest {
         private final ConcurrentHashMap<String, Integer> seen = new ConcurrentHashMap<>();
 
         @Override
-        public String eventType() {
-            return "ORDER";
-        }
-
-        @Override
-        public Class<OrderCreated> payloadType() {
-            return OrderCreated.class;
+        public EventType<OrderCreated> type() {
+            return EventType.of("ORDER", OrderCreated.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, OrderCreated payload) {
             invocations.incrementAndGet();
             seen.put(payload.orderId(), payload.count());
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
 
         int invocationCount() {

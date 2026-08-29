@@ -23,6 +23,7 @@ import io.github.bams22.outboxer.core.dispatch.DispatcherConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.EventStatus;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -97,7 +98,7 @@ class StaleClaimSweeperTest {
                                         .finalizeBatching(true)
                                         .finalizeBatchMaxSize(128)
                                         .build())
-                        .handler(handler("KNOWN", (ctx, p) -> EventOutcome.Success.INSTANCE))
+                        .handler(handler("KNOWN", (ctx, p) -> EventOutcome.success()))
                         .build();
         engine.start();
 
@@ -136,10 +137,7 @@ class StaleClaimSweeperTest {
                                                         cfg.handlerMaxRuntime(
                                                                 Duration.ofMinutes(10)),
                                                 m -> m.staleClaimThreshold(Duration.ofMinutes(5)))
-                                        .handler(
-                                                handler(
-                                                        "T",
-                                                        (ctx, p) -> EventOutcome.Success.INSTANCE))
+                                        .handler(handler("T", (ctx, p) -> EventOutcome.success()))
                                         .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("staleClaimThreshold");
@@ -188,13 +186,8 @@ class StaleClaimSweeperTest {
                         .handler(
                                 new EventHandler<String>() {
                                     @Override
-                                    public String eventType() {
-                                        return "LOCKED";
-                                    }
-
-                                    @Override
-                                    public Class<String> payloadType() {
-                                        return String.class;
+                                    public EventType<String> type() {
+                                        return EventType.of("LOCKED", String.class);
                                     }
 
                                     @Override
@@ -205,13 +198,13 @@ class StaleClaimSweeperTest {
                                     @Override
                                     public EventOutcome handle(EventContext ctx, String payload) {
                                         handled.incrementAndGet();
-                                        return EventOutcome.Success.INSTANCE;
+                                        return EventOutcome.success();
                                     }
                                 })
                         .build();
         engine.start();
 
-        UUID id = engine.publisher().publish("LOCKED", "payload");
+        UUID id = engine.publisher().publish(EventType.of("LOCKED", String.class), "payload");
 
         // Before the bracket widening the hang was invisible (registration happened after the
         // lock); now the watchdog force-reclaims it at handlerMaxRuntime and a retry succeeds.
@@ -274,13 +267,8 @@ class StaleClaimSweeperTest {
     private static EventHandler<String> handler(String type, HandleFn fn) {
         return new EventHandler<String>() {
             @Override
-            public String eventType() {
-                return type;
-            }
-
-            @Override
-            public Class<String> payloadType() {
-                return String.class;
+            public EventType<String> type() {
+                return EventType.of(type, String.class);
             }
 
             @Override

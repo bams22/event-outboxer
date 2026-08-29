@@ -18,12 +18,55 @@ import org.jspecify.annotations.Nullable;
  * {@link Retry}, {@link Fail}, and {@link Skip}.
  *
  * <p>An uncaught exception thrown from {@code EventHandler.handle(...)} is treated by the engine as
- * {@code Retry(ex.getMessage(), null, ex)}. Handlers therefore do not need to convert every
- * exception to a {@code Retry} manually — returning {@code Success}, {@code Skip}, or an explicit
- * {@code Fail} is enough.
+ * {@code retry(ex.getMessage(), ex)}. Handlers therefore do not need to convert every exception to
+ * a {@code Retry} manually — returning {@link #success()}, {@link #skip(String)}, or an explicit
+ * {@link #fail(String)} is enough.
+ *
+ * <p>The static factories are the idiomatic way to produce an outcome; the records stay public for
+ * pattern matching ({@code switch (outcome) { case Retry r -> ... }}).
  */
 public sealed interface EventOutcome
         permits EventOutcome.Success, EventOutcome.Retry, EventOutcome.Fail, EventOutcome.Skip {
+
+    /** Processing completed — the canonical {@link Success} instance. */
+    static EventOutcome success() {
+        return Success.INSTANCE;
+    }
+
+    /** Successful no-op, see {@link Skip}. */
+    static EventOutcome skip(String reason) {
+        return new Skip(reason);
+    }
+
+    /** Transient failure; the configured {@code FailureHandler} chain decides the delay. */
+    static EventOutcome retry(String reason) {
+        return new Retry(reason, null, null);
+    }
+
+    /** Transient failure carrying its cause; the chain decides the delay. */
+    static EventOutcome retry(String reason, Throwable cause) {
+        return new Retry(reason, null, cause);
+    }
+
+    /** Transient failure with an explicit delay before the next attempt. */
+    static EventOutcome retry(String reason, Duration delay) {
+        return new Retry(reason, delay, null);
+    }
+
+    /** Transient failure with an explicit delay and cause; either may be {@code null}. */
+    static EventOutcome retry(String reason, @Nullable Duration delay, @Nullable Throwable cause) {
+        return new Retry(reason, delay, cause);
+    }
+
+    /** Permanent failure — straight to {@code DISABLED}, see {@link Fail}. */
+    static EventOutcome fail(String reason) {
+        return new Fail(reason, null);
+    }
+
+    /** Permanent failure carrying its cause. */
+    static EventOutcome fail(String reason, Throwable cause) {
+        return new Fail(reason, cause);
+    }
 
     /**
      * Processing completed successfully. The event is removed from the active outbox (or moved to
@@ -31,10 +74,7 @@ public sealed interface EventOutcome
      */
     record Success() implements EventOutcome {
 
-        /**
-         * Canonical zero-state instance. Prefer {@code EventOutcome.Success.INSTANCE} in handler
-         * code instead of allocating a new record.
-         */
+        /** Canonical zero-state instance, returned by {@link EventOutcome#success()}. */
         public static final Success INSTANCE = new Success();
     }
 

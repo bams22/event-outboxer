@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.publish.PublishRequest;
 import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.exception.NoTransactionException;
@@ -48,6 +49,8 @@ import org.slf4j.LoggerFactory;
  * serves every thread. Steps:
  *
  * <ol>
+ *   <li>Validate: non-null key and payload, and the payload is an instance of {@code
+ *       type.payloadType()} (ADR-0031).
  *   <li>Consult the {@link TransactionContext}; if no active transaction, apply the configured
  *       {@link NoTransactionPolicy}.
  *   <li>Serialize the payload via {@link EventSerializer}.
@@ -158,14 +161,14 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
 
     @Override
-    public UUID publish(String eventType, Object payload) {
-        return publish(eventType, payload, PublishOptions.defaults());
+    public <T> UUID publish(EventType<T> type, T payload) {
+        return publish(type, payload, PublishOptions.defaults());
     }
 
     @Override
-    public UUID publish(String eventType, Object payload, Instant runAt) {
+    public <T> UUID publish(EventType<T> type, T payload, Instant runAt) {
         Objects.requireNonNull(runAt, "runAt must not be null");
-        return publish(eventType, payload, PublishOptions.builder().runAt(runAt).build());
+        return publish(type, payload, PublishOptions.builder().runAt(runAt).build());
     }
 
     /**
@@ -175,8 +178,9 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     private static final int DEDUP_RACE_RETRIES = 3;
 
     @Override
-    public UUID publish(String eventType, Object payload, @Nullable PublishOptions options) {
-        validate(eventType, payload);
+    public <T> UUID publish(EventType<T> type, T payload, @Nullable PublishOptions options) {
+        validate(type, payload);
+        String eventType = type.name();
         PublishOptions resolved = options == null ? PublishOptions.defaults() : options;
         enforceTransactionPolicy();
 
@@ -281,7 +285,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
     }
 
     @Override
-    public List<UUID> publishAll(Collection<PublishRequest> requests) {
+    public List<UUID> publishAll(Collection<? extends PublishRequest<?>> requests) {
         Objects.requireNonNull(requests, "requests must not be null");
         if (requests.isEmpty()) {
             return List.of();
@@ -297,18 +301,17 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         // dedup-path spans close per row inside the loop.
         List<OutboxTracer.PublishSpan> batchSpans = new ArrayList<>(requests.size());
         try {
-            for (PublishRequest r : requests) {
+            for (PublishRequest<?> r : requests) {
                 Objects.requireNonNull(r, "request element must not be null");
-                validate(r.eventType(), r.payload());
+                validate(r.type(), r.payload());
+                String eventType = r.type().name();
                 PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
-                SerializedPayload serialized = serialize(r.eventType(), r.payload());
+                SerializedPayload serialized = serialize(eventType, r.payload());
                 UUID id = UUID.randomUUID();
                 if (opts.dedupKey() != null) {
-                    try (OutboxTracer.PublishSpan span =
-                            tracer.startPublishSpan(id, r.eventType())) {
+                    try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
                         PendingEvent pe =
-                                buildPending(
-                                        id, r.eventType(), r.payload(), serialized, opts, span);
+                                buildPending(id, eventType, r.payload(), serialized, opts, span);
                         try {
                             CoalescingResult result = saveCoalescing(pe);
                             if (result.inserted()) {
@@ -329,10 +332,10 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                         }
                     }
                 } else {
-                    OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, r.eventType());
+                    OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType);
                     batchSpans.add(span);
                     PendingEvent pe =
-                            buildPending(id, r.eventType(), r.payload(), serialized, opts, span);
+                            buildPending(id, eventType, r.payload(), serialized, opts, span);
                     batch.add(pe);
                     ids.add(pe.id());
                 }
@@ -370,15 +373,21 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
      * still pass null, and this check turns that into a {@link PublishValidationException} instead
      * of an unexplained NPE.
      */
-    private void validate(@Nullable String eventType, @Nullable Object payload) {
-        if (eventType == null) {
-            throw new PublishValidationException("eventType must not be null");
-        }
-        if (eventType.isBlank()) {
-            throw new PublishValidationException("eventType must not be blank");
+    private void validate(@Nullable EventType<?> type, @Nullable Object payload) {
+        if (type == null) {
+            throw new PublishValidationException("type must not be null");
         }
         if (payload == null) {
             throw new PublishValidationException("payload must not be null");
+        }
+        if (!type.payloadType().isInstance(payload)) {
+            throw new PublishValidationException(
+                    "payload of event type "
+                            + type.name()
+                            + " must be an instance of "
+                            + type.payloadType().getName()
+                            + ", got "
+                            + payload.getClass().getName());
         }
     }
 

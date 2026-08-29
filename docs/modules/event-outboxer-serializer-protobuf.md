@@ -135,9 +135,11 @@ new OutboxEngineBuilder()
 
 ```java
 public class OrderCreatedHandler implements EventHandler<OrderCreatedProto> {
-    @Override public String eventType() { return "ORDER_CREATED"; }
-    @Override public Class<OrderCreatedProto> payloadType() { return OrderCreatedProto.class; }
-    // publisher.publish("ORDER_CREATED", OrderCreatedProto.newBuilder()...build());
+    public static final EventType<OrderCreatedProto> ORDER_CREATED =
+        EventType.of("ORDER_CREATED", OrderCreatedProto.class);
+
+    @Override public EventType<OrderCreatedProto> type() { return ORDER_CREATED; }
+    // publisher.publish(OrderCreatedHandler.ORDER_CREATED, OrderCreatedProto.newBuilder()...build());
 }
 ```
 

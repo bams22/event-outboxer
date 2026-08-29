@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.lock.postgres.lease.PgLeaseEntityLocker;
 import java.util.List;
 import javax.sql.DataSource;
@@ -127,18 +128,13 @@ class OutboxFlywayIT {
     /** The engine refuses to start without a handler; the tests only care about the schema. */
     static final class NoopHandler implements EventHandler<String> {
         @Override
-        public String eventType() {
-            return "NOOP";
-        }
-
-        @Override
-        public Class<String> payloadType() {
-            return String.class;
+        public EventType<String> type() {
+            return EventType.of("NOOP", String.class);
         }
 
         @Override
         public EventOutcome handle(EventContext ctx, String payload) {
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
         }
     }
 }

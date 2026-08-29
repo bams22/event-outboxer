@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-08-29 (the handler↔payload binding is the typed
+key `EventType<T>`, ADR-0031; see the Amendment section at the bottom)
 
 ## Date
 
@@ -114,6 +115,17 @@ Explicit DTOs close all of that:
 - The API is slightly more verbose: `publisher.publish("TYPE", new
   Payload(...))` vs `publisher.run(() -> svc.doWork(id))`. This is a
   deliberate cost.
+
+## Amendment (2026-08-29): the binding is a typed key
+
+"Handlers are bound to payloads via `eventType()` (String) and
+`payloadType()` (Class)" is now expressed as one value: `EventType<T>`
+(`name` + `Class<T>`), declared once and shared by the producer
+(`publish(type, payload)`) and the handler (`type()`) — ADR-0031. The
+`Class<T>` is still explicit and still the single deserialization
+target; no reflection over payloads is introduced. The stored
+`event_type` remains the string name, and `payload_class` remains a
+diagnostic column.
 
 ## Related decisions
 

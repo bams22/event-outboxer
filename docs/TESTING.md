@@ -25,10 +25,12 @@ the Jackson serializer transitively — nothing else to wire.
 @ExtendWith(OutboxExtension.class)
 class OrderHandlerTest {
 
+  static final EventType<EmailRequest> SEND_EMAIL = EventType.of("SEND_EMAIL", EmailRequest.class);
+
   @Test
   void sendsConfirmationEmail(OutboxTestContext outbox) {
-    // publish
-    outbox.publisher().publish("SEND_EMAIL", new EmailRequest("me@x.io"));
+    // publish (typed key — the same constant a handler would return from type())
+    outbox.publisher().publish(SEND_EMAIL, new EmailRequest("me@x.io"));
 
     // process synchronously on the current thread
     int dispatched = outbox.manualEngine().tick();
@@ -137,13 +139,13 @@ void handlerRunsOnce(OutboxTestContext outbox) {
   AtomicInteger invocations = new AtomicInteger();
   OutboxTestContext ctx =
       OutboxTestContext.builder()
-          .handler(simpleHandler("ORDER", p -> {
+          .handler(simpleHandler(ORDER, p -> {      // ORDER = EventType.of("ORDER", OrderCreated.class)
             invocations.incrementAndGet();
-            return EventOutcome.Success.INSTANCE;
+            return EventOutcome.success();
           }))
           .build();
 
-  UUID id = ctx.publisher().publish("ORDER", new OrderCreated("o-1"));
+  UUID id = ctx.publisher().publish(ORDER, new OrderCreated("o-1"));
   ctx.manualEngine().tick();
 
   assertThat(invocations).hasValue(1);
@@ -167,13 +169,13 @@ void disabledAfterThreeAttempts() {
               FailureHandlers.<Object>builder()
                   .withMaxAttempts(3, MaxRetriesFailureHandler.ExhaustedAction.DISABLE)
                   .withFixedDelay(Duration.ofSeconds(1)))
-          .handler(simpleHandler("FLAKY", p -> {
+          .handler(simpleHandler(FLAKY, p -> {      // FLAKY = EventType.of("FLAKY", String.class)
             throw new RuntimeException("nope");
           }))
           .clock(SettableClock.atEpoch())
           .build();
 
-  UUID id = ctx.publisher().publish("FLAKY", "payload");
+  UUID id = ctx.publisher().publish(FLAKY, "payload");
 
   for (int i = 0; i < 3; i++) {
     ctx.manualEngine().tick();              // attempt
@@ -203,7 +205,7 @@ void watchdogReclaimsStuckHandler() {
   OutboxTestContext ctx =
       OutboxTestContext.builder()
           .defaultEventTypeConfig(fastDeadline)
-          .handler(simpleHandler("SLOW", p -> EventOutcome.Success.INSTANCE))
+          .handler(simpleHandler(SLOW, p -> EventOutcome.success()))
           .clock(SettableClock.atEpoch())
           .build();
 

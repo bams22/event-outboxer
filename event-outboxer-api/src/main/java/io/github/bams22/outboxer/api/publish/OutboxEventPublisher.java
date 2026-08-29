@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.publish;
 
+import io.github.bams22.outboxer.domain.EventType;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -39,7 +40,8 @@ import org.jspecify.annotations.Nullable;
  * All publish failures raise a subclass of {@code PublishException}:
  *
  * <ul>
- *   <li>{@code PublishValidationException} — bad arguments.
+ *   <li>{@code PublishValidationException} — bad arguments: a null type or payload, or a payload
+ *       that is not an instance of the type's payload class.
  *   <li>{@code PublishSerializationException} — the payload could not be serialized.
  *   <li>{@code NoTransactionException} — no active transaction under the FAIL policy.
  *   <li>{@code PublishFailedException} — {@code publishAll(...)} encountered a storage-level
@@ -55,27 +57,28 @@ import org.jspecify.annotations.Nullable;
  */
 public interface OutboxEventPublisher {
 
-    /** Equivalent to {@code publish(eventType, payload, PublishOptions.defaults())}. */
-    UUID publish(String eventType, Object payload);
+    /** Equivalent to {@code publish(type, payload, PublishOptions.defaults())}. */
+    <T> UUID publish(EventType<T> type, T payload);
 
     /**
-     * Equivalent to {@code publish(eventType, payload,
-     * PublishOptions.builder().runAt(runAt).build())}.
+     * Equivalent to {@code publish(type, payload, PublishOptions.builder().runAt(runAt).build())}.
      */
-    UUID publish(String eventType, Object payload, Instant runAt);
+    <T> UUID publish(EventType<T> type, T payload, Instant runAt);
 
     /**
-     * Publishes a single event with explicit options.
+     * Publishes a single event with explicit options. The payload must be an instance of {@code
+     * type.payloadType()} — the same {@link EventType} constant the handler returns from {@code
+     * EventHandler.type()} (ADR-0031); anything else is a {@code PublishValidationException}.
      *
      * @param options publish options, or {@code null} to use {@code PublishOptions.defaults()}
      * @return the id of the persisted event; the same value is visible through {@code Event.id()}
      */
-    UUID publish(String eventType, Object payload, @Nullable PublishOptions options);
+    <T> UUID publish(EventType<T> type, T payload, @Nullable PublishOptions options);
 
     /**
      * Publishes a batch of events fail-fast. On success the returned list has the same size and
      * order as {@code requests}; on any failure a {@code PublishFailedException} is raised and the
      * caller's transaction is expected to roll back, leaving the outbox untouched.
      */
-    List<UUID> publishAll(Collection<PublishRequest> requests);
+    List<UUID> publishAll(Collection<? extends PublishRequest<?>> requests);
 }
