@@ -68,6 +68,11 @@ event-outboxer:
     archive-enabled: false           # move successful events to the archive table
     metrics-cache-ttl: 30s           # TTL of the metricsSnapshot() cache
 
+  serializer:                        # ADR-0025 — see §Serialization below
+    write-format: null               # format that writes new events; null = the only bean, else the
+                                     # bean named outboxEventSerializer (Jackson: jackson-json)
+    write-format-per-type: {}        # event type → format, e.g. ORDER_CREATED: protobuf
+
   flyway:                            # starter-managed Flyway instance (ADR-0028); locations are fixed
     enabled: true                    # false = apply the shipped SQL through your own tooling
     url: null                        # dedicated migration connection; null = the outbox DataSource
@@ -755,7 +760,7 @@ with `event-outboxer-storage-inmemory` on the test classpath:
 For plain-Java (non-Spring) tests use the testkit's
 `OutboxTestContext`, which wires the in-memory store directly.
 
-### Serialization
+### Serialization (`event-outboxer.serializer.*`)
 
 The library ships two serializers: Jackson JSON (`jackson-json`, text
 lane, ADR-0011) — **included with the starter** and the zero-config

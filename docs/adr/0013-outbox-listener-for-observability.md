@@ -7,7 +7,10 @@ registered by default; amended 2026-08-16: 21 → 25 methods — added the
 Polling group (`onPollCompleted`, `onPollerSaturated`) and the
 Maintenance group (`onStaleClaimsSwept`, `onRetentionPurged`),
 discriminated lock-busy vs locker-backend-error via
-`LockAcquisitionInfo.Outcome`, and corrected stale metric-name examples)
+`LockAcquisitionInfo.Outcome`, and corrected stale metric-name examples;
+amended 2026-08-29: 25 → 26 methods — `onHandlerAbandoned` joined the
+Recovery group when the watchdog started reporting force-reclaimed
+handlers that outlive `abandoned-handler-grace`)
 
 ## Date
 
@@ -40,7 +43,7 @@ separate `event-outboxer-metrics-micrometer` module with
 
 ### API
 
-25 methods in `OutboxListener`, all with a default no-op. Arguments are
+26 methods in `OutboxListener`, all with a default no-op. Arguments are
 records (protection against breaking changes when adding fields).
 
 Groups:
@@ -56,7 +59,8 @@ Groups:
    `onLockReleaseFailed`.
 5. **Worker lifecycle**: `onWorkerRegistered`, `onWorkerGracefulStop`,
    `onWorkerDeregistered`, `onHeartbeatFailed`.
-6. **Recovery**: `onOrphansReclaimed`, `onStuckHandlerReclaimed`.
+6. **Recovery**: `onOrphansReclaimed`, `onStuckHandlerReclaimed`,
+   `onHandlerAbandoned`.
 7. **Maintenance**: `onStaleClaimsSwept`, `onRetentionPurged`.
 8. **Storage**: `onStorageError`.
 9. **Dispatch**: `onDispatchRejected`.
@@ -158,7 +162,7 @@ no dedicated enable/disable property.
 
 ### Negative consequences
 
-- 25 methods — a noticeable API surface. Adding a new one is a breaking
+- 26 methods — a noticeable API surface. Adding a new one is a breaking
   change.
 - Listeners must be thread-safe and fast.
 - A little more boilerplate when creating a custom listener.

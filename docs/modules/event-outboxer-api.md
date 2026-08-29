@@ -139,17 +139,19 @@ validation-style handlers).
 
 ### Observability (`api.observer`)
 
-**`OutboxListener`** — 21 callbacks, all default no-ops, each with its
+**`OutboxListener`** — 26 callbacks, all default no-ops, each with its
 own immutable `*Info` record: event lifecycle (`onEventPublished`,
 `onEventClaimed`, `onEventProcessed`, `onEventRetryScheduled`,
-`onEventDisabled`, `onEventDeleted`, `onEventSkipped`), failures
-(`onHandlerError`, `onUnknownEventType`, `onEventSerializationError`,
-`onStorageError`, `onDispatchRejected`), locking
-(`onLockAcquisitionFailed`, `onLockReleaseFailed`), worker lifecycle
-(`onWorkerRegistered`, `onWorkerGracefulStop`, `onWorkerDeregistered`,
-`onHeartbeatFailed`), recovery (`onOrphansReclaimed`,
-`onStuckHandlerReclaimed`) and `onEngineCrashed` (fatal — the engine
-does not self-recover).
+`onEventDisabled`, `onEventDeleted`, `onEventSkipped`), polling
+(`onPollCompleted`, `onPollerSaturated`), failures (`onHandlerError`,
+`onUnknownEventType`, `onEventSerializationError`, `onStorageError`,
+`onDispatchRejected`), locking (`onLockAcquisitionFailed`,
+`onLockReleaseFailed`), worker lifecycle (`onWorkerRegistered`,
+`onWorkerGracefulStop`, `onWorkerDeregistered`, `onHeartbeatFailed`),
+recovery (`onOrphansReclaimed`, `onStuckHandlerReclaimed`,
+`onHandlerAbandoned`), maintenance (`onStaleClaimsSwept`,
+`onRetentionPurged`) and `onEngineCrashed` (fatal — the engine does not
+self-recover).
 
 Contracts: callbacks run on poller / worker / maintenance threads —
 implementations must be thread-safe and fast (offload long work); the

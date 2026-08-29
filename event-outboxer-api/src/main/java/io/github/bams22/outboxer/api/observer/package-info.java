@@ -10,7 +10,7 @@
 
 /**
  * Observability event bus — {@link io.github.bams22.outboxer.api.observer.OutboxListener} and its
- * 21 {@code *Info} record types. Implementations typically publish metrics (see the {@code
+ * 26 {@code *Info} record types. Implementations typically publish metrics (see the {@code
  * event-outboxer-metrics-micrometer} module), emit structured logs, or maintain an audit trail.
  *
  * <p>{@link org.jspecify.annotations.NullMarked}: everything is non-null by default.
