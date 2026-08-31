@@ -8,6 +8,26 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Breaking
+- **Seven redundant Micrometer meters removed; `events.attempts`
+  gains an `outcome` tag.** Every removed series is derivable from a
+  surviving one; migrate dashboards and alerts as follows and
+  re-import the shipped Grafana dashboard:
+
+  | Removed | Use instead |
+  |---|---|
+  | `event_outboxer_events_claimed_total` | `event_outboxer_events_queue_time_seconds_count` |
+  | `event_outboxer_events_processed_total` | `event_outboxer_events_processing_time_seconds_count` |
+  | `event_outboxer_handler_stuck_reclaimed_total` | `event_outboxer_handler_stuck_time_seconds_count` |
+  | `event_outboxer_dispatch_rejected_total` | `event_outboxer_events_retry_scheduled_total{reason="dispatch_rejected"}` |
+  | `event_outboxer_poller_batch_size_*` | avg batch = `queue_time_seconds_count / poller_polls_total{result="claimed"}` |
+  | `event_outboxer_workers_deregistered_total` | `event_outboxer_workers_graceful_stops_total` (documented as same-semantics) |
+  | `event_outboxer_orphans_dead_workers_total` | dropped without replacement (`orphans.reclaimed` remains) |
+
+  `event_outboxer.events.attempts` now carries
+  `outcome=processed|disabled|deleted` — the untagged series
+  disappears; `sum without(outcome)(...)` restores the old view. The
+  corresponding `OutboxListener` callbacks are unchanged — only the
+  Micrometer implementation slimmed down.
 - **`OutboxListener` grows 26 → 28 methods (ADR-0013 amendment).**
   New callbacks `onEventCoalesced(EventCoalescedInfo)` (a keyed publish
   coalesced into an existing PENDING event instead of inserting —
@@ -50,6 +70,20 @@ All notable changes to this project are documented here. Format follows
   via `onRetentionPurged` before propagating.
 
 ### Added
+- **Six new meters close the observability blind spots.**
+  `event_outboxer.maintenance.runs{task,result}` (background-task
+  liveness — failures used to be WARN log lines only),
+  `event_outboxer.events.coalesced{event_type}` (ADR-0021 dedup
+  ratio), `event_outboxer.poller.claim_time{event_type}` (claim-query
+  latency, attributes a rising queue time to the DB vs the handlers),
+  `event_outboxer.handler.error_time{event_type}` (failed-attempt
+  duration — separates instant failures from burnt timeouts),
+  `event_outboxer.heartbeat.last_success_age_seconds` (starter gauge,
+  NaN until the first success — catches a stalled maintenance
+  scheduler that `heartbeat.failed` cannot see), and `storage.errors`
+  operations `save`/`finalize`/`release`. The new timers ship without
+  SLO buckets (count/sum/max only). `entity_locks.held` — which
+  existed all along — is now in the OBSERVABILITY.md table too.
 - **`OutboxEngine.lastHeartbeatSuccessAt()`** — instant of the last
   successful heartbeat write ({@code null} until the first); the
   read-only seam behind the starter's upcoming heartbeat-age gauge. A

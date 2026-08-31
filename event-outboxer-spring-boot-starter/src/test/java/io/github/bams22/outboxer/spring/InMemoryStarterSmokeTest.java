@@ -144,6 +144,26 @@ class InMemoryStarterSmokeTest {
     }
 
     @Test
+    void heartbeatAgeGaugeTurnsFiniteAfterFirstHeartbeat() {
+        await().atMost(Duration.ofSeconds(10))
+                .until(
+                        () ->
+                                !Double.isNaN(
+                                        meterRegistry
+                                                .get(
+                                                        "event_outboxer.heartbeat"
+                                                                + ".last_success_age_seconds")
+                                                .gauge()
+                                                .value()));
+        assertThat(
+                        meterRegistry
+                                .get("event_outboxer.heartbeat.last_success_age_seconds")
+                                .gauge()
+                                .value())
+                .isBetween(0.0, 60.0);
+    }
+
+    @Test
     void saturationGaugesAreRegisteredPerEventType() {
         assertThat(
                         meterRegistry

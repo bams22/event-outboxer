@@ -97,8 +97,10 @@ automatically into `OutboxListenerRegistry`. In plain Java — via a builder.
 
 The `event-outboxer-metrics-micrometer` module provides a ready
 implementation. Mapping (sample):
-- `onEventProcessed` → `event_outboxer.events.processed{event_type}` Counter +
-  `event_outboxer.events.processing_time{event_type}` Timer.
+- `onEventProcessed` → `event_outboxer.events.processing_time{event_type}`
+  Timer + `event_outboxer.events.attempts{event_type,outcome="processed"}`
+  Summary (the timer's `_count` series doubles as the success counter —
+  the meter set is deliberately non-redundant).
 - `onEventRetryScheduled` →
   `event_outboxer.events.retry_scheduled{event_type,reason}` Counter.
 - `onEventDisabled` → `event_outboxer.events.disabled{event_type,reason}` Counter.

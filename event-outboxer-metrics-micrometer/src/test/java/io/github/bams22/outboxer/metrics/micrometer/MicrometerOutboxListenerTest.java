@@ -11,8 +11,9 @@ package io.github.bams22.outboxer.metrics.micrometer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
+import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
@@ -21,6 +22,7 @@ import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
+import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
 import io.github.bams22.outboxer.api.observer.PollerSaturatedInfo;
@@ -70,7 +72,17 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void claimedIncrementsPerTypeCounterAndRecordsQueueTime() {
+    void coalescedIncrementsPerTypeCounter() {
+        listener.onEventCoalesced(new EventCoalescedInfo(UUID.randomUUID(), "ORDER", "order-1"));
+
+        assertThat(
+                        registry.counter("event_outboxer.events.coalesced", "event_type", "ORDER")
+                                .count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void claimedRecordsQueueTime() {
         Instant createdAt = Instant.now();
         listener.onEventClaimed(
                 new EventClaimedInfo(
@@ -81,8 +93,6 @@ class MicrometerOutboxListenerTest {
                         createdAt.plusMillis(250),
                         new WorkerId("w-1")));
 
-        assertThat(registry.counter("event_outboxer.events.claimed", "event_type", "ORDER").count())
-                .isEqualTo(1.0);
         assertThat(
                         registry.timer("event_outboxer.events.queue_time", "event_type", "ORDER")
                                 .totalTime(TimeUnit.MILLISECONDS))
@@ -108,14 +118,10 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void processedIncrementsCounterAndRecordsTimer() {
+    void processedRecordsTimerAndAttempts() {
         listener.onEventProcessed(
                 new EventProcessedInfo(UUID.randomUUID(), "ORDER", 1, Duration.ofMillis(150)));
 
-        assertThat(
-                        registry.counter("event_outboxer.events.processed", "event_type", "ORDER")
-                                .count())
-                .isEqualTo(1.0);
         assertThat(
                         registry.timer(
                                         "event_outboxer.events.processing_time",
@@ -123,7 +129,14 @@ class MicrometerOutboxListenerTest {
                                         "ORDER")
                                 .totalTime(TimeUnit.MILLISECONDS))
                 .isEqualTo(150.0);
-        assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
+        assertThat(
+                        registry.summary(
+                                        "event_outboxer.events.attempts",
+                                        "event_type",
+                                        "ORDER",
+                                        "outcome",
+                                        "processed")
+                                .mean())
                 .isEqualTo(1.0);
     }
 
@@ -170,8 +183,32 @@ class MicrometerOutboxListenerTest {
                                         "failure_decision")
                                 .count())
                 .isEqualTo(1.0);
-        assertThat(registry.summary("event_outboxer.events.attempts", "event_type", "ORDER").mean())
+        assertThat(
+                        registry.summary(
+                                        "event_outboxer.events.attempts",
+                                        "event_type",
+                                        "ORDER",
+                                        "outcome",
+                                        "disabled")
+                                .mean())
                 .isEqualTo(10.0);
+    }
+
+    @Test
+    void deletedIncrementsCounterAndRecordsAttempts() {
+        listener.onEventDeleted(new EventDeletedInfo(UUID.randomUUID(), "ORDER", 3, "purged"));
+
+        assertThat(registry.counter("event_outboxer.events.deleted", "event_type", "ORDER").count())
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.summary(
+                                        "event_outboxer.events.attempts",
+                                        "event_type",
+                                        "ORDER",
+                                        "outcome",
+                                        "deleted")
+                                .mean())
+                .isEqualTo(3.0);
     }
 
     @Test
@@ -193,6 +230,10 @@ class MicrometerOutboxListenerTest {
                                         "IllegalStateException")
                                 .count())
                 .isEqualTo(1.0);
+        assertThat(
+                        registry.timer("event_outboxer.handler.error_time", "event_type", "ORDER")
+                                .totalTime(TimeUnit.MILLISECONDS))
+                .isEqualTo(250.0);
     }
 
     @Test
@@ -218,17 +259,16 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void orphansReclaimedTracksBothCounters() {
+    void orphansReclaimedIncrementsByEventCount() {
         listener.onOrphansReclaimed(
                 new OrphansReclaimedInfo(
                         List.of(new WorkerId("dead-1"), new WorkerId("dead-2")), 7));
 
         assertThat(registry.counter("event_outboxer.orphans.reclaimed").count()).isEqualTo(7.0);
-        assertThat(registry.counter("event_outboxer.orphans.dead_workers").count()).isEqualTo(2.0);
     }
 
     @Test
-    void stuckHandlerReclaimedIncrementsCounterAndRecordsElapsed() {
+    void stuckHandlerReclaimedRecordsElapsed() {
         listener.onStuckHandlerReclaimed(
                 new StuckHandlerReclaimedInfo(
                         UUID.randomUUID(),
@@ -237,13 +277,6 @@ class MicrometerOutboxListenerTest {
                         new WorkerId("w-1"),
                         true));
 
-        assertThat(
-                        registry.counter(
-                                        "event_outboxer.handler.stuck_reclaimed",
-                                        "event_type",
-                                        "ORDER")
-                                .count())
-                .isEqualTo(1.0);
         assertThat(
                         registry.timer("event_outboxer.handler.stuck_time", "event_type", "ORDER")
                                 .totalTime(TimeUnit.SECONDS))
@@ -281,19 +314,7 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void dispatchRejectedTagsByType() {
-        listener.onDispatchRejected(
-                new DispatchRejectedInfo(
-                        UUID.randomUUID(), "ORDER", new RuntimeException("saturated")));
-
-        assertThat(
-                        registry.counter("event_outboxer.dispatch.rejected", "event_type", "ORDER")
-                                .count())
-                .isEqualTo(1.0);
-    }
-
-    @Test
-    void pollCompletedTagsResultAndRecordsBatchSize() {
+    void pollCompletedTagsResultAndRecordsClaimTime() {
         listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 7, Duration.ofMillis(3)));
         listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 0, Duration.ofMillis(2)));
 
@@ -315,15 +336,15 @@ class MicrometerOutboxListenerTest {
                                         "empty")
                                 .count())
                 .isEqualTo(1.0);
-        // Batch size recorded only for the non-empty poll.
+        // Claim latency recorded for every poll, empty ones included.
         assertThat(
-                        registry.summary("event_outboxer.poller.batch_size", "event_type", "ORDER")
+                        registry.timer("event_outboxer.poller.claim_time", "event_type", "ORDER")
                                 .count())
-                .isEqualTo(1L);
+                .isEqualTo(2L);
         assertThat(
-                        registry.summary("event_outboxer.poller.batch_size", "event_type", "ORDER")
-                                .totalAmount())
-                .isEqualTo(7.0);
+                        registry.timer("event_outboxer.poller.claim_time", "event_type", "ORDER")
+                                .totalTime(TimeUnit.MILLISECONDS))
+                .isEqualTo(5.0);
     }
 
     @Test
@@ -385,6 +406,36 @@ class MicrometerOutboxListenerTest {
                 .isEqualTo(23.0);
         assertThat(registry.counter("event_outboxer.retention.purged", "kind", "disabled").count())
                 .isEqualTo(10.0);
+    }
+
+    @Test
+    void maintenanceRunsTagTaskAndResult() {
+        listener.onMaintenanceRunCompleted(
+                new MaintenanceRunInfo("heartbeat", MaintenanceRunInfo.Result.OK, null));
+        listener.onMaintenanceRunCompleted(
+                new MaintenanceRunInfo(
+                        "retention",
+                        MaintenanceRunInfo.Result.FAILED,
+                        new RuntimeException("boom")));
+
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.maintenance.runs",
+                                        "task",
+                                        "heartbeat",
+                                        "result",
+                                        "ok")
+                                .count())
+                .isEqualTo(1.0);
+        assertThat(
+                        registry.counter(
+                                        "event_outboxer.maintenance.runs",
+                                        "task",
+                                        "retention",
+                                        "result",
+                                        "failed")
+                                .count())
+                .isEqualTo(1.0);
     }
 
     @Test

@@ -265,6 +265,42 @@ public class MicrometerAutoConfiguration {
     /** Marker bean for the saturation gauges registration. */
     public static final class OutboxSaturationGauges {}
 
+    /**
+     * Heartbeat-age gauge ({@code <prefix>.heartbeat.last_success_age_seconds}): seconds since the
+     * engine's last successful heartbeat write, {@code NaN} until the first one. Complements the
+     * {@code heartbeat.failed} counter — a stalled maintenance scheduler produces no failures at
+     * all, but shows up here as an ever-growing age. Prometheus drops NaN samples, so alert with an
+     * {@code absent()}-aware rule or a plain {@code > threshold} comparison (recommended: 3x the
+     * configured heartbeat interval).
+     */
+    @Bean
+    @ConditionalOnBean(OutboxEngine.class)
+    @ConditionalOnMissingBean(name = "outboxHeartbeatGauge")
+    public OutboxHeartbeatGauge outboxHeartbeatGauge(
+            MeterRegistry registry, OutboxEngine engine, Clock clock, OutboxProperties properties) {
+        Gauge.builder(
+                        properties.getMetrics().getPrefix() + ".heartbeat.last_success_age_seconds",
+                        engine,
+                        e -> {
+                            Instant last = e.lastHeartbeatSuccessAt();
+                            if (last == null) {
+                                return Double.NaN;
+                            }
+                            double seconds =
+                                    Duration.between(last, clock.now()).toMillis() / 1000.0;
+                            return Math.max(0.0, seconds);
+                        })
+                .description(
+                        "Seconds since the last successful heartbeat write; NaN until the first."
+                                + " Alert when it exceeds ~3x the heartbeat interval")
+                .strongReference(true)
+                .register(registry);
+        return new OutboxHeartbeatGauge();
+    }
+
+    /** Marker bean for the heartbeat-age gauge registration. */
+    public static final class OutboxHeartbeatGauge {}
+
     private static void registerBacklog(
             MeterRegistry registry,
             String name,
