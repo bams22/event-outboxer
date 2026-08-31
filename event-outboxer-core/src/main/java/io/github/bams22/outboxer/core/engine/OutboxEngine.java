@@ -16,6 +16,7 @@ import io.github.bams22.outboxer.api.observer.WorkerGracefulStopInfo;
 import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
+import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
 import io.github.bams22.outboxer.core.polling.Poller;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -48,6 +49,7 @@ public final class OutboxEngine {
     private final EventStore store;
     private final Clock clock;
     private final MaintenanceScheduler maintenance;
+    private final HeartbeatTask heartbeat;
     private final List<Poller> pollers;
     private final HandlerExecutorManager handlerExecutors;
     private final InFlightRegistry inFlight;
@@ -77,6 +79,7 @@ public final class OutboxEngine {
             Clock clock,
             OutboxEventPublisher publisher,
             MaintenanceScheduler maintenance,
+            HeartbeatTask heartbeat,
             List<Poller> pollers,
             HandlerExecutorManager handlerExecutors,
             InFlightRegistry inFlight,
@@ -88,6 +91,7 @@ public final class OutboxEngine {
         this.clock = Objects.requireNonNull(clock);
         this.publisher = Objects.requireNonNull(publisher);
         this.maintenance = Objects.requireNonNull(maintenance);
+        this.heartbeat = Objects.requireNonNull(heartbeat);
         this.pollers = List.copyOf(pollers);
         this.handlerExecutors = Objects.requireNonNull(handlerExecutors);
         this.inFlight = Objects.requireNonNull(inFlight);
@@ -147,6 +151,16 @@ public final class OutboxEngine {
      */
     public int handlerExecutorCapacity(String eventType) {
         return handlerExecutors.capacity(eventType);
+    }
+
+    /**
+     * Instant of this worker's last successful heartbeat write; {@code null} until the first
+     * success after {@link #start()}. Read-only seam for the heartbeat-age gauge — a stalled
+     * maintenance scheduler shows up here as a growing age even though no heartbeat failure is ever
+     * reported.
+     */
+    public @Nullable Instant lastHeartbeatSuccessAt() {
+        return heartbeat.lastSuccessAt();
     }
 
     /** Start worker registration, maintenance and pollers in the right order. */

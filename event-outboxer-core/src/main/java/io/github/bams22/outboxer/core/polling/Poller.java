@@ -242,6 +242,7 @@ public final class Poller {
 
     private int tick(int limit) {
         List<ClaimedEvent> batch;
+        long claimStartNanos = System.nanoTime();
         try {
             batch = strategy.pollOnce(eventType, workerId, limit);
         } catch (StorageException ex) {
@@ -252,7 +253,12 @@ public final class Poller {
             log.warn("unexpected claim error for type {}: {}", eventType, ex.toString(), ex);
             return 0;
         }
-        listener.onPollCompleted(new PollCompletedInfo(eventType, limit, batch.size()));
+        listener.onPollCompleted(
+                new PollCompletedInfo(
+                        eventType,
+                        limit,
+                        batch.size(),
+                        Duration.ofNanos(System.nanoTime() - claimStartNanos)));
         if (batch.isEmpty()) {
             return 0;
         }

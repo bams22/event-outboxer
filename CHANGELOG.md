@@ -7,7 +7,63 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Breaking
+- **`OutboxListener` grows 26 → 28 methods (ADR-0013 amendment).**
+  New callbacks `onEventCoalesced(EventCoalescedInfo)` (a keyed publish
+  coalesced into an existing PENDING event instead of inserting —
+  fires instead of `onEventPublished`, ADR-0021 amendment) and
+  `onMaintenanceRunCompleted(MaintenanceRunInfo)` (every periodic
+  maintenance task run, OK or FAILED, with a stable task name:
+  `heartbeat`, `orphan_recovery`, `watchdog`, `engine_health_check`,
+  `retention`, `stale_claim_sweeper`). Both have default no-ops —
+  existing listener implementations keep compiling; only the interface
+  surface expands.
+- **`HandlerErrorInfo` and `PollCompletedInfo` gained a trailing
+  `Duration duration` component.** `HandlerErrorInfo.duration` is the
+  time spent in the failed `handler.handle(...)` attempt;
+  `PollCompletedInfo.duration` is the wall time of the claim query,
+  recorded for empty polls too. Constructor calls must append the new
+  argument.
+
+  Migration —
+
+  ```java
+  // before
+  new HandlerErrorInfo(id, "ORDER", 1, cause);
+  new PollCompletedInfo("ORDER", 10, 7);
+  // after
+  new HandlerErrorInfo(id, "ORDER", 1, cause, Duration.ofMillis(250));
+  new PollCompletedInfo("ORDER", 10, 7, Duration.ofMillis(3));
+  ```
+- **Maintenance tasks no longer swallow their own failures — the
+  scheduler's guarded wrapper is the single catch-and-continue
+  barrier.** Behaviour of the background engine is unchanged (failures
+  are still caught, logged, and the schedule survives — a throwing
+  task can no longer silently cancel its own `scheduleWithFixedDelay`
+  registration either, which previously could happen to the watchdog
+  on an `inFlight.snapshot()` failure). But code driving the tasks
+  directly sees the difference: testkit's
+  `ManualEngine.tickHeartbeat()` / `tickOrphanRecovery()` now
+  propagate storage failures to the caller instead of logging them
+  away — deliberate, tests should see the failure. A failing retention
+  sweep still runs the other dimension and reports partial progress
+  via `onRetentionPurged` before propagating.
+
 ### Added
+- **`OutboxEngine.lastHeartbeatSuccessAt()`** — instant of the last
+  successful heartbeat write ({@code null} until the first); the
+  read-only seam behind the starter's upcoming heartbeat-age gauge. A
+  stalled maintenance scheduler shows up as a growing age even though
+  `onHeartbeatFailed` never fires.
+- **`storage.errors` now covers more than the claim path.** The
+  dispatcher reports a failed finalize (`operation="finalize"`) and a
+  failed recovery release (`operation="release"`); the publisher
+  reports a failed insert (`operation="save"`) before rethrowing
+  `PublishFailedException`. A finalize failure whose recovery release
+  also fails emits both — two distinct failed storage operations.
+- **`RecordingOutboxListener`** records the two new callbacks
+  (`coalesced()`, `maintenanceRuns()` accessors); its `clear()` now
+  also resets the previously-missed `handlersAbandoned` list.
 - **Low-watermark claim refill — `claim-min-free` (ADR-0004
   amendment).** New per-type setting
   `event-outboxer.event-types.{defaults,overrides.<TYPE>}.claim-min-free`

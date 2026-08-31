@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.core.maintenance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
@@ -82,9 +83,11 @@ class RetentionTaskTest {
     }
 
     @Test
-    @DisplayName("a failing sweep is contained: the other dimension still runs, nothing propagates")
-    void sweepFailureIsContained() {
-        AtomicInteger disabledPurged = new AtomicInteger();
+    @DisplayName(
+            "a failing archive sweep still runs the disabled sweep, reports partial progress, then"
+                    + " propagates")
+    void sweepFailurePropagatesAfterBothSweeps() {
+        AtomicInteger disabledCalls = new AtomicInteger();
         OutboxAdmin admin =
                 new StubAdmin() {
                     @Override
@@ -94,14 +97,19 @@ class RetentionTaskTest {
 
                     @Override
                     public int purgeDisabled(@Nullable String type, Instant olderThan, int limit) {
-                        disabledPurged.incrementAndGet();
-                        return 0;
+                        return disabledCalls.incrementAndGet() == 1 ? 4 : 0;
                     }
                 };
+        List<RetentionPurgedInfo> purgedInfos = new ArrayList<>();
         RetentionTask task =
                 new RetentionTask(
                         admin,
-                        new OutboxListener() {},
+                        new OutboxListener() {
+                            @Override
+                            public void onRetentionPurged(RetentionPurgedInfo info) {
+                                purgedInfos.add(info);
+                            }
+                        },
                         Clock.system(),
                         RetentionConfig.builder()
                                 .archiveOlderThan(Duration.ofDays(30))
@@ -110,9 +118,12 @@ class RetentionTaskTest {
                                 .interval(Duration.ofHours(1))
                                 .build());
 
-        task.run(); // must not throw
+        assertThatThrownBy(task::run)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("archive table missing");
 
-        assertThat(disabledPurged).hasValue(1);
+        assertThat(disabledCalls).hasValue(1);
+        assertThat(purgedInfos).containsExactly(new RetentionPurgedInfo(0, 4));
     }
 
     @Test

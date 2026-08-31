@@ -98,7 +98,7 @@ batch on the calling thread, deterministically.
 
 ### `RecordingOutboxListener`
 
-Captures every one of the 26 `OutboxListener` callbacks into
+Captures every one of the 28 `OutboxListener` callbacks into
 `CopyOnWriteArrayList`s keyed by type. Snapshot any list to assert on
 the full sequence of events the engine emitted:
 

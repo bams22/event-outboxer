@@ -51,6 +51,16 @@ public interface OutboxListener {
         // no-op
     }
 
+    /**
+     * Called when a publish carrying a dedup key coalesced into an existing {@code PENDING} event
+     * of the same {@code (type, key)} instead of inserting a new row (ADR-0021). Fires instead of
+     * {@code onEventPublished} for that request. Note: the caller's transaction may still roll
+     * back, in which case the coalescing never becomes visible to the engine.
+     */
+    default void onEventCoalesced(EventCoalescedInfo info) {
+        // no-op
+    }
+
     // ==================== Polling ====================
 
     /**
@@ -207,6 +217,15 @@ public interface OutboxListener {
      * only when at least one row was purged.
      */
     default void onRetentionPurged(RetentionPurgedInfo info) {
+        // no-op
+    }
+
+    /**
+     * Called after every run of a periodic maintenance task, successful or failed. A failed run is
+     * caught by the scheduler and the task simply runs again at its next cadence; {@code
+     * info.task()} is one of a small stable set of names, safe to use as a metric tag.
+     */
+    default void onMaintenanceRunCompleted(MaintenanceRunInfo info) {
         // no-op
     }
 

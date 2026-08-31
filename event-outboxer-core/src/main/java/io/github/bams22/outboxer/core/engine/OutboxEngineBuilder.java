@@ -589,6 +589,7 @@ public final class OutboxEngineBuilder {
                         .retention(retention)
                         .staleClaimSweeper(staleClaimSweeper)
                         .config(maintenanceConfig)
+                        .listener(listener)
                         .build();
 
         OutboxEngine engine =
@@ -599,6 +600,7 @@ public final class OutboxEngineBuilder {
                         clock,
                         publisher,
                         maintenance,
+                        heartbeat,
                         pollers,
                         executors,
                         inFlight,

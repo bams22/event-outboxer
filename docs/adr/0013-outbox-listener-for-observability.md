@@ -10,7 +10,12 @@ discriminated lock-busy vs locker-backend-error via
 `LockAcquisitionInfo.Outcome`, and corrected stale metric-name examples;
 amended 2026-08-29: 25 → 26 methods — `onHandlerAbandoned` joined the
 Recovery group when the watchdog started reporting force-reclaimed
-handlers that outlive `abandoned-handler-grace`)
+handlers that outlive `abandoned-handler-grace`; amended 2026-08-31:
+26 → 28 methods — `onEventCoalesced` joined the Publication group
+(ADR-0021 coalescing became observable) and `onMaintenanceRunCompleted`
+joined the Maintenance group (every periodic task run, OK or FAILED, is
+now reported by the scheduler's guarded wrapper); `HandlerErrorInfo`
+and `PollCompletedInfo` gained a `duration` component)
 
 ## Date
 
@@ -43,11 +48,13 @@ separate `event-outboxer-metrics-micrometer` module with
 
 ### API
 
-26 methods in `OutboxListener`, all with a default no-op. Arguments are
+28 methods in `OutboxListener`, all with a default no-op. Arguments are
 records (protection against breaking changes when adding fields).
 
 Groups:
-1. **Publication**: `onEventPublished`.
+1. **Publication**: `onEventPublished`, `onEventCoalesced` (a keyed
+   publish coalesced into an existing PENDING event, ADR-0021 — fires
+   instead of `onEventPublished`).
 2. **Polling**: `onPollCompleted` (every claim attempt including empty
    polls — the highest-frequency callback), `onPollerSaturated` (claim
    cycle skipped because the handler executor had no free capacity).
@@ -61,7 +68,10 @@ Groups:
    `onWorkerDeregistered`, `onHeartbeatFailed`.
 6. **Recovery**: `onOrphansReclaimed`, `onStuckHandlerReclaimed`,
    `onHandlerAbandoned`.
-7. **Maintenance**: `onStaleClaimsSwept`, `onRetentionPurged`.
+7. **Maintenance**: `onStaleClaimsSwept`, `onRetentionPurged`,
+   `onMaintenanceRunCompleted` (every periodic task run with a stable
+   task name and OK/FAILED result — fired by the scheduler's guarded
+   wrapper, which also keeps a throwing task on its schedule).
 8. **Storage**: `onStorageError`.
 9. **Dispatch**: `onDispatchRejected`.
 10. **Engine lifecycle**: `onEngineCrashed`.
@@ -162,7 +172,7 @@ no dedicated enable/disable property.
 
 ### Negative consequences
 
-- 26 methods — a noticeable API surface. Adding a new one is a breaking
+- 28 methods — a noticeable API surface. Adding a new one is a breaking
   change.
 - Listeners must be thread-safe and fast.
 - A little more boilerplate when creating a custom listener.

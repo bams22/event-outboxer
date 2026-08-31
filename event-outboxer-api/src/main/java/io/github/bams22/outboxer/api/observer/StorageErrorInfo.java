@@ -17,8 +17,11 @@ import java.util.Objects;
  * catches the exception, emits this event, and continues; transient errors resolve on the next
  * cycle.
  *
- * @param operation a short label naming the operation that failed (for example {@code "claim"},
- *     {@code "markProcessed"}, {@code "heartbeat"})
+ * @param operation a short label naming the operation that failed; the engine emits a small stable
+ *     set: {@code "claim[TYPE]"} (per-type claim query), {@code "save"} (publish-side insert),
+ *     {@code "finalize"} (a markProcessed / markForRetry / markDisabled call) and {@code "release"}
+ *     (the recovery release after a failed finalize — a finalize failure whose recovery also fails
+ *     therefore emits twice)
  * @param cause underlying exception
  */
 public record StorageErrorInfo(String operation, Throwable cause) {

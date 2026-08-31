@@ -9,8 +9,10 @@
  */
 package io.github.bams22.outboxer.core.publish;
 
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.api.publish.PublishRequest;
@@ -194,17 +196,21 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                 if (pending.dedupKey() != null) {
                     CoalescingResult result = saveCoalescing(pending);
                     if (!result.inserted()) {
-                        // Coalesced into an existing PENDING event. No listener, no wake — nothing
-                        // new was
-                        // inserted, and the existing row is pinned (FOR UPDATE) inside this
-                        // transaction, so
-                        // claims skip it until we commit and its handler is guaranteed to see our
-                        // changes.
+                        // Coalesced into an existing PENDING event. No onEventPublished, no wake —
+                        // nothing new was inserted, and the existing row is pinned (FOR UPDATE)
+                        // inside this transaction, so claims skip it until we commit and its
+                        // handler is guaranteed to see our changes. onEventCoalesced is the
+                        // aggregate signal for this branch.
                         UUID existingId =
                                 Objects.requireNonNull(
                                         result.existingId(),
                                         "coalesced result must carry the existing event id");
                         span.coalesced(existingId);
+                        listener.onEventCoalesced(
+                                new EventCoalescedInfo(
+                                        existingId,
+                                        eventType,
+                                        Objects.requireNonNull(pending.dedupKey())));
                         return existingId;
                     }
                 } else {
@@ -212,6 +218,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                 }
             } catch (StorageException ex) {
                 span.error(ex);
+                listener.onStorageError(new StorageErrorInfo("save", ex));
                 throw new PublishFailedException(
                         "storage rejected event " + pending.id() + " of type " + eventType, ex);
             } catch (PublishFailedException ex) {
@@ -324,6 +331,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                                                 "coalesced result must carry the existing event"
                                                         + " id");
                                 span.coalesced(existingId);
+                                listener.onEventCoalesced(
+                                        new EventCoalescedInfo(
+                                                existingId,
+                                                eventType,
+                                                Objects.requireNonNull(opts.dedupKey())));
                                 ids.add(existingId);
                             }
                         } catch (StorageException | PublishFailedException ex) {
@@ -346,6 +358,7 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
             for (OutboxTracer.PublishSpan span : batchSpans) {
                 span.error(ex);
             }
+            listener.onStorageError(new StorageErrorInfo("save", ex));
             throw new PublishFailedException("publishAll(" + requests.size() + ") failed", ex);
         } finally {
             for (OutboxTracer.PublishSpan span : batchSpans) {

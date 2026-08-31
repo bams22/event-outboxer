@@ -29,6 +29,10 @@ import org.slf4j.LoggerFactory;
  * <p>Each pass loops in {@code batchSize}-bounded DELETE statements until a batch comes back short,
  * so a single pass fully catches up regardless of backlog while never holding a long-running
  * transaction.
+ *
+ * <p>A failing archive sweep does not skip the disabled sweep (and vice versa); after both sweeps
+ * ran — and any partial progress was reported through {@code onRetentionPurged} — the first failure
+ * propagates so the {@link MaintenanceScheduler} wrapper reports the run as failed.
  */
 public final class RetentionTask implements Runnable {
 
@@ -54,24 +58,38 @@ public final class RetentionTask implements Runnable {
 
     @Override
     public void run() {
+        RuntimeException firstFailure = null;
         long archivedPurged = 0;
         Duration archiveAge = config.archiveOlderThan();
         if (archiveAge != null) {
             Instant threshold = clock.now().minus(archiveAge);
-            archivedPurged =
-                    sweep("archive", () -> admin.purgeArchive(threshold, config.batchSize()));
+            try {
+                archivedPurged =
+                        sweep("archive", () -> admin.purgeArchive(threshold, config.batchSize()));
+            } catch (RuntimeException ex) {
+                firstFailure = ex;
+            }
         }
         long disabledPurged = 0;
         Duration disabledAge = config.disabledOlderThan();
         if (disabledAge != null) {
             Instant threshold = clock.now().minus(disabledAge);
-            disabledPurged =
-                    sweep(
-                            "disabled",
-                            () -> admin.purgeDisabled(null, threshold, config.batchSize()));
+            try {
+                disabledPurged =
+                        sweep(
+                                "disabled",
+                                () -> admin.purgeDisabled(null, threshold, config.batchSize()));
+            } catch (RuntimeException ex) {
+                if (firstFailure == null) {
+                    firstFailure = ex;
+                }
+            }
         }
         if (archivedPurged + disabledPurged > 0) {
             listener.onRetentionPurged(new RetentionPurgedInfo(archivedPurged, disabledPurged));
+        }
+        if (firstFailure != null) {
+            throw firstFailure;
         }
     }
 
@@ -88,10 +106,8 @@ public final class RetentionTask implements Runnable {
             }
         } catch (RuntimeException ex) {
             log.warn(
-                    "retention sweep of {} failed after {} row(s); will retry next pass: {}",
-                    what,
-                    total,
-                    ex.toString());
+                    "retention sweep of {} failed after {} row(s): {}", what, total, ex.toString());
+            throw ex;
         }
         return total;
     }

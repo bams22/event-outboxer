@@ -99,10 +99,8 @@ public final class StaleClaimSweeperTask implements Runnable {
                 listener.onStaleClaimsSwept(new StaleClaimsSweptInfo(total, threshold));
             }
         } catch (RuntimeException ex) {
-            log.warn(
-                    "stale-claim sweep failed after {} row(s); will retry next pass: {}",
-                    total,
-                    ex.toString());
+            log.warn("stale-claim sweep failed after {} row(s): {}", total, ex.toString());
+            throw ex;
         }
     }
 }

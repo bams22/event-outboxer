@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.core.listener;
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
 import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
@@ -23,6 +24,7 @@ import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
+import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
@@ -96,6 +98,11 @@ public final class OutboxListenerRegistry implements OutboxListener {
     @Override
     public void onEventPublished(EventPublishedInfo info) {
         broadcast(l -> l.onEventPublished(info), info);
+    }
+
+    @Override
+    public void onEventCoalesced(EventCoalescedInfo info) {
+        broadcast(l -> l.onEventCoalesced(info), info);
     }
 
     @Override
@@ -206,6 +213,11 @@ public final class OutboxListenerRegistry implements OutboxListener {
     @Override
     public void onRetentionPurged(RetentionPurgedInfo info) {
         broadcast(l -> l.onRetentionPurged(info), info);
+    }
+
+    @Override
+    public void onMaintenanceRunCompleted(MaintenanceRunInfo info) {
+        broadcast(l -> l.onMaintenanceRunCompleted(info), info);
     }
 
     @Override

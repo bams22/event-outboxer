@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.core.listener;
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
 import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
@@ -23,6 +24,7 @@ import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
+import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
@@ -56,6 +58,15 @@ public final class LoggingOutboxListener implements OutboxListener {
                 info.eventType(),
                 info.runAt(),
                 info.priority());
+    }
+
+    @Override
+    public void onEventCoalesced(EventCoalescedInfo info) {
+        log.debug(
+                "publish coalesced into existing eventId={} type={} dedupKey={}",
+                info.existingEventId(),
+                info.eventType(),
+                info.dedupKey());
     }
 
     @Override
@@ -171,6 +182,15 @@ public final class LoggingOutboxListener implements OutboxListener {
     @Override
     public void onRetentionPurged(RetentionPurgedInfo info) {
         log.info("retention purged {}", info);
+    }
+
+    @Override
+    public void onMaintenanceRunCompleted(MaintenanceRunInfo info) {
+        if (info.result() == MaintenanceRunInfo.Result.FAILED) {
+            log.warn("maintenance task {} failed", info.task(), info.cause());
+        } else {
+            log.trace("maintenance task {} completed", info.task());
+        }
     }
 
     @Override

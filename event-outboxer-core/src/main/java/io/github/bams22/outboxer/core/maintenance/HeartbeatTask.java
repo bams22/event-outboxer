@@ -15,7 +15,9 @@ import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
 import io.github.bams22.outboxer.domain.WorkerInfo;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.WorkerRegistry;
+import java.time.Instant;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +31,9 @@ import org.slf4j.LoggerFactory;
  * re-registers the worker immediately. Without that, a reaped-but-alive worker keeps claiming
  * events with no registry row, and a later crash would leave those events invisible to orphan
  * recovery forever.
+ *
+ * <p>Failures fire {@code onHeartbeatFailed} and then propagate — the {@link MaintenanceScheduler}
+ * wrapper catches them, reports the run as failed, and keeps the schedule alive.
  */
 public final class HeartbeatTask implements Runnable {
 
@@ -38,6 +43,8 @@ public final class HeartbeatTask implements Runnable {
     private final WorkerInfo workerInfo;
     private final Clock clock;
     private final OutboxListener listener;
+
+    private volatile @Nullable Instant lastSuccessAt;
 
     public HeartbeatTask(
             WorkerRegistry registry, WorkerInfo workerInfo, Clock clock, OutboxListener listener) {
@@ -59,9 +66,18 @@ public final class HeartbeatTask implements Runnable {
                 registry.register(workerInfo);
                 listener.onWorkerRegistered(new WorkerRegisteredInfo(workerInfo));
             }
+            lastSuccessAt = clock.now();
         } catch (RuntimeException ex) {
             listener.onHeartbeatFailed(new HeartbeatFailedInfo(workerInfo.id(), ex));
-            log.warn("heartbeat failed for worker {}: {}", workerInfo.id(), ex.toString());
+            throw ex;
         }
+    }
+
+    /**
+     * Instant of the last successful heartbeat write (or re-registration); {@code null} until the
+     * first success. Read-only seam for the heartbeat-age gauge.
+     */
+    public @Nullable Instant lastSuccessAt() {
+        return lastSuccessAt;
     }
 }

@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.observer;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -21,12 +22,15 @@ import java.util.UUID;
  * @param eventType event type string
  * @param attempts attempt counter including this failed attempt
  * @param cause exception thrown by the handler
+ * @param duration time spent in the failed {@code handler.handle(...)} attempt
  */
-public record HandlerErrorInfo(UUID eventId, String eventType, int attempts, Throwable cause) {
+public record HandlerErrorInfo(
+        UUID eventId, String eventType, int attempts, Throwable cause, Duration duration) {
 
     public HandlerErrorInfo {
         Objects.requireNonNull(eventId, "eventId must not be null");
         Objects.requireNonNull(eventType, "eventType must not be null");
         Objects.requireNonNull(cause, "cause must not be null");
+        Objects.requireNonNull(duration, "duration must not be null");
     }
 }

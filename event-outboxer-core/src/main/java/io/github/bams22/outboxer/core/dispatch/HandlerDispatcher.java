@@ -27,6 +27,7 @@ import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
+import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
 import io.github.bams22.outboxer.api.observer.UnknownEventTypeInfo;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
@@ -315,6 +316,7 @@ public final class HandlerDispatcher {
     }
 
     private void releaseAfterFinalizeFailure(ClaimedEvent claimed, RuntimeException finalizeError) {
+        listener.onStorageError(new StorageErrorInfo("finalize", finalizeError));
         Instant when = clock.now().plus(FINALIZE_FAILURE_RETRY_DELAY);
         try {
             store.release(
@@ -324,6 +326,7 @@ public final class HandlerDispatcher {
                     "finalize failed: " + rootMessage(finalizeError),
                     when);
         } catch (RuntimeException ex) {
+            listener.onStorageError(new StorageErrorInfo("release", ex));
             log.error(
                     "release after finalize failure also failed for eventId={}; event stays"
                             + " PROCESSING until crash recovery or shutdown release: {}",
@@ -480,6 +483,7 @@ public final class HandlerDispatcher {
 
     private EventOutcome invokeHandler(
             ClaimedEvent claimed, EventHandler<?> handler, Object payload) {
+        Instant attemptStart = clock.now();
         // In-flight registration happens in dispatch() and brackets the whole pipeline.
         // The CONSUMER span (ADR-0023) wraps only the handler invocation: it restores the trace
         // stored at publish time as the current context, and it must close on this worker thread
@@ -515,7 +519,11 @@ public final class HandlerDispatcher {
         } catch (RuntimeException ex) {
             listener.onHandlerError(
                     new HandlerErrorInfo(
-                            claimed.id(), claimed.eventType(), claimed.attempts() + 1, ex));
+                            claimed.id(),
+                            claimed.eventType(),
+                            claimed.attempts() + 1,
+                            ex,
+                            Duration.between(attemptStart, clock.now())));
             String msg = ex.getMessage();
             return EventOutcome.retry(msg != null ? msg : ex.getClass().getSimpleName(), ex);
         }

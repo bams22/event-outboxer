@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.observer;
 
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -19,11 +20,13 @@ import java.util.Objects;
  * @param eventType event type of the poller
  * @param requested the claim batch limit passed to the store
  * @param claimed number of events actually claimed; {@code 0} for an empty poll
+ * @param duration wall time of the claim query itself, recorded for empty polls too
  */
-public record PollCompletedInfo(String eventType, int requested, int claimed) {
+public record PollCompletedInfo(String eventType, int requested, int claimed, Duration duration) {
 
     public PollCompletedInfo {
         Objects.requireNonNull(eventType, "eventType must not be null");
+        Objects.requireNonNull(duration, "duration must not be null");
         if (requested < 0) {
             throw new IllegalArgumentException("requested must not be negative");
         }

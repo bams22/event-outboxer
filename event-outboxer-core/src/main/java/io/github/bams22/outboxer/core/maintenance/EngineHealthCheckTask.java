@@ -13,8 +13,6 @@ import io.github.bams22.outboxer.core.polling.Poller;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Periodic task that detects unrecoverable engine-level failures — specifically, poller threads
@@ -28,8 +26,6 @@ import org.slf4j.LoggerFactory;
  */
 public final class EngineHealthCheckTask implements Runnable {
 
-    private static final Logger log = LoggerFactory.getLogger(EngineHealthCheckTask.class);
-
     private final List<Poller> pollers;
     private final CrashReporter reporter;
 
@@ -40,15 +36,11 @@ public final class EngineHealthCheckTask implements Runnable {
 
     @Override
     public void run() {
-        try {
-            for (Poller poller : pollers) {
-                if (poller.isCrashed()) {
-                    reporter.report("poller thread died for eventType=" + poller.eventType(), null);
-                    return;
-                }
+        for (Poller poller : pollers) {
+            if (poller.isCrashed()) {
+                reporter.report("poller thread died for eventType=" + poller.eventType(), null);
+                return;
             }
-        } catch (RuntimeException ex) {
-            log.warn("engine health check pass failed: {}", ex.toString(), ex);
         }
     }
 

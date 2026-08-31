@@ -9,6 +9,8 @@
  */
 package io.github.bams22.outboxer.core.maintenance;
 
+import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
+import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.core.concurrent.NamedThreadFactory;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import java.time.Duration;
@@ -18,6 +20,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Owns a small scheduled executor (three threads by default) that ticks {@link HeartbeatTask},
@@ -25,10 +29,18 @@ import org.jspecify.annotations.Nullable;
  * is created on {@link #start()} and shut down on {@link #stop(Duration)} so the engine's
  * graceful-shutdown flow can drain pending work deterministically.
  *
+ * <p>Every task run is guarded: a {@code RuntimeException} is caught here (so {@code
+ * scheduleWithFixedDelay} keeps rescheduling the task — a propagated exception would cancel it
+ * silently and forever), logged, and reported through {@code
+ * OutboxListener.onMaintenanceRunCompleted(...)} together with successful runs. An {@code Error}
+ * still cancels that one task's schedule — deliberate: the JVM is in an undefined state.
+ *
  * <p><b>Construction.</b> {@code MaintenanceScheduler.builder()} — see the constructor for required
  * collaborators and defaults.
  */
 public final class MaintenanceScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(MaintenanceScheduler.class);
 
     private final HeartbeatTask heartbeat;
     private final OrphanRecoveryTask orphanRecovery;
@@ -37,6 +49,7 @@ public final class MaintenanceScheduler {
     private final @Nullable RetentionTask retention;
     private final StaleClaimSweeperTask staleClaimSweeper;
     private final MaintenanceConfig config;
+    private final OutboxListener listener;
 
     private @Nullable ScheduledExecutorService executor;
 
@@ -44,7 +57,8 @@ public final class MaintenanceScheduler {
      * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
      * heartbeat}, {@code orphanRecovery}, {@code watchdog}, {@code engineHealthCheck}, {@code
      * staleClaimSweeper}. {@code retention} is genuinely optional — {@code null} means retention is
-     * disabled; {@code config} defaults to {@link MaintenanceConfig#defaults()}.
+     * disabled; {@code config} defaults to {@link MaintenanceConfig#defaults()}; {@code listener}
+     * defaults to {@link OutboxListener#NOOP}.
      */
     @Builder
     private MaintenanceScheduler(
@@ -54,7 +68,8 @@ public final class MaintenanceScheduler {
             EngineHealthCheckTask engineHealthCheck,
             @Nullable RetentionTask retention,
             StaleClaimSweeperTask staleClaimSweeper,
-            @Nullable MaintenanceConfig config) {
+            @Nullable MaintenanceConfig config,
+            @Nullable OutboxListener listener) {
         this.heartbeat = Objects.requireNonNull(heartbeat, "heartbeat must not be null");
         this.orphanRecovery =
                 Objects.requireNonNull(orphanRecovery, "orphanRecovery must not be null");
@@ -65,6 +80,7 @@ public final class MaintenanceScheduler {
         this.staleClaimSweeper =
                 Objects.requireNonNull(staleClaimSweeper, "staleClaimSweeper must not be null");
         this.config = config != null ? config : MaintenanceConfig.defaults();
+        this.listener = listener != null ? listener : OutboxListener.NOOP;
     }
 
     /** Start ticking. Must be called exactly once. */
@@ -75,15 +91,17 @@ public final class MaintenanceScheduler {
         executor =
                 Executors.newScheduledThreadPool(
                         3, new NamedThreadFactory("outbox-maintenance", true));
-        scheduleFixed(executor, heartbeat, config.heartbeatInterval());
-        scheduleFixed(executor, orphanRecovery, config.orphanRecoveryInterval());
-        scheduleFixed(executor, watchdog, config.watchdogInterval());
+        scheduleFixed(executor, "heartbeat", heartbeat, config.heartbeatInterval());
+        scheduleFixed(executor, "orphan_recovery", orphanRecovery, config.orphanRecoveryInterval());
+        scheduleFixed(executor, "watchdog", watchdog, config.watchdogInterval());
         // Crash detection ticks at the same cadence as the watchdog — no new config knob.
-        scheduleFixed(executor, engineHealthCheck, config.watchdogInterval());
+        scheduleFixed(
+                executor, "engine_health_check", engineHealthCheck, config.watchdogInterval());
         if (retention != null) {
-            scheduleFixed(executor, retention, retention.interval());
+            scheduleFixed(executor, "retention", retention, retention.interval());
         }
-        scheduleFixed(executor, staleClaimSweeper, staleClaimSweeper.interval());
+        scheduleFixed(
+                executor, "stale_claim_sweeper", staleClaimSweeper, staleClaimSweeper.interval());
     }
 
     /**
@@ -108,9 +126,34 @@ public final class MaintenanceScheduler {
         }
     }
 
-    private static void scheduleFixed(
-            ScheduledExecutorService exec, Runnable task, Duration interval) {
+    private void scheduleFixed(
+            ScheduledExecutorService exec, String name, Runnable task, Duration interval) {
         long nanos = Math.max(1_000_000L, interval.toNanos());
-        exec.scheduleWithFixedDelay(task, nanos, nanos, TimeUnit.NANOSECONDS);
+        exec.scheduleWithFixedDelay(
+                () -> runGuarded(name, task), nanos, nanos, TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * The single catch-and-continue barrier for maintenance work. The listener call is guarded
+     * separately: a throwing listener must neither turn an OK run into a FAILED one nor cancel the
+     * task's schedule.
+     */
+    private void runGuarded(String name, Runnable task) {
+        MaintenanceRunInfo info;
+        try {
+            task.run();
+            info = new MaintenanceRunInfo(name, MaintenanceRunInfo.Result.OK, null);
+        } catch (RuntimeException ex) {
+            log.warn("maintenance task {} failed; will retry next pass: {}", name, ex.toString());
+            info = new MaintenanceRunInfo(name, MaintenanceRunInfo.Result.FAILED, ex);
+        }
+        try {
+            listener.onMaintenanceRunCompleted(info);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "listener threw on maintenance run completion of task {}: {}",
+                    name,
+                    ex.toString());
+        }
     }
 }

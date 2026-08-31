@@ -94,12 +94,18 @@ public final class ManualEngine {
         return claimed.size();
     }
 
-    /** Run one heartbeat cycle. */
+    /**
+     * Run one heartbeat cycle on the calling thread. Storage failures propagate to the caller —
+     * unlike the background scheduler, which catches and reports them.
+     */
     public void tickHeartbeat() {
         heartbeat.run();
     }
 
-    /** Run one orphan-recovery cycle. */
+    /**
+     * Run one orphan-recovery cycle on the calling thread. Storage failures propagate to the caller
+     * — unlike the background scheduler, which catches and reports them.
+     */
     public void tickOrphanRecovery() {
         orphanRecovery.run();
     }

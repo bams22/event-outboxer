@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-08-31: coalescing became observable — a
+coalesced publish fires `OutboxListener.onEventCoalesced` with the
+existing event's id, the event type and the dedup key, complementing
+the `event_outboxer.coalesced_into` span attribute with an aggregate
+per-type signal; `onEventPublished` still fires only for real inserts)
 
 ## Date
 
@@ -58,7 +62,8 @@ Mechanics (PostgreSQL):
    the publisher retries the insert (bounded loop).
 3. **API**: `PublishOptions.dedupKey` (≤ 256 chars). A coalesced
    publish returns the **existing** event's id; `onEventPublished` and
-   the poller wake fire only for real inserts. `publishAll` routes
+   the poller wake fire only for real inserts, while a coalesced
+   request fires `onEventCoalesced` instead. `publishAll` routes
    keyed requests through the single-insert path (batch `saveAll`
    rejects keyed events — coalescing needs per-row feedback).
 4. **SPI**: `EventStore.save` returns `boolean` (inserted vs

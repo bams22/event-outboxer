@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.core.publish;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.PublishOptions;
@@ -202,6 +203,7 @@ class DefaultOutboxEventPublisherTest {
     void dedupKeyCoalescesIntoExistingPendingEvent() {
         InMemoryEventStore store = new InMemoryEventStore();
         AtomicInteger published = new AtomicInteger();
+        List<EventCoalescedInfo> coalesced = new ArrayList<>();
         List<String> wakes = new ArrayList<>();
         DefaultOutboxEventPublisher publisher =
                 DefaultOutboxEventPublisher.builder()
@@ -212,6 +214,11 @@ class DefaultOutboxEventPublisherTest {
                                     @Override
                                     public void onEventPublished(EventPublishedInfo info) {
                                         published.incrementAndGet();
+                                    }
+
+                                    @Override
+                                    public void onEventCoalesced(EventCoalescedInfo info) {
+                                        coalesced.add(info);
                                     }
                                 })
                         .waker(wakes::add)
@@ -228,7 +235,10 @@ class DefaultOutboxEventPublisherTest {
 
         assertThat(second).isEqualTo(first); // coalesced into the existing pending event
         assertThat(third).isNotEqualTo(first);
-        assertThat(published).hasValue(2); // listener only for real inserts
+        assertThat(published).hasValue(2); // onEventPublished only for real inserts
+        assertThat(coalesced)
+                .singleElement() // onEventCoalesced exactly for the coalesced request
+                .isEqualTo(new EventCoalescedInfo(first, "SYNC", "order-1"));
         assertThat(wakes).containsExactly("SYNC", "SYNC"); // wake only for real inserts
         assertThat(store.findById(first)).isPresent();
     }
@@ -236,7 +246,19 @@ class DefaultOutboxEventPublisherTest {
     @Test
     void publishAllRoutesDedupRequestsIndividually() {
         InMemoryEventStore store = new InMemoryEventStore();
-        DefaultOutboxEventPublisher publisher = plain(store);
+        List<EventCoalescedInfo> coalesced = new ArrayList<>();
+        DefaultOutboxEventPublisher publisher =
+                DefaultOutboxEventPublisher.builder()
+                        .store(store)
+                        .serializer(new StringEventSerializer())
+                        .listener(
+                                new OutboxListener() {
+                                    @Override
+                                    public void onEventCoalesced(EventCoalescedInfo info) {
+                                        coalesced.add(info);
+                                    }
+                                })
+                        .build();
         PublishOptions keyed = PublishOptions.builder().dedupKey("k").build();
 
         List<UUID> ids =
@@ -250,6 +272,9 @@ class DefaultOutboxEventPublisherTest {
         assertThat(ids).hasSize(3);
         assertThat(ids.get(1)).isEqualTo(ids.get(0)); // second keyed request coalesced
         assertThat(ids.get(2)).isNotEqualTo(ids.get(0));
+        assertThat(coalesced)
+                .singleElement()
+                .isEqualTo(new EventCoalescedInfo(ids.get(0), "A", "k"));
         assertThat(store.findById(ids.get(0))).isPresent();
         assertThat(store.findById(ids.get(2))).isPresent();
     }

@@ -31,6 +31,11 @@ import org.slf4j.LoggerFactory;
  * successful reclaim, the dead worker rows survive until the next pass, where reclaiming their (now
  * zero) events again is a no-op — the flow is idempotent, not transactional.
  *
+ * <p>A failing {@code findDead} or {@code reclaimOrphans} propagates — the {@link
+ * MaintenanceScheduler} wrapper catches it, reports the run as failed, and keeps the schedule
+ * alive. A failing {@code removeDead} after a successful reclaim is only logged: the reclaim itself
+ * worked, and the next pass retries the removal.
+ *
  * <p><b>Construction.</b> {@code OrphanRecoveryTask.builder()} — see the constructor for required
  * collaborators and defaults.
  */
@@ -65,30 +70,21 @@ public final class OrphanRecoveryTask implements Runnable {
 
     @Override
     public void run() {
-        try {
-            List<WorkerInfo> dead;
-            try {
-                dead = registry.findDead(config.deadThreshold(), config.reclaimBatchSize());
-            } catch (RuntimeException ex) {
-                log.warn("findDead failed: {}", ex.toString());
-                return;
-            }
-            if (dead.isEmpty()) {
-                return;
-            }
-            List<WorkerId> ids = dead.stream().map(WorkerInfo::id).toList();
-            int reclaimed = store.reclaimOrphans(ids, clock.now());
-            try {
-                registry.removeDead(ids);
-            } catch (RuntimeException ex) {
-                log.warn(
-                        "removeDead failed after reclaiming {} events; will retry next pass: {}",
-                        reclaimed,
-                        ex.toString());
-            }
-            listener.onOrphansReclaimed(new OrphansReclaimedInfo(ids, reclaimed));
-        } catch (RuntimeException ex) {
-            log.warn("orphan recovery pass failed: {}", ex.toString(), ex);
+        List<WorkerInfo> dead =
+                registry.findDead(config.deadThreshold(), config.reclaimBatchSize());
+        if (dead.isEmpty()) {
+            return;
         }
+        List<WorkerId> ids = dead.stream().map(WorkerInfo::id).toList();
+        int reclaimed = store.reclaimOrphans(ids, clock.now());
+        try {
+            registry.removeDead(ids);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "removeDead failed after reclaiming {} events; will retry next pass: {}",
+                    reclaimed,
+                    ex.toString());
+        }
+        listener.onOrphansReclaimed(new OrphansReclaimedInfo(ids, reclaimed));
     }
 }

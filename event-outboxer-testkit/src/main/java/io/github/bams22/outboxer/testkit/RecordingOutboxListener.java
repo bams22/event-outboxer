@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.testkit;
 import io.github.bams22.outboxer.api.observer.DispatchRejectedInfo;
 import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
@@ -23,6 +24,7 @@ import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
+import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
@@ -46,6 +48,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class RecordingOutboxListener implements OutboxListener {
 
     private final CopyOnWriteArrayList<EventPublishedInfo> published = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<EventCoalescedInfo> coalesced = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<EventClaimedInfo> claimed = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<EventProcessedInfo> processed = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<EventRetryScheduledInfo> retryScheduled =
@@ -91,10 +94,13 @@ public final class RecordingOutboxListener implements OutboxListener {
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<RetentionPurgedInfo> retentionPurged =
             new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<MaintenanceRunInfo> maintenanceRuns =
+            new CopyOnWriteArrayList<>();
 
     /** Reset every captured list. */
     public void clear() {
         published.clear();
+        coalesced.clear();
         claimed.clear();
         processed.clear();
         retryScheduled.clear();
@@ -112,6 +118,7 @@ public final class RecordingOutboxListener implements OutboxListener {
         heartbeatsFailed.clear();
         orphansReclaimed.clear();
         stuckReclaimed.clear();
+        handlersAbandoned.clear();
         storageErrors.clear();
         dispatchRejected.clear();
         engineCrashed.clear();
@@ -119,6 +126,7 @@ public final class RecordingOutboxListener implements OutboxListener {
         pollerSaturated.clear();
         staleClaimsSwept.clear();
         retentionPurged.clear();
+        maintenanceRuns.clear();
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -128,6 +136,11 @@ public final class RecordingOutboxListener implements OutboxListener {
     @Override
     public void onEventPublished(EventPublishedInfo info) {
         published.add(info);
+    }
+
+    @Override
+    public void onEventCoalesced(EventCoalescedInfo info) {
+        coalesced.add(info);
     }
 
     @Override
@@ -255,12 +268,21 @@ public final class RecordingOutboxListener implements OutboxListener {
         retentionPurged.add(info);
     }
 
+    @Override
+    public void onMaintenanceRunCompleted(MaintenanceRunInfo info) {
+        maintenanceRuns.add(info);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // accessors — snapshots for assertions
     // ---------------------------------------------------------------------------------------------
 
     public List<EventPublishedInfo> published() {
         return List.copyOf(published);
+    }
+
+    public List<EventCoalescedInfo> coalesced() {
+        return List.copyOf(coalesced);
     }
 
     public List<EventClaimedInfo> claimed() {
@@ -361,5 +383,9 @@ public final class RecordingOutboxListener implements OutboxListener {
 
     public List<RetentionPurgedInfo> retentionPurged() {
         return List.copyOf(retentionPurged);
+    }
+
+    public List<MaintenanceRunInfo> maintenanceRuns() {
+        return List.copyOf(maintenanceRuns);
     }
 }

@@ -178,7 +178,11 @@ class MicrometerOutboxListenerTest {
     void handlerErrorTagsByTypeAndExceptionClass() {
         listener.onHandlerError(
                 new HandlerErrorInfo(
-                        UUID.randomUUID(), "ORDER", 1, new IllegalStateException("x")));
+                        UUID.randomUUID(),
+                        "ORDER",
+                        1,
+                        new IllegalStateException("x"),
+                        Duration.ofMillis(250)));
 
         assertThat(
                         registry.counter(
@@ -290,8 +294,8 @@ class MicrometerOutboxListenerTest {
 
     @Test
     void pollCompletedTagsResultAndRecordsBatchSize() {
-        listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 7));
-        listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 0));
+        listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 7, Duration.ofMillis(3)));
+        listener.onPollCompleted(new PollCompletedInfo("ORDER", 10, 0, Duration.ofMillis(2)));
 
         assertThat(
                         registry.counter(
