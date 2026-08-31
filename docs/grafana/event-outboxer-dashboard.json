@@ -414,6 +414,70 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Seconds since each pod's last successful heartbeat write; absent until the first success (the gauge reads NaN, which Prometheus drops — use absent()-aware alert rules). Keeps growing when the maintenance scheduler is stalled even though heartbeat.failed stays flat. Alert when it exceeds ~3x the heartbeat interval.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "id": 41,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max by (pod) (event_outboxer_heartbeat_last_success_age_seconds{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Heartbeat last-success age by pod",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
@@ -423,7 +487,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 22
       },
       "id": 9,
       "panels": [],
@@ -435,7 +499,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Event flow through the outbox, summed across pods. Sustained published > processed means the backlog is growing.",
+      "description": "Publish, claim and success throughput. Claimed and processed are the _count series of the queue_time and processing_time timers — the meter set carries no standalone counters for them.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -461,7 +525,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 23
       },
       "id": 10,
       "options": {
@@ -495,7 +559,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(event_outboxer_events_claimed_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "expr": "sum(rate(event_outboxer_events_queue_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
           "legendFormat": "claimed",
           "refId": "B"
         },
@@ -504,7 +568,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(event_outboxer_events_processed_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "expr": "sum(rate(event_outboxer_events_processing_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
           "legendFormat": "processed",
           "refId": "C"
         }
@@ -543,7 +607,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 23
       },
       "id": 11,
       "options": {
@@ -568,12 +632,76 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (event_type) (rate(event_outboxer_events_processed_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "expr": "sum by (event_type) (rate(event_outboxer_events_processing_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
           "legendFormat": "{{event_type}}",
           "refId": "A"
         }
       ],
       "title": "Processed by event type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Keyed publishes that coalesced into an existing PENDING event instead of inserting (ADR-0021). The dedup ratio coalesced / (published + coalesced) says whether dedup keys actually collapse anything; a flat zero with keys configured means the keys never repeat.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "id": 42,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (rate(event_outboxer_events_coalesced_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Coalesced publishes by event type",
       "type": "timeseries"
     },
     {
@@ -586,7 +714,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 39
       },
       "id": 12,
       "panels": [],
@@ -624,7 +752,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 40
       },
       "id": 13,
       "options": {
@@ -697,7 +825,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 40
       },
       "id": 14,
       "options": {
@@ -761,7 +889,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 48
       },
       "id": 15,
       "options": {
@@ -825,7 +953,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 48
       },
       "id": 16,
       "options": {
@@ -859,6 +987,70 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Average wall time of the claim query itself (poller.claim_time, empty polls included). Attributes a rising queue time: slow claims point at the database (index bloat, lock contention on FOR UPDATE SKIP LOCKED, overload), not at the handler pools. No histogram buckets by design — avg/max only.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "id": 43,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (rate(event_outboxer_poller_claim_time_seconds_sum{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])) / sum by (event_type) (rate(event_outboxer_poller_claim_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Claim query time avg by event type",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
@@ -868,7 +1060,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 64
       },
       "id": 17,
       "panels": [],
@@ -906,7 +1098,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 41
+        "y": 65
       },
       "id": 18,
       "options": {
@@ -970,7 +1162,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 41
+        "y": 65
       },
       "id": 19,
       "options": {
@@ -1034,7 +1226,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 41
+        "y": 65
       },
       "id": 20,
       "options": {
@@ -1077,7 +1269,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 73
       },
       "id": 21,
       "panels": [],
@@ -1115,7 +1307,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 74
       },
       "id": 22,
       "options": {
@@ -1153,7 +1345,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Retry rate split by the bounded trigger set: failure_decision (handler failed), lock_busy (contention), unknown_handler (deploy skew), dispatch_rejected (backpressure). Watch the ratio to the processed rate.",
+      "description": "Retry rate split by the bounded trigger set: failure_decision (handler failed), lock_busy (contention), unknown_handler (deploy skew), dispatch_rejected (backpressure — the only signal for rejected dispatches). Watch the ratio to the processed rate (processing_time count).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1179,7 +1371,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 50
+        "y": 74
       },
       "id": 23,
       "options": {
@@ -1243,7 +1435,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 58
+        "y": 82
       },
       "id": 24,
       "options": {
@@ -1307,7 +1499,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 58
+        "y": 82
       },
       "id": 25,
       "options": {
@@ -1354,7 +1546,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "StorageException rate per storage operation (claim[TYPE], save, findDead, ...). Any sustained rate means database trouble.",
+      "description": "StorageException rate per storage operation: claim[TYPE] (per-type claim query), save (publish-side insert), finalize (markProcessed/markForRetry/markDisabled), release (recovery release after a failed finalize — a finalize failure whose release also fails counts twice). Any sustained rate means database trouble.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1380,7 +1572,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 58
+        "y": 82
       },
       "id": 26,
       "options": {
@@ -1414,6 +1606,70 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Average duration of failed handler.handle(...) attempts (handler.error_time). Separates instant failures (logic bug, NPE) from slow ones: an average near your client timeout means the handler burns its runtime budget waiting on a downstream. No histogram buckets by design — avg/max only, add your own distribution config for quantiles.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 90,
+        "w": 12,
+        "h": 8
+      },
+      "id": 44,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (rate(event_outboxer_handler_error_time_seconds_sum{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])) / sum by (event_type) (rate(event_outboxer_handler_error_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Failed handler attempt time avg by event type",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
@@ -1423,7 +1679,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 98
       },
       "id": 27,
       "panels": [],
@@ -1461,7 +1717,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 67
+        "y": 99
       },
       "id": 28,
       "options": {
@@ -1547,7 +1803,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 67
+        "y": 99
       },
       "id": 29,
       "options": {
@@ -1585,7 +1841,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "poller.saturated = claim cycles skipped because the executor had no capacity (each increment ≈ one skipped cycle); dispatch.rejected = claims bounced off a full executor and released back to PENDING. Both signal an undersized pool.",
+      "description": "poller.saturated = claim cycles skipped because the executor had no capacity (each increment ≈ one skipped cycle); dispatch_rejected retries = claims bounced off a full executor and released back to PENDING (retry_scheduled{reason=\"dispatch_rejected\"}). Both signal an undersized pool.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1611,7 +1867,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 107
       },
       "id": 30,
       "options": {
@@ -1645,7 +1901,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (event_type) (rate(event_outboxer_dispatch_rejected_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "expr": "sum by (event_type) (rate(event_outboxer_events_retry_scheduled_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\",reason=\"dispatch_rejected\"}[$__rate_interval]))",
           "legendFormat": "{{event_type}}: rejected",
           "refId": "B"
         }
@@ -1658,7 +1914,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Share of polls that returned nothing (healthy idling when the backlog is flat; suspicious when it grows) and the average claimed batch size (consistently maxed batches with a growing backlog → raise claimBatchSize or the pool).",
+      "description": "Share of polls that returned nothing (healthy idling when the backlog is flat; suspicious when it grows) and the average claimed batch size, derived as claims (queue_time count) per non-empty poll (consistently maxed batches with a growing backlog → raise claimBatchSize or the pool).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1701,7 +1957,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 107
       },
       "id": 31,
       "options": {
@@ -1735,7 +1991,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (event_type) (rate(event_outboxer_poller_batch_size_sum{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])) / sum by (event_type) (rate(event_outboxer_poller_batch_size_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "expr": "sum by (event_type) (rate(event_outboxer_events_queue_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])) / sum by (event_type) (rate(event_outboxer_poller_polls_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\",result=\"claimed\"}[$__rate_interval]))",
           "legendFormat": "{{event_type}}: avg batch",
           "refId": "B"
         }
@@ -1753,7 +2009,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 115
       },
       "id": 32,
       "panels": [],
@@ -1807,7 +2063,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 84
+        "y": 116
       },
       "id": 33,
       "options": {
@@ -1871,7 +2127,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 84
+        "y": 116
       },
       "id": 34,
       "options": {
@@ -1935,7 +2191,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 84
+        "y": 116
       },
       "id": 35,
       "options": {
@@ -1978,7 +2234,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 92
+        "y": 124
       },
       "id": 36,
       "panels": [],
@@ -1990,7 +2246,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Events reclaimed from dead workers and the number of dead workers detected. Positive values mean a peer pod crashed and the fleet took over its in-flight events.",
+      "description": "Events reclaimed from dead workers. Positive values mean a peer pod crashed and the fleet took over its in-flight events.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2016,7 +2272,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 93
+        "y": 125
       },
       "id": 37,
       "options": {
@@ -2044,15 +2300,6 @@
           "expr": "sum(increase(event_outboxer_orphans_reclaimed_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "events reclaimed",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(increase(event_outboxer_orphans_dead_workers_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
-          "legendFormat": "dead workers",
-          "refId": "B"
         }
       ],
       "title": "Orphan recovery",
@@ -2089,7 +2336,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 93
+        "y": 125
       },
       "id": 38,
       "options": {
@@ -2166,7 +2413,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 93
+        "y": 125
       },
       "id": 39,
       "options": {
@@ -2191,7 +2438,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (event_type) (rate(event_outboxer_handler_stuck_reclaimed_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "expr": "sum by (event_type) (rate(event_outboxer_handler_stuck_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
           "legendFormat": "{{event_type}}: reclaims",
           "refId": "A"
         },
@@ -2257,7 +2504,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 101
+        "y": 133
       },
       "id": 40,
       "options": {
@@ -2288,6 +2535,70 @@
         }
       ],
       "title": "Attempts per finalized event (avg)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Failed runs of the periodic maintenance tasks (heartbeat, orphan_recovery, watchdog, engine_health_check, retention, stale_claim_sweeper). Any sustained rate for one task deserves triage — before these meters existed such failures were WARN log lines only. The ok series of the same meter flatlining means the task silently stopped.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 133,
+        "w": 12,
+        "h": 8
+      },
+      "id": 45,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (task) (rate(event_outboxer_maintenance_runs_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",result=\"failed\"}[$__rate_interval]))",
+          "legendFormat": "{{task}}: failed",
+          "refId": "A"
+        }
+      ],
+      "title": "Maintenance run failures by task",
       "type": "timeseries"
     }
   ],
