@@ -10,7 +10,7 @@ an embedded, per-service outbox (not a cross-service shared-DB bridge —
 see [ADR-0001](docs/adr/0001-local-embedded-outbox-scope.md)).
 
 Architecture is fully designed before implementation — see
-[docs/](docs/) and the 31 ADRs in [docs/adr/](docs/adr/). Treat the
+[docs/](docs/) and the 32 ADRs in [docs/adr/](docs/adr/). Treat the
 ADRs as the source of truth: if implementation must deviate from an
 ADR, amend the ADR in the same PR.
 
@@ -28,7 +28,7 @@ ADR, amend the ADR in the same PR.
 - PostgreSQL 15+, KeyDB 6 / Redis 7 (adapter-level).
 - JUnit 5 + AssertJ + Testcontainers for testing.
 
-## Module layout (19 modules + 1 relocation stub)
+## Module layout (20 modules + 1 relocation stub)
 
 ```
 event-outboxer (parent pom)
@@ -48,6 +48,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-metrics-micrometer      MicrometerOutboxListener
 ├── event-outboxer-tracing-otel            OpenTelemetry OutboxTracer (ADR-0023)
 ├── event-outboxer-tracing-micrometer      Micrometer Tracing OutboxTracer (ADR-0023)
+├── event-outboxer-relay-spring-cloud-stream  StreamOutboxPublisher facade + built-in StreamBridge relay handler (ADR-0032)
 ├── event-outboxer-admin-actuator          Actuator endpoint over OutboxAdmin SPI
 ├── event-outboxer-admin-rest              opt-in REST controller over OutboxAdmin SPI
 ├── event-outboxer-testkit                 SettableClock, ManualEngine, assertions
@@ -124,12 +125,14 @@ in a new or amended ADR.
 8. **Heartbeat lives in a separate `event_outboxer.workers` table** — O(1) per
    JVM, not per in-flight event. See
    [ADR-0005](docs/adr/0005-workers-heartbeat-table.md).
-9. **Spring appears only in `event-outboxer-spring-boot-starter` and
-   the two admin surface modules (`-admin-actuator`, `-admin-rest`)** —
+9. **Spring appears only in `event-outboxer-spring-boot-starter`, the
+   two admin surface modules (`-admin-actuator`, `-admin-rest`) and the
+   Spring Cloud Stream relay (`-relay-spring-cloud-stream`)** —
    autoconfiguration, TransactionAwareDataSourceProxy,
    `ThreadPoolTaskExecutor` with `ContextPropagatingTaskDecorator`;
-   the admin modules are Spring-integration surfaces by nature
-   (ADR-0019). Core and storage/lock adapters stay Spring-free. See
+   the admin and relay modules are Spring-integration surfaces by
+   nature (ADR-0019, ADR-0032). Core and storage/lock adapters stay
+   Spring-free. See
    [ADR-0009](docs/adr/0009-spring-task-executor-in-starter.md).
 
 ## Code style
@@ -183,7 +186,7 @@ in a new or amended ADR.
 - **PostgreSQL schema and SQL**: [docs/STORAGE.md](docs/STORAGE.md)
 - **Terminology**: [docs/GLOSSARY.md](docs/GLOSSARY.md)
 - **Rationale for every design decision**:
-  [docs/adr/README.md](docs/adr/README.md) (31 ADRs)
+  [docs/adr/README.md](docs/adr/README.md) (32 ADRs)
 - **Implementation roadmap (phases P0–P10)**: see the plan file noted
   in the user's plan tooling.
 

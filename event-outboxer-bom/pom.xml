@@ -89,6 +89,11 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-relay-spring-cloud-stream</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-admin-actuator</artifactId>
                 <version>${project.version}</version>
             </dependency>

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-09-02 (the "user handler publishes to a broker"
+pattern now ships packaged as the Spring Cloud Stream relay module; see
+the Amendment section at the bottom)
 
 ## Date
 
@@ -86,9 +88,22 @@ handler.
   broker is required. Requires explicit documentation that explains the
   correct path.
 
+## Amendment (2026-09-02): the broker-publishing handler ships as a module
+
+ADR-0032 adds `event-outboxer-relay-spring-cloud-stream` — a facade
+plus a built-in `EventHandler` that delivers stored messages to a
+broker through Spring Cloud Stream's `StreamBridge`. This does NOT
+change the scope decided here: the outbox stays embedded and
+per-service, no service reads another service's tables, and delivery
+still goes through a broker exactly as option B describes. The module
+merely packages the handler that this ADR always expected users to
+write themselves.
+
 ## Related decisions
 
 - [ADR-0002](0002-participate-in-client-transaction.md) — atomicity within
   the caller's transaction (in a single service).
 - [ADR-0010](0010-storage-agnostic-core-via-spi.md) — adapters are isolated
   from the engine, which makes adding non-SQL backends easier if needed.
+- [ADR-0032](0032-spring-cloud-stream-relay-module.md) — the packaged
+  broker-publishing handler (see the Amendment above).

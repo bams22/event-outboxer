@@ -54,6 +54,7 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0028: Starter-managed Flyway instance for the outbox schema](0028-starter-managed-flyway-instance.md)
 - [ADR-0030: Failure policy: YAML thin merge and the @OutboxFailureHandler qualifier](0030-failure-policy-yaml-thin-merge-and-outbox-failure-handler-qualifier.md)
 - [ADR-0029: Publish-only mode is an explicit opt-in](0029-publish-only-is-explicit.md)
+- [ADR-0032: Spring Cloud Stream relay module](0032-spring-cloud-stream-relay-module.md)
 
 ### Operations
 

@@ -46,6 +46,12 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md).
 | [event-outboxer-tracing-otel](event-outboxer-tracing-otel.md) | OpenTelemetry tracer: publish→handle trace continuity (OTel agent / SDK). |
 | [event-outboxer-tracing-micrometer](event-outboxer-tracing-micrometer.md) | Micrometer Tracing tracer — the Boot Actuator-native alternative. |
 
+## Broker relay
+
+| Module | One-liner |
+|---|---|
+| [event-outboxer-relay-spring-cloud-stream](event-outboxer-relay-spring-cloud-stream.md) | Transactional publish to any Spring Cloud Stream binder — facade + built-in `StreamBridge` handler, no per-project DTO. |
+
 ## Operations
 
 | Module | One-liner |
@@ -64,6 +70,7 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 - **Spring Boot + PostgreSQL (typical production)**: `spring-boot-starter` + `storage-postgres` (+ `lock-postgres-lease` if handlers use `extractLockKey`, + `metrics-micrometer`, + a tracing adapter). JSON via Jackson comes with the starter; add `serializer-protobuf` for Protobuf.
 - **Plain Java**: `core` + `storage-postgres` + `serializer-jackson` (or `-protobuf`) + a locker if needed.
+- **Broker delivery via Spring Cloud Stream**: add `relay-spring-cloud-stream` + your binder — no per-project event DTO or handler.
 - **Tests**: `testkit` (test scope); `storage-inmemory` + `@Import(OutboxInMemoryTestConfiguration.class)` for DB-less Spring tests.
 - **Custom adapter**: `spi` + its `tests`-classifier contract tests.
 

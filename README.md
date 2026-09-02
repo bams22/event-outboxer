@@ -50,7 +50,9 @@ steps.
 
 **Not suitable for**: cross-service messaging. If an event must reach another
 service, use a broker (Kafka, RabbitMQ); the library provides an integration
-point via a handler that publishes to the broker. Shared DB between services
+point via a handler that publishes to the broker — shipped ready-made as
+[`event-outboxer-relay-spring-cloud-stream`](docs/modules/event-outboxer-relay-spring-cloud-stream.md)
+for Spring Cloud Stream binders. Shared DB between services
 is an anti-pattern and is explicitly not supported.
 
 ## Quick start

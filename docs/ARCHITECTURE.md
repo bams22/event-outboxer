@@ -32,7 +32,10 @@ asynchronously with atomicity guarantees relative to business transactions.
 - Per-event-type resource isolation.
 
 **Out of scope**:
-- Cross-service messaging (use a broker instead: Kafka, RabbitMQ).
+- Cross-service messaging (use a broker instead: Kafka, RabbitMQ). The
+  broker-publishing handler itself ships pre-packaged as
+  `event-outboxer-relay-spring-cloud-stream` (ADR-0032) — the scope
+  stays per-service either way.
 - Exactly-once (fundamentally impossible in distributed systems; our
   contract is at-least-once + handler idempotency).
 - Our own message broker.
@@ -75,7 +78,7 @@ asynchronously with atomicity guarantees relative to business transactions.
 
 ## Module layout
 
-The library consists of 19 Maven modules:
+The library consists of 20 Maven modules:
 
 ```
 event-outboxer (parent pom)
@@ -94,6 +97,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
 ├── event-outboxer-tracing-otel             OpenTelemetry OutboxTracer (ADR-0023)
 ├── event-outboxer-tracing-micrometer       Micrometer Tracing OutboxTracer (ADR-0023)
+├── event-outboxer-relay-spring-cloud-stream  Spring Cloud Stream relay: facade + built-in handler (ADR-0032)
 ├── event-outboxer-admin-actuator           Actuator endpoint over OutboxAdmin
 ├── event-outboxer-admin-rest               REST controller over OutboxAdmin
 ├── event-outboxer-testkit                  Test utilities (SettableClock, ManualEngine)
@@ -114,6 +118,9 @@ event-outboxer (parent pom)
       metrics-micrometer (depends only on api — implements OutboxListener)
 
       tracing-otel, tracing-micrometer (depend on api + spi — implement OutboxTracer, ADR-0023)
+
+      relay-spring-cloud-stream (depends on api + serializer-jackson + spring-cloud-stream —
+                                 ships a StreamOutboxPublisher facade and a built-in EventHandler)
 
       testkit (depends on api, spi, core, storage-inmemory)
 ```
@@ -136,6 +143,7 @@ Packages mirror the modules 1-to-1 under `io.github.bams22.outboxer.*`:
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
 | `-tracing-otel` | `io.github.bams22.outboxer.tracing.otel.*` |
 | `-tracing-micrometer` | `io.github.bams22.outboxer.tracing.micrometer.*` |
+| `-relay-spring-cloud-stream` | `io.github.bams22.outboxer.relay.stream.*` |
 | `-testkit` | `io.github.bams22.outboxer.testkit.*` |
 | `-spring-boot-starter` | `io.github.bams22.outboxer.spring.*` |
 

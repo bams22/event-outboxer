@@ -3,7 +3,9 @@
 ## Status
 
 Accepted — amended 2026-08-29 (the starter depends on the Jackson
-serializer non-optionally; see the Amendment section at the bottom)
+serializer non-optionally) and 2026-09-02 (20th module:
+`event-outboxer-relay-spring-cloud-stream`, ADR-0032); see the
+Amendment sections at the bottom
 
 ## Date
 
@@ -17,7 +19,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 19 modules
+### 20 modules
 
 ```
 event-outboxer (root parent pom)
@@ -36,6 +38,7 @@ event-outboxer (root parent pom)
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
 ├── event-outboxer-tracing-otel             OpenTelemetry OutboxTracer (ADR-0023)
 ├── event-outboxer-tracing-micrometer       Micrometer Tracing OutboxTracer (ADR-0023)
+├── event-outboxer-relay-spring-cloud-stream  Spring Cloud Stream relay (ADR-0032)
 ├── event-outboxer-admin-actuator           Actuator endpoint over OutboxAdmin
 ├── event-outboxer-admin-rest               REST controller over OutboxAdmin
 ├── event-outboxer-testkit                  Test utilities
@@ -74,6 +77,7 @@ Why `groupId=io.github.bams22` (rather than
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
 | `-tracing-otel` | `io.github.bams22.outboxer.tracing.otel.*` |
 | `-tracing-micrometer` | `io.github.bams22.outboxer.tracing.micrometer.*` |
+| `-relay-spring-cloud-stream` | `io.github.bams22.outboxer.relay.stream.*` |
 | `-testkit` | `io.github.bams22.outboxer.testkit.*` |
 | `-spring-boot-starter` | `io.github.bams22.outboxer.spring.*` |
 
@@ -220,7 +224,7 @@ The BOM POM manages:
 
 ### Negative consequences
 
-- 19 modules — more than a monorepo. That is the price of the pluggable
+- 20 modules — more than a monorepo. That is the price of the pluggable
   architecture. (`event-outboxer-cache-redis` was added after the
   original decision when `MetricsSnapshotCache` became an SPI port;
   `event-outboxer-lock-postgres-lease` was added by ADR-0022 so the
@@ -268,6 +272,20 @@ regular (non-optional) dependency:
 Storage, lock, cache, metrics and tracing adapters remain optional —
 there is no sensible default storage (ADR-0020), and the rest are
 opt-in features.
+
+## Amendment (2026-09-02): 20th module — the Spring Cloud Stream relay
+
+ADR-0032 adds `event-outboxer-relay-spring-cloud-stream` (package
+`io.github.bams22.outboxer.relay.stream`): a facade + built-in
+`EventHandler` that relays outbox events to a broker through
+`StreamBridge`. Like the admin modules it is a self-wiring Spring
+surface — its own `AutoConfiguration.imports`, no starter involvement,
+depends on `-api` (plus `-serializer-jackson`, since its envelope
+requires the `jackson-json` write format). The module tree, package
+table and module counts above include it. The parent pom now also
+imports `spring-cloud-dependencies` (after `spring-boot-dependencies`,
+so Boot wins on overlaps) to manage the module's Spring Cloud Stream
+dependency.
 
 ## Related decisions
 

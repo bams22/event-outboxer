@@ -7,7 +7,29 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **New module `event-outboxer-relay-spring-cloud-stream`
+  (ADR-0032)** — a ready-made broker relay over Spring Cloud Stream:
+  the `StreamOutboxPublisher` facade stores messages (binding, key,
+  headers, payload) in the outbox inside the caller's transaction, and
+  a built-in `EventHandler` (reserved event type
+  `outboxer-stream-relay`) delivers them through `StreamBridge` — no
+  per-project event DTO or relay handler needed. Payloads are encoded
+  at publish time (Jackson by default, `StreamPayloadEncoder` SPI to
+  replace; `String` / `byte[]` / `SerializedPayload` pass through as
+  the wire form). Auto-activates when the module and `StreamBridge`
+  are on the classpath; configured under
+  `event-outboxer.relay.stream.*` (kill switch, configurable
+  message-key header — default `kafka_messageKey`, opt-in per-key
+  ordering via entity-locker lock keys). The parent build now imports
+  the `spring-cloud-dependencies` 2025.0.x BOM; the consumer BOM does
+  not re-export it. New message code `OUTBOX-105`
+  (`StreamEncodingException`).
+  **One thing to get right when adopting it:** configure an
+  acknowledged producer send per binding (Kafka:
+  `spring.cloud.stream.kafka.bindings.<b>.producer.sync: true`) — on
+  binder defaults `StreamBridge.send` returns before the broker acks,
+  which makes the hop from the outbox to the broker at-most-once.
 
 
 ## [0.6.0] — 2026-08-31

@@ -47,6 +47,7 @@
         <module>event-outboxer-metrics-micrometer</module>
         <module>event-outboxer-tracing-otel</module>
         <module>event-outboxer-tracing-micrometer</module>
+        <module>event-outboxer-relay-spring-cloud-stream</module>
         <module>event-outboxer-admin-actuator</module>
         <module>event-outboxer-admin-rest</module>
         <module>event-outboxer-testkit</module>
@@ -138,6 +139,14 @@
             gencode <= runtime. ADR-0026.
         -->
         <protobuf.version>4.35.1</protobuf.version>
+
+        <!--
+            Spring Cloud release train for the -relay-spring-cloud-stream
+            module (ADR-0032). The 2025.0.x line is the one compatible with
+            Boot 3.5.x (2025.1.x targets Boot 4); bump to the latest 2025.0.x
+            patch alongside spring-boot.version bumps.
+        -->
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
     </properties>
 
     <dependencyManagement>
@@ -147,6 +156,21 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!--
+                Spring Cloud BOM for spring-cloud-stream and its function/
+                test-binder transitives. Imported AFTER spring-boot-dependencies
+                so Boot's managed versions win on any overlap (the arrangement
+                Spring Cloud documents). Consumers of the relay module bring
+                their own train — the event-outboxer BOM does not re-export it.
+            -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -261,6 +285,11 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-relay-spring-cloud-stream</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-admin-actuator</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -272,6 +301,11 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-testkit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

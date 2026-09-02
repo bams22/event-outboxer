@@ -8,44 +8,51 @@
         <version>${revision}</version>
     </parent>
 
-    <artifactId>event-outboxer-admin-rest</artifactId>
+    <artifactId>event-outboxer-relay-spring-cloud-stream</artifactId>
 
-    <name>event-outboxer (admin REST controller)</name>
-    <description>Opt-in REST surface over the OutboxAdmin SPI port:
-        inspect DISABLED events, re-enable them, purge the archive and
-        old failures. Disabled by default
-        (event-outboxer.admin.rest.enabled=false); protected by
-        @PreAuthorize with a configurable authority
-        (event-outboxer.admin.rest.required-authority).</description>
+    <name>event-outboxer (Spring Cloud Stream relay)</name>
+    <description>Ready-made broker relay over Spring Cloud Stream
+        (ADR-0032): a StreamOutboxPublisher facade stores messages
+        (binding, key, headers, payload) in the outbox inside the
+        caller's transaction, and a built-in EventHandler delivers
+        them to the broker through StreamBridge — no per-project
+        event DTO or handler required. Auto-activates when
+        StreamBridge is on the classpath; opt out with
+        event-outboxer.relay.stream.enabled=false.</description>
 
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-api</artifactId>
         </dependency>
+        <!--
+            Hard dependency by design (ADR-0032): the StreamEnvelope event is a
+            POJO record and can only be stored through the jackson-json write
+            format, so a relay deployment without the Jackson serializer cannot
+            function. Depending on it also keeps the default payload encoder's
+            ObjectMapper fallback aligned with the engine's read-side mapper
+            (JacksonObjectMapperFactory.defaults()).
+        -->
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>event-outboxer-spi</artifactId>
+            <artifactId>event-outboxer-serializer-jackson</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
-            <artifactId>spring-webmvc</artifactId>
+            <artifactId>spring-messaging</artifactId>
         </dependency>
-        <!--
-            Optional: only the @PreAuthorize annotation and the startup misconfiguration
-            check reference Spring Security. Without it on the application classpath the
-            annotation is ignored by the JVM and the API runs unprotected — acceptable
-            per ADR-0019 for security-less applications.
-        -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-core</artifactId>
-            <optional>true</optional>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
 
         <dependency>
@@ -72,12 +79,12 @@
         <!-- test -->
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>event-outboxer-storage-inmemory</artifactId>
+            <artifactId>event-outboxer-spring-boot-starter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-storage-inmemory</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -86,13 +93,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-config</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream-test-binder</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -104,7 +106,7 @@
                 turns OFF processor discovery from the compile classpath — so the
                 Boot processors must be repeated here or they never run and the
                 module ships without spring-configuration-metadata.json (no IDE
-                hints for event-outboxer.admin.rest.*). Same block as the starter.
+                hints for event-outboxer.relay.stream.*). Same block as the starter.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -130,8 +132,12 @@
             </plugin>
 
             <!--
-                Surface modules must not depend on event-outboxer-core: they are wired
-                through -api / -spi only (CLAUDE.md invariant 2, ADR-0019).
+                Surface modules must not ship a dependency on event-outboxer-core:
+                they are wired through -api only (CLAUDE.md invariant 2, ADR-0032).
+                Unlike the admin modules the ban is scope-qualified, because the
+                end-to-end test deliberately runs the full engine via the starter
+                (test scope) — only the compile/runtime/provided scopes that reach
+                consumers are banned.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -146,7 +152,9 @@
                             <rules>
                                 <bannedDependencies>
                                     <excludes>
-                                        <exclude>io.github.bams22:event-outboxer-core</exclude>
+                                        <exclude>io.github.bams22:event-outboxer-core:*:*:compile</exclude>
+                                        <exclude>io.github.bams22:event-outboxer-core:*:*:runtime</exclude>
+                                        <exclude>io.github.bams22:event-outboxer-core:*:*:provided</exclude>
                                     </excludes>
                                 </bannedDependencies>
                             </rules>

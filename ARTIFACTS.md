@@ -14,6 +14,7 @@ The table below is the quickest way to decide what to add to your `pom.xml`.
 | Spring Boot + PG with Redis-coordinated locks | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-redis` | Additional: Lettuce 6. |
 | Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` (or `-serializer-protobuf`) <br> `event-outboxer-lock-postgres-lease` (or postgres-advisory / redis / noop) | SLF4J, Jackson (or protobuf-java), adapter dependencies. |
 | Unit / integration tests for your handlers | `event-outboxer-testkit` (test scope) | Transitively brings in-memory adapter + Jackson. |
+| Transactional publish to Kafka/RabbitMQ via Spring Cloud Stream | `event-outboxer-relay-spring-cloud-stream` <br> + your binder (e.g. `spring-cloud-stream-binder-kafka`) | Additional: Spring Cloud Stream (function core, integration). Configure an acknowledged producer send (Kafka: `producer.sync: true`) — see the module doc. |
 
 Always import the BOM first and let it manage versions:
 
@@ -50,6 +51,7 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-metrics-micrometer` | `OutboxListener` publishing to a Micrometer `MeterRegistry`. | `micrometer-core`. | Any Boot app with Micrometer/Observation; the starter auto-wires it if present. |
 | `event-outboxer-tracing-otel` | OpenTelemetry `OutboxTracer` — publish→handle trace continuity (ADR-0023); works with the OTel Java agent. | `opentelemetry-api`. | OTel-instrumented apps without Boot's Micrometer Tracing bridge; auto-detected by the starter. |
 | `event-outboxer-tracing-micrometer` | Micrometer `OutboxTracer` on the Observation API (ADR-0023) — propagation follows `management.tracing.*`; side effect: four meters under `<prefix>.publish{,.active}` / `<prefix>.process{,.active}`. | `micrometer-observation`, `micrometer-tracing`. | Boot Actuator tracing setups; wins over the OTel adapter when both are present. |
+| `event-outboxer-relay-spring-cloud-stream` | `StreamOutboxPublisher` facade + built-in `EventHandler` relaying stored messages through `StreamBridge` (event type `outboxer-stream-relay`, ADR-0032). | `event-outboxer-api`, `event-outboxer-serializer-jackson`, `spring-cloud-stream`. | Transactional publish to any Spring Cloud Stream binder without writing your own relay handler. |
 | `event-outboxer-admin-actuator` | Actuator endpoint (`outboxadmin`) over the `OutboxAdmin` SPI. | Spring Boot Actuator. | Ops surface via the management port (ADR-0019). |
 | `event-outboxer-admin-rest` | Opt-in REST controller over `OutboxAdmin` with configurable `@PreAuthorize` authority. | Spring Web (+ optional Spring Security). | Ops surface on the app port when Actuator is not exposed (ADR-0019). |
 | `event-outboxer-testkit` | `SettableClock`, `ManualEngine`, `OutboxTestContext`, `RecordingOutboxListener`, fluent assertions, JUnit 5 extension. | `event-outboxer-core`, in-memory adapter, Jackson serializer. | Test-scope dependency for handler tests. |
@@ -90,24 +92,25 @@ so adapter modules can extend the abstract contract tests.
 ## Coordinates cheat-sheet
 
 ```
-io.github.bams22:event-outboxer-bom:0.5.0                  (pom)
-io.github.bams22:event-outboxer-api:0.5.0
-io.github.bams22:event-outboxer-spi:0.5.0
-io.github.bams22:event-outboxer-spi:0.5.0:tests            (classifier)
-io.github.bams22:event-outboxer-core:0.5.0
-io.github.bams22:event-outboxer-storage-inmemory:0.5.0
-io.github.bams22:event-outboxer-storage-postgres:0.5.0
-io.github.bams22:event-outboxer-serializer-jackson:0.5.0
-io.github.bams22:event-outboxer-serializer-protobuf:0.5.0
-io.github.bams22:event-outboxer-lock-postgres-lease:0.5.0
-io.github.bams22:event-outboxer-lock-postgres-advisory:0.5.0  (0.2.0 shipped as event-outboxer-lock-postgres)
-io.github.bams22:event-outboxer-lock-redis:0.5.0
-io.github.bams22:event-outboxer-cache-redis:0.5.0
-io.github.bams22:event-outboxer-metrics-micrometer:0.5.0
-io.github.bams22:event-outboxer-tracing-otel:0.5.0
-io.github.bams22:event-outboxer-tracing-micrometer:0.5.0
-io.github.bams22:event-outboxer-admin-actuator:0.5.0
-io.github.bams22:event-outboxer-admin-rest:0.5.0
-io.github.bams22:event-outboxer-testkit:0.5.0
-io.github.bams22:event-outboxer-spring-boot-starter:0.5.0
+io.github.bams22:event-outboxer-bom:0.6.0                  (pom)
+io.github.bams22:event-outboxer-api:0.6.0
+io.github.bams22:event-outboxer-spi:0.6.0
+io.github.bams22:event-outboxer-spi:0.6.0:tests            (classifier)
+io.github.bams22:event-outboxer-core:0.6.0
+io.github.bams22:event-outboxer-storage-inmemory:0.6.0
+io.github.bams22:event-outboxer-storage-postgres:0.6.0
+io.github.bams22:event-outboxer-serializer-jackson:0.6.0
+io.github.bams22:event-outboxer-serializer-protobuf:0.6.0
+io.github.bams22:event-outboxer-lock-postgres-lease:0.6.0
+io.github.bams22:event-outboxer-lock-postgres-advisory:0.6.0  (0.2.0 shipped as event-outboxer-lock-postgres)
+io.github.bams22:event-outboxer-lock-redis:0.6.0
+io.github.bams22:event-outboxer-cache-redis:0.6.0
+io.github.bams22:event-outboxer-metrics-micrometer:0.6.0
+io.github.bams22:event-outboxer-tracing-otel:0.6.0
+io.github.bams22:event-outboxer-tracing-micrometer:0.6.0
+io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.7.0     (new in 0.7.0)
+io.github.bams22:event-outboxer-admin-actuator:0.6.0
+io.github.bams22:event-outboxer-admin-rest:0.6.0
+io.github.bams22:event-outboxer-testkit:0.6.0
+io.github.bams22:event-outboxer-spring-boot-starter:0.6.0
 ```

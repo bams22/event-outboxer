@@ -187,6 +187,13 @@ event-outboxer:
     batch-size: 1000                 # rows per DELETE; a pass loops until a short batch
     interval: 1h                     # delay between retention passes
 
+  relay:
+    stream:                          # requires the event-outboxer-relay-spring-cloud-stream module
+      enabled: true                  # kill switch; active when StreamBridge is on the classpath
+      message-key-header: kafka_messageKey  # outgoing key header (UTF-8 bytes); empty = no key header
+      per-key-ordering: false        # serialize sends sharing (binding, key) via the entity locker
+      default-content-type: application/json  # contentType for pre-encoded payloads
+
   admin:
     rest:                            # requires the event-outboxer-admin-rest module
       enabled: false                 # write-capable HTTP surface — strictly opt-in
@@ -821,6 +828,86 @@ a surprise default; enable with one line, e.g.
 Requires the storage adapter's `OutboxAdmin` (wired automatically by
 the starter).
 
+### `event-outboxer.relay.stream.*`
+
+Spring Cloud Stream relay (ADR-0032) — requires the
+`event-outboxer-relay-spring-cloud-stream` module. When the module and
+`StreamBridge` are on the classpath, the auto-configuration registers a
+`StreamOutboxPublisher` facade and a built-in relay `EventHandler`
+under the reserved event type `outboxer-stream-relay`.
+
+- `enabled` — kill switch for the whole relay (facade, handler,
+  encoder). **Default: `true`** — presence of the module is the
+  opt-in.
+
+- `message-key-header` — name of the outgoing message header carrying
+  the message key, written as UTF-8 bytes. **Default:
+  `kafka_messageKey`** — the Kafka binder's record-key header,
+  matching its default `ByteArraySerializer` key serializer. Set to an
+  empty string to disable the key header entirely and rely on the
+  binding's `partitionKeyExpression` instead.
+
+- `per-key-ordering` — when `true`, the handler's `extractLockKey`
+  returns `outboxer-stream-relay:<binding>:<key>`, serializing deliveries
+  that share a (binding, key) pair through the configured entity
+  locker (ADR-0012). Requires `event-outboxer.lock.type` to be a real
+  locker; costs throughput. **Default: `false`.**
+
+- `default-content-type` — `contentType` stamped on messages whose
+  payload was passed pre-encoded (`String`, `byte[]`,
+  `SerializedPayload`) without a per-message content type; payloads
+  encoded by the `StreamPayloadEncoder` use the encoder's own content
+  type. **Default: `application/json`.**
+
+Retry policy, backoff and pool sizing for relay deliveries are tuned
+through the regular per-type mechanism:
+
+```yaml
+event-outboxer:
+  event-types:
+    overrides:
+      outboxer-stream-relay:
+        handler-pool-size: 8
+        failure:
+          max-attempts: 12
+  serializer:
+    write-format-per-type:
+      outboxer-stream-relay: jackson-json   # only if the global write
+                                            # format is not jackson-json
+```
+
+The `write-format-per-type` line is required for deployments whose
+global write format is not `jackson-json` — the relay envelope is a
+POJO record and requires the Jackson serializer (shipped as a
+dependency of the module).
+
+**Delivery is only as durable as the binder's producer
+acknowledgement.** The handler treats `StreamBridge.send(...) == true`
+as success and the engine then finalizes the event, deleting the
+outbox row. With the Kafka binder's default `sync: false` the producer
+returns as soon as the record is buffered, *before* the broker
+acknowledges it — a crash or a producer-side error at that point loses
+the message with no outbox row left to retry from. To get the
+at-least-once guarantee the outbox exists for, make the send
+synchronous per binding:
+
+```yaml
+spring:
+  cloud:
+    stream:
+      kafka:
+        bindings:
+          orders-out:
+            producer:
+              sync: true             # block until the broker acks
+```
+
+Other binders have their own mechanism for turning a fire-and-forget
+send into an acknowledged one (RabbitMQ: publisher confirms) — check
+your binder's reference. Without it the relay degrades to at-most-once
+between the outbox and the broker, which defeats the point of the
+outbox.
+
 ### `event-outboxer.admin.rest.*` and the admin modules
 
 Operational surface over the `OutboxAdmin` SPI port (ADR-0019): list
@@ -1057,6 +1144,51 @@ to the core `EventTypeConfig` objects. The nested `failure.*` group
 merges the same way, independently of the other fields: an override
 that sets only `failure.max-attempts` keeps every other retry knob of
 `defaults.failure` (or of the library chain).
+
+### Event-type names containing a dot
+
+`overrides` is a `Map<String, …>` with a structured value, so Spring
+Boot's map binder splits the key on `.`. An event type whose name
+contains a dot — say `billing.invoice-paid` — **must** therefore be
+written in brackets. Plain YAML quoting does not help: the YAML parser
+strips the quotes before the binder ever sees the key.
+
+```yaml
+event-outboxer:
+  event-types:
+    overrides:
+      "[billing.invoice-paid]":      # ✅ binds
+        handler-pool-size: 8
+      "billing.invoice-paid":        # ❌ silently binds nothing
+        handler-pool-size: 8
+```
+
+There is no validation of override keys against the registered
+handlers, so the wrong form fails silently — the type simply keeps
+running on `defaults`. `event-outboxer.serializer.write-format-per-type`
+has plain string values and tolerates both forms, which makes the
+inconsistency easy to miss.
+
+The cheapest fix is to not put a dot in the name in the first place:
+a kebab-case name (`billing-invoice-paid`) binds identically whether
+written bare, quoted, bracketed or as a flat `.properties` key. That
+is why the library's own reserved relay type is
+`outboxer-stream-relay` and not `outboxer.stream-relay` (ADR-0032 §2).
+Event-type names are persisted natural keys, so this is worth getting
+right before the first event is written.
+
+The same key shape applies wherever the value comes from. Library
+modules may ship per-type defaults through an
+`EnvironmentPostProcessor` registered with `addLast` (the pattern the
+Micrometer distribution defaults use); those land in the weakest
+property source, and an application setting the same key in its own
+config wins field by field — a library default of
+`failure.max-attempts` survives while the application overrides only
+`handler-pool-size`. Note that per-type pool and polling knobs are
+property-only: there is no Java-side customizer for them. What *can*
+be replaced from Java is the type's failure handling — a
+`@OutboxFailureHandler("outboxer-stream-relay")` bean (ADR-0030), see
+[Custom FailureHandler](#custom-failurehandler-global-or-per-type).
 
 ---
 
