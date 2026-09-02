@@ -31,3 +31,10 @@ target/
 # Created during `mvn process-resources` / `install` / `deploy`, cleaned by
 # `mvn clean`. Never committed.
 .flattened-pom.xml
+
+# This repo's docs/ADRs live in Markdown; override the user's global
+# ~/.gitignore_global (which ignores *.md by default) for this repo only.
+!*.md
+!**/*.md
+
+docs/notes
