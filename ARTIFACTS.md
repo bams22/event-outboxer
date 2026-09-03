@@ -92,25 +92,25 @@ so adapter modules can extend the abstract contract tests.
 ## Coordinates cheat-sheet
 
 ```
-io.github.bams22:event-outboxer-bom:0.6.0                  (pom)
-io.github.bams22:event-outboxer-api:0.6.0
-io.github.bams22:event-outboxer-spi:0.6.0
-io.github.bams22:event-outboxer-spi:0.6.0:tests            (classifier)
-io.github.bams22:event-outboxer-core:0.6.0
-io.github.bams22:event-outboxer-storage-inmemory:0.6.0
-io.github.bams22:event-outboxer-storage-postgres:0.6.0
-io.github.bams22:event-outboxer-serializer-jackson:0.6.0
-io.github.bams22:event-outboxer-serializer-protobuf:0.6.0
-io.github.bams22:event-outboxer-lock-postgres-lease:0.6.0
-io.github.bams22:event-outboxer-lock-postgres-advisory:0.6.0  (0.2.0 shipped as event-outboxer-lock-postgres)
-io.github.bams22:event-outboxer-lock-redis:0.6.0
-io.github.bams22:event-outboxer-cache-redis:0.6.0
-io.github.bams22:event-outboxer-metrics-micrometer:0.6.0
-io.github.bams22:event-outboxer-tracing-otel:0.6.0
-io.github.bams22:event-outboxer-tracing-micrometer:0.6.0
-io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.7.0     (new in 0.7.0)
-io.github.bams22:event-outboxer-admin-actuator:0.6.0
-io.github.bams22:event-outboxer-admin-rest:0.6.0
-io.github.bams22:event-outboxer-testkit:0.6.0
-io.github.bams22:event-outboxer-spring-boot-starter:0.6.0
+io.github.bams22:event-outboxer-bom:0.7.0                  (pom)
+io.github.bams22:event-outboxer-api:0.7.0
+io.github.bams22:event-outboxer-spi:0.7.0
+io.github.bams22:event-outboxer-spi:0.7.0:tests            (classifier)
+io.github.bams22:event-outboxer-core:0.7.0
+io.github.bams22:event-outboxer-storage-inmemory:0.7.0
+io.github.bams22:event-outboxer-storage-postgres:0.7.0
+io.github.bams22:event-outboxer-serializer-jackson:0.7.0
+io.github.bams22:event-outboxer-serializer-protobuf:0.7.0
+io.github.bams22:event-outboxer-lock-postgres-lease:0.7.0
+io.github.bams22:event-outboxer-lock-postgres-advisory:0.7.0  (0.2.0 shipped as event-outboxer-lock-postgres)
+io.github.bams22:event-outboxer-lock-redis:0.7.0
+io.github.bams22:event-outboxer-cache-redis:0.7.0
+io.github.bams22:event-outboxer-metrics-micrometer:0.7.0
+io.github.bams22:event-outboxer-tracing-otel:0.7.0
+io.github.bams22:event-outboxer-tracing-micrometer:0.7.0
+io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.7.0  (new in 0.7.0)
+io.github.bams22:event-outboxer-admin-actuator:0.7.0
+io.github.bams22:event-outboxer-admin-rest:0.7.0
+io.github.bams22:event-outboxer-testkit:0.7.0
+io.github.bams22:event-outboxer-spring-boot-starter:0.7.0
 ```
