@@ -25,13 +25,24 @@ but on the **application port**, guarded by a configurable
 | `GET /events/{id}` | one event — active store, then archive; 404 when absent |
 | `POST /events/{id}/reenable` | re-enable one `DISABLED` event (fresh attempts budget); 409 when the row exists but is not `DISABLED` |
 | `POST /events/reenable-all` body `{"eventType": "X", "createdBefore": …, "limit": 100}` | bulk re-enable |
+| `POST /events/{id}/replay` | replay one archived event back into the hot table ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)); 200 `{"outcome": "REPLAYED"/"COALESCED"}` (a coalesced replay keeps the archive row), 404 when not in the archive, 409 when the hot table already holds that id (the app re-published the UUID — the live event is the one to look at) |
+| `POST /events/replay-all` body `{"eventType": "X", "archivedAfter": …, "archivedBefore": …, "limit": 100, "cursor": …}` | bulk replay from the archive; response `{"replayed": n, "coalesced": n, "idInUse": n, "nextCursor": "…"}`. Sweep by feeding `nextCursor` back as `cursor` until it comes back null; the counters report rows that stayed archived and never block the walk |
 | `POST /purge/disabled` body `{"olderThan": "<instant>", "eventType": …, "limit": 1000}` | purge old `DISABLED` events |
 | `POST /purge/archive` body `{"archivedBefore": "<instant>", "limit": 1000}` | purge archive rows |
 
 Responses are thin records (`EventResponse`, `EventPageResponse`,
-`CountResponse`, …) so the domain types can evolve without breaking
-the HTTP contract. Payloads appear as `payload` (text) or
-`payloadBase64` (binary), exactly one set.
+`CountResponse`, `ReplayResponse`, `ReplayAllResponse`, …) so the
+domain types can evolve without breaking the HTTP contract. Payloads
+appear as `payload` (text) or `payloadBase64` (binary), exactly one
+set; events carry their `dedupKey` when they have one.
+
+A rejected argument — a malformed `cursor`, a non-positive `limit`, a
+replay window whose `archivedAfter` is not strictly before
+`archivedBefore` — comes back as **400** with the reason in
+`{"error": …}`, not as a 500. The handler is scoped to this controller
+rather than declared as a `@ControllerAdvice`, so enabling the admin
+surface never changes how the host application renders its own
+exceptions.
 
 ### Security model — the module's headline feature
 
@@ -100,6 +111,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   https://svc/outbox-admin/events/6f9d…/reenable
+
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"eventType": "ORDER_SYNC", "archivedAfter": "2026-09-03T10:00:00Z", "archivedBefore": "2026-09-03T12:00:00Z"}' \
+  https://svc/outbox-admin/events/replay-all
 ```
 
 ## Related

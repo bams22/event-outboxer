@@ -11,28 +11,37 @@ package io.github.bams22.outboxer.admin.rest;
 
 import io.github.bams22.outboxer.admin.rest.AdminDtos.ArchivedEventResponse;
 import io.github.bams22.outboxer.admin.rest.AdminDtos.CountResponse;
+import io.github.bams22.outboxer.admin.rest.AdminDtos.ErrorResponse;
 import io.github.bams22.outboxer.admin.rest.AdminDtos.EventPageResponse;
 import io.github.bams22.outboxer.admin.rest.AdminDtos.EventResponse;
 import io.github.bams22.outboxer.admin.rest.AdminDtos.PurgeArchiveRequest;
 import io.github.bams22.outboxer.admin.rest.AdminDtos.PurgeDisabledRequest;
 import io.github.bams22.outboxer.admin.rest.AdminDtos.ReenableAllRequest;
+import io.github.bams22.outboxer.admin.rest.AdminDtos.ReplayAllRequest;
+import io.github.bams22.outboxer.admin.rest.AdminDtos.ReplayAllResponse;
+import io.github.bams22.outboxer.admin.rest.AdminDtos.ReplayResponse;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
+import io.github.bams22.outboxer.spi.OutboxAdmin.ReplayAllResult;
+import io.github.bams22.outboxer.spi.OutboxAdmin.ReplayOutcome;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -105,6 +114,47 @@ public class OutboxAdminController {
                         request.eventType(), request.createdBefore(), request.limitOrDefault()));
     }
 
+    /**
+     * Replay one archived event (ADR-0033): 200 with the outcome — {@code REPLAYED}, or {@code
+     * COALESCED} when a PENDING event with the same {@code (event_type, dedup_key)} already exists
+     * (nothing inserted, the archive row is kept) — 404 when the id is not in the archive, 409 when
+     * the hot table already holds that id, which is a live event to look at rather than a replay.
+     */
+    @PostMapping("/events/{id}/replay")
+    public ResponseEntity<Object> replay(@PathVariable UUID id) {
+        ReplayOutcome outcome = admin.replayFromArchive(id);
+        return switch (outcome) {
+            case NOT_FOUND -> ResponseEntity.notFound().build();
+            case ID_IN_USE ->
+                    ResponseEntity.status(409)
+                            .body(
+                                    new AdminDtos.ErrorResponse(
+                                            "an event with this id is already in the outbox"));
+            case REPLAYED, COALESCED -> ResponseEntity.ok(new ReplayResponse(outcome.name()));
+        };
+    }
+
+    /**
+     * Bulk replay of archived events of one type, optionally bounded to an archived_at window.
+     * Sweep by feeding {@code nextCursor} back as {@code cursor} until it comes back null — rows
+     * that stayed archived are counted but never block the walk.
+     */
+    @PostMapping("/events/replay-all")
+    public ReplayAllResponse replayAll(@RequestBody ReplayAllRequest request) {
+        ReplayAllResult result =
+                admin.replayAllFromArchive(
+                        request.eventType(),
+                        request.archivedAfter(),
+                        request.archivedBefore(),
+                        request.limitOrDefault(),
+                        AdminDtos.decodeArchiveCursor(request.cursor()));
+        return new ReplayAllResponse(
+                result.replayed(),
+                result.coalesced(),
+                result.idInUse(),
+                AdminDtos.encodeArchiveCursor(result.next()));
+    }
+
     /** Delete old DISABLED rows. */
     @PostMapping("/purge/disabled")
     public CountResponse purgeDisabled(@RequestBody PurgeDisabledRequest request) {
@@ -118,5 +168,24 @@ public class OutboxAdminController {
     public CountResponse purgeArchive(@RequestBody PurgeArchiveRequest request) {
         return new CountResponse(
                 admin.purgeArchive(request.archivedBefore(), request.limitOrDefault()));
+    }
+
+    /**
+     * A rejected argument is the caller's mistake, not a server fault: a malformed cursor, a
+     * non-positive limit, a replay window whose bounds cannot enclose anything. The {@link
+     * OutboxAdmin} port signals all of these with {@link IllegalArgumentException}, and without
+     * this handler each would surface as a 500 with a stack trace — indistinguishable from the
+     * store actually being broken, and unactionable for whoever wrote the request.
+     *
+     * <p>Scoped to this controller rather than a {@code @ControllerAdvice}: the admin surface is
+     * opt-in and must not change how the host application renders its own exceptions.
+     *
+     * <p>The message is the port's own wording (it never contains request data beyond the values
+     * the caller just sent), so echoing it is what makes the 400 useful.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse badRequest(IllegalArgumentException ex) {
+        return new ErrorResponse(ex.getMessage() == null ? "invalid request" : ex.getMessage());
     }
 }

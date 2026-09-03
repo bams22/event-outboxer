@@ -20,7 +20,7 @@ import org.springframework.util.ClassUtils;
  *
  * <p>The locations live under {@code event-outboxer/migration/} — deliberately outside {@code
  * db/migration/}, which Flyway scans recursively for the application's own instance. Keeping the
- * outbox SQL out of that tree is what prevents the library's {@code V001…V007} from colliding with
+ * outbox SQL out of that tree is what prevents the library's {@code V001…V009} from colliding with
  * the application's version numbers.
  *
  * <p>Resolution is classpath-driven: {@link #CORE} and {@link #ARCHIVE} always (both ship in {@code
@@ -34,7 +34,7 @@ public final class OutboxFlywayLocations {
     /** {@code events}, {@code workers} and their indexes (V001, V003, V004, V006). */
     public static final String CORE = "classpath:event-outboxer/migration/core";
 
-    /** {@code event_archive} (V002, V007). */
+    /** {@code event_archive} (V002, V007, V008, V009). */
     public static final String ARCHIVE = "classpath:event-outboxer/migration/archive";
 
     /**

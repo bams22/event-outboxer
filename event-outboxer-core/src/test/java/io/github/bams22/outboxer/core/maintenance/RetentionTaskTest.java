@@ -15,18 +15,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.RetentionPurgedInfo;
 import io.github.bams22.outboxer.core.config.RetentionConfig;
-import io.github.bams22.outboxer.domain.ArchivedEvent;
-import io.github.bams22.outboxer.domain.Event;
-import io.github.bams22.outboxer.domain.EventStatus;
-import io.github.bams22.outboxer.spi.AdminCursor;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
+import io.github.bams22.outboxer.spi.contracts.support.StubOutboxAdmin;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -41,7 +36,7 @@ class RetentionTaskTest {
         AtomicInteger archiveRemaining = new AtomicInteger(23);
         AtomicInteger disabledCalls = new AtomicInteger();
         OutboxAdmin admin =
-                new StubAdmin() {
+                new StubOutboxAdmin() {
                     @Override
                     public int purgeArchive(Instant archivedBefore, int limit) {
                         int purged = Math.min(limit, archiveRemaining.get());
@@ -89,7 +84,7 @@ class RetentionTaskTest {
     void sweepFailurePropagatesAfterBothSweeps() {
         AtomicInteger disabledCalls = new AtomicInteger();
         OutboxAdmin admin =
-                new StubAdmin() {
+                new StubOutboxAdmin() {
                     @Override
                     public int purgeArchive(Instant archivedBefore, int limit) {
                         throw new IllegalStateException("archive table missing (simulated)");
@@ -142,39 +137,4 @@ class RetentionTaskTest {
     }
 
     /** All-empty base so tests override only what they observe. */
-    private static class StubAdmin implements OutboxAdmin {
-        @Override
-        public List<Event> findByStatus(
-                EventStatus status,
-                @Nullable String eventType,
-                int limit,
-                @Nullable AdminCursor after) {
-            return new ArrayList<>();
-        }
-
-        @Override
-        public Optional<ArchivedEvent> findInArchive(UUID id) {
-            return Optional.empty();
-        }
-
-        @Override
-        public boolean reenable(UUID id) {
-            return false;
-        }
-
-        @Override
-        public int reenableAll(String eventType, @Nullable Instant createdBefore, int limit) {
-            return 0;
-        }
-
-        @Override
-        public int purgeDisabled(@Nullable String eventType, Instant olderThan, int limit) {
-            return 0;
-        }
-
-        @Override
-        public int purgeArchive(Instant archivedBefore, int limit) {
-            return 0;
-        }
-    }
 }

@@ -26,8 +26,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * In-memory {@link OutboxAdmin} over the rows of an {@link InMemoryEventStore}. The in-memory
- * adapter has no archive (ADR-0008), so {@link #findInArchive} is always empty and {@link
- * #purgeArchive} is a no-op.
+ * adapter has no archive (ADR-0008), so {@link #findInArchive} is always empty, {@link
+ * #purgeArchive} is a no-op and the replay operations are inherited from {@link OutboxAdmin}'s
+ * archive-less defaults.
  */
 public final class InMemoryOutboxAdmin implements OutboxAdmin {
 

@@ -24,8 +24,9 @@ import lombok.Builder;
  * @param tablePrefix optional prefix applied before table names; defaults to empty. Useful when
  *     multiple outboxes share a schema.
  * @param archiveEnabled when {@code true}, {@code markProcessed} copies the row to {@code
- *     event_archive} before deleting from {@code events}. The archive migration {@code V002} must
- *     have been applied.
+ *     event_archive} before deleting from {@code events}. The archive migrations {@code
+ *     V002}/{@code V007}/{@code V008} must have been applied — the archiving statement names their
+ *     columns.
  * @param metricsCacheTtl TTL of the in-memory cache for {@link
  *     io.github.bams22.outboxer.spi.EventStore#metricsSnapshot()}; short so dashboards stay fresh
  *     but long enough not to hammer the DB.

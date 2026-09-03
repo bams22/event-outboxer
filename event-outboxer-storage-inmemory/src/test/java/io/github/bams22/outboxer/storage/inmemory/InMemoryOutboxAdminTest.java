@@ -39,5 +39,9 @@ class InMemoryOutboxAdminTest extends AbstractOutboxAdminContractTest {
     void archiveOperationsAreNoOps() {
         assertThat(admin.findInArchive(UUID.randomUUID())).isEmpty();
         assertThat(admin.purgeArchive(Instant.now().plusSeconds(3600), 100)).isZero();
+        assertThat(admin.replayFromArchive(UUID.randomUUID()))
+                .isEqualTo(OutboxAdmin.ReplayOutcome.NOT_FOUND);
+        assertThat(admin.replayAllFromArchive("ADMIN_A", null, null, 100, null))
+                .isEqualTo(new OutboxAdmin.ReplayAllResult(0, 0, 0, null));
     }
 }

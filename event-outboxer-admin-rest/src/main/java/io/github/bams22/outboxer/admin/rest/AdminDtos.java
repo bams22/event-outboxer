@@ -13,6 +13,7 @@ import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.spi.AdminCursor;
+import io.github.bams22.outboxer.spi.ArchiveCursor;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -43,7 +44,8 @@ public final class AdminDtos {
             String payloadFormat,
             String payloadClass,
             @Nullable String payload,
-            @Nullable String payloadBase64) {
+            @Nullable String payloadBase64,
+            @Nullable String dedupKey) {
 
         static EventResponse from(Event e) {
             return new EventResponse(
@@ -57,7 +59,8 @@ public final class AdminDtos {
                     e.payloadFormat(),
                     e.payloadClass(),
                     e.payload().text(),
-                    base64(e.payload()));
+                    base64(e.payload()),
+                    e.dedupKey());
         }
     }
 
@@ -73,7 +76,8 @@ public final class AdminDtos {
             String payloadFormat,
             String payloadClass,
             @Nullable String payload,
-            @Nullable String payloadBase64) {
+            @Nullable String payloadBase64,
+            @Nullable String dedupKey) {
 
         static ArchivedEventResponse from(ArchivedEvent e) {
             return new ArchivedEventResponse(
@@ -87,7 +91,8 @@ public final class AdminDtos {
                     e.payloadFormat(),
                     e.payloadClass(),
                     e.payload().text(),
-                    base64(e.payload()));
+                    base64(e.payload()),
+                    e.dedupKey());
         }
     }
 
@@ -132,6 +137,34 @@ public final class AdminDtos {
         }
     }
 
+    /**
+     * Bulk replay-from-archive request (ADR-0033); both window bounds are exclusive. {@code cursor}
+     * continues a sweep — pass back the {@code nextCursor} of the previous response.
+     */
+    public record ReplayAllRequest(
+            String eventType,
+            @Nullable Instant archivedAfter,
+            @Nullable Instant archivedBefore,
+            @Nullable Integer limit,
+            @Nullable String cursor) {
+
+        int limitOrDefault() {
+            return limit == null ? 100 : limit;
+        }
+    }
+
+    /** Outcome of a single replay-from-archive: {@code REPLAYED} or {@code COALESCED}. */
+    public record ReplayResponse(String outcome) {}
+
+    /**
+     * Counts of a bulk replay plus the cursor to continue from. Rows that stayed archived are
+     * reported per reason — {@code coalesced} (a live PENDING event holds the same dedup key),
+     * {@code idInUse} (the hot table already holds the id) — and neither stops the sweep: keep
+     * calling with {@code nextCursor} until it comes back null.
+     */
+    public record ReplayAllResponse(
+            int replayed, int coalesced, int idInUse, @Nullable String nextCursor) {}
+
     /** Row-count result of a bulk operation. */
     public record CountResponse(int count) {}
 
@@ -157,5 +190,23 @@ public final class AdminDtos {
 
     static String encodeCursor(Event last) {
         return last.createdAt() + "_" + last.id();
+    }
+
+    /** Same wire shape as {@link #decodeCursor}, over the archive's {@code (archivedAt, id)}. */
+    static @Nullable ArchiveCursor decodeArchiveCursor(@Nullable String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        int sep = cursor.indexOf('_');
+        if (sep <= 0) {
+            throw new IllegalArgumentException("malformed cursor: " + cursor);
+        }
+        return new ArchiveCursor(
+                Instant.parse(cursor.substring(0, sep)),
+                UUID.fromString(cursor.substring(sep + 1)));
+    }
+
+    static @Nullable String encodeArchiveCursor(@Nullable ArchiveCursor cursor) {
+        return cursor == null ? null : cursor.archivedAt() + "_" + cursor.id();
     }
 }

@@ -913,8 +913,10 @@ outbox.
 Operational surface over the `OutboxAdmin` SPI port (ADR-0019): list
 events by status with keyset pagination, look events up in the
 archive, re-enable `DISABLED` events (single or bulk, with a fresh
-attempts budget), purge old rows. Two interchangeable surfaces, each
-activated by adding its module next to the starter:
+attempts budget), purge old rows, and replay archived events back into
+the hot table for re-execution (single or bulk, ADR-0033). Two
+interchangeable surfaces, each activated by adding its module next to
+the starter:
 
 - **`event-outboxer-admin-actuator`** — Actuator endpoint
   `outboxadmin`. Not exposed by default; expose with

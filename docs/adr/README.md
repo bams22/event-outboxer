@@ -61,6 +61,7 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0019: Admin and retention surface](0019-admin-and-retention-surface.md)
 - [ADR-0020: In-memory storage is test infrastructure only](0020-no-inmemory-storage-in-production.md)
 - [ADR-0021: Dedup key — single in-flight event per key](0021-dedup-key-single-inflight-per-key.md)
+- [ADR-0033: Archive dedup key + replay from archive](0033-archive-dedup-key-and-replay-from-archive.md)
 
 ### Code conventions
 

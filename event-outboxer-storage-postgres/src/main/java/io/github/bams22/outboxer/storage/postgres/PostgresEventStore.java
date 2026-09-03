@@ -141,14 +141,15 @@ public final class PostgresEventStore implements EventStore {
                         + "  WHERE id = ? AND version = ? AND claimed_by = ? AND status ="
                         + " 'PROCESSING'  RETURNING id, event_type, payload, payload_binary,"
                         + " payload_format, payload_class, priority, attempts, created_at, run_at,"
-                        + " last_fail_reason, trace_context) INSERT INTO "
+                        + " last_fail_reason, trace_context, dedup_key) INSERT INTO "
                         + tables.archive()
                         + " (id, event_type, payload, payload_binary, payload_format,"
                         + " payload_class, priority, attempts, created_at, run_at,"
-                        + " last_fail_reason, trace_context, archived_at, archived_by) SELECT id,"
+                        + " last_fail_reason, trace_context, dedup_key, archived_at, archived_by)"
+                        + " SELECT id,"
                         + " event_type, payload, payload_binary, payload_format, payload_class,"
                         + " priority, attempts, created_at, run_at, last_fail_reason,"
-                        + " trace_context, now(), ? FROM del";
+                        + " trace_context, dedup_key, now(), ? FROM del";
 
         this.sqlMarkForRetry =
                 "UPDATE "
@@ -474,13 +475,15 @@ public final class PostgresEventStore implements EventStore {
                 + ") AS k(id, ver)   WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = ?"
                 + " AND e.status = 'PROCESSING'  RETURNING e.id, e.event_type, e.payload,"
                 + " e.payload_binary, e.payload_format, e.payload_class, e.priority, e.attempts,"
-                + " e.created_at, e.run_at, e.last_fail_reason, e.trace_context) INSERT INTO "
+                + " e.created_at, e.run_at, e.last_fail_reason, e.trace_context, e.dedup_key)"
+                + " INSERT INTO "
                 + tables.archive()
                 + " (id, event_type, payload, payload_binary, payload_format, payload_class,"
                 + " priority, attempts, created_at, run_at, last_fail_reason, trace_context,"
-                + " archived_at, archived_by) SELECT id, event_type, payload, payload_binary,"
-                + " payload_format, payload_class, priority, attempts, created_at, run_at,"
-                + " last_fail_reason, trace_context, now(), ? FROM del RETURNING id";
+                + " dedup_key, archived_at, archived_by) SELECT id, event_type, payload,"
+                + " payload_binary, payload_format, payload_class, priority, attempts, created_at,"
+                + " run_at, last_fail_reason, trace_context, dedup_key, now(), ? FROM del"
+                + " RETURNING id";
     }
 
     /**

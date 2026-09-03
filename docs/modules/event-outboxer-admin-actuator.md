@@ -2,9 +2,11 @@
 
 An Actuator endpoint (`outboxadmin`) over the `OutboxAdmin` SPI
 ([ADR-0019](../adr/0019-admin-and-retention-surface.md)): inspect
-`DISABLED` / archived events, re-enable them after a fix, purge old
-rows — all through the management port with the standard Actuator
-exposure and security model.
+`DISABLED` / archived events, re-enable them after a fix, replay
+archived events for re-execution
+([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)),
+purge old rows — all through the management port with the standard
+Actuator exposure and security model.
 
 | | |
 |---|---|
@@ -35,8 +37,8 @@ read / write / delete operations:
 |---|---|
 | `GET /actuator/outboxadmin?status=DISABLED&eventType=X&limit=50&cursor=…` | list events, keyset-paginated newest-first; all params optional (defaults `status=DISABLED`, `limit=50`); response = `events` + `nextCursor` |
 | `GET /actuator/outboxadmin/{id}` | one event — active store first, then the archive; 404 when absent |
-| `POST /actuator/outboxadmin/{id}` (empty body) | re-enable one `DISABLED` event → `PENDING` with a **fresh attempts budget**; response `{"reenabled": true/false}` |
-| `POST /actuator/outboxadmin` body `{"eventType": "X", "limit": 100}` | bulk re-enable; `eventType` required |
+| `POST /actuator/outboxadmin/{id}` (empty body) | re-enable one `DISABLED` event → `PENDING` with a **fresh attempts budget**; response `{"reenabled": true/false}`. With body `{"action": "replay"}`: replay one archived event (ADR-0033); response `{"outcome": "REPLAYED"/"COALESCED"/"ID_IN_USE"/"NOT_FOUND"}` — `ID_IN_USE` means the hot table already holds that id (the app re-published the UUID), so the archive row is kept |
+| `POST /actuator/outboxadmin` body `{"eventType": "X", "limit": 100}` | bulk re-enable; `eventType` required. With `"action": "replay"` (+ optional ISO-instant `archivedAfter` / `archivedBefore` window and a `cursor`): bulk replay from the archive; response `{"replayed": n, "coalesced": n, "idInUse": n, "nextCursor": "…"}`. Sweep by feeding `nextCursor` back as `cursor` until it comes back null — rows that stay archived are counted but never block the walk |
 | `DELETE /actuator/outboxadmin?target=disabled&olderThanDays=90&limit=1000` | purge; `target` = `disabled` \| `archive`, `olderThanDays` required |
 
 Event payloads appear as `payload` (text formats, verbatim JSON) or
@@ -48,7 +50,8 @@ The pagination `cursor` is opaque (`<iso-instant>_<uuid>`); pass back
 The endpoint activates only when `OutboxAdmin` and `EventStore` beans
 exist — with the PostgreSQL adapter the starter wires
 `PostgresOutboxAdmin` automatically. Note the in-memory adapter has no
-archive: `findInArchive` is empty and archive purge is a no-op.
+archive: `findInArchive` is empty, archive purge is a no-op and replay
+reports `NOT_FOUND` / zero counts.
 
 ## When to use it
 
@@ -83,7 +86,7 @@ management:
 There are no `event-outboxer.*` properties of its own.
 
 **Security:** the endpoint is write-capable and destructive
-(re-enable, purge). Do not expose it on a public port; secure it like
+(re-enable, replay, purge). Do not expose it on a public port; secure it like
 any other sensitive Actuator endpoint — separate management port
 and/or a `SecurityFilterChain` rule:
 

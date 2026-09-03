@@ -35,6 +35,9 @@ import org.jspecify.annotations.Nullable;
  * @param traceContext propagated trace context
  * @param archivedAt time the row was moved to the archive
  * @param archivedBy worker that finalized the event
+ * @param dedupKey coalescing key the event carried in the hot table (ADR-0021), copied for audit
+ *     and replay (ADR-0033); the archive enforces no uniqueness on it. {@code null} for key-less
+ *     events and for rows archived before migration V008
  */
 @Builder
 public record ArchivedEvent(
@@ -50,7 +53,8 @@ public record ArchivedEvent(
         @Nullable String lastFailReason,
         Map<String, String> traceContext,
         Instant archivedAt,
-        String archivedBy) {
+        String archivedBy,
+        @Nullable String dedupKey) {
 
     public ArchivedEvent {
         Objects.requireNonNull(id, "id must not be null");

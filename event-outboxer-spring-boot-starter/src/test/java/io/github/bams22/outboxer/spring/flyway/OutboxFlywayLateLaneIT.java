@@ -30,7 +30,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * A lane adopted late (ADR-0028): the application ran without {@code
- * event-outboxer-lock-postgres-lease} — core and archive migrations up to V007 applied — and adds
+ * event-outboxer-lock-postgres-lease} — core and archive migrations up to V009 applied — and adds
  * the module afterwards. V005 is then lower than the current schema version; the starter's instance
  * runs with {@code outOfOrder}, so it applies instead of failing validation.
  */
@@ -61,7 +61,7 @@ class OutboxFlywayLateLaneIT {
     }
 
     @Test
-    @DisplayName("lock lane added after V007 → V005 applies out of order on the next start")
+    @DisplayName("lock lane added after V009 → V005 applies out of order on the next start")
     void lockLaneAdoptedLate() {
         ApplicationContextRunner runner =
                 new ApplicationContextRunner()
@@ -79,21 +79,23 @@ class OutboxFlywayLateLaneIT {
                         ctx -> {
                             assertThat(ctx).hasNotFailed();
                             assertThat(versions())
-                                    .containsExactly("001", "002", "003", "004", "006", "007");
+                                    .containsExactly(
+                                            "001", "002", "003", "004", "006", "007", "008", "009");
                             assertThat(tables()).doesNotContain("entity_locks");
                         });
 
-        // 2. The lease module is added later: V005 is below the schema's V007.
+        // 2. The lease module is added later: V005 is below the schema's V009.
         runner.run(
                 ctx -> {
                     assertThat(ctx).hasNotFailed();
                     assertThat(versions())
-                            .containsExactly("001", "002", "003", "004", "006", "007", "005");
+                            .containsExactly(
+                                    "001", "002", "003", "004", "006", "007", "008", "009", "005");
                     assertThat(tables()).contains("entity_locks");
                 });
 
         // 3. Steady state: nothing left to apply.
-        runner.run(ctx -> assertThat(versions()).hasSize(7));
+        runner.run(ctx -> assertThat(versions()).hasSize(9));
     }
 
     private static List<String> versions() {

@@ -3,7 +3,12 @@
 ## Status
 
 Accepted — amended 2026-07-26 (archive lookup and retention now exist
-via the OutboxAdmin port; see the Amendment section at the bottom)
+via the OutboxAdmin port; see the Amendment section at the bottom);
+amended 2026-09-03 by [ADR-0033](0033-archive-dedup-key-and-replay-from-archive.md)
+(the archive schema gains a nullable `dedup_key` column — migration
+V008 — and archived events can be replayed back into the hot table via
+`OutboxAdmin.replayFromArchive` / `replayAllFromArchive`; the schema
+block below predates V007/V008 and is kept as the original decision)
 
 ## Date
 

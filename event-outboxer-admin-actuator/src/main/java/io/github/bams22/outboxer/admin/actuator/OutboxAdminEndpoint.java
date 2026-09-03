@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.spi.AdminCursor;
+import io.github.bams22.outboxer.spi.ArchiveCursor;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import java.time.Duration;
@@ -43,8 +44,11 @@ import org.springframework.boot.actuate.endpoint.annotation.WriteOperation;
  * <pre>
  * GET    /actuator/outboxadmin?status=DISABLED&amp;eventType=X&amp;limit=50&amp;cursor=...
  * GET    /actuator/outboxadmin/{id}
- * POST   /actuator/outboxadmin/{id}            {"action": "reenable"}
+ * POST   /actuator/outboxadmin/{id}            {"action": "reenable"} | {"action": "replay"}
  * POST   /actuator/outboxadmin                 {"eventType": "X", "limit": 100}   (reenable-all)
+ *                                              + {"action": "replay", "archivedAfter": ...,
+ *                                                 "archivedBefore": ..., "cursor": ...}
+ *                                                                                 (replay-all)
  * DELETE /actuator/outboxadmin?target=disabled&amp;olderThanDays=90&amp;limit=1000
  * </pre>
  */
@@ -98,19 +102,84 @@ public class OutboxAdminEndpoint {
         return admin.findInArchive(uuid).map(OutboxAdminEndpoint::toArchivedMap).orElse(null);
     }
 
-    /** Re-enable one DISABLED event. */
+    /**
+     * Re-enable one DISABLED event (default), or replay one archived event with {@code
+     * action=replay} (ADR-0033). One {@code @WriteOperation} per {@code POST /{id}} path is all
+     * Actuator allows, so the verb is discriminated by the {@code action} parameter — the same
+     * pattern as {@link #purge}'s {@code target}.
+     */
     @WriteOperation
-    public Map<String, Object> reenable(@Selector String id) {
-        boolean reenabled = admin.reenable(UUID.fromString(id));
-        return Map.of("reenabled", reenabled);
+    public Map<String, Object> reenable(
+            @Selector String id, @org.springframework.lang.Nullable @Nullable String action) {
+        UUID uuid = UUID.fromString(id);
+        return switch (action == null ? "reenable" : action) {
+            case "reenable" -> Map.of("reenabled", admin.reenable(uuid));
+            case "replay" -> Map.of("outcome", admin.replayFromArchive(uuid).name());
+            default ->
+                    throw new IllegalArgumentException(
+                            "action must be 'reenable' or 'replay', got '" + action + "'");
+        };
     }
 
-    /** Bulk re-enable for one event type. */
+    /**
+     * Bulk re-enable for one event type (default), or bulk replay from the archive with {@code
+     * action=replay} (ADR-0033); the ISO-instant window parameters and {@code cursor} apply to
+     * replay only.
+     *
+     * <p>A replay response carries {@code nextCursor}: feed it back as {@code cursor} until it
+     * comes back null. Rows that stayed archived (coalesced, or their id already live) are counted
+     * but do not stop the sweep — the cursor advances past them.
+     */
     @WriteOperation
-    public Map<String, Object> reenableAll(
-            String eventType, @org.springframework.lang.Nullable @Nullable Integer limit) {
-        int count = admin.reenableAll(eventType, null, limit == null ? 100 : limit);
-        return Map.of("reenabled", count);
+    public Map<String, @Nullable Object> reenableAll(
+            String eventType,
+            @org.springframework.lang.Nullable @Nullable Integer limit,
+            @org.springframework.lang.Nullable @Nullable String action,
+            @org.springframework.lang.Nullable @Nullable String archivedAfter,
+            @org.springframework.lang.Nullable @Nullable String archivedBefore,
+            @org.springframework.lang.Nullable @Nullable String cursor) {
+        int resolvedLimit = limit == null ? 100 : limit;
+        if ("replay".equals(action)) {
+            OutboxAdmin.ReplayAllResult result =
+                    admin.replayAllFromArchive(
+                            eventType,
+                            parseInstant("archivedAfter", archivedAfter),
+                            parseInstant("archivedBefore", archivedBefore),
+                            resolvedLimit,
+                            CursorCodec.decodeArchive(cursor));
+            Map<String, @Nullable Object> body = new LinkedHashMap<>();
+            body.put("replayed", result.replayed());
+            body.put("coalesced", result.coalesced());
+            body.put("idInUse", result.idInUse());
+            body.put("nextCursor", CursorCodec.encodeArchive(result.next()));
+            return body;
+        }
+        if (action != null && !"reenable".equals(action)) {
+            throw new IllegalArgumentException(
+                    "action must be 'reenable' or 'replay', got '" + action + "'");
+        }
+        if (archivedAfter != null || archivedBefore != null || cursor != null) {
+            throw new IllegalArgumentException(
+                    "archivedAfter/archivedBefore/cursor apply to action=replay only");
+        }
+        return Map.of("reenabled", admin.reenableAll(eventType, null, resolvedLimit));
+    }
+
+    /**
+     * ISO-instant parameter parsing that reports a bad value as a client error. {@code
+     * Instant.parse} throws {@link java.time.format.DateTimeParseException}, which Actuator maps to
+     * HTTP 500; {@link IllegalArgumentException} is what it renders as a 400.
+     */
+    private static @Nullable Instant parseInstant(String name, @Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (java.time.format.DateTimeParseException ex) {
+            throw new IllegalArgumentException(
+                    name + " must be an ISO-8601 instant, got '" + value + "'", ex);
+        }
     }
 
     /**
@@ -148,6 +217,7 @@ public class OutboxAdminEndpoint {
         m.put("createdAt", e.createdAt().toString());
         m.put("runAt", e.runAt().toString());
         m.put("lastFailReason", e.lastFailReason());
+        m.put("dedupKey", e.dedupKey());
         m.put("payloadFormat", e.payloadFormat());
         m.put("payloadClass", e.payloadClass());
         putPayload(m, e.payload());
@@ -163,6 +233,7 @@ public class OutboxAdminEndpoint {
         m.put("createdAt", e.createdAt().toString());
         m.put("archivedAt", e.archivedAt().toString());
         m.put("archivedBy", e.archivedBy());
+        m.put("dedupKey", e.dedupKey());
         m.put("payloadFormat", e.payloadFormat());
         m.put("payloadClass", e.payloadClass());
         putPayload(m, e.payload());
@@ -203,6 +274,23 @@ public class OutboxAdminEndpoint {
 
         static String encode(Event last) {
             return last.createdAt() + "_" + last.id();
+        }
+
+        static @Nullable ArchiveCursor decodeArchive(@Nullable String cursor) {
+            if (cursor == null || cursor.isBlank()) {
+                return null;
+            }
+            int sep = cursor.indexOf('_');
+            if (sep <= 0) {
+                throw new IllegalArgumentException("malformed cursor: " + cursor);
+            }
+            return new ArchiveCursor(
+                    Instant.parse(cursor.substring(0, sep)),
+                    UUID.fromString(cursor.substring(sep + 1)));
+        }
+
+        static @Nullable String encodeArchive(@Nullable ArchiveCursor cursor) {
+            return cursor == null ? null : cursor.archivedAt() + "_" + cursor.id();
         }
     }
 }

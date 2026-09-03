@@ -7,7 +7,89 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Breaking
+- **`ArchivedEvent` gains a trailing `@Nullable String dedupKey`
+  component.** The canonical constructor's arity changes; `@Builder`
+  users are unaffected. `null` for key-less events and for rows
+  archived before migration V008.
+
 ### Added
+- **`OutboxAdmin` grows 6 → 8 methods (ADR-0019 amendment,
+  ADR-0033).** `replayFromArchive(UUID)` → `ReplayOutcome {REPLAYED,
+  COALESCED, ID_IN_USE, NOT_FOUND}` and
+  `replayAllFromArchive(eventType, archivedAfter, archivedBefore,
+  limit, after)` → `ReplayAllResult(replayed, coalesced, idInUse,
+  next)` (both types nested in the interface), plus the new
+  `ArchiveCursor(archivedAt, id)` keyset cursor alongside the existing
+  `AdminCursor`. Both methods are `default`, carrying the answer for a
+  store without an archive — argument validation, then `NOT_FOUND` /
+  zero counts with a null cursor — so third-party implementations keep
+  compiling and only adapters that *have* an archive override them.
+- **The archive carries the dedup key (ADR-0033, migration V008).**
+  `event_archive.dedup_key` — nullable, un-indexed, audit-only; both
+  archiving CTEs copy it, `findInArchive` returns it, and the admin
+  surfaces expose it (`dedupKey` also added to the REST
+  `EventResponse` and the Actuator event maps). Runtime coalescing
+  semantics are unchanged — uniqueness stays on the hot table's
+  partial index only.
+  **Upgrade note for `archive-enabled=true` deployments:** the
+  archiving statement now names `dedup_key`, so V008 must be applied
+  with this upgrade or every `markProcessed` fails at runtime. The
+  starter-managed Flyway instance applies it automatically; Liquibase
+  users must pick up the `outbox-archive-008-dedup-key` changeset; the
+  ADR-0028 legacy-upgrade recipe is unchanged:
+  `event-outboxer.flyway.baseline-version=7` — the highest migration a
+  ≤ 0.4.0 install actually applied. Do **not** raise it to 8: Flyway
+  treats every migration at or below the baseline as already applied, so
+  a baseline of 8 skips V008 forever and produces exactly the
+  `markProcessed` failure described above.
+- **Replay from archive (ADR-0033).** Operators can move archived
+  events back into the hot table for re-execution — legal by contract
+  since delivery is at-least-once and handlers are idempotent
+  (ADR-0015). One atomic insert-first CTE: the replayed row re-enters
+  as a fresh `PENDING` (attempts 0, version 0, `created_at = now`,
+  `run_at = now` — a replay is a new lifecycle and gets a new retention
+  clock; the original publish time stays readable in the archive), and
+  when a `PENDING` event with the same `(event_type, dedup_key)`
+  already exists the replay *coalesces* — nothing is inserted and the
+  archive row is kept. A row whose id is already live in the hot table
+  — the application re-published that explicit UUID — is reported
+  rather than fatal: `ReplayOutcome.ID_IN_USE` for a single replay
+  (REST 409), the `idInUse` counter in bulk. It is skipped, the archive
+  row is kept and the rest of the batch still moves; without that one
+  such row would abort the whole statement and wedge the sweep on that
+  window. Exposed as `OutboxAdmin.replayFromArchive` /
+  `replayAllFromArchive`, REST `POST /events/{id}/replay` +
+  `/events/replay-all`, and the Actuator write operations'
+  `action=replay` discriminator.
+  **One thing to get right when adopting it:** drive a bulk sweep with
+  the cursor, not the counters. Rows that stay archived (coalesced or
+  `idInUse`) are found again by the same window, so no counter ends the
+  loop; `ReplayAllResult.next()` is the `ArchiveCursor` of the last row
+  the batch considered — pass it back as `after` and loop until it
+  comes back null. A window whose `archivedAfter` is not strictly
+  before `archivedBefore` (both bounds are exclusive) is rejected with
+  `IllegalArgumentException` instead of answered with zeroed counts —
+  swapped date pickers must not read as "already replayed".
+- **Bulk replay is indexed (ADR-0033, migration V009).**
+  `idx_archive_event_type_archived_at (event_type, archived_at, id)`
+  covers the sweep's access path — `WHERE event_type = ? [AND
+  archived_at …] ORDER BY archived_at, id LIMIT ?` — which neither
+  V002 index served. Without it each batch walked the archive in
+  `archived_at` order filtering on type, while holding the locks of its
+  own INSERT into `events` and DELETE from the archive. Index only:
+  applying it late costs performance, not correctness. Liquibase users
+  pick it up as the `outbox-archive-009-replay-index` changeset.
+- **The admin REST controller answers a rejected argument with 400
+  instead of 500.** A malformed cursor, a non-positive limit or a
+  replay window whose bounds cannot enclose anything reach the
+  controller as `IllegalArgumentException`; a controller-scoped
+  `@ExceptionHandler` now renders them as `400` with the reason in the
+  usual `{"error": …}` body. Scoped to this controller, not a
+  `@ControllerAdvice`, so an opt-in admin surface never changes how the
+  host application renders its own exceptions. (The Actuator endpoint
+  already returned 400 for these — Spring Boot maps
+  `IllegalArgumentException` out of a `@WriteOperation` itself.)
 - **New module `event-outboxer-relay-spring-cloud-stream`
   (ADR-0032)** — a ready-made broker relay over Spring Cloud Stream:
   the `StreamOutboxPublisher` facade stores messages (binding, key,

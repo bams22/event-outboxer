@@ -37,4 +37,22 @@
             stripComments="false"
             endDelimiter=";"/>
     </changeSet>
+
+    <changeSet id="outbox-archive-008-dedup-key" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="event-outboxer/migration/archive/V008__outbox_archive_dedup_key.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
+
+    <changeSet id="outbox-archive-009-replay-index" author="event-outboxer" dbms="postgresql">
+        <sqlFile
+            path="event-outboxer/migration/archive/V009__outbox_archive_replay_index.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="false"
+            endDelimiter=";"/>
+    </changeSet>
 </databaseChangeLog>

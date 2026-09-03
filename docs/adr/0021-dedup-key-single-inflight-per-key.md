@@ -7,6 +7,11 @@ coalesced publish fires `OutboxListener.onEventCoalesced` with the
 existing event's id, the event type and the dedup key, complementing
 the `event_outboxer.coalesced_into` span attribute with an aggregate
 per-type signal; `onEventPublished` still fires only for real inserts)
+(amended 2026-09-03 by
+[ADR-0033](0033-archive-dedup-key-and-replay-from-archive.md): the
+archive now carries the dedup key — nullable, un-indexed, audit-only —
+and replay-from-archive reuses this ADR's `ON CONFLICT` arbiter;
+coalescing mechanics are unchanged)
 
 ## Date
 
@@ -105,8 +110,13 @@ Mechanics (PostgreSQL):
   lock on the pending event until commit; concurrent publishers of
   the same key serialize on it (and then coalesce). Key-less publishes
   are unaffected.
-- The archive table does not carry the dedup key — the key's meaning
-  ends when the row leaves PENDING.
+- ~~The archive table does not carry the dedup key — the key's meaning
+  ends when the row leaves PENDING.~~ Superseded by
+  [ADR-0033](0033-archive-dedup-key-and-replay-from-archive.md):
+  since migration V008 the archive copies the key for audit and
+  replay. The *mechanical* half still holds — archive rows never
+  block a key, and uniqueness lives only on the hot table's partial
+  index.
 - Schema V004 (column + partial unique index); `EventStore.save`
   signature change (pre-1.0 SPI break).
 

@@ -58,6 +58,14 @@ class OutboxAdminSecurityTest {
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> controller.reenable(UUID.randomUUID()))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> controller.replay(UUID.randomUUID()))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(
+                        () ->
+                                controller.replayAll(
+                                        new AdminDtos.ReplayAllRequest(
+                                                "T", null, null, null, null)))
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     @Test
@@ -66,6 +74,18 @@ class OutboxAdminSecurityTest {
         authenticate("CUSTOM_PERMIT"); // matches the property below, not the default
 
         assertThat(controller.events(EventStatus.DISABLED, null, 10, null).events()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the 400 handler is reachable through the method-security proxy")
+    void badRequestHandlerStaysReachable() {
+        authenticate("CUSTOM_PERMIT");
+
+        // The handler is a public method of a @PreAuthorize'd class, so it is advised like every
+        // operation. It only ever runs for a request that already passed the guard, and must
+        // render the 400 rather than fail the proxy or re-raise an authorization error.
+        assertThat(controller.badRequest(new IllegalArgumentException("limit must be positive")))
+                .isEqualTo(new AdminDtos.ErrorResponse("limit must be positive"));
     }
 
     @Test

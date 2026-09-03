@@ -29,10 +29,12 @@ class FlywayMigrationIT {
             assertTableExists(st, SCHEMA, "events");
             assertTableExists(st, SCHEMA, "workers");
             assertTableExists(st, SCHEMA, "event_archive");
+            assertColumnExists(st, "event_archive", "dedup_key");
             assertIndexExists(st, "idx_events_ready");
             assertIndexExists(st, "idx_events_processing_by_worker");
             assertIndexExists(st, "idx_events_processing_claimed_at");
             assertIndexExists(st, "idx_workers_heartbeat");
+            assertIndexExists(st, "idx_archive_event_type_archived_at");
         }
     }
 
@@ -62,6 +64,21 @@ class FlywayMigrationIT {
                                 + table
                                 + "'")) {
             assertThat(rs.next()).as("table %s.%s must exist", schema, table).isTrue();
+        }
+    }
+
+    private static void assertColumnExists(Statement st, String table, String column)
+            throws Exception {
+        try (ResultSet rs =
+                st.executeQuery(
+                        "SELECT 1 FROM information_schema.columns WHERE table_schema = '"
+                                + SCHEMA
+                                + "' AND table_name = '"
+                                + table
+                                + "' AND column_name = '"
+                                + column
+                                + "'")) {
+            assertThat(rs.next()).as("column %s.%s must exist", table, column).isTrue();
         }
     }
 

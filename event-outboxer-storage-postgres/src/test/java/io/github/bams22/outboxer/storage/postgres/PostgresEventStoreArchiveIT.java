@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -141,19 +142,44 @@ class PostgresEventStoreArchiveIT {
 
         assertThat(store.markProcessed(claimed.id(), WORKER, claimed.claimedVersion())).isTrue();
 
-        PostgresOutboxAdmin admin =
-                new PostgresOutboxAdmin(
-                        PostgresTestEnvironment.connectionSupplier(),
-                        PostgresStorageProperties.builder()
-                                .schema(PostgresTestEnvironment.SCHEMA)
-                                .tablePrefix("")
-                                .archiveEnabled(true)
-                                .metricsCacheTtl(Duration.ofSeconds(30))
-                                .build());
-        ArchivedEvent archived = admin.findInArchive(claimed.id()).orElseThrow();
+        ArchivedEvent archived = archiveAdmin().findInArchive(claimed.id()).orElseThrow();
         assertThat(archived.payload().isText()).isFalse();
         assertThat(archived.payload().requireBytes()).isEqualTo(raw);
         assertThat(archived.payloadFormat()).isEqualTo("test-binary");
+    }
+
+    @Test
+    @DisplayName("markProcessed() carries the dedup key into the archive; key-less rows stay null")
+    void markProcessed_archivesDedupKey() {
+        ClaimedEvent keyed = publishAndClaim("keyed", "order-42");
+        ClaimedEvent keyless = publishAndClaim("keyless");
+
+        assertThat(store.markProcessed(keyed.id(), WORKER, keyed.claimedVersion())).isTrue();
+        assertThat(store.markProcessed(keyless.id(), WORKER, keyless.claimedVersion())).isTrue();
+
+        PostgresOutboxAdmin admin = archiveAdmin();
+        assertThat(admin.findInArchive(keyed.id()).orElseThrow().dedupKey()).isEqualTo("order-42");
+        assertThat(admin.findInArchive(keyless.id()).orElseThrow().dedupKey()).isNull();
+    }
+
+    @Test
+    @DisplayName("markProcessedAll() carries the dedup key into the archive too")
+    void markProcessedAll_archivesDedupKey() {
+        ClaimedEvent keyed = publishAndClaim("batch-keyed", "order-43");
+        ClaimedEvent keyless = publishAndClaim("batch-keyless");
+
+        Set<UUID> applied =
+                store.markProcessedAll(
+                        List.of(
+                                new EventStore.ProcessedMark(keyed.id(), keyed.claimedVersion()),
+                                new EventStore.ProcessedMark(
+                                        keyless.id(), keyless.claimedVersion())),
+                        WORKER);
+
+        assertThat(applied).containsExactlyInAnyOrder(keyed.id(), keyless.id());
+        PostgresOutboxAdmin admin = archiveAdmin();
+        assertThat(admin.findInArchive(keyed.id()).orElseThrow().dedupKey()).isEqualTo("order-43");
+        assertThat(admin.findInArchive(keyless.id()).orElseThrow().dedupKey()).isNull();
     }
 
     @Test
@@ -180,6 +206,10 @@ class PostgresEventStoreArchiveIT {
     // ---------------------------------------------------------------------------------------------
 
     private ClaimedEvent publishAndClaim(String payload) {
+        return publishAndClaim(payload, null);
+    }
+
+    private ClaimedEvent publishAndClaim(String payload, @Nullable String dedupKey) {
         return claimOne(
                 PendingEvent.builder()
                         .id(UUID.randomUUID())
@@ -190,6 +220,18 @@ class PostgresEventStoreArchiveIT {
                         .priority((short) 0)
                         .runAt(Instant.now().minusSeconds(1))
                         .traceContext(Map.of())
+                        .dedupKey(dedupKey)
+                        .build());
+    }
+
+    private static PostgresOutboxAdmin archiveAdmin() {
+        return new PostgresOutboxAdmin(
+                PostgresTestEnvironment.connectionSupplier(),
+                PostgresStorageProperties.builder()
+                        .schema(PostgresTestEnvironment.SCHEMA)
+                        .tablePrefix("")
+                        .archiveEnabled(true)
+                        .metricsCacheTtl(Duration.ofSeconds(30))
                         .build());
     }
 

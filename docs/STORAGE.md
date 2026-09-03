@@ -185,6 +185,7 @@ CREATE TABLE event_outboxer.event_archive (
     trace_context    JSONB,
     archived_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     archived_by      VARCHAR(64)  NOT NULL,
+    dedup_key        VARCHAR(256),          -- audit copy (ADR-0033, V008); nullable, no index
 
     CONSTRAINT event_archive_payload_exactly_one
         CHECK ((payload IS NULL) <> (payload_binary IS NULL))
@@ -193,10 +194,17 @@ CREATE TABLE event_outboxer.event_archive (
 CREATE INDEX idx_archive_archived_at ON event_outboxer.event_archive (archived_at);
 CREATE INDEX idx_archive_event_type_created_at
     ON event_outboxer.event_archive (event_type, created_at);
+-- ADR-0033, V009: the access path of replayAllFromArchive — event_type leads, the
+-- (archived_at, id) tail serves both the ORDER BY and the keyset cursor.
+CREATE INDEX idx_archive_event_type_archived_at
+    ON event_outboxer.event_archive (event_type, archived_at, id);
 ```
 
 Absent columns: `status`, `claimed_by`, `version` — they lose meaning after
-archiving.
+archiving. `dedup_key` is carried for audit and replay (ADR-0033) but
+enforces nothing here: uniqueness lives only on the hot table's partial
+index, and rows with the same `(event_type, dedup_key)` accumulate
+naturally as the key is reused across processed runs.
 
 ---
 
@@ -328,7 +336,9 @@ event-outboxer-storage-postgres/src/main/resources/event-outboxer/migration/
 │   └── V006__outbox_payload_format.sql  ← dual payload lane + format (ADR-0025)
 └── archive/
     ├── V002__outbox_archive.sql         ← event_archive
-    └── V007__outbox_archive_payload_format.sql ← archive payload lanes (ADR-0025)
+    ├── V007__outbox_archive_payload_format.sql ← archive payload lanes (ADR-0025)
+    ├── V008__outbox_archive_dedup_key.sql ← archived dedup key (ADR-0033)
+    └── V009__outbox_archive_replay_index.sql ← bulk-replay index (ADR-0033)
 
 event-outboxer-lock-postgres-lease/src/main/resources/event-outboxer/migration/
 └── lock/
@@ -336,8 +346,8 @@ event-outboxer-lock-postgres-lease/src/main/resources/event-outboxer/migration/
 ```
 
 Version numbers form one shared sequence across the lanes (core:
-V001/V003/V004/V006, archive: V002/V007, lock: V005); each lane touches
-only its own tables.
+V001/V003/V004/V006, archive: V002/V007/V008/V009, lock: V005); each lane
+touches only its own tables.
 
 ### Starter-managed instance (default)
 
@@ -397,7 +407,7 @@ spring:
 ```
 
 The library's versions then share the application's sequence — make
-sure your own migrations do not reuse `V001…V007`, and expect an
+sure your own migrations do not reuse `V001…V009`, and expect an
 out-of-order validation failure when adopting a lane after later core
 migrations unless `spring.flyway.out-of-order=true`.
 
@@ -708,18 +718,118 @@ WITH del AS (
       AND status = 'PROCESSING'
     RETURNING id, event_type, payload, payload_binary, payload_format,
               payload_class, priority, attempts, created_at, run_at,
-              last_fail_reason, trace_context
+              last_fail_reason, trace_context, dedup_key
 )
 INSERT INTO event_outboxer.event_archive (
     id, event_type, payload, payload_binary, payload_format,
     payload_class, priority, attempts, created_at, run_at,
-    last_fail_reason, trace_context, archived_at, archived_by
+    last_fail_reason, trace_context, dedup_key, archived_at, archived_by
 )
 SELECT id, event_type, payload, payload_binary, payload_format,
        payload_class, priority, attempts, created_at, run_at,
-       last_fail_reason, trace_context, now(), :worker_id
+       last_fail_reason, trace_context, dedup_key, now(), :worker_id
 FROM del;
 ```
+
+### Replay from archive (ADR-0033)
+
+The reverse move — `OutboxAdmin.replayFromArchive` /
+`replayAllFromArchive` — is also one atomic CTE, but **insert-first**:
+the archive `DELETE` consumes the ids the hot-table `INSERT` actually
+returned, so a replay that coalesces never touches the audit row.
+
+```sql
+WITH src AS MATERIALIZED (
+    SELECT id, event_type, payload, payload_binary, payload_format,
+           payload_class, priority, trace_context, dedup_key, archived_at
+    FROM event_outboxer.event_archive
+    WHERE id = :event_id
+    -- bulk variant instead:
+    --   WHERE event_type = :type
+    --     [AND archived_at > :archived_after] [AND archived_at < :archived_before]
+    --     [AND (archived_at, id) > (:cursor_archived_at, :cursor_id)]
+    --   ORDER BY archived_at, id LIMIT :limit
+), blocked AS (
+    SELECT s.id FROM src s
+    WHERE EXISTS (SELECT 1 FROM event_outboxer.events e WHERE e.id = s.id)
+), ins AS (
+    INSERT INTO event_outboxer.events (
+        id, event_type, payload, payload_binary, payload_format,
+        payload_class, priority, attempts, status, created_at, run_at,
+        last_fail_reason, trace_context, version, dedup_key
+    )
+    SELECT id, event_type, payload, payload_binary, payload_format,
+           payload_class, priority, 0, 'PENDING', now(), now(),
+           'replayed from archive', trace_context, 0, dedup_key
+    FROM src
+    WHERE id NOT IN (SELECT id FROM blocked)
+    ON CONFLICT (event_type, dedup_key)
+        WHERE status = 'PENDING' AND dedup_key IS NOT NULL DO NOTHING
+    RETURNING id
+), del AS (
+    DELETE FROM event_outboxer.event_archive a USING ins WHERE a.id = ins.id
+    RETURNING a.id
+)
+SELECT (SELECT count(*) FROM src)     AS found,
+       (SELECT count(*) FROM ins)     AS inserted,
+       (SELECT count(*) FROM blocked) AS id_in_use,
+       (SELECT archived_at FROM src ORDER BY archived_at DESC, id DESC LIMIT 1)
+                                      AS cursor_archived_at,
+       (SELECT id FROM src ORDER BY archived_at DESC, id DESC LIMIT 1) AS cursor_id;
+```
+
+Semantics:
+
+- **Insert-first atomicity.** `del` deletes only ids present in
+  `ins`'s `RETURNING`; a coalesced row (the `ON CONFLICT` arbiter of
+  V004 hit a live `PENDING` with the same `(event_type, dedup_key)`)
+  is never deleted — the archive keeps the audit record structurally,
+  not by ordering luck. A delete-first mirror of the finalize CTE
+  would silently drop the row on coalesce.
+- **Coalesce keeps the archive row**: `found=1, inserted=0` →
+  `COALESCED`; the pending event already scheduled will do the work.
+- **An id already live is skipped, not fatal.** `ON CONFLICT` takes one
+  arbiter index and it is spent on the V004 partial index, so a
+  primary-key collision — the application re-published the archived
+  event's explicit UUID — is not swallowed by it and would abort the
+  entire statement. In a bulk batch that means replaying none of the
+  window, forever, since the window is deterministic. The `blocked`
+  anti-join excludes those ids before the INSERT: `id_in_use` counts
+  them, the archive row stays, and the rest of the batch proceeds. A
+  publish of the same id concurrent with this statement still raises.
+- **`src` is `MATERIALIZED`** because the "oldest archived row wins"
+  rule below depends on the INSERT consuming it in `(archived_at, id)`
+  order — guaranteed for a materialized CTE, not for an inlined one.
+- **The cursor ends the sweep.** `cursor_archived_at`/`cursor_id` carry
+  the last row the batch *considered*, whatever its verdict, so a
+  caller looping on it walks past rows that stayed archived instead of
+  re-finding them. Keyset on the pair: rows can share an `archived_at`,
+  and a timestamp-only cursor would skip whichever tied row the
+  previous `LIMIT` cut off.
+- **Duplicate keys within one bulk batch**: the second row's
+  speculative insert conflicts against the first's and is skipped by
+  `DO NOTHING`; `ORDER BY archived_at, id` makes the winner
+  deterministic (oldest archived replays, newer rows stay).
+- **Field reset**: `attempts=0`, `version=0`, `created_at=now()`,
+  `run_at=now()`, `last_fail_reason='replayed from archive'`; payload
+  lanes, `priority`, `trace_context` and `dedup_key` are copied verbatim.
+- **The bulk `WHERE` is served by `idx_archive_event_type_archived_at`
+  (V009)** — `event_type` leading, `(archived_at, id)` following, so
+  both the `ORDER BY` and the keyset predicate resolve inside the
+  index and a batch stays O(`limit`). The V002 indexes cannot serve
+  it: one lacks the leading `event_type`, the other is ordered by
+  `created_at`.
+- **An impossible window is rejected, not answered.** Both bounds are
+  exclusive, so an `archived_after` that is not strictly below
+  `archived_before` matches nothing by construction;
+  `replayAllFromArchive` throws `IllegalArgumentException` rather than
+  returning zeros an operator would read as "already replayed".
+  `created_at` is the replay moment, not the original publish time: it is
+  the column `purgeDisabled` ages rows by, `reenableAll` bounds on and
+  `findByStatus` pages by, so a year-old timestamp would make the replay
+  purgeable by the next retention sweep and bury it on the last admin
+  page. The publish time stays readable in the archive until the row is
+  moved.
 
 ### Batch finalize (group commit, ADR-0014 batch form)
 
@@ -922,14 +1032,17 @@ GROUP BY w.worker_id, w.host;
 
 ### Admin API (preferred over raw SQL)
 
-Investigating and reviving `DISABLED` events, archive lookups and
-retention purges no longer require hand-written SQL: the
+Investigating and reviving `DISABLED` events, archive lookups,
+retention purges and replays no longer require hand-written SQL: the
 `OutboxAdmin` SPI port (ADR-0019) exposes `findByStatus` (keyset
 pagination), `findInArchive`, `reenable` / `reenableAll` (back to
 `PENDING` with a fresh attempts budget and a correct `version` bump),
-`purgeDisabled` and `purgeArchive`. Consume it as a Spring bean, via
-the `event-outboxer-admin-actuator` endpoint, or via the opt-in
-`event-outboxer-admin-rest` controller — see
+`purgeDisabled`, `purgeArchive` and `replayFromArchive` /
+`replayAllFromArchive` (archived events back into the hot table for
+re-execution, ADR-0033 — see [Replay from
+archive](#replay-from-archive-adr-0033) above). Consume it as a Spring
+bean, via the `event-outboxer-admin-actuator` endpoint, or via the
+opt-in `event-outboxer-admin-rest` controller — see
 [CONFIGURATION.md](CONFIGURATION.md#event-outboxeradminrest-and-the-admin-modules).
 
 Migration `V003__outbox_admin_index.sql` backs these operations with a

@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,7 +80,7 @@ class OutboxAdminEndpointTest {
     void reenablesSingleEvent() {
         UUID id = disableOne("T", "revive-me");
 
-        Map<String, Object> result = endpoint.reenable(id.toString());
+        Map<String, Object> result = endpoint.reenable(id.toString(), null);
 
         assertThat(result.get("reenabled")).isEqualTo(true);
         assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
@@ -92,10 +93,69 @@ class OutboxAdminEndpointTest {
         disableOne("A", "a2");
         disableOne("B", "b1");
 
-        assertThat(endpoint.reenableAll("A", null).get("reenabled")).isEqualTo(2);
+        assertThat(endpoint.reenableAll("A", null, null, null, null, null).get("reenabled"))
+                .isEqualTo(2);
         assertThat(endpoint.purge("disabled", 0, null, null).get("purged")).isEqualTo(1); // B only
         assertThatThrownBy(() -> endpoint.purge("bogus", 1, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("action=replay routes to the replay operations; no archive in-memory → NOT_FOUND")
+    void replayActions() {
+        assertThat(endpoint.reenable(UUID.randomUUID().toString(), "replay").get("outcome"))
+                .isEqualTo("NOT_FOUND");
+        Map<String, @Nullable Object> bulk =
+                endpoint.reenableAll("A", null, "replay", null, null, null);
+        assertThat(bulk.get("replayed")).isEqualTo(0);
+        assertThat(bulk.get("coalesced")).isEqualTo(0);
+        assertThat(bulk.get("idInUse")).isEqualTo(0);
+        // No archive means nothing was considered, so the sweep ends immediately.
+        assertThat(bulk).containsEntry("nextCursor", null);
+        // The window parameters are parsed as ISO instants on the replay path.
+        assertThat(
+                        endpoint.reenableAll(
+                                        "A",
+                                        null,
+                                        "replay",
+                                        "2026-01-01T00:00:00Z",
+                                        "2026-02-01T00:00:00Z",
+                                        null)
+                                .get("replayed"))
+                .isEqualTo(0);
+        // A cursor round-trips through the opaque <instant>_<uuid> form.
+        assertThat(
+                        endpoint.reenableAll(
+                                        "A",
+                                        null,
+                                        "replay",
+                                        null,
+                                        null,
+                                        "2026-01-01T00:00:00Z_"
+                                                + "0f9a2c31-1111-4222-8333-444455556666")
+                                .get("replayed"))
+                .isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("bogus action and a window without action=replay are rejected")
+    void replayActionValidation() {
+        assertThatThrownBy(() -> endpoint.reenable(UUID.randomUUID().toString(), "bogus"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> endpoint.reenableAll("A", null, "bogus", null, null, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                endpoint.reenableAll(
+                                        "A", null, null, "2026-01-01T00:00:00Z", null, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> endpoint.reenableAll("A", null, null, null, null, "c"))
+                .isInstanceOf(IllegalArgumentException.class);
+        // A malformed instant is a client error, not a 500: Actuator renders
+        // IllegalArgumentException as HTTP 400, DateTimeParseException as HTTP 500.
+        assertThatThrownBy(() -> endpoint.reenableAll("A", null, "replay", "yesterday", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("archivedAfter");
     }
 
     private UUID disableOne(String type, String payload) {

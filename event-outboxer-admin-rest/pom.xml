@@ -75,6 +75,13 @@
             <artifactId>event-outboxer-storage-inmemory</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Test: shared fixtures (StubOutboxAdmin) from the SPI test-jar -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-spi</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

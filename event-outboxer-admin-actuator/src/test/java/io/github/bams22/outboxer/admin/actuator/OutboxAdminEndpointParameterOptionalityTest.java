@@ -43,12 +43,33 @@ class OutboxAdminEndpointParameterOptionalityTest {
     }
 
     @Test
-    @DisplayName("reenableAll(): eventType is mandatory, limit is optional")
+    @DisplayName("reenable(): the id selector is mandatory, action is optional")
+    void reenableParameterOptionality() throws Exception {
+        Map<String, Boolean> mandatory = mandatoryByName("reenable", String.class, String.class);
+
+        assertThat(mandatory).containsEntry("id", true).containsEntry("action", false);
+    }
+
+    @Test
+    @DisplayName("reenableAll(): eventType is mandatory, the other five are optional")
     void reenableAllParameterOptionality() throws Exception {
         Map<String, Boolean> mandatory =
-                mandatoryByName("reenableAll", String.class, Integer.class);
+                mandatoryByName(
+                        "reenableAll",
+                        String.class,
+                        Integer.class,
+                        String.class,
+                        String.class,
+                        String.class,
+                        String.class);
 
-        assertThat(mandatory).containsEntry("eventType", true).containsEntry("limit", false);
+        assertThat(mandatory)
+                .containsEntry("eventType", true)
+                .containsEntry("limit", false)
+                .containsEntry("action", false)
+                .containsEntry("archivedAfter", false)
+                .containsEntry("archivedBefore", false)
+                .containsEntry("cursor", false);
     }
 
     @Test

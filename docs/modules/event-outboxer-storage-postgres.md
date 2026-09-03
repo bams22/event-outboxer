@@ -32,7 +32,7 @@ infrastructure ([ADR-0020](../adr/0020-no-inmemory-storage-in-production.md)).
 |---|---|
 | `PostgresEventStore` | `EventStore`: save (with dedup coalescing), claim, finalize, reclaim, sweep, metrics snapshot. All SQL precomputed in the constructor. |
 | `PostgresWorkerRegistry` | `WorkerRegistry`: register / heartbeat / findDead / removeDead over `event_outboxer.workers`. |
-| `PostgresOutboxAdmin` | `OutboxAdmin` ([ADR-0019](../adr/0019-admin-and-retention-surface.md)): list by status (keyset pagination), archive lookup, re-enable, purge. |
+| `PostgresOutboxAdmin` | `OutboxAdmin` ([ADR-0019](../adr/0019-admin-and-retention-surface.md)): list by status (keyset pagination), archive lookup, re-enable, purge, replay-from-archive ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)). |
 | `PostgresStorageProperties` | Plain record (`schema`, `tablePrefix`, `archiveEnabled`, `metricsCacheTtl`); `defaults()` = `event_outboxer` / `""` / `false` / `30s`. No Spring annotations. |
 | `SchemaResolver` | Builds fully-qualified table names once (`<schema>.<prefix>events`, `…workers`, `…event_archive`). |
 
@@ -61,7 +61,10 @@ between minor versions.
 - **Archive** (opt-in, [ADR-0008](../adr/0008-three-statuses-plus-optional-archive.md)):
   with `archive-enabled`, `markProcessed` becomes one atomic
   `WITH del AS (DELETE … RETURNING …) INSERT INTO event_archive …`
-  statement.
+  statement (carrying `dedup_key` since V008). The reverse move —
+  `replayFromArchive` — is the mirror CTE, insert-first, so a replay
+  that coalesces against a live PENDING keeps the archive row
+  ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)).
 - **Dedup coalescing** ([ADR-0021](../adr/0021-dedup-key-single-inflight-per-key.md)):
   the insert carries `ON CONFLICT (event_type, dedup_key) … DO NOTHING`
   against a partial unique index over `PENDING` rows;
@@ -89,7 +92,7 @@ them (ADR-0028):
 | Location | Contents | Applied by the starter? |
 |---|---|---|
 | `event-outboxer/migration/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key), V006 (payload format) | always |
-| `event-outboxer/migration/archive` | V002, V007 (`event_archive`) | always (`storage.archive-enabled` only governs runtime) |
+| `event-outboxer/migration/archive` | V002, V007, V008, V009 (`event_archive`) | always (`storage.archive-enabled` only governs runtime) |
 | `event-outboxer/migration/lock` | V005 (`entity_locks`) | when [`event-outboxer-lock-postgres-lease`](event-outboxer-lock-postgres-lease.md) is on the classpath |
 | `db/changelog/outbox/{core,archive}/changelog.xml` | Liquibase changelogs delegating to the same SQL files | no — for `event-outboxer.flyway.enabled=false` setups |
 

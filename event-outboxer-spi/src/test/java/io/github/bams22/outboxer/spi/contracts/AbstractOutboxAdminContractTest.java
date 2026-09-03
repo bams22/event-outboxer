@@ -10,6 +10,8 @@
 package io.github.bams22.outboxer.spi.contracts;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.Event;
@@ -18,9 +20,12 @@ import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.AdminCursor;
+import io.github.bams22.outboxer.spi.ArchiveCursor;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
+import io.github.bams22.outboxer.spi.OutboxAdmin.ReplayAllResult;
+import io.github.bams22.outboxer.spi.OutboxAdmin.ReplayOutcome;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -214,6 +219,63 @@ public abstract class AbstractOutboxAdminContractTest {
 
         assertThat(admin.purgeDisabled(TYPE_A, Instant.now().plusSeconds(3600), 2)).isEqualTo(2);
         assertThat(admin.findByStatus(EventStatus.DISABLED, TYPE_A, 10, null)).hasSize(3);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // replay from archive (ADR-0033) — the archive-independent half of the contract
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("replayFromArchive() reports NOT_FOUND for an id that is not in the archive")
+    void replayFromArchive_unknownIdIsNotFound() {
+        // Holds for every adapter: one that has no archive at all, and one whose archive simply
+        // does not contain this id. What a populated archive does is adapter-specific and lives
+        // in the PostgreSQL tests.
+        assertThat(admin.replayFromArchive(UUID.randomUUID())).isEqualTo(ReplayOutcome.NOT_FOUND);
+        assertThatNullPointerException().isThrownBy(() -> admin.replayFromArchive(null));
+    }
+
+    @Test
+    @DisplayName("replayAllFromArchive() over an archive with nothing to offer reports all zeros")
+    void replayAllFromArchive_nothingToReplay() {
+        store.save(pending(TYPE_A, "live"));
+
+        assertThat(admin.replayAllFromArchive(TYPE_A, null, null, 100, null))
+                .isEqualTo(new ReplayAllResult(0, 0, 0, null));
+        // A null cursor is what ends a sweep: an adapter that returned a non-null one here would
+        // loop forever.
+        assertThat(admin.replayAllFromArchive(TYPE_A, null, null, 100, null).next()).isNull();
+    }
+
+    @Test
+    @DisplayName("replayAllFromArchive() rejects a null type, a non-positive limit, a dead window")
+    void replayAllFromArchive_rejectsBadArguments() {
+        Instant t = Instant.parse("2026-01-01T12:00:00Z");
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> admin.replayAllFromArchive(null, null, null, 100, null));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> admin.replayAllFromArchive(TYPE_A, null, null, 0, null));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> admin.replayAllFromArchive(TYPE_A, null, null, -1, null));
+        // Both bounds are exclusive, so neither an inverted nor a collapsed window can match a
+        // row. Answering them with zeros would read as "that window is already replayed".
+        assertThatIllegalArgumentException()
+                .isThrownBy(
+                        () ->
+                                admin.replayAllFromArchive(
+                                        TYPE_A, t, t.minusSeconds(3600), 100, null))
+                .withMessageContaining("archivedAfter must be strictly before archivedBefore");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> admin.replayAllFromArchive(TYPE_A, t, t, 100, null));
+        // A well-formed window is accepted, cursor included, so the checks above are not blanket
+        // rejections.
+        assertThat(admin.replayAllFromArchive(TYPE_A, t.minusSeconds(3600), t, 100, null))
+                .isEqualTo(new ReplayAllResult(0, 0, 0, null));
+        assertThat(
+                        admin.replayAllFromArchive(
+                                TYPE_A, null, null, 100, new ArchiveCursor(t, UUID.randomUUID())))
+                .isEqualTo(new ReplayAllResult(0, 0, 0, null));
     }
 
     // ---------------------------------------------------------------------------------------------

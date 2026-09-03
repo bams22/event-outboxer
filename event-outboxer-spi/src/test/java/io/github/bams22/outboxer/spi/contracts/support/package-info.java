@@ -11,7 +11,8 @@
 /**
  * Test fixtures shared through the {@code event-outboxer-spi} test-jar: a deliberately non-JSON
  * binary {@code EventSerializer} and its payload DTO, used to prove that engine and storage
- * adapters carry the binary payload lane verbatim (ADR-0025).
+ * adapters carry the binary payload lane verbatim (ADR-0025), and an inert {@code OutboxAdmin} stub
+ * for tests that need the port but assert on only a slice of it.
  */
 @NullMarked
 package io.github.bams22.outboxer.spi.contracts.support;

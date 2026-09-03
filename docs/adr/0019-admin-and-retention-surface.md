@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-09-03 by
+[ADR-0033](0033-archive-dedup-key-and-replay-from-archive.md): the
+`OutboxAdmin` port grows `replayFromArchive` / `replayAllFromArchive`
+(with the `ReplayOutcome` / `ReplayAllResult` types), exposed on both
+admin surfaces (REST `POST /events/{id}/replay` +
+`/events/replay-all`; Actuator `action=replay` on the two write
+operations)
 
 ## Date
 
