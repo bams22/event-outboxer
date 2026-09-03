@@ -79,7 +79,7 @@
             never see the property placeholder. Release runbook lives in
             RELEASING.md.
         -->
-        <revision>0.7.0-SNAPSHOT</revision>
+        <revision>0.8.0-SNAPSHOT</revision>
 
         <!-- Baseline Java 25 (LTS) — ADR-0017. -->
         <java.version>25</java.version>
@@ -122,7 +122,7 @@
             Baseline for japicmp API-compatibility reports: the latest release
             published to Maven Central. Bump on every release.
         -->
-        <japicmp.baseline.version>0.6.0</japicmp.baseline.version>
+        <japicmp.baseline.version>0.7.0</japicmp.baseline.version>
 
         <!-- Non-Boot-managed test libs -->
         <testcontainers.version>1.20.4</testcontainers.version>
