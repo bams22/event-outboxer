@@ -7,7 +7,28 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **Benchmark and invariant harness — `event-outboxer-benchmark`
+  (ADR-0034, never published).** A reactor module that drives the
+  library as deployed (Spring Boot starter + PostgreSQL storage + lease
+  locker: one publish-only context, N worker contexts with explicit
+  worker ids) through presets — `smoke`, `throughput`, `hot-key`,
+  `failures`, `backlog` — every knob overridable from the command line.
+  Every handler invocation goes into the harness's own ledger, which is
+  graded after a graceful stop: no lost event, no duplicate, no
+  handling of an unpublished event, no overlap on a lock key when a
+  real locker is on, and a clean `events` / `entity_locks` schema.
+  Invariants fail the run (exit code 1); publish and end-to-end latency
+  percentiles, handled/s, retries and `pg_stat_user_tables` row writes
+  per event are reported as information, never gated. The report is a
+  self-describing JSON (scenario, JVM, host, PostgreSQL version
+  embedded). `-P bench` builds an executable jar; without
+  `--bench.jdbc-url` the run starts a disposable PostgreSQL via
+  Testcontainers. The `smoke` preset also runs as `BenchmarkSmokeIT`
+  under `-P it`. The system under test is an interface, so a second
+  outbox implementation can be measured with the same scenarios from an
+  adapter kept outside this repository. Phase 2 (forked worker JVMs,
+  `SIGKILL` chaos, PostgreSQL restart) is a follow-up.
 
 
 ## [0.7.0] — 2026-09-03

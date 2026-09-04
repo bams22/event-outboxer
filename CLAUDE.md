@@ -10,7 +10,7 @@ an embedded, per-service outbox (not a cross-service shared-DB bridge —
 see [ADR-0001](docs/adr/0001-local-embedded-outbox-scope.md)).
 
 Architecture is fully designed before implementation — see
-[docs/](docs/) and the 33 ADRs in [docs/adr/](docs/adr/). Treat the
+[docs/](docs/) and the 34 ADRs in [docs/adr/](docs/adr/). Treat the
 ADRs as the source of truth: if implementation must deviate from an
 ADR, amend the ADR in the same PR.
 
@@ -28,7 +28,7 @@ ADR, amend the ADR in the same PR.
 - PostgreSQL 15+, KeyDB 6 / Redis 7 (adapter-level).
 - JUnit 5 + AssertJ + Testcontainers for testing.
 
-## Module layout (20 modules + 1 relocation stub)
+## Module layout (20 published modules + 1 relocation stub + 1 unpublished harness)
 
 ```
 event-outboxer (parent pom)
@@ -52,7 +52,8 @@ event-outboxer (parent pom)
 ├── event-outboxer-admin-actuator          Actuator endpoint over OutboxAdmin SPI
 ├── event-outboxer-admin-rest              opt-in REST controller over OutboxAdmin SPI
 ├── event-outboxer-testkit                 SettableClock, ManualEngine, assertions
-└── event-outboxer-spring-boot-starter     autoconfiguration + SmartLifecycle + TX integration
+├── event-outboxer-spring-boot-starter     autoconfiguration + SmartLifecycle + TX integration
+└── event-outboxer-benchmark               NEVER PUBLISHED: load/invariant harness over the starter + PG (ADR-0034)
 ```
 
 Java package layout mirrors modules 1-to-1 under
@@ -81,6 +82,13 @@ Per-module:
 ```
 ./mvnw -pl event-outboxer-core verify
 ./mvnw -pl event-outboxer-storage-postgres -P it verify
+```
+
+Benchmark / invariant harness (ADR-0034; needs Docker unless
+`--bench.jdbc-url` points at a database; numbers are never a CI gate):
+```
+./mvnw -B -ntp -pl event-outboxer-benchmark -P bench -DskipTests package
+java -jar event-outboxer-benchmark/target/event-outboxer-benchmark-*-exec.jar --bench.scenario=throughput
 ```
 
 Auto-fix formatting (Google Java Format via Spotless; `spotless:check`
@@ -186,7 +194,7 @@ in a new or amended ADR.
 - **PostgreSQL schema and SQL**: [docs/STORAGE.md](docs/STORAGE.md)
 - **Terminology**: [docs/GLOSSARY.md](docs/GLOSSARY.md)
 - **Rationale for every design decision**:
-  [docs/adr/README.md](docs/adr/README.md) (33 ADRs)
+  [docs/adr/README.md](docs/adr/README.md) (34 ADRs)
 - **Implementation roadmap (phases P0–P10)**: see the plan file noted
   in the user's plan tooling.
 

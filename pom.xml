@@ -52,6 +52,8 @@
         <module>event-outboxer-admin-rest</module>
         <module>event-outboxer-testkit</module>
         <module>event-outboxer-spring-boot-starter</module>
+        <!-- Never published: load/invariant harness (ADR-0034). -->
+        <module>event-outboxer-benchmark</module>
     </modules>
 
     <scm>

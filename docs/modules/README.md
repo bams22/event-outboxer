@@ -65,6 +65,7 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md).
 |---|---|
 | [event-outboxer-testkit](event-outboxer-testkit.md) | Deterministic handler tests: `ManualEngine.tick()`, `SettableClock`, recording listener, assertions. |
 | [event-outboxer-spring-boot-starter](event-outboxer-spring-boot-starter.md) | Spring Boot 3.5+ autoconfiguration, transaction integration, lifecycle, health. |
+| [event-outboxer-benchmark](event-outboxer-benchmark.md) | **Not published.** Load + invariant harness (ADR-0034): scenarios against the starter on PostgreSQL, `lost = 0` grading, JSON report. |
 
 ## Which modules do I need?
 

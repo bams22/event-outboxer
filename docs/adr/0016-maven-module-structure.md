@@ -3,9 +3,10 @@
 ## Status
 
 Accepted — amended 2026-08-29 (the starter depends on the Jackson
-serializer non-optionally) and 2026-09-02 (20th module:
-`event-outboxer-relay-spring-cloud-stream`, ADR-0032); see the
-Amendment sections at the bottom
+serializer non-optionally), 2026-09-02 (20th module:
+`event-outboxer-relay-spring-cloud-stream`, ADR-0032) and 2026-09-04
+(21st, unpublished module: `event-outboxer-benchmark`, ADR-0034); see
+the Amendment sections at the bottom
 
 ## Date
 
@@ -19,7 +20,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 20 modules
+### 20 modules (+ 1 unpublished harness, see the 2026-09-04 amendment)
 
 ```
 event-outboxer (root parent pom)
@@ -42,7 +43,8 @@ event-outboxer (root parent pom)
 ├── event-outboxer-admin-actuator           Actuator endpoint over OutboxAdmin
 ├── event-outboxer-admin-rest               REST controller over OutboxAdmin
 ├── event-outboxer-testkit                  Test utilities
-└── event-outboxer-spring-boot-starter      Autoconfiguration + SmartLifecycle
+├── event-outboxer-spring-boot-starter      Autoconfiguration + SmartLifecycle
+└── event-outboxer-benchmark                Load/invariant harness — never published (ADR-0034)
 ```
 
 ### Coordinates
@@ -286,6 +288,21 @@ table and module counts above include it. The parent pom now also
 imports `spring-cloud-dependencies` (after `spring-boot-dependencies`,
 so Boot wins on overlaps) to manage the module's Spring Cloud Stream
 dependency.
+
+## Amendment (2026-09-04): an unpublished 21st module — the benchmark harness
+
+ADR-0034 adds `event-outboxer-benchmark` (package
+`io.github.bams22.outboxer.benchmark`) to the reactor so that it
+always compiles and unit-tests against the working tree, while
+excluding it from everything a consumer could see: `maven.deploy.skip`,
+`skipPublishing`, `gpg.skip`, `maven.javadoc.skip`, `maven.source.skip`
+and `japicmp.skip` are `true` in its pom, and it is listed neither in
+the BOM nor in `ARTIFACTS.md`. It is the first module allowed to depend
+on the starter (it boots the library as deployed) and on Testcontainers
+at compile scope (it starts a disposable PostgreSQL when none is
+given). The "20 modules" count above refers to published artifacts and
+stays; the reactor now builds 21 plus the relocation stub. The `bench`
+Maven profile repackages the module into an executable jar.
 
 ## Related decisions
 

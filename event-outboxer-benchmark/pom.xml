@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bams22</groupId>
+        <artifactId>event-outboxer-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>event-outboxer-benchmark</artifactId>
+
+    <name>event-outboxer (benchmark harness)</name>
+    <description>Load and invariant harness (ADR-0034): drives the library as deployed
+        (Spring Boot starter + PostgreSQL) through configurable scenarios, grades the
+        at-least-once invariants from a handling ledger and writes a JSON report.
+        Part of the reactor so it always builds against the working tree; never
+        published.</description>
+
+    <properties>
+        <!--
+            Not a consumer artifact (ADR-0034): never deployed to Central, never
+            signed, no sources/javadoc jars, no API-compatibility report. It is
+            also absent from the BOM.
+        -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <skipPublishing>true</skipPublishing>
+        <gpg.skip>true</gpg.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <japicmp.skip>true</japicmp.skip>
+    </properties>
+
+    <dependencies>
+        <!-- The library as deployed: starter + PostgreSQL storage + both PG lockers. -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-storage-postgres</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-lock-postgres-lease</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
+        </dependency>
+        <!-- JSON report goes through the library's own ObjectMapper factory. -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-serializer-jackson</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <!-- Starter-managed Flyway instance migrates the outbox schema (ADR-0028). -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <!--
+            Compile scope on purpose: without a bench.jdbc-url argument the runner starts a
+            disposable PostgreSQL itself. Published numbers must not come from it.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <!--
+            -P bench: repackage into an executable jar so a run is one command:
+            java -jar target/event-outboxer-benchmark-&lt;version&gt;-exec.jar with the bench.scenario argument
+        -->
+        <profile>
+            <id>bench</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <version>${spring-boot.version}</version>
+                        <configuration>
+                            <classifier>exec</classifier>
+                            <mainClass>io.github.bams22.outboxer.benchmark.BenchmarkRunner</mainClass>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>repackage</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
