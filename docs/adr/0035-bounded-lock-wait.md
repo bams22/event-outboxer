@@ -165,7 +165,10 @@ public interface EntityLocker {
   `pg_notify` per release on one channel per schema, a dedicated
   session that listens, waiters that park (ADR-0022 amendment). It
   measured no gain over polling — the lease's own commits are the
-  cycle — so the polling wait stays the default there.
+  cycle — so the polling wait stays the default there; and it cannot
+  work behind pgBouncer transaction or statement pooling (`LISTEN` is
+  session state), which the listener detects with a probe and reports
+  once before falling back to polling.
 - `RedisEntityLocker` kept the default polling in the first cut; on
   2026-09-05 it gained the pub/sub wake-up (release script `PUBLISH`es
   on the key's channel, waiters subscribe through a second Lettuce

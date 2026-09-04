@@ -93,8 +93,11 @@ import org.slf4j.LoggerFactory;
  * milliseconds. A parked waiter still re-probes every {@code fallbackProbeInterval} (default {@link
  * #DEFAULT_FALLBACK_PROBE_INTERVAL}) because notifications are at-most-once, an expired lease is
  * taken over without one, and a JVM with notifications off releases silently — configure a fleet
- * uniformly. Until the listener has proved the path — and permanently where it cannot, such as
- * behind pgBouncer transaction pooling — the wait polls. {@link #close()} stops the listener.
+ * uniformly. Until the listener has proved the path the wait polls. <b>Behind pgBouncer in
+ * transaction or statement pooling mode the wake-up cannot work</b>: {@code LISTEN} is session
+ * state the pooler neither honours nor forwards; the listener detects it with its probe, reports
+ * itself unsupported once, the locker stops notifying, and the wait polls exactly as without the
+ * option — leave {@code releaseNotifications} off there. {@link #close()} stops the listener.
  *
  * <h2>Construction</h2>
  *
@@ -273,6 +276,19 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
         return listener;
     }
 
+    /**
+     * Whether releases send a notification: configured, and the listener has not found the path
+     * unsupported (behind pgBouncer transaction pooling nobody could receive them) or been closed.
+     */
+    private boolean notificationsWanted() {
+        if (listener == null) {
+            return false;
+        }
+        PgLeaseReleaseListener.State state = listener.state();
+        return state == PgLeaseReleaseListener.State.CONNECTING
+                || state == PgLeaseReleaseListener.State.ACTIVE;
+    }
+
     /** Number of lock keys with at least one waiter parked on a notification in this JVM. */
     public int waitingKeys() {
         return waiters != null ? waiters.waitingTopics() : 0;
@@ -449,7 +465,7 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
                             "lease '{}' was already released (expired or taken over) by the"
                                     + " time close() ran",
                             key);
-                } else if (listener != null) {
+                } else if (notificationsWanted()) {
                     try (PreparedStatement ps = conn.prepareStatement(NOTIFY_SQL)) {
                         ps.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
                         ps.setString(1, channel);

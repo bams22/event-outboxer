@@ -220,9 +220,10 @@ public class OutboxProperties {
          * the tail on hot keys), <b>off</b> for the lease locker ({@code LISTEN} on one pooled
          * connection held for the context's life plus an asynchronous {@code NOTIFY} per release;
          * measured no gain over polling, because the lease's own commits dominate). {@code false}
-         * keeps the polling wait and opens no extra connection; {@code true} on the lease locker
-         * verifies the path with a probe at startup and polls where notifications are not delivered
-         * (pgBouncer transaction pooling).
+         * keeps the polling wait and opens no extra connection. <b>{@code true} on the lease locker
+         * is not usable behind pgBouncer in transaction or statement pooling mode</b> — {@code
+         * LISTEN} is session state the pooler neither honours nor forwards; the locker's probe
+         * detects it at startup, warns once and polls, so leave the option off there.
          */
         private @Nullable Boolean wakeup;
 

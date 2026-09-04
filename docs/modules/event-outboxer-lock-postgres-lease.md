@@ -5,7 +5,8 @@ The **recommended PostgreSQL `EntityLocker`**
 held lock is a row in `event_outboxer.entity_locks`, acquired and
 released as single autocommit statements. No connection is held while
 the handler runs, TTL is honoured, and it is safe behind pgBouncer
-transaction pooling.
+transaction pooling — with its opt-in `lock.wakeup` listener left off,
+see [Behind pgBouncer](#behind-pgbouncer).
 
 | | |
 |---|---|
@@ -71,10 +72,11 @@ infrastructure. The advisory locker remains available as an
   the path on every fresh session by sending itself a probe from a
   second, briefly borrowed connection: where the probe never arrives
   — pgBouncer transaction or statement pooling does not forward
-  `NOTIFY` — it reports itself unsupported once at WARN and the wait
-  polls, exactly as before; a session lost later is reconnected with
-  a back-off, and every reconnect wakes the parked waiters so a
-  release missed in the gap costs one probe. A JVM with notifications
+  `NOTIFY` — it reports itself unsupported once at WARN, `UNLISTEN`s,
+  the locker stops notifying and the wait polls, exactly as before
+  (see [Behind pgBouncer](#behind-pgbouncer)); a session lost later is
+  reconnected with a back-off, and every reconnect wakes the parked
+  waiters so a release missed in the gap costs one probe. A JVM with notifications
   off releases silently, so configure a fleet uniformly — waiters in
   other JVMs then rely on the fallback probe. `close()` stops the
   listener; the starter does that on shutdown.
@@ -106,8 +108,8 @@ infrastructure. The advisory locker remains available as an
 - **Default choice** for any PostgreSQL deployment where handlers
   declare `extractLockKey`.
 - **Mandatory** (among the PG options) behind pgBouncer
-  transaction/statement pooling, or when handler pools are large
-  relative to the Hikari pool.
+  transaction/statement pooling — with `lock.wakeup` off, its default
+  here — or when handler pools are large relative to the Hikari pool.
 - Skip locking entirely (`lock.type: noop`, the default) when no
   handler declares a lock key.
 
@@ -181,6 +183,36 @@ Notes:
 - Migration note when coming from `postgres-advisory`: apply V005
   first; during the rolling deploy old and new pods form disjoint
   exclusion domains (ADR-0022 §Rollout).
+
+### Behind pgBouncer
+
+Acquire and release are single autocommit statements and work in any
+pooling mode. **The `lock.wakeup` listener does not: it is unusable
+behind pgBouncer in transaction or statement pooling mode.** `LISTEN`
+is session state — the subscription lands on whichever server
+connection served that one statement, the pooler never forwards the
+notifications to the listener's client, and the server connection
+keeps the subscription, so a pooler may deliver those notifications to
+whatever client it links to that server next, where pgjdbc queues them
+unread. What the locker does about it:
+
+- On every fresh session the listener sends itself a probe through a
+  second pooled connection and waits up to 2 s for it. A probe that
+  never arrives on the first session marks the listener unsupported:
+  one WARN (`entity_locks release notifications are not delivered on
+  this connection …`), a best-effort `UNLISTEN *` on the same JDBC
+  connection (which reaches the right server connection only if the
+  pooler links the same one again), no more `NOTIFY` from this JVM,
+  and the bounded wait polls exactly as without the option.
+- Nothing about locking correctness changes: exclusion, TTL and the
+  release path are the same statements as before.
+
+Do not enable `lock.wakeup` behind such a pooler. Where the wake-up is
+wanted, the listener needs a session-pooled or direct connection to
+PostgreSQL; a dedicated listener URL (the pattern of
+`event-outboxer.flyway.url`) is a possible follow-up, not shipped. The
+Redis locker's wake-up is unaffected — it rides the Redis connection,
+not the JDBC pool.
 
 ### Without Spring
 

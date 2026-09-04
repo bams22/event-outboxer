@@ -436,10 +436,13 @@ default is `noop` and other backends are opt-in:
     inside the delete would serialize every release commit of the
     fleet); the locker holds **one pool connection** for the
     application's life to `LISTEN`, verified with a probe on every
-    fresh session. Behind pgBouncer transaction pooling the probe
-    never arrives: the listener reports itself unsupported once at
-    WARN and the wait polls. Configure a fleet uniformly — a JVM
-    without the wake-up releases without notifying.
+    fresh session. **Not usable behind pgBouncer in transaction or
+    statement pooling mode** — `LISTEN` is session state the pooler
+    neither honours nor forwards; the probe never arrives, the listener
+    reports itself unsupported once at WARN, `UNLISTEN`s and the wait
+    polls (see [Running behind pgBouncer](#running-behind-pgbouncer)).
+    Configure a fleet uniformly — a JVM without the wake-up releases
+    without notifying.
   - `false` opens no extra connection and keeps the polling wait —
     for Redis proxies that do not forward pub/sub, or to save the pool
     slot.
@@ -459,6 +462,21 @@ With pgBouncer in **transaction** (or statement) pooling mode:
 
 - Polling, claim, finalize, heartbeat and the `postgres-lease` and
   `redis` lockers are safe — no session state.
+- **`lock.wakeup: true` on the lease locker is not usable here.** Its
+  release listener is a `LISTEN` session, i.e. session state: in
+  transaction or statement mode the subscription lands on whichever
+  server connection served that statement, the pooler never forwards
+  the notifications to the listener, and the server connection keeps
+  the subscription — a pooler may hand its notifications to whatever
+  client it links next, where pgjdbc queues them unread. The listener
+  detects the situation with a self-sent probe at startup, logs
+  `entity_locks release notifications are not delivered on this
+  connection` once at WARN, issues a best-effort `UNLISTEN *`, and the
+  locker stops notifying and polls exactly as without the option. Leave
+  `lock.wakeup` unset (its default for the lease locker is off) or
+  `false` behind such a pooler; session pooling or a direct connection
+  is required for the wake-up. The Redis locker's wake-up is
+  unaffected — it rides the Redis connection.
 - `postgres-advisory` is **not** usable: session-scoped advisory locks
   silently lose mutual exclusion when statements multiplex across
   server connections. Use the lease locker, the Redis locker, or a

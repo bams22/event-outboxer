@@ -621,14 +621,25 @@ the bottleneck; the polling wait stays the default.
 
 Two consequences for this ADR's guarantees. The JDBC contract is
 untouched — acquire and release stay single autocommit statements
-safe behind pgBouncer — but the listener is session state: behind
-transaction or statement pooling `NOTIFY` is not forwarded, so the
-listener proves the path with a self-sent probe on every fresh
-session, reports itself unsupported once at WARN when the probe never
-arrives, and the wait polls exactly as before; a lost session is
-reconnected with a back-off and wakes the parked waiters. And the
-"zero held connections" property now reads "zero held connections
-during a handler; one held connection per JVM for the listener when
+safe behind pgBouncer — but **the listener is session state and
+cannot work behind pgBouncer in transaction or statement pooling
+mode**, the very deployment this locker exists for. `LISTEN` lands on
+whichever server connection served that statement; the pooler never
+forwards the notifications to the listener, and the server connection
+keeps the subscription, so the pooler may deliver those notifications
+to whatever client it links to that server next, where pgjdbc queues
+them unread. The listener therefore proves the path with a self-sent
+probe on every fresh session; when the probe never arrives on the
+first one it reports itself unsupported once at WARN, issues a
+best-effort `UNLISTEN *`, the locker stops sending `NOTIFY`, and the
+wait polls exactly as before. The option is off by default for this
+locker and must stay off behind such a pooler; a session-pooled or
+direct listener connection would be needed for it (a dedicated
+listener URL after the `event-outboxer.flyway.url` pattern is a
+possible follow-up). A session lost later is reconnected with a
+back-off and wakes the parked waiters. And the "zero held
+connections" property now reads "zero held connections during a
+handler; one held connection per JVM for the listener when
 `lock.wakeup` is on".
 
 ## Related decisions

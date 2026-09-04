@@ -46,6 +46,16 @@ import org.slf4j.LoggerFactory;
  * back-off, and the waiters are woken on every reconnect so that a release missed in the gap costs
  * at most one probe.
  *
+ * <p><b>Not usable behind pgBouncer in transaction or statement pooling mode.</b> {@code LISTEN} is
+ * session state: it lands on whichever server connection served that one statement, the pooler
+ * never forwards the notifications to this client, and worse, the server connection keeps the
+ * subscription — the pooler may hand its notifications to whatever client it links next, where a
+ * JDBC driver queues them unread. The listener therefore treats a probe that never arrives on the
+ * first session as {@link State#UNSUPPORTED}, issues a best-effort {@code UNLISTEN *} on the same
+ * JDBC connection before returning it (which reaches the right server connection only if the pooler
+ * links the same one again), and the locker stops sending notifications. Leave the wake-up off
+ * behind such a pooler, or give the listener a session-pooled or direct connection.
+ *
  * <p>The session is opened and closed by the listener thread only: a pooled connection returned
  * while another thread still reads on it would be handed out to someone else. {@link #close()}
  * flips the state and interrupts the thread, which notices within one notification poll or at once
@@ -162,6 +172,7 @@ public final class PgLeaseReleaseListener implements AutoCloseable {
                     if (!state.compareAndSet(State.CONNECTING, State.UNSUPPORTED)) {
                         return; // closed meanwhile
                     }
+                    unlistenQuietly(conn);
                     log.warn(
                             "entity_locks release notifications are not delivered on this"
                                 + " connection (LISTEN/NOTIFY needs a session-pinned connection;"
@@ -274,6 +285,18 @@ public final class PgLeaseReleaseListener implements AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
+        }
+    }
+
+    /**
+     * Best-effort cleanup of a subscription that may have landed on a pooled server connection
+     * behind a transaction-mode pooler; on a direct connection it is merely redundant.
+     */
+    private static void unlistenQuietly(Connection conn) {
+        try (Statement st = conn.createStatement()) {
+            st.execute("UNLISTEN *");
+        } catch (SQLException ex) {
+            log.debug("UNLISTEN after an unsupported probe failed: {}", ex.toString());
         }
     }
 
