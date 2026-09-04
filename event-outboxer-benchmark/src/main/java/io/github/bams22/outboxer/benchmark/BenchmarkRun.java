@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.benchmark.db.DatabaseHandle;
 import io.github.bams22.outboxer.benchmark.db.PgProbe;
 import io.github.bams22.outboxer.benchmark.db.RedisHandle;
 import io.github.bams22.outboxer.benchmark.db.RedisProbe;
+import io.github.bams22.outboxer.benchmark.db.StatementStats;
 import io.github.bams22.outboxer.benchmark.db.StorageState;
 import io.github.bams22.outboxer.benchmark.db.TableWrites;
 import io.github.bams22.outboxer.benchmark.ledger.Handling;
@@ -108,6 +109,10 @@ public final class BenchmarkRun {
             if (probe.vacuumFull(schema + ".events")) {
                 log.info("VACUUM FULL {}.events done: no bloat from a previous run", schema);
             }
+            boolean statementStats = probe.enableStatementStats();
+            log.info(
+                    "pg_stat_statements {}",
+                    statementStats ? "available" : "not available: statement figures omitted");
             try (RedisSide redis = openRedis(scenario);
                     LedgerHandle ledgerHandle = openLedger(db, scenario)) {
                 Ledger ledger = ledgerHandle.ledger;
@@ -123,6 +128,7 @@ public final class BenchmarkRun {
                 PublishPhase publish;
                 Drain drain;
                 TableWrites before;
+                StatementStats statementsBefore = null;
                 long walBefore;
                 long eventsBytesAfterPublish;
                 long redisBefore = 0;
@@ -132,6 +138,9 @@ public final class BenchmarkRun {
                         session.startWorkers();
                     }
                     before = probe.tableWrites(schema);
+                    if (statementStats) {
+                        statementsBefore = probe.statementStats(schema);
+                    }
                     walBefore = probe.walBytes();
                     redisBefore = redis.commandsProcessed();
                     Instant phaseStart = Instant.now();
@@ -147,6 +156,10 @@ public final class BenchmarkRun {
                 Thread.sleep(STATS_SETTLE);
                 TableWrites writes = probe.tableWrites(schema).minus(before);
                 long walBytes = probe.walBytes() - walBefore;
+                StatementStats statements =
+                        statementsBefore == null
+                                ? null
+                                : probe.statementStats(schema).minus(statementsBefore);
                 BenchmarkReport.@Nullable RedisMetrics redisMetrics =
                         redis.metrics(redisBefore, scenario.events());
                 long totalHandlings = ledger.total();
@@ -196,6 +209,7 @@ public final class BenchmarkRun {
                                         walBytes,
                                         (double) walBytes / scenario.events(),
                                         eventsBytesAfterPublish,
+                                        statements,
                                         databaseCaveat(scenario, chaos)))
                         .redis(redisMetrics)
                         .invariants(invariants)

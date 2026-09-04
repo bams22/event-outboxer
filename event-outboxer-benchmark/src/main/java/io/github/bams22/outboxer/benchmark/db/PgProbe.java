@@ -19,7 +19,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -118,6 +121,75 @@ public final class PgProbe {
         } catch (SQLException e) {
             throw new IllegalStateException("VACUUM FULL failed for " + qualifiedTable, e);
         }
+    }
+
+    /**
+     * Makes {@code pg_stat_statements} available if the server preloads it: creates the extension
+     * when the role may, and reports whether the view can be read. {@code false} means the
+     * statement figures stay out of the report — the module needs {@code shared_preload_libraries =
+     * 'pg_stat_statements'}, a server setting the harness cannot change.
+     */
+    public boolean enableStatementStats() {
+        try (Connection c = open();
+                Statement st = c.createStatement()) {
+            try {
+                st.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements");
+            } catch (SQLException ignored) {
+                // Not preloaded, or the role may not create extensions; probe the view below.
+            }
+            try (ResultSet rs = st.executeQuery("SELECT count(*) FROM pg_stat_statements")) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Calls and rows per statement class for statements touching {@code schema}, cumulative since
+     * the last reset. Only meaningful after {@link #enableStatementStats()} returned true.
+     */
+    public StatementStats statementStats(String schema) {
+        Map<String, Long> calls = new TreeMap<>();
+        Map<String, Long> rows = new TreeMap<>();
+        String sql = "SELECT query, calls, rows FROM pg_stat_statements WHERE query LIKE ?";
+        try (Connection c = open();
+                PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, "%" + schema + ".%");
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String cls = classify(rs.getString(1), schema);
+                    calls.merge(cls, rs.getLong(2), Long::sum);
+                    rows.merge(cls, rs.getLong(3), Long::sum);
+                }
+            }
+            return new StatementStats(calls, rows);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot read pg_stat_statements", e);
+        }
+    }
+
+    private static String classify(String query, String schema) {
+        String q = query.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+        String events = schema.toLowerCase(Locale.ROOT) + ".events";
+        if (q.startsWith("with picked as")) {
+            return "claim";
+        }
+        if (q.startsWith("insert into " + events)) {
+            return "insert";
+        }
+        if (q.startsWith("delete from " + events + " e using (values")
+                || (q.startsWith("with") && q.contains("event_archive") && q.contains("values"))) {
+            return "finalizeBatch";
+        }
+        if (q.startsWith("delete from " + events + " where id = $1")
+                || (q.startsWith("with") && q.contains("event_archive"))) {
+            return "finalizeSingle";
+        }
+        if (q.startsWith("update " + events) && q.contains("'pending'")) {
+            return "release";
+        }
+        return "other";
     }
 
     /** Blocks until a connection succeeds or {@code timeout} passes. */

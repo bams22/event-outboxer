@@ -129,7 +129,12 @@ schema, WAL bytes from `pg_current_wal_lsn` (both sampled before
 publishing and after the fleet has stopped) and the events table size
 right after the publish phase. The closing sample waits for every
 connection to close: a PostgreSQL backend flushes its counters on
-exit, and idle backends may hold them back for up to ten seconds. Heartbeats and
+exit, and idle backends may hold them back for up to ten seconds.
+When the server preloads `pg_stat_statements`
+(`shared_preload_libraries`), the report also carries a `statements`
+block: calls and rows per statement class — claim, insert, batched
+and single finalize, release, other — so a change in round trips per
+event is visible directly. Heartbeats and
 worker registration during the run are included: they are real cost.
 A *crash* restart of PostgreSQL resets the cumulative statistics; the
 report then marks the figure unreliable. A fast restart persists them.
@@ -208,7 +213,9 @@ the run-order trap that led to `VACUUM FULL` at run start. Fourth:
 [2026-09-04, group-commit convoy](../benchmarks/2026-09-04-laptop-group-commit-convoy.md)
 — the harness's first engine finding: under commit-bound latency the
 group-commit flush lock convoys, and every laptop number was bound by
-a ~5 ms commit.
+a ~5 ms commit. Fifth:
+[2026-09-04, group-commit matrix](../benchmarks/2026-09-04-laptop-group-commit-matrix.md)
+— batching on vs off across 16 cells; it lost in 15.
 
 ## Reporting policy
 

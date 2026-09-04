@@ -57,6 +57,12 @@ All notable changes to this project are documented here. Format follows
   after the publish phase, and every run now begins with `VACUUM FULL`
   on the events table so a previous run's bloat cannot pose as a
   difference between variants. `BenchmarkProtobufIT` under `-P it`.
+- **Benchmark harness: statement counts.** When the server preloads
+  `pg_stat_statements`, the report's database block carries calls and
+  rows per statement class (claim, insert, batched/single finalize,
+  release, other) sampled before and after the run — the direct
+  measure of round trips per event that the group-commit sessions
+  needed.
 
 
 ## [0.7.0] — 2026-09-03

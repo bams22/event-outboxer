@@ -138,6 +138,22 @@ public final class ReportWriter {
                 bytes(db.walBytes()),
                 bytes((long) db.walBytesPerEvent()),
                 bytes(db.eventsTableBytesAfterPublish()));
+        if (db.statements() != null) {
+            var st = db.statements();
+            out.printf(
+                    Locale.ROOT,
+                    "statements   %d calls = %.2f/event   claim %d calls x %.1f rows   finalize"
+                            + " batched %d calls x %.1f rows, single %d   release %d   other %d%n",
+                    st.totalCalls(),
+                    (double) st.totalCalls() / p.events(),
+                    st.calls("claim"),
+                    st.rowsPerCall("claim"),
+                    st.calls("finalizeBatch"),
+                    st.rowsPerCall("finalizeBatch"),
+                    st.calls("finalizeSingle"),
+                    st.calls("release"),
+                    st.calls("other"));
+        }
         if (db.caveat() != null) {
             out.println("             " + db.caveat());
         }

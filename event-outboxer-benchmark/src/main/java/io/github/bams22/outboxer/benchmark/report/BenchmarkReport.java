@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.benchmark.report;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.github.bams22.outboxer.benchmark.db.StatementStats;
 import io.github.bams22.outboxer.benchmark.db.StorageState;
 import io.github.bams22.outboxer.benchmark.db.TableWrites;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
@@ -147,6 +148,8 @@ public record BenchmarkReport(
      * @param eventsTableBytesAfterPublish {@code pg_total_relation_size} of the events table right
      *     after the publish phase — the full backlog on disk in backlog mode, a partial snapshot in
      *     steady state (workers were already draining)
+     * @param statements calls and rows per statement class from {@code pg_stat_statements}; {@code
+     *     null} when the extension is not available on the server
      * @param caveat why the figures are not to be trusted, {@code null} when they are. A crash
      *     restart of PostgreSQL resets the cumulative statistics, so the closing sample only covers
      *     the part of the run after it; a fast restart persists them.
@@ -157,6 +160,7 @@ public record BenchmarkReport(
             long walBytes,
             double walBytesPerEvent,
             long eventsTableBytesAfterPublish,
+            @Nullable StatementStats statements,
             @Nullable String caveat) {}
 
     /**
