@@ -181,7 +181,12 @@ deliberately out of scope here.
 The forked worker waits for `SIGTERM` (graceful stop, claims released)
 or for the driver to vanish (its stdin closes), so a driver that dies
 never leaves workers behind. Worker output is in `<id>.log` next to
-its `<id>.json` spec and `<id>.ready` marker.
+its `<id>.json` spec and `<id>.ready` marker. Every context the target
+boots registers a recovery listener that logs orphan reclaims, stale
+sweeps, stuck-handler reclaims, abandoned handlers, non-busy retries
+and storage errors at WARN with the worker id, and a run whose
+invariants fail writes the full ledger to `handlings.csv` in the work
+directory.
 
 ## Remaining limits
 
@@ -224,7 +229,11 @@ unique keys under fsync and is irrelevant on hot keys. Seventh:
 [2026-09-04, group commit after the fix](../benchmarks/2026-09-04-laptop-group-commit-after-fix.md)
 — the harness's first before/after of an engine change: the
 convoy-free flush path (ADR-0014 amendment), validated on the same
-matrix.
+matrix. Eighth:
+[2026-09-04, publish-only sweeper](../benchmarks/2026-09-04-laptop-publish-only-sweeper.md)
+— a correctness defect (ADR-0029 amendment) found by the `crash`
+preset at full size, traced with the ledger dump and the recovery
+listener the harness gained for it.
 
 ## Reporting policy
 

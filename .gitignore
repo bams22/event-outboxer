@@ -25,6 +25,11 @@ replay_pid*
 
 /.idea
 target/
+# `target/` above is meant for Maven build output, but it also matches a Java package
+# directory named target — the benchmark harness has one (…/benchmark/target/, the
+# system-under-test seam). Source trees are never build output: un-ignore them there.
+!**/src/main/java/**/target/
+!**/src/test/java/**/target/
 *.iml
 
 # flatten-maven-plugin: generated per-module pom with ${revision} resolved.

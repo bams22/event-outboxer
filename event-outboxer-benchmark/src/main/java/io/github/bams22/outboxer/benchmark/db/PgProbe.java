@@ -234,9 +234,9 @@ public final class PgProbe {
         throw new IllegalStateException("PostgreSQL did not come back within " + timeout, last);
     }
 
-    /** Rows left in {@code <schema>.events} and {@code <schema>.entity_locks} after a clean run. */
-    public StorageState storageState(String schema) {
-        return storageState(schema, List.of(), null);
+    /** Rows left in the events table and live leases in the lease table after a clean run. */
+    public StorageState storageState(String eventsTable, @Nullable String leaseTable) {
+        return storageState(eventsTable, leaseTable, List.of(), null);
     }
 
     /**
@@ -248,22 +248,20 @@ public final class PgProbe {
      * @param ignoreLeasesAcquiredBefore moment of the last database restart, {@code null} = none
      */
     public StorageState storageState(
-            String schema,
+            String eventsTable,
+            @Nullable String leaseTable,
             Collection<String> ignoredLeaseOwners,
             @Nullable Instant ignoreLeasesAcquiredBefore) {
         try (Connection c = open()) {
-            long events = count(c, schema + ".events");
+            long events = count(c, eventsTable);
             long locks =
-                    exists(c, schema + ".entity_locks")
+                    leaseTable != null && exists(c, leaseTable)
                             ? liveLeases(
-                                    c,
-                                    schema + ".entity_locks",
-                                    ignoredLeaseOwners,
-                                    ignoreLeasesAcquiredBefore)
+                                    c, leaseTable, ignoredLeaseOwners, ignoreLeasesAcquiredBefore)
                             : -1;
             return new StorageState(events, locks);
         } catch (SQLException e) {
-            throw new IllegalStateException("Cannot inspect schema " + schema, e);
+            throw new IllegalStateException("Cannot inspect " + eventsTable, e);
         }
     }
 

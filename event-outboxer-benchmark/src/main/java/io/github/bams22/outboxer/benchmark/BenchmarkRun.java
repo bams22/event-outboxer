@@ -21,6 +21,7 @@ import io.github.bams22.outboxer.benchmark.ledger.Handling;
 import io.github.bams22.outboxer.benchmark.ledger.InMemoryLedger;
 import io.github.bams22.outboxer.benchmark.ledger.JdbcLedger;
 import io.github.bams22.outboxer.benchmark.ledger.Ledger;
+import io.github.bams22.outboxer.benchmark.ledger.LedgerDump;
 import io.github.bams22.outboxer.benchmark.report.BenchmarkReport;
 import io.github.bams22.outboxer.benchmark.report.LatencyStats;
 import io.github.bams22.outboxer.benchmark.scenario.Chaos;
@@ -106,8 +107,9 @@ public final class BenchmarkRun {
             PgProbe probe = new PgProbe(db.coordinates());
             String postgresVersion = probe.serverVersion();
             String schema = target.storageSchema();
-            if (probe.vacuumFull(schema + ".events")) {
-                log.info("VACUUM FULL {}.events done: no bloat from a previous run", schema);
+            String eventsTable = target.eventsTable();
+            if (probe.vacuumFull(eventsTable)) {
+                log.info("VACUUM FULL {} done: no bloat from a previous run", eventsTable);
             }
             boolean statementStats = probe.enableStatementStats();
             log.info(
@@ -145,7 +147,7 @@ public final class BenchmarkRun {
                     redisBefore = redis.commandsProcessed();
                     Instant phaseStart = Instant.now();
                     publish = publishAll(session.publisher(), scenario);
-                    eventsBytesAfterPublish = probe.relationBytes(schema + ".events");
+                    eventsBytesAfterPublish = probe.relationBytes(eventsTable);
                     if (scenario.workersStartAfterPublish()) {
                         phaseStart = Instant.now();
                         session.startWorkers();
@@ -165,7 +167,11 @@ public final class BenchmarkRun {
                 long totalHandlings = ledger.total();
                 List<Handling> handlings = ledger.snapshot();
                 StorageState storage =
-                        probe.storageState(schema, killedWorkers(chaos), lastRestart(chaos));
+                        probe.storageState(
+                                eventsTable,
+                                target.leaseTable(),
+                                killedWorkers(chaos),
+                                lastRestart(chaos));
 
                 InvariantReport invariants =
                         new InvariantChecker()
@@ -175,6 +181,10 @@ public final class BenchmarkRun {
                                         scenario.lockType().exclusive(),
                                         chaos);
                 ProcessingSummary processing = summarize(publish, handlings, drain, scenario);
+                if (!invariants.passed() || !storage.clean() || !drain.drained) {
+                    Path dump = LedgerDump.write(workDir.resolve("handlings.csv"), handlings);
+                    log.warn("Invariants failed; ledger dumped to {}", dump);
+                }
 
                 return BenchmarkReport.builder()
                         .target(target.name())
