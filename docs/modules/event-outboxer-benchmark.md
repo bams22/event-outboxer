@@ -84,7 +84,8 @@ fast-restarted). Each asserts the verdict, never a number.
 Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `workers`, `publisher-threads`, `handler-pool-size`, `claim-batch-size`,
 `poll-min-interval`, `poll-max-interval`, `executor` (`platform` |
-`virtual`), `lock` (`noop` | `postgres-lease` | `postgres-advisory`),
+`virtual`), `lock` (`noop` | `postgres-lease` | `postgres-advisory` |
+`redis` — with `redis-uri`, or a disposable `redis-image` container),
 `finalize-batching`, `handler-work-time`, `failure-rate`,
 `workers-after-publish`, `drain-timeout`, `payload-bytes`,
 `connection-pool-size`, `fleet` (`in-process` | `forked`),
@@ -190,6 +191,11 @@ each with hardware, database, commit, commands and the verbatim console
 summaries. First one: [2026-09-04, developer laptop](../benchmarks/2026-09-04-laptop-first-run.md)
 — three row writes per event confirmed, and the hot-key path under a
 locker identified as the first scene where the library looks bad.
+Second: [2026-09-04, locks](../benchmarks/2026-09-04-laptop-locks.md)
+— the lease locker costs PostgreSQL two extra row writes per locked
+event, the Redis locker none (four Redis commands instead). When the
+scenario uses the Redis locker the report carries a `redis` block:
+commands per event from `INFO stats` and lock keys left behind.
 
 ## Reporting policy
 

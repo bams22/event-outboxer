@@ -119,6 +119,20 @@ class BenchmarkOptionsTest {
     }
 
     @Test
+    void redisLockerTakesAnExternalUriOrADisposableImage() {
+        BenchmarkOptions external =
+                BenchmarkOptions.parse(
+                        "--bench.lock=redis", "--bench.redis-uri=redis://cache:6379/0");
+        assertThat(external.scenario().lockType()).isEqualTo(LockType.REDIS);
+        assertThat(external.scenario().lockType().exclusive()).isTrue();
+        assertThat(external.redisUri()).isEqualTo("redis://cache:6379/0");
+
+        BenchmarkOptions disposable = BenchmarkOptions.parse("--bench.lock=redis");
+        assertThat(disposable.redisUri()).isNull();
+        assertThat(disposable.redisImage()).isEqualTo("redis:7-alpine");
+    }
+
+    @Test
     void unknownKeyIsRejectedWithTheKnownList() {
         assertThatThrownBy(() -> BenchmarkOptions.parse("--bench.wrokers=3"))
                 .isInstanceOf(IllegalArgumentException.class)

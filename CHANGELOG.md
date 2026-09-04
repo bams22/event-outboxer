@@ -43,6 +43,12 @@ All notable changes to this project are documented here. Format follows
   ITs `BenchmarkCrashIT` and `BenchmarkPostgresRestartIT`. A crash
   restart resets `pg_stat`, so the database-cost figure is then marked
   unreliable in the report.
+- **Benchmark harness: Redis locker.** `--bench.lock=redis` runs the
+  scenario on `event-outboxer-lock-redis`, against `--bench.redis-uri`
+  or a disposable `redis:7-alpine` container; the report gains a
+  `redis` block (commands processed per event from `INFO stats`, lock
+  keys left after the stop) and the environment records the Redis
+  origin and version. `BenchmarkRedisLockIT` under `-P it`.
 
 
 ## [0.7.0] — 2026-09-03

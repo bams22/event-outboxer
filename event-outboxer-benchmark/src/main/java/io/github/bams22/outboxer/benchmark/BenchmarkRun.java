@@ -12,6 +12,8 @@ package io.github.bams22.outboxer.benchmark;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
 import io.github.bams22.outboxer.benchmark.db.DatabaseHandle;
 import io.github.bams22.outboxer.benchmark.db.PgProbe;
+import io.github.bams22.outboxer.benchmark.db.RedisHandle;
+import io.github.bams22.outboxer.benchmark.db.RedisProbe;
 import io.github.bams22.outboxer.benchmark.db.StorageState;
 import io.github.bams22.outboxer.benchmark.db.TableWrites;
 import io.github.bams22.outboxer.benchmark.ledger.Handling;
@@ -22,6 +24,7 @@ import io.github.bams22.outboxer.benchmark.report.BenchmarkReport;
 import io.github.bams22.outboxer.benchmark.report.LatencyStats;
 import io.github.bams22.outboxer.benchmark.scenario.Chaos;
 import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
+import io.github.bams22.outboxer.benchmark.scenario.LockType;
 import io.github.bams22.outboxer.benchmark.scenario.PostgresRestart;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
 import io.github.bams22.outboxer.benchmark.target.BenchmarkEnvironment;
@@ -102,10 +105,12 @@ public final class BenchmarkRun {
             PgProbe probe = new PgProbe(db.coordinates());
             String postgresVersion = probe.serverVersion();
             String schema = target.storageSchema();
-            try (LedgerHandle ledgerHandle = openLedger(db, scenario)) {
+            try (RedisSide redis = openRedis(scenario);
+                    LedgerHandle ledgerHandle = openLedger(db, scenario)) {
                 Ledger ledger = ledgerHandle.ledger;
                 BenchmarkEnvironment env =
-                        new BenchmarkEnvironment(db.coordinates(), scenario, ledger, workDir);
+                        new BenchmarkEnvironment(
+                                db.coordinates(), redis.uri(), scenario, ledger, workDir);
 
                 log.info(
                         "Opening target {} against {} ({} fleet)",
@@ -115,12 +120,14 @@ public final class BenchmarkRun {
                 PublishPhase publish;
                 Drain drain;
                 TableWrites before;
+                long redisBefore = 0;
                 List<ChaosEvent> chaos = new ArrayList<>();
                 try (TargetSession session = target.open(env)) {
                     if (!scenario.workersStartAfterPublish()) {
                         session.startWorkers();
                     }
                     before = probe.tableWrites(schema);
+                    redisBefore = redis.commandsProcessed();
                     Instant phaseStart = Instant.now();
                     publish = publishAll(session.publisher(), scenario);
                     if (scenario.workersStartAfterPublish()) {
@@ -132,6 +139,8 @@ public final class BenchmarkRun {
                 }
                 Thread.sleep(STATS_SETTLE);
                 TableWrites writes = probe.tableWrites(schema).minus(before);
+                BenchmarkReport.@Nullable RedisMetrics redisMetrics =
+                        redis.metrics(redisBefore, scenario.events());
                 long totalHandlings = ledger.total();
                 List<Handling> handlings = ledger.snapshot();
                 StorageState storage =
@@ -149,7 +158,12 @@ public final class BenchmarkRun {
                 return BenchmarkReport.builder()
                         .target(target.name())
                         .scenario(scenario)
-                        .environment(environment(db.origin(), postgresVersion))
+                        .environment(
+                                environment(
+                                        db.origin(),
+                                        postgresVersion,
+                                        redis.origin(),
+                                        redis.serverVersion()))
                         .startedAt(runStart)
                         .finishedAt(Instant.now())
                         .publish(
@@ -172,6 +186,7 @@ public final class BenchmarkRun {
                                         writes,
                                         (double) writes.total() / scenario.events(),
                                         databaseCaveat(scenario, chaos)))
+                        .redis(redisMetrics)
                         .invariants(invariants)
                         .storage(storage)
                         .chaos(chaos)
@@ -184,6 +199,17 @@ public final class BenchmarkRun {
         return options.database() != null
                 ? DatabaseHandle.external(options.database())
                 : DatabaseHandle.testcontainers(options.postgresImage());
+    }
+
+    private RedisSide openRedis(Scenario scenario) {
+        if (scenario.lockType() != LockType.REDIS) {
+            return RedisSide.NONE;
+        }
+        RedisHandle handle =
+                options.redisUri() != null
+                        ? RedisHandle.external(options.redisUri())
+                        : RedisHandle.testcontainers(options.redisImage());
+        return new RedisSide(handle, new RedisProbe(handle.uri()));
     }
 
     private static LedgerHandle openLedger(DatabaseHandle db, Scenario scenario) {
@@ -400,7 +426,11 @@ public final class BenchmarkRun {
         return seconds <= 0 ? 0 : count / seconds;
     }
 
-    private static BenchmarkReport.Environment environment(String origin, String pgVersion) {
+    private static BenchmarkReport.Environment environment(
+            String origin,
+            String pgVersion,
+            @Nullable String redisOrigin,
+            @Nullable String redisVersion) {
         Runtime rt = Runtime.getRuntime();
         String host;
         try {
@@ -423,6 +453,8 @@ public final class BenchmarkRun {
                 .host(host)
                 .databaseOrigin(origin)
                 .postgresVersion(pgVersion)
+                .redisOrigin(redisOrigin)
+                .redisVersion(redisVersion)
                 .libraryVersion(library == null ? "working-tree" : library)
                 .build();
     }
@@ -432,6 +464,53 @@ public final class BenchmarkRun {
     private record Drain(boolean drained, Instant phaseStart, Duration wallDuration) {}
 
     private record ProcessingSummary(Duration duration, LatencyStats endToEnd) {}
+
+    /**
+     * The Redis the redis locker uses, plus its probe; {@link #NONE} when the scenario has no
+     * Redis, so the run code needs no null checks.
+     */
+    private record RedisSide(@Nullable RedisHandle handle, @Nullable RedisProbe probe)
+            implements AutoCloseable {
+
+        static final RedisSide NONE = new RedisSide(null, null);
+
+        private static final String LOCK_PREFIX = "outbox:lock:";
+
+        @Nullable String uri() {
+            return handle == null ? null : handle.uri();
+        }
+
+        @Nullable String origin() {
+            return handle == null ? null : handle.origin();
+        }
+
+        @Nullable String serverVersion() {
+            return probe == null ? null : probe.serverVersion();
+        }
+
+        long commandsProcessed() {
+            return probe == null ? 0 : probe.commandsProcessed();
+        }
+
+        BenchmarkReport.@Nullable RedisMetrics metrics(long before, long events) {
+            if (probe == null) {
+                return null;
+            }
+            long commands = probe.commandsProcessed() - before;
+            return new BenchmarkReport.RedisMetrics(
+                    commands, (double) commands / events, probe.keysWithPrefix(LOCK_PREFIX));
+        }
+
+        @Override
+        public void close() {
+            if (probe != null) {
+                probe.close();
+            }
+            if (handle != null) {
+                handle.close();
+            }
+        }
+    }
 
     /** The ledger plus whatever must be closed with it (the JDBC pool for the forked fleet). */
     private record LedgerHandle(Ledger ledger, @Nullable AutoCloseable resource)

@@ -32,15 +32,20 @@ threads, lease locker) showed what this costs under contention:
 | lease locker | 213 | 6.88 | 4.6 s |
 | lease, `lock-busy-retry-delay=50ms` | 255 | 6.68 | 5.1 s |
 | lease, busy 50 ms + `poll-max-interval=100ms` | 298 | 6.72 | 4.3 s |
+| Redis locker (second session) | 336 | 5.52 | 1.5 s |
 | `lock.type=noop` (incorrect baseline, 1 140 overlaps) | 612 | 3.00 | 0.2 s |
 | per-key serial ideal (8 keys × 1/5 ms) | ~1 600 | — | — |
 
 Three mechanisms compound:
 
-1. **Collisions are near-certain.** Nine handler threads on eight keys
-   with 5 ms holds means almost every key is held at any instant; the
-   ledger shows 1.6–1.8 busy hits per event, each costing two row
-   writes (the claim's update and the release's update).
+1. **Collisions are frequent.** Nine handler threads on eight keys
+   with 5 ms holds means most keys are held at any instant; the
+   counters show 0.8–0.9 busy hits per event with the lease locker
+   (1.3 with Redis, whose cheaper failed attempts allow more of them),
+   each costing two row writes — the release back to `PENDING` and the
+   later re-claim. *(Figure corrected on 2026-09-04 from an earlier
+   "1.6–1.8", which had counted both writes as separate hits; see the
+   [locks session](../benchmarks/2026-09-04-laptop-locks.md).)*
 2. **The penalty for a busy hit is the queue position, not the
    delay.** The claim query orders by `priority DESC, run_at`
    (`PostgresEventStore`), and a released event carries

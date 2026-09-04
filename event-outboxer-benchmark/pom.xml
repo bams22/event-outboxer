@@ -53,6 +53,10 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-lock-postgres-advisory</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-lock-redis</artifactId>
+        </dependency>
         <!-- JSON report goes through the library's own ObjectMapper factory. -->
         <dependency>
             <groupId>${project.groupId}</groupId>

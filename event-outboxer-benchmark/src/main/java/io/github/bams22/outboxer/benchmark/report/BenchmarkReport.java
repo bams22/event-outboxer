@@ -34,6 +34,7 @@ import org.jspecify.annotations.Nullable;
  * @param publish the publish phase
  * @param processing the handling phase
  * @param database row writes attributed to the outbox schema
+ * @param redis the locker's Redis load, {@code null} unless the scenario used the redis locker
  * @param invariants the checker's verdict
  * @param storage what the schema looked like after the fleet stopped
  * @param chaos what the harness did on purpose, in order
@@ -48,6 +49,7 @@ public record BenchmarkReport(
         PublishMetrics publish,
         ProcessingMetrics processing,
         DatabaseMetrics database,
+        @Nullable RedisMetrics redis,
         InvariantReport invariants,
         StorageState storage,
         List<ChaosEvent> chaos) {
@@ -85,6 +87,9 @@ public record BenchmarkReport(
      * @param host host name
      * @param databaseOrigin {@code external} or {@code testcontainers:<image>}
      * @param postgresVersion {@code server_version}
+     * @param redisOrigin {@code external} or {@code testcontainers:<image>}, {@code null} when no
+     *     Redis was involved
+     * @param redisVersion {@code INFO server} version, {@code null} when no Redis was involved
      * @param libraryVersion event-outboxer version from the api jar manifest, if present
      */
     @Builder
@@ -96,6 +101,8 @@ public record BenchmarkReport(
             String host,
             String databaseOrigin,
             String postgresVersion,
+            @Nullable String redisOrigin,
+            @Nullable String redisVersion,
             String libraryVersion) {}
 
     /**
@@ -141,4 +148,15 @@ public record BenchmarkReport(
      */
     public record DatabaseMetrics(
             TableWrites writes, double writesPerEvent, @Nullable String caveat) {}
+
+    /**
+     * What the {@code redis} locker cost the Redis server, from {@code INFO stats} sampled before
+     * and after the run (the probe's own few commands included).
+     *
+     * @param commands commands processed during the run
+     * @param commandsPerEvent {@code commands / events}
+     * @param remainingLockKeys lock keys still present after the graceful stop; expected 0 without
+     *     chaos, keys of killed workers linger until their TTL
+     */
+    public record RedisMetrics(long commands, double commandsPerEvent, long remainingLockKeys) {}
 }

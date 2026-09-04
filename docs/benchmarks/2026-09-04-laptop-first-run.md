@@ -102,11 +102,13 @@ against the baseline and 7× against the ideal.
 
 The write counters say where the time goes. Per event the lease adds
 one insert and one delete (`~5 000` each), and the update column
-carries about 8 000–9 000 rows beyond the 5 000 claims: each is a
-*lock-busy release* — a worker claimed an event, found its key held by
-another handling, wrote the event back to `PENDING` with a retry
-delay, and moved on. That is 1.6–1.8 busy hits per event, two row
-writes each.
+carries about 8 000–9 000 rows beyond the 5 000 claims. Each busy hit
+costs two of them: the *lock-busy release* — a worker claimed an
+event, found its key held by another handling, wrote the event back to
+`PENDING` with a retry delay, and moved on — and the later re-claim.
+That is 0.8–0.9 busy hits per event, two row writes each. *(Corrected
+in the [second session](2026-09-04-laptop-locks.md): the original text
+counted every extra update as a hit and quoted 1.6–1.8.)*
 
 Two hypotheses about the timing knobs were tested and both fell:
 
@@ -115,8 +117,8 @@ Two hypotheses about the timing knobs were tested and both fell:
 - additionally `poll-max-interval` from 1 s down to 100 ms, so the
   poller's adaptive back-off cannot delay the re-claim: 298/s.
 
-The busy-hit count did not move either (updates 13 038 and 13 228 vs
-14 145). The cause is therefore structural, not a timer: the engine
+The busy-hit count did not move either (extra updates 8 038 and 8 228
+vs 9 145, i.e. 0.80–0.91 hits per event). The cause is therefore structural, not a timer: the engine
 claims events without knowing their lock keys (the key lives in the
 handler, ADR-0012), so three workers keep claiming events whose keys
 are currently held, releasing them and claiming them again. The root

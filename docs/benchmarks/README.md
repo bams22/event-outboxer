@@ -8,6 +8,7 @@ travels without its configuration.
 
 | Date | Setup | What it answers |
 |---|---|---|
+| [2026-09-04, locks](2026-09-04-laptop-locks.md) | same laptop, plus a standalone Redis 7 container | lease vs Redis locker: two extra row writes per locked event on PostgreSQL with the lease, none with Redis (4 Redis commands instead); Redis faster under contention; the busy-hit accounting corrected |
 | [2026-09-04](2026-09-04-laptop-first-run.md) | developer laptop, standalone PostgreSQL 15 container on the same host | first numbers: `throughput` and `hot-key` presets, six control variants; the hot-key path under a locker is the first "looks bad" scene |
 
 ## How to read a run

@@ -38,6 +38,8 @@ import org.springframework.boot.convert.DurationStyle;
  * @param targetName which {@code BenchmarkTarget} to run; only {@code outboxer} ships here
  * @param database external database, {@code null} = start a disposable PostgreSQL
  * @param postgresImage image for the disposable database
+ * @param redisUri external Redis for {@code --bench.lock=redis}, {@code null} = disposable
+ * @param redisImage image for the disposable Redis
  * @param reportDir where the JSON report goes
  */
 public record BenchmarkOptions(
@@ -45,6 +47,8 @@ public record BenchmarkOptions(
         String targetName,
         @Nullable DatabaseCoordinates database,
         String postgresImage,
+        @Nullable String redisUri,
+        String redisImage,
         Path reportDir) {
 
     /** Prefix every option carries. */
@@ -52,6 +56,7 @@ public record BenchmarkOptions(
 
     private static final String DEFAULT_TARGET = "outboxer";
     private static final String DEFAULT_IMAGE = "postgres:15";
+    private static final String DEFAULT_REDIS_IMAGE = "redis:7-alpine";
     private static final Path DEFAULT_REPORT_DIR = Path.of("target", "bench");
     private static final String WORKER_PROP = "worker-prop.";
 
@@ -64,6 +69,8 @@ public record BenchmarkOptions(
                             "jdbc-user",
                             "jdbc-password",
                             "postgres-image",
+                            "redis-uri",
+                            "redis-image",
                             "report-dir",
                             "name",
                             "events",
@@ -96,6 +103,7 @@ public record BenchmarkOptions(
         Objects.requireNonNull(scenario, "scenario must not be null");
         Objects.requireNonNull(targetName, "targetName must not be null");
         Objects.requireNonNull(postgresImage, "postgresImage must not be null");
+        Objects.requireNonNull(redisImage, "redisImage must not be null");
         Objects.requireNonNull(reportDir, "reportDir must not be null");
     }
 
@@ -184,6 +192,8 @@ public record BenchmarkOptions(
                 kv.getOrDefault("target", DEFAULT_TARGET),
                 database,
                 kv.getOrDefault("postgres-image", DEFAULT_IMAGE),
+                kv.get("redis-uri"),
+                kv.getOrDefault("redis-image", DEFAULT_REDIS_IMAGE),
                 Path.of(kv.getOrDefault("report-dir", DEFAULT_REPORT_DIR.toString())));
     }
 

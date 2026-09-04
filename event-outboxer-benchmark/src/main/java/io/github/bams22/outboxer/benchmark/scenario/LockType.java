@@ -10,13 +10,14 @@
 package io.github.bams22.outboxer.benchmark.scenario;
 
 /**
- * Entity locker under test, bound to {@code event-outboxer.lock.type}. Redis is deliberately absent
- * from the first cut: the harness runs on PostgreSQL alone.
+ * Entity locker under test, bound to {@code event-outboxer.lock.type}. {@link #REDIS} needs a
+ * Redis/KeyDB: {@code --bench.redis-uri}, or a disposable container when absent.
  */
 public enum LockType {
     NOOP("noop"),
     POSTGRES_LEASE("postgres-lease"),
-    POSTGRES_ADVISORY("postgres-advisory");
+    POSTGRES_ADVISORY("postgres-advisory"),
+    REDIS("redis");
 
     private final String property;
 
@@ -47,6 +48,6 @@ public enum LockType {
         throw new IllegalArgumentException(
                 "Unknown lock type '"
                         + value
-                        + "', expected noop, postgres-lease or postgres-advisory");
+                        + "', expected noop, postgres-lease, postgres-advisory or redis");
     }
 }

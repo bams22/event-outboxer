@@ -135,6 +135,16 @@ public final class ReportWriter {
         if (db.caveat() != null) {
             out.println("             " + db.caveat());
         }
+        if (report.redis() != null) {
+            out.printf(
+                    Locale.ROOT,
+                    "redis        %d commands = %.2f/event   lock keys left=%d   (%s, %s)%n",
+                    report.redis().commands(),
+                    report.redis().commandsPerEvent(),
+                    report.redis().remainingLockKeys(),
+                    env.redisVersion(),
+                    env.redisOrigin());
+        }
         for (ChaosEvent c : report.chaos()) {
             out.printf(
                     Locale.ROOT,
