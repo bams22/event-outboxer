@@ -8,6 +8,7 @@ travels without its configuration.
 
 | Date | Setup | What it answers |
 |---|---|---|
+| [2026-09-04, group-commit convoy](2026-09-04-laptop-group-commit-convoy.md) | same laptop | root cause of the Protobuf "gap": every round trip pays a ~5 ms commit on this host, and group commit's flush lock turns concurrent commits into a convoy of small batches; with commit latency removed the engine does 6 500/s and both formats are equal. Fix proposed for ADR-0014 |
 | [2026-09-04, payload formats](2026-09-04-laptop-payload-formats.md) | same laptop | Jackson vs Protobuf at 256 B / 4 KB / 16 KB: identical database cost (rows, WAL, disk) for text payloads, serialization CPU invisible, Protobuf drain 20–40 % slower for a reason not yet found; a run-order (bloat) mistake caught and fixed with `VACUUM FULL` at run start |
 | [2026-09-04, locks](2026-09-04-laptop-locks.md) | same laptop, plus a standalone Redis 7 container | lease vs Redis locker: two extra row writes per locked event on PostgreSQL with the lease, none with Redis (4 Redis commands instead); Redis faster under contention; the busy-hit accounting corrected |
 | [2026-09-04](2026-09-04-laptop-first-run.md) | developer laptop, standalone PostgreSQL 15 container on the same host | first numbers: `throughput` and `hot-key` presets, six control variants; the hot-key path under a locker is the first "looks bad" scene |

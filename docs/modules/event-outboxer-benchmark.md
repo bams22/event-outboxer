@@ -204,7 +204,11 @@ scenario uses the Redis locker the report carries a `redis` block:
 commands per event from `INFO stats` and lock keys left behind.
 Third: [2026-09-04, payload formats](../benchmarks/2026-09-04-laptop-payload-formats.md)
 — Jackson and Protobuf cost the database the same for text payloads;
-the run-order trap that led to `VACUUM FULL` at run start.
+the run-order trap that led to `VACUUM FULL` at run start. Fourth:
+[2026-09-04, group-commit convoy](../benchmarks/2026-09-04-laptop-group-commit-convoy.md)
+— the harness's first engine finding: under commit-bound latency the
+group-commit flush lock convoys, and every laptop number was bound by
+a ~5 ms commit.
 
 ## Reporting policy
 

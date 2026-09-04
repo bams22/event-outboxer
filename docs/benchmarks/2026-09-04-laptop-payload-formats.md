@@ -110,8 +110,13 @@ the profile shows is that pgjdbc decodes the `bytea` column from its
 hex text representation (`PGbytea.toBytesHexEscaped`), so the binary
 lane travels as text and twice the bytes; at 256 B that cannot
 account for milliseconds per event, so it is an observation, not an
-explanation. **Open question**, to be answered with a wall-clock
-(thread-state) profile of the drain pipeline rather than a CPU one.
+explanation. **Answered the same day** in the
+[group-commit convoy session](2026-09-04-laptop-group-commit-convoy.md):
+the format is not the cause. Every round trip on this host pays a
+~5 ms commit, and under that latency the group-commit flush lock forms
+a convoy that makes throughput hypersensitive to arrival timing; with
+group commit off, or with commit latency removed, the two formats are
+equal.
 
 ### 4. A side observation on the poller, from `pg_stat_statements`
 
@@ -158,7 +163,7 @@ are kept with the raw JSON reports by the author.
 
 ## Next
 
-1. Wall-clock profile of the drain pipeline for the Protobuf case
-   (thread states, not CPU samples) — the open question of finding 3.
+1. ~~Wall-clock profile of the drain pipeline~~ — done, see the
+   [fourth session](2026-09-04-laptop-group-commit-convoy.md).
 2. A `backlog` session varying `claim-min-free` and `claim-batch-size`
-   for finding 4.
+   for finding 4, after the group-commit fix.
