@@ -1,0 +1,32 @@
+# Benchmark runs
+
+Recorded runs of the [benchmark and invariant harness](../modules/event-outboxer-benchmark.md)
+(ADR-0034). One file per session, newest first. Each file states the
+hardware, the database, the harness commit and the exact commands, and
+carries the harness's own console summary verbatim, so a number never
+travels without its configuration.
+
+| Date | Setup | What it answers |
+|---|---|---|
+| [2026-09-04](2026-09-04-laptop-first-run.md) | developer laptop, standalone PostgreSQL 15 container on the same host | first numbers: `throughput` and `hot-key` presets, six control variants; the hot-key path under a locker is the first "looks bad" scene |
+
+## How to read a run
+
+- **Invariants** (`lost`, unexplained `duplicates`, `unexpected`,
+  `lockOverlaps` when graded, `storage clean`) are the verdict. A run
+  with a failed invariant is a bug report, whatever its numbers say.
+- **Numbers** (publish/s, handled/s, end-to-end percentiles, row writes
+  per event) are information about *that* host, database and
+  configuration. Compare them across variants of the same session, not
+  across sessions on different hardware.
+- **Row writes per event** is the most portable figure: it depends on
+  the engine's design, not on the host. `3.00` is the design minimum
+  (insert, claim, finalize-delete).
+
+## Policy (ADR-0034 §8)
+
+Numbers quoted in the README or in module docs must come from a run
+against an external PostgreSQL on separate hardware, state that
+hardware, and include the `hot-key` scenario with the locker on. A
+session recorded here does not automatically qualify: the file says
+whether it does.

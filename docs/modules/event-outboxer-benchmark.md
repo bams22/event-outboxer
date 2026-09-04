@@ -183,6 +183,14 @@ its `<id>.json` spec and `<id>.ready` marker.
 - A crash restart of PostgreSQL resets `pg_stat`; the database cost
   figure of such a run is marked unreliable.
 
+## Recorded runs
+
+Sessions are written up under [docs/benchmarks/](../benchmarks/README.md),
+each with hardware, database, commit, commands and the verbatim console
+summaries. First one: [2026-09-04, developer laptop](../benchmarks/2026-09-04-laptop-first-run.md)
+— three row writes per event confirmed, and the hot-key path under a
+locker identified as the first scene where the library looks bad.
+
 ## Reporting policy
 
 Numbers published in this repository's docs must come from a run

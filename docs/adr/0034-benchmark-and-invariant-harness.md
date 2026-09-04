@@ -239,7 +239,9 @@ repository's docs must come from a run against an external PostgreSQL
 (not Testcontainers on the build host), state the hardware, and
 include the `hot-key` scenario with the locker on. A performance
 change to the engine ships with a before/after report from this
-harness in its PR description.
+harness in its PR description. Sessions are recorded under
+`docs/benchmarks/`, one file each, whether or not they qualify for
+publication — the file says which.
 
 ## Rationale
 
