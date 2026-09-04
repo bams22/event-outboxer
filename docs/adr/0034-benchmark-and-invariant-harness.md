@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-09-04 (phase 2 delivered: forked fleet,
+`SIGKILL`, PostgreSQL restart); see the Amendment section at the bottom
 
 ## Date
 
@@ -125,26 +126,57 @@ is what a team deploys.
 - **Publisher side**: one `publish-only` context (ADR-0029) whose
   `OutboxEventPublisher` is called inside a `TransactionTemplate`, one
   business transaction per event by default.
-- **Worker fleet, phase 1 (this ADR)**: `N` additional Spring contexts
-  in the driver JVM, each with an explicit `event-outboxer.worker.id`
-  (`bench-w<i>`), its own connection pool, executors and pollers.
-  Contexts do not share a `PollerWakeHub`, so workers rely on polling
-  exactly like separate pods do.
-- **Worker fleet, phase 2 (follow-up, not in this ADR's code)**: one
-  JVM per worker forked from the exec jar, so a worker can be
-  `SIGKILL`ed mid-batch and PostgreSQL can be restarted underneath the
-  fleet. The in-process fleet cannot fake a crash honestly: an
-  abandoned context keeps finalizing on its handler threads.
+- **Worker fleet, in-process (`--bench.fleet=in-process`, default)**:
+  `N` additional Spring contexts in the driver JVM, each with an
+  explicit `event-outboxer.worker.id` (`bench-w<i>`), its own
+  connection pool, executors and pollers. Contexts do not share a
+  `PollerWakeHub`, so workers rely on polling exactly like separate
+  pods do. Cheap; cannot be crashed honestly — an abandoned context
+  keeps finalizing on its handler threads.
+- **Worker fleet, forked (`--bench.fleet=forked`)**: one JVM per
+  worker, launched with the same code as the driver (the exec jar via
+  `JarLauncher` when running from it, the current class path
+  otherwise) and told what to do through a JSON `WorkerSpec` file:
+  database coordinates, the scenario, its id, a ready-marker path. The
+  worker boots the same starter context, marks itself ready, and waits
+  for `SIGTERM` (graceful stop through a shutdown hook, claims
+  released) or for the driver to disappear (its stdin reaches
+  end-of-file). Output goes to `<workDir>/<id>.log`. A kill is
+  `Process.destroyForcibly()` = `SIGKILL`, no cooperation needed.
 
 ### 4. Every handling goes into a ledger
 
 The target's handler records `(seq, eventType, attempt, workerId,
 thread, startedAt, finishedAt, outcome)` for every invocation,
 including retries. The in-process fleet uses an in-memory ledger; the
-forked fleet will use the `bench.handled` table in the same
-PostgreSQL. The ledger is the only source of truth for both metrics
-and invariants: the harness never trusts the library's own listener
-callbacks or metrics to grade the library.
+forked fleet uses the `bench.handled` table in the same PostgreSQL,
+each JVM through a small HikariCP pool of its own (the library's pool
+and metrics stay untouched; the `bench` schema is outside the
+`pg_stat` sample). A ledger insert that fails is a handler failure:
+for the harness the row *is* the side effect, so the library must
+retry the event rather than count it. The ledger is the only source of
+truth for both metrics and invariants: the harness never trusts the
+library's own listener callbacks or metrics to grade the library.
+
+### 4a. Chaos
+
+Actions fire from the drain loop, each once, when handled progress
+reaches its trigger (so always after the publish phase — chaos
+presets run in backlog mode to guarantee there is work to lose):
+
+- **Kill** (`--bench.kill-workers=N --bench.kill-at=0.3`): `SIGKILL` the
+  `N` oldest workers; with `--bench.respawn-killed=true` (default) boot
+  replacements with fresh ids, as an orchestrator would.
+- **PostgreSQL restart** (`--bench.pg-restart=fast|crash
+  --bench.pg-restart-at=0.5`): send the container's postmaster `SIGINT`
+  (fast shutdown, clean) or `SIGKILL` (crash, WAL replay on start),
+  start the same container again, wait until it answers. The
+  container is created with a fixed host port so the address every
+  worker holds survives the restart. Only the disposable Testcontainers
+  database can be restarted; an external one fails fast.
+
+Every action is recorded as a `ChaosEvent` (kind, moment, progress,
+worker ids) that the report embeds and the checker consumes.
 
 ### 5. Invariants are pass/fail; numbers are information
 
@@ -154,9 +186,9 @@ set:
 | Invariant | Rule | Expected |
 |---|---|---|
 | **No lost event** | every published `seq` has ≥ 1 successful handling | always 0 lost |
-| **No unexplained duplicate** | successful handlings per `seq` > 1 | 0 without chaos; every duplicate attributable to an injected crash with chaos |
+| **No unexplained duplicate** | successful handlings per `seq` > 1 | 0 without chaos; with chaos a duplicate is *attributable* when one of its successful handlings lies within ±10 s of a kill of its own worker or of a database restart, and only unexplained duplicates fail the run |
 | **Lock-key exclusivity** | two handlings with the same lock key never overlap in `[startedAt, finishedAt]` | 0 overlaps when a locker is configured; overlaps *expected* with `lock.type=noop` (that is the hot-key scenario's baseline) |
-| **Storage is clean** | after the drain the `events` table holds no rows for the run and `entity_locks` is empty | always |
+| **Storage is clean** | after the graceful stop the `events` table holds no rows and no live lease that somebody alive should have released remains in `entity_locks` | always; leases owned by killed workers and leases acquired before a database outage are discounted (they expire, nobody can release them) |
 
 A run whose invariants fail exits non-zero and writes the report
 anyway. Throughput and latency never fail a run.
@@ -169,7 +201,10 @@ anyway. Throughput and latency never fail a run.
 - Database cost: `n_tup_ins + n_tup_upd + n_tup_del` over the
   `event_outboxer` schema from `pg_stat_user_tables`, sampled before
   and after, divided by events. The ledger table is outside that
-  schema and does not count.
+  schema and does not count. The closing sample is taken after every
+  connection is closed (idle backends hold counters back for up to ten
+  seconds). A *crash* restart of PostgreSQL resets the cumulative
+  statistics; the report then marks the figure unreliable.
 - Retries: handlings with `attempt > 1`.
 
 ### 7. Scenarios are presets with overrides, and the effective config is always printed
@@ -181,6 +216,14 @@ anyway. Throughput and latency never fail a run.
 | `hot-key` | all events on a handful of lock keys: the cost of entity locking, run with and without a locker |
 | `failures` | a share of first attempts return `retry`: the retry path and its DB cost |
 | `backlog` | publish everything first, then start the fleet: drain rate after an outage |
+| `crash` | forked fleet of 3, two workers `SIGKILL`ed at 30 % and replaced: orphan reclaim, lease takeover, attributable duplicates |
+| `pg-restart` | forked fleet, PostgreSQL fast-restarted at 40 %: pool recovery, finalize failures, stale-claim sweep |
+
+The chaos presets shorten the recovery timers (`heartbeat 1 s`,
+`dead-threshold 5 s`, `orphan-recovery 2 s`, `stale-claim-sweep 5 s`,
+`handler-max-runtime 10 s`, `lock-ttl 15 s`) — the production defaults
+would turn one recovery into a coffee break. Those values bound the
+recovery times the run reports, and the report carries them.
 
 Every knob (`workers`, `eventTypes`, `handlerPoolSize`,
 `claimBatchSize`, `pollMinInterval`, `executorType`, `lockType`,
@@ -232,9 +275,10 @@ you intend to deploy.
 
 **Maintainers.** A new module to keep in sync with starter properties
 and with the SPI. Performance changes now need evidence: the harness
-report becomes part of the PR. The phase-2 forked fleet and crash
-chaos are the next step and should follow before any headline
-"lost = 0 under crashes" claim is made in the README.
+report becomes part of the PR. Changes to orphan reclaim, the lease
+locker, finalize-failure handling or the stale-claim sweeper now have a
+test that exercises them across JVMs (`BenchmarkCrashIT`,
+`BenchmarkPostgresRestartIT` under `-P it`).
 
 **Operations.** None directly. The scenarios mirror the questions an
 on-call engineer asks (drain after outage, retry storms, hot keys), so
@@ -244,7 +288,23 @@ the reports are also the documentation for those situations.
 of the library; the reporting policy (external PostgreSQL, hot-key
 included) is the guard. The in-process fleet shares one JVM's garbage
 collector and CPU between publisher and workers, which understates
-what separate pods achieve; phase 2 removes that bias.
+what separate pods achieve; the forked fleet removes that bias but
+still shares one host. The ±10 s attribution window can mask a genuine
+duplicate that happens to land inside it. Chaos runs measure the
+recovery timers as much as the engine — which is the point, but the
+numbers must be read next to those timers.
+
+## Amendment (2026-09-04): phase 2 delivered
+
+The forked fleet, `SIGKILL` of workers with optional respawn, and the
+fast/crash restart of the disposable PostgreSQL are implemented as
+described in §3, §4, §4a and §5, together with the database ledger, the
+chaos-aware duplicate attribution, the lease discounting in the storage
+check and the `crash` / `pg-restart` presets. First runs (600 events,
+three workers, this host): lost = 0 in both, two attributable
+duplicates each, storage clean; the drain of ~20 s is bounded by the
+shortened recovery timers (5 s dead threshold + 2 s reclaim cadence,
+15 s lease TTL, 20 s stale-claim threshold), not by the engine.
 
 ## Related decisions
 

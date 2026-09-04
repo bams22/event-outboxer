@@ -37,6 +37,10 @@ under retries and hot keys.
 java -jar event-outboxer-benchmark/target/event-outboxer-benchmark-*-exec.jar \
      --bench.scenario=throughput
 
+# chaos: forked fleet, two workers SIGKILLed and replaced, then a PostgreSQL crash
+java -jar event-outboxer-benchmark/target/event-outboxer-benchmark-*-exec.jar \
+     --bench.scenario=crash --bench.pg-restart=crash --bench.pg-restart-at=0.6
+
 # the same against your own database — the only setup whose numbers count
 java -jar event-outboxer-benchmark/target/event-outboxer-benchmark-*-exec.jar \
      --bench.scenario=throughput --bench.workers=3 \
@@ -59,9 +63,11 @@ invariants   lost=0 duplicates=0 unexpected=0 lockOverlaps=0 (graded)   storage:
 RESULT       PASS
 ```
 
-The invariant half also runs as a test: `BenchmarkSmokeIT` executes
-the `smoke` preset under `./mvnw -pl event-outboxer-benchmark -P it verify`
-and asserts the verdict, never a number.
+The invariant half also runs as tests under
+`./mvnw -pl event-outboxer-benchmark -P it verify`: `BenchmarkSmokeIT`
+(in-process), `BenchmarkCrashIT` (forked fleet, two workers `SIGKILL`ed
+and replaced) and `BenchmarkPostgresRestartIT` (forked fleet, database
+fast-restarted). Each asserts the verdict, never a number.
 
 ## Presets
 
@@ -72,6 +78,8 @@ and asserts the verdict, never a number.
 | `hot-key` | the price of entity locking | 5 000 events on 8 lock keys, 5 ms of work, lease locker — rerun with `--bench.lock=noop` for the baseline where overlaps are *expected* |
 | `failures` | the retry path and its DB cost | 5 000 events, 10 % of first attempts return `retry`, backoff shortened to 200 ms |
 | `backlog` | drain rate after an outage | 20 000 events published first, fleet started afterwards |
+| `crash` | orphan reclaim, lease takeover, duplicate accounting | forked fleet of 3, 5 000 events on 32 keys, two workers `SIGKILL`ed at 30 % and respawned, fast recovery timers |
+| `pg-restart` | pool recovery, finalize failures, stale-claim sweep | forked fleet of 3, 5 000 events, PostgreSQL fast-restarted at 40 %; `--bench.pg-restart=crash` for a crash with WAL replay |
 
 Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `workers`, `publisher-threads`, `handler-pool-size`, `claim-batch-size`,
@@ -79,13 +87,21 @@ Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `virtual`), `lock` (`noop` | `postgres-lease` | `postgres-advisory`),
 `finalize-batching`, `handler-work-time`, `failure-rate`,
 `workers-after-publish`, `drain-timeout`, `payload-bytes`,
-`connection-pool-size`, plus `worker-prop.<any starter property>` for
-everything else. An unknown key fails fast and lists the known ones.
+`connection-pool-size`, `fleet` (`in-process` | `forked`),
+`worker-jvm-args`, `kill-workers`, `kill-at`, `respawn-killed`,
+`pg-restart` (`none` | `fast` | `crash`), `pg-restart-at`, plus
+`worker-prop.<any starter property>` for everything else. An unknown
+key fails fast and lists the known ones.
 
 Harness defaults are **not** production defaults where it matters for
 the measurement: `poll-min-interval` is 100 ms (starter: 500 ms) and
 `poll-max-interval` 1 s (starter: 10 s), because steady-state latency
-is one of the things being measured. The report embeds the effective
+is one of the things being measured. The chaos presets additionally
+shorten the recovery timers (heartbeat 1 s, dead-threshold 5 s,
+orphan-recovery 2 s, stale-claim-sweep 5 s, handler-max-runtime 10 s,
+lock-ttl 15 s), because the production values (30 s, 5 min, 10 min)
+would turn a recovery into a coffee break. Those timers bound the
+recovery times a chaos run reports. The report embeds the effective
 scenario, so a number never travels without its configuration.
 
 ## What is graded and what is only reported
@@ -93,10 +109,10 @@ scenario, so a number never travels without its configuration.
 | Invariant (fails the run) | Rule |
 |---|---|
 | no lost event | every published sequence number has ≥ 1 successful handling |
-| no duplicate | successful handlings per event ≤ 1 (the in-process fleet has no crash injection yet, so any duplicate is a bug) |
+| no unexplained duplicate | successful handlings per event ≤ 1, except duplicates a chaos event explains: one of the event's successful handlings lies within ±10 s of a `SIGKILL` of its own worker or of a database restart (its finalize was lost — the at-least-once contract at work). Without chaos every duplicate is a bug |
 | nothing unexpected | no handling for a sequence number that was never published |
 | lock-key exclusivity | two handlings of the same key never overlap — graded only when a real locker is configured; with `lock=noop` overlaps are counted and shown as information |
-| storage is clean | after the graceful stop, `events` has no rows and `entity_locks` is empty |
+| storage is clean | after the graceful stop, `events` has no rows and no live lease that somebody alive should have released is left in `entity_locks`; leases owned by killed workers and leases acquired before a database outage are discounted |
 
 Numbers — publish and end-to-end latency percentiles, handled/s,
 retries, row writes per event — are information. They never fail a
@@ -108,47 +124,64 @@ has stopped (a PostgreSQL backend flushes its counters on exit; idle
 backends may hold them back for up to ten seconds, which is why the
 closing sample waits for the connections to close). Heartbeats and
 worker registration during the run are included: they are real cost.
+A *crash* restart of PostgreSQL resets the cumulative statistics; the
+report then marks the figure unreliable. A fast restart persists them.
 
 ## How it is built
 
 ```
-BenchmarkRunner  main: options → target → BenchmarkRun → ReportWriter
-BenchmarkRun     database up → target.open → [workers] → publish → drain → close → sample → grade
+BenchmarkRunner  main: options → target → BenchmarkRun → ReportWriter; --bench.role=worker → WorkerProcess
+BenchmarkRun     database up → target.open → [workers] → publish → drain (+ chaos) → close → sample → grade
 target/          BenchmarkTarget · TargetSession · BenchmarkPublisher · BenchmarkEvent   (the SUT seam)
-target/outboxer  OutboxerTarget: 1 publish-only Spring context + N worker contexts, BenchEventHandler → Ledger
-ledger/          Handling · Ledger · InMemoryLedger
-verify/          InvariantChecker → InvariantReport
-db/              DatabaseHandle (testcontainers | external) · PgProbe · TableWrites · StorageState
+target/outboxer  OutboxerTarget: 1 publish-only Spring context + a WorkerFleet
+                 InProcessFleet (contexts in this JVM) | ForkedFleet (JVM per worker, WorkerSpec file, ready marker, log)
+                 WorkerBootstrap (one place that turns a Scenario into starter properties) · WorkerProcess · BenchEventHandler → Ledger
+ledger/          Handling · Ledger · InMemoryLedger (in-process) · JdbcLedger (bench.handled, forked)
+verify/          InvariantChecker → InvariantReport · ChaosEvent (attribution window)
+db/              DatabaseHandle (testcontainers with fixed host port + restart | external) · PgProbe · TableWrites · StorageState
 report/          BenchmarkReport · LatencyStats · ReportWriter
-scenario/        Scenario (+ presets) · ExecutorType · LockType
+scenario/        Scenario (+ presets) · Chaos · FleetMode · PostgresRestart · ExecutorType · LockType
 ```
 
 The **system under test is an interface**. `BenchmarkRun` only knows
 `BenchmarkTarget`; the event-outboxer implementation boots one
-publish-only context (ADR-0029) for the driver and one Spring context
-per worker with an explicit `event-outboxer.worker.id`, its own
-connection pool, executors and pollers. Contexts share nothing but the
-database — not even the same-JVM poller wake hub — so workers discover
-events by polling exactly as separate pods do. A team can measure
-another outbox with the same scenarios by implementing the three
-target types in its own repository; that comparison is deliberately
-out of scope here.
+publish-only context (ADR-0029) for the driver and one worker instance
+per `workers`, each with an explicit `event-outboxer.worker.id`, its
+own connection pool, executors and pollers. Instances share nothing
+but the database — not even the same-JVM poller wake hub — so workers
+discover events by polling exactly as separate pods do. A team can
+measure another outbox with the same scenarios by implementing the
+three target types in its own repository; that comparison is
+deliberately out of scope here.
 
-## Limits of the in-process fleet
+## Two fleets
 
-- Publisher and workers share one JVM's CPU and garbage collector,
-  which understates what separate pods achieve.
-- A crash cannot be faked honestly: an abandoned Spring context keeps
-  finalizing on its handler threads. The duplicate-under-crash claim
-  therefore has no scenario yet.
-- Overlap detection compares timestamps from one clock; a fleet across
-  hosts would need a skew tolerance.
+| | `--bench.fleet=in-process` (default) | `--bench.fleet=forked` |
+|---|---|---|
+| worker | a Spring context in the driver JVM | a JVM of its own, forked with the same code (exec jar or class path) and a JSON spec file |
+| ledger | in memory, zero cost | `bench.handled` table, one small pool per JVM |
+| kill | impossible — an abandoned context keeps finalizing | `SIGKILL`, optional respawn with a fresh id |
+| PostgreSQL restart | supported | supported |
+| cost | seconds per run | + ~2–5 s JVM boot per worker, logs and spec files under `target/bench/work/<scenario>-<stamp>/` |
 
-The forked fleet (ADR-0034 phase 2 — one JVM per worker launched from
-the exec jar, `SIGKILL` mid-batch, PostgreSQL restart under the fleet,
-a `bench.handled` ledger table instead of the in-memory one) addresses
-all three and is the prerequisite for any headline "lost = 0 under
-crashes" claim.
+The forked worker waits for `SIGTERM` (graceful stop, claims released)
+or for the driver to vanish (its stdin closes), so a driver that dies
+never leaves workers behind. Worker output is in `<id>.log` next to
+its `<id>.json` spec and `<id>.ready` marker.
+
+## Remaining limits
+
+- Everything runs on one host: the forked fleet has separate heaps but
+  shares the CPU, and overlap detection compares timestamps from one
+  clock. A fleet across hosts would need a skew tolerance.
+- The PostgreSQL restart needs the disposable Testcontainers database
+  (the container is created with a fixed host port so its address
+  survives the restart); against `--bench.jdbc-url` the option fails
+  fast.
+- The ±10 s attribution window can mask a genuine duplicate that
+  happens to land inside it.
+- A crash restart of PostgreSQL resets `pg_stat`; the database cost
+  figure of such a run is marked unreliable.
 
 ## Reporting policy
 

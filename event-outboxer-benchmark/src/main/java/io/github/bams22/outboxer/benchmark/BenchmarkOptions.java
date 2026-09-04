@@ -10,8 +10,11 @@
 package io.github.bams22.outboxer.benchmark;
 
 import io.github.bams22.outboxer.benchmark.db.DatabaseCoordinates;
+import io.github.bams22.outboxer.benchmark.scenario.Chaos;
 import io.github.bams22.outboxer.benchmark.scenario.ExecutorType;
+import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
 import io.github.bams22.outboxer.benchmark.scenario.LockType;
+import io.github.bams22.outboxer.benchmark.scenario.PostgresRestart;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -80,7 +83,14 @@ public record BenchmarkOptions(
                             "workers-after-publish",
                             "drain-timeout",
                             "payload-bytes",
-                            "connection-pool-size"));
+                            "connection-pool-size",
+                            "fleet",
+                            "worker-jvm-args",
+                            "kill-workers",
+                            "kill-at",
+                            "respawn-killed",
+                            "pg-restart",
+                            "pg-restart-at"));
 
     public BenchmarkOptions {
         Objects.requireNonNull(scenario, "scenario must not be null");
@@ -140,6 +150,16 @@ public record BenchmarkOptions(
         applyDuration(kv, "drain-timeout", b::drainTimeout);
         applyInt(kv, "payload-bytes", b::payloadBytes);
         applyInt(kv, "connection-pool-size", b::connectionPoolSize);
+        apply(kv, "fleet", v -> b.fleet(FleetMode.parse(v)));
+        apply(kv, "worker-jvm-args", v -> b.workerJvmArgs(List.of(v.trim().split("\\s+"))));
+
+        Chaos.ChaosBuilder chaos = base.chaos().toBuilder();
+        applyInt(kv, "kill-workers", chaos::killWorkers);
+        apply(kv, "kill-at", v -> chaos.killAtProgress(Double.parseDouble(v)));
+        apply(kv, "respawn-killed", v -> chaos.respawnKilled(bool("respawn-killed", v)));
+        apply(kv, "pg-restart", v -> chaos.postgresRestart(PostgresRestart.parse(v)));
+        apply(kv, "pg-restart-at", v -> chaos.postgresRestartAtProgress(Double.parseDouble(v)));
+        b.chaos(chaos.build());
 
         Map<String, String> workerProps = new LinkedHashMap<>(base.workerProperties());
         kv.forEach(

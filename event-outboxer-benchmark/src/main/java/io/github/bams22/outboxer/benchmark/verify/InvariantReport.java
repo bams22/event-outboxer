@@ -23,8 +23,12 @@ import lombok.Builder;
  * @param lost published events with no successful handling
  * @param lostSample first offenders, at most {@link InvariantChecker#SAMPLE_SIZE}
  * @param duplicatedEvents events with more than one successful handling
+ * @param attributableDuplicates of those, events one of whose successful handlings falls into a
+ *     chaos event's window ({@link ChaosEvent#explains}) — the expected price of a kill or an
+ *     outage under at-least-once
+ * @param unexplainedDuplicates duplicated events no chaos event accounts for — a bug
  * @param extraHandlings successful handlings beyond the first, summed over all events
- * @param duplicateSample first duplicated sequence numbers
+ * @param duplicateSample first <em>unexplained</em> duplicated sequence numbers
  * @param unexpected handlings whose sequence number was never published
  * @param retries handlings with {@code attempt > 1}
  * @param failedAttempts handlings whose outcome was not success
@@ -40,6 +44,8 @@ public record InvariantReport(
         long lost,
         List<Long> lostSample,
         long duplicatedEvents,
+        long attributableDuplicates,
+        long unexplainedDuplicates,
         long extraHandlings,
         List<Long> duplicateSample,
         long unexpected,
@@ -55,11 +61,14 @@ public record InvariantReport(
         overlapSample = List.copyOf(Objects.requireNonNullElse(overlapSample, List.of()));
     }
 
-    /** No lost event, no duplicate, nothing unexpected, and no overlap when a locker was on. */
+    /**
+     * No lost event, no unexplained duplicate, nothing unexpected, and no overlap when a locker was
+     * on. Duplicates a chaos event accounts for are the contract, not a defect (ADR-0015).
+     */
     @JsonProperty("passed")
     public boolean passed() {
         return lost == 0
-                && duplicatedEvents == 0
+                && unexplainedDuplicates == 0
                 && unexpected == 0
                 && (!lockExclusivityExpected || lockOverlaps == 0);
     }

@@ -15,7 +15,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Read-only questions to PostgreSQL that the report needs: server version, write counters of the
@@ -62,15 +67,88 @@ public final class PgProbe {
         }
     }
 
-    /** Rows left in {@code <schema>.events} and {@code <schema>.entity_locks}. */
+    /** Blocks until a connection succeeds or {@code timeout} passes. */
+    public void awaitReady(Duration timeout) {
+        Instant deadline = Instant.now().plus(timeout);
+        SQLException last = null;
+        while (Instant.now().isBefore(deadline)) {
+            try (Connection c = open();
+                    Statement st = c.createStatement()) {
+                st.execute("SELECT 1");
+                return;
+            } catch (SQLException e) {
+                last = e;
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while waiting for PostgreSQL", ie);
+                }
+            }
+        }
+        throw new IllegalStateException("PostgreSQL did not come back within " + timeout, last);
+    }
+
+    /** Rows left in {@code <schema>.events} and {@code <schema>.entity_locks} after a clean run. */
     public StorageState storageState(String schema) {
+        return storageState(schema, List.of(), null);
+    }
+
+    /**
+     * Rows left after a run with chaos. Leases are counted only while live ({@code expires_at >
+     * now()}), and a lease is not held against the run when its owner was killed or when it was
+     * acquired before a database outage — nobody could have released either; they expire.
+     *
+     * @param ignoredLeaseOwners worker ids that were {@code SIGKILL}ed
+     * @param ignoreLeasesAcquiredBefore moment of the last database restart, {@code null} = none
+     */
+    public StorageState storageState(
+            String schema,
+            Collection<String> ignoredLeaseOwners,
+            @Nullable Instant ignoreLeasesAcquiredBefore) {
         try (Connection c = open()) {
             long events = count(c, schema + ".events");
             long locks =
-                    exists(c, schema + ".entity_locks") ? count(c, schema + ".entity_locks") : -1;
+                    exists(c, schema + ".entity_locks")
+                            ? liveLeases(
+                                    c,
+                                    schema + ".entity_locks",
+                                    ignoredLeaseOwners,
+                                    ignoreLeasesAcquiredBefore)
+                            : -1;
             return new StorageState(events, locks);
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot inspect schema " + schema, e);
+        }
+    }
+
+    private static long liveLeases(
+            Connection c,
+            String table,
+            Collection<String> ignoredOwners,
+            @Nullable Instant ignoreAcquiredBefore)
+            throws SQLException {
+        StringBuilder sql =
+                new StringBuilder("SELECT count(*) FROM " + table + " WHERE expires_at > now()");
+        List<String> owners = List.copyOf(ignoredOwners);
+        if (!owners.isEmpty()) {
+            sql.append(" AND (owner_worker IS NULL OR owner_worker <> ALL (?))");
+        }
+        if (ignoreAcquiredBefore != null) {
+            sql.append(" AND acquired_at >= ?");
+        }
+        try (PreparedStatement ps = c.prepareStatement(sql.toString())) {
+            int i = 1;
+            if (!owners.isEmpty()) {
+                ps.setArray(i++, c.createArrayOf("varchar", owners.toArray()));
+            }
+            if (ignoreAcquiredBefore != null) {
+                ps.setTimestamp(i, java.sql.Timestamp.from(ignoreAcquiredBefore));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
         }
     }
 

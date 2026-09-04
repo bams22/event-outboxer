@@ -33,20 +33,34 @@ public final class InvariantChecker {
     /** How many offenders each sample list keeps. */
     public static final int SAMPLE_SIZE = 20;
 
+    /** Grades {@code handlings} for a run without chaos. */
+    public InvariantReport check(
+            long published, List<Handling> handlings, boolean lockExclusivityExpected) {
+        return check(published, handlings, lockExclusivityExpected, List.of());
+    }
+
     /**
      * Grades {@code handlings} for a run that published sequence numbers {@code 0..published-1}.
      *
      * @param lockExclusivityExpected {@code true} when the scenario ran a real locker, so overlaps
      *     fail the run; {@code false} reports them as information (the hot-key baseline)
+     * @param chaos what the harness did on purpose; a duplicated event whose successful handling
+     *     falls into one of these windows is attributable and does not fail the run. A genuine
+     *     duplicate that happens to land inside a window is masked — the price of the rule.
      */
     public InvariantReport check(
-            long published, List<Handling> handlings, boolean lockExclusivityExpected) {
+            long published,
+            List<Handling> handlings,
+            boolean lockExclusivityExpected,
+            List<ChaosEvent> chaos) {
         Objects.requireNonNull(handlings, "handlings must not be null");
+        Objects.requireNonNull(chaos, "chaos must not be null");
         if (published < 0) {
             throw new IllegalArgumentException("published must be >= 0, got " + published);
         }
 
         Map<Long, Integer> successesPerSeq = new HashMap<>();
+        Map<Long, List<Handling>> successes = new HashMap<>();
         long unexpected = 0;
         long retries = 0;
         long failedAttempts = 0;
@@ -59,6 +73,7 @@ public final class InvariantChecker {
             }
             if (h.succeeded()) {
                 successesPerSeq.merge(h.seq(), 1, Integer::sum);
+                successes.computeIfAbsent(h.seq(), k -> new ArrayList<>()).add(h);
             } else {
                 failedAttempts++;
             }
@@ -76,13 +91,16 @@ public final class InvariantChecker {
         }
 
         long duplicatedEvents = 0;
+        long attributable = 0;
         long extraHandlings = 0;
         List<Long> duplicateSample = new ArrayList<>();
         for (Map.Entry<Long, Integer> e : new TreeMap<>(successesPerSeq).entrySet()) {
             if (e.getValue() > 1) {
                 duplicatedEvents++;
                 extraHandlings += e.getValue() - 1;
-                if (duplicateSample.size() < SAMPLE_SIZE) {
+                if (explained(successes.get(e.getKey()), chaos)) {
+                    attributable++;
+                } else if (duplicateSample.size() < SAMPLE_SIZE) {
                     duplicateSample.add(e.getKey());
                 }
             }
@@ -96,6 +114,8 @@ public final class InvariantChecker {
                 .lost(lost)
                 .lostSample(lostSample)
                 .duplicatedEvents(duplicatedEvents)
+                .attributableDuplicates(attributable)
+                .unexplainedDuplicates(duplicatedEvents - attributable)
                 .extraHandlings(extraHandlings)
                 .duplicateSample(duplicateSample)
                 .unexpected(unexpected)
@@ -105,6 +125,17 @@ public final class InvariantChecker {
                 .lockOverlaps(overlaps.count)
                 .overlapSample(overlaps.sample)
                 .build();
+    }
+
+    private static boolean explained(List<Handling> successes, List<ChaosEvent> chaos) {
+        for (Handling h : successes) {
+            for (ChaosEvent event : chaos) {
+                if (event.explains(h.workerId(), h.finishedAt())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Overlaps findOverlaps(List<Handling> handlings) {

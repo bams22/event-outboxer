@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.benchmark.report;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
+import io.github.bams22.outboxer.benchmark.verify.ChaosEvent;
 import io.github.bams22.outboxer.serializer.jackson.JacksonObjectMapperFactory;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -66,10 +67,12 @@ public final class ReportWriter {
         Scenario s = report.scenario();
         out.printf(
                 Locale.ROOT,
-                "%s  scenario=%s  events=%d workers=%d types=%d lockKeys=%d pool=%d batch=%d"
-                        + " poll=%s lock=%s exec=%s finalizeBatching=%s work=%s failureRate=%.2f%n",
+                "%s  scenario=%s  fleet=%s events=%d workers=%d types=%d lockKeys=%d pool=%d"
+                        + " batch=%d poll=%s lock=%s exec=%s finalizeBatching=%s work=%s"
+                        + " failureRate=%.2f%n",
                 report.target(),
                 s.name(),
+                s.fleet().option(),
                 s.events(),
                 s.workers(),
                 s.eventTypes(),
@@ -129,13 +132,28 @@ public final class ReportWriter {
                 db.writes().updates(),
                 db.writes().deletes(),
                 db.writesPerEvent());
+        if (db.caveat() != null) {
+            out.println("             " + db.caveat());
+        }
+        for (ChaosEvent c : report.chaos()) {
+            out.printf(
+                    Locale.ROOT,
+                    "chaos        %s at %s after %d handled %s %s%n",
+                    c.kind(),
+                    c.at(),
+                    c.progress(),
+                    c.workerIds(),
+                    c.details());
+        }
         var inv = report.invariants();
         out.printf(
                 Locale.ROOT,
-                "invariants   lost=%d duplicates=%d unexpected=%d lockOverlaps=%d (%s)"
-                        + "   storage: events=%d locks=%d%n",
+                "invariants   lost=%d duplicates=%d (attributable %d, unexplained %d) unexpected=%d"
+                        + " lockOverlaps=%d (%s)   storage: events=%d locks=%d%n",
                 inv.lost(),
                 inv.duplicatedEvents(),
+                inv.attributableDuplicates(),
+                inv.unexplainedDuplicates(),
                 inv.unexpected(),
                 inv.lockOverlaps(),
                 inv.lockExclusivityExpected() ? "graded" : "informational, no locker",
@@ -148,7 +166,7 @@ public final class ReportWriter {
             out.println("             lost seqs: " + inv.lostSample());
         }
         if (!inv.duplicateSample().isEmpty()) {
-            out.println("             duplicated seqs: " + inv.duplicateSample());
+            out.println("             unexplained duplicated seqs: " + inv.duplicateSample());
         }
         out.println(report.passed() ? "RESULT       PASS" : "RESULT       FAIL");
     }

@@ -54,6 +54,9 @@ import org.jspecify.annotations.Nullable;
  *     the default of 256
  * @param connectionPoolSize Hikari pool size per context (publisher and each worker)
  * @param workerProperties extra starter properties applied last to every worker context
+ * @param fleet in-process contexts or forked JVMs
+ * @param workerJvmArgs JVM options for forked workers; ignored in-process
+ * @param chaos what goes wrong on purpose during the drain
  */
 @Builder(toBuilder = true)
 public record Scenario(
@@ -76,11 +79,31 @@ public record Scenario(
         Duration drainTimeout,
         int payloadBytes,
         int connectionPoolSize,
-        Map<String, String> workerProperties) {
+        Map<String, String> workerProperties,
+        FleetMode fleet,
+        List<String> workerJvmArgs,
+        Chaos chaos) {
 
     /** Names of the shipped presets, in documentation order. */
     public static final List<String> PRESETS =
-            List.of("smoke", "throughput", "hot-key", "failures", "backlog");
+            List.of("smoke", "throughput", "hot-key", "failures", "backlog", "crash", "pg-restart");
+
+    /**
+     * Maintenance settings every chaos preset applies: the production defaults (30 s dead
+     * threshold, 5 min stale-claim sweep, 10 min lock TTL) would turn a recovery into a coffee
+     * break. Each value respects the starter's validation rules ({@code dead-threshold >= 3 ×
+     * heartbeat}, {@code lock-ttl >= handler-max-runtime}). Documented in the report because they
+     * bound the recovery times the run measures.
+     */
+    public static final Map<String, String> FAST_RECOVERY_PROPERTIES =
+            Map.of(
+                    "event-outboxer.maintenance.heartbeat-interval", "1s",
+                    "event-outboxer.maintenance.dead-threshold", "5s",
+                    "event-outboxer.maintenance.orphan-recovery-interval", "2s",
+                    "event-outboxer.maintenance.watchdog-interval", "2s",
+                    "event-outboxer.maintenance.stale-claim-sweep-interval", "5s",
+                    "event-outboxer.event-types.defaults.handler-max-runtime", "10s",
+                    "event-outboxer.event-types.defaults.lock-ttl", "15s");
 
     public Scenario {
         Objects.requireNonNull(name, "name must not be null");
@@ -126,6 +149,21 @@ public record Scenario(
                 workerProperties == null
                         ? Map.of()
                         : Collections.unmodifiableMap(new LinkedHashMap<>(workerProperties));
+        fleet = fleet == null ? FleetMode.IN_PROCESS : fleet;
+        workerJvmArgs = workerJvmArgs == null ? List.of("-Xmx1g") : List.copyOf(workerJvmArgs);
+        chaos = chaos == null ? Chaos.none() : chaos;
+        if (chaos.killWorkers() > 0 && fleet != FleetMode.FORKED) {
+            throw new IllegalArgumentException(
+                    "chaos.killWorkers requires fleet=forked: an in-process context cannot be"
+                            + " killed honestly");
+        }
+        if (chaos.killWorkers() > workers) {
+            throw new IllegalArgumentException(
+                    "chaos.killWorkers must not exceed workers ("
+                            + workers
+                            + "), got "
+                            + chaos.killWorkers());
+        }
     }
 
     /** Resolves a preset by name; {@code null} or blank means {@code smoke}. */
@@ -137,6 +175,8 @@ public record Scenario(
             case "hot-key", "hotkey" -> hotKey();
             case "failures" -> failures();
             case "backlog" -> backlog();
+            case "crash" -> crash();
+            case "pg-restart", "pgrestart", "pg_restart" -> pgRestart();
             default ->
                     throw new IllegalArgumentException(
                             "Unknown scenario '" + name + "', expected one of " + PRESETS);
@@ -209,6 +249,56 @@ public record Scenario(
                 .workers(3)
                 .claimBatchSize(50)
                 .workersStartAfterPublish(true)
+                .build();
+    }
+
+    /**
+     * Two of three forked workers are {@code SIGKILL}ed mid-drain and replaced: orphan reclaim,
+     * lease takeover and the duplicate accounting that follows. Backlog mode so the fleet has work
+     * to lose. Recovery timers are shortened ({@link #FAST_RECOVERY_PROPERTIES}).
+     */
+    public static Scenario crash() {
+        return Scenario.builder()
+                .name("crash")
+                .events(5_000)
+                .workers(3)
+                .lockKeyCardinality(32)
+                .lockType(LockType.POSTGRES_LEASE)
+                .handlerWorkTime(Duration.ofMillis(2))
+                .workersStartAfterPublish(true)
+                .fleet(FleetMode.FORKED)
+                .chaos(
+                        Chaos.builder()
+                                .killWorkers(2)
+                                .killAtProgress(0.3)
+                                .respawnKilled(true)
+                                .build())
+                .workerProperties(FAST_RECOVERY_PROPERTIES)
+                .build();
+    }
+
+    /**
+     * PostgreSQL is fast-restarted under a forked fleet mid-drain: connection-pool recovery,
+     * finalize failures, stale-claim sweep. Recovery timers are shortened ({@link
+     * #FAST_RECOVERY_PROPERTIES}); {@code --bench.pg-restart=crash} makes it a crash with WAL
+     * replay instead.
+     */
+    public static Scenario pgRestart() {
+        return Scenario.builder()
+                .name("pg-restart")
+                .events(5_000)
+                .workers(3)
+                .lockKeyCardinality(32)
+                .lockType(LockType.POSTGRES_LEASE)
+                .handlerWorkTime(Duration.ofMillis(2))
+                .workersStartAfterPublish(true)
+                .fleet(FleetMode.FORKED)
+                .chaos(
+                        Chaos.builder()
+                                .postgresRestart(PostgresRestart.FAST)
+                                .postgresRestartAtProgress(0.4)
+                                .build())
+                .workerProperties(FAST_RECOVERY_PROPERTIES)
                 .build();
     }
 

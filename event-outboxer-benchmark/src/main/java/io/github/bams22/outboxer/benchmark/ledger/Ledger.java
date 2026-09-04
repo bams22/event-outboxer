@@ -14,6 +14,9 @@ import java.util.List;
 /**
  * Where the target's handler reports every invocation. Implementations must be safe for concurrent
  * {@link #record} calls from many handler threads; reads happen from the driver thread.
+ *
+ * <p>Reads may throw while the ledger's backing store is temporarily unavailable (a database
+ * restart under chaos); the driver retries them until the drain deadline.
  */
 public interface Ledger {
 

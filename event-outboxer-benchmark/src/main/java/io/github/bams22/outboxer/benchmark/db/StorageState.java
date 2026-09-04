@@ -16,8 +16,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * (processed events are deleted, or moved to the archive when it is enabled) and no lease rows.
  *
  * @param eventRows rows left in {@code events}
- * @param lockRows rows left in {@code entity_locks}; {@code -1} when the table does not exist
- *     (advisory or noop locker)
+ * @param lockRows live leases left in {@code entity_locks} that somebody alive should have released
+ *     (see {@code PgProbe.storageState} for what is excluded under chaos); {@code -1} when the
+ *     table does not exist (advisory or noop locker)
  */
 public record StorageState(long eventRows, long lockRows) {
 

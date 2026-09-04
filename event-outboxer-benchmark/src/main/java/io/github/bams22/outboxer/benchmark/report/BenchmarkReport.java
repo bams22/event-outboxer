@@ -13,11 +13,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.github.bams22.outboxer.benchmark.db.StorageState;
 import io.github.bams22.outboxer.benchmark.db.TableWrites;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
+import io.github.bams22.outboxer.benchmark.verify.ChaosEvent;
 import io.github.bams22.outboxer.benchmark.verify.InvariantReport;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Everything one run produced, in the shape the JSON file takes. The scenario and environment
@@ -33,6 +36,7 @@ import lombok.Builder;
  * @param database row writes attributed to the outbox schema
  * @param invariants the checker's verdict
  * @param storage what the schema looked like after the fleet stopped
+ * @param chaos what the harness did on purpose, in order
  */
 @Builder
 public record BenchmarkReport(
@@ -45,7 +49,8 @@ public record BenchmarkReport(
         ProcessingMetrics processing,
         DatabaseMetrics database,
         InvariantReport invariants,
-        StorageState storage) {
+        StorageState storage,
+        List<ChaosEvent> chaos) {
 
     public BenchmarkReport {
         Objects.requireNonNull(target, "target must not be null");
@@ -58,6 +63,7 @@ public record BenchmarkReport(
         Objects.requireNonNull(database, "database must not be null");
         Objects.requireNonNull(invariants, "invariants must not be null");
         Objects.requireNonNull(storage, "storage must not be null");
+        chaos = List.copyOf(Objects.requireNonNullElse(chaos, List.of()));
     }
 
     /**
@@ -129,6 +135,10 @@ public record BenchmarkReport(
      *
      * @param writes the counter difference
      * @param writesPerEvent {@code writes.total() / events}
+     * @param caveat why the figure is not to be trusted, {@code null} when it is. A crash restart
+     *     of PostgreSQL resets the cumulative statistics, so the closing sample only covers the
+     *     part of the run after it; a fast restart persists them.
      */
-    public record DatabaseMetrics(TableWrites writes, double writesPerEvent) {}
+    public record DatabaseMetrics(
+            TableWrites writes, double writesPerEvent, @Nullable String caveat) {}
 }

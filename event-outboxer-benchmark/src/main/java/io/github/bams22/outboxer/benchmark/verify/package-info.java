@@ -10,7 +10,8 @@
 
 /**
  * Grading: the invariant checker that turns a ledger plus the published set into a pass/fail
- * verdict (ADR-0034 §5). Pure functions, unit-tested without a database.
+ * verdict (ADR-0034 §5), and the chaos events that explain the duplicates a kill or an outage is
+ * allowed to produce. Pure functions, unit-tested without a database.
  */
 @NullMarked
 package io.github.bams22.outboxer.benchmark.verify;

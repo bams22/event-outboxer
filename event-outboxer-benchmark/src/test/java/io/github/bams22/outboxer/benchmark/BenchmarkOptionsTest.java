@@ -13,7 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bams22.outboxer.benchmark.scenario.ExecutorType;
+import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
 import io.github.bams22.outboxer.benchmark.scenario.LockType;
+import io.github.bams22.outboxer.benchmark.scenario.PostgresRestart;
 import java.nio.file.Path;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -56,6 +58,36 @@ class BenchmarkOptionsTest {
         assertThat(s.finalizeBatching()).isFalse();
         assertThat(s.failureRate()).isEqualTo(0.25);
         assertThat(s.workersStartAfterPublish()).isTrue();
+    }
+
+    @Test
+    void fleetAndChaosKnobsOverrideThePreset() {
+        BenchmarkOptions o =
+                BenchmarkOptions.parse(
+                        "--bench.scenario=crash",
+                        "--bench.kill-workers=1",
+                        "--bench.kill-at=0.5",
+                        "--bench.respawn-killed=false",
+                        "--bench.pg-restart=crash",
+                        "--bench.pg-restart-at=0.7",
+                        "--bench.worker-jvm-args=-Xmx256m -XX:+UseSerialGC");
+
+        var s = o.scenario();
+        assertThat(s.fleet()).isEqualTo(FleetMode.FORKED);
+        assertThat(s.chaos().killWorkers()).isEqualTo(1);
+        assertThat(s.chaos().killAtProgress()).isEqualTo(0.5);
+        assertThat(s.chaos().respawnKilled()).isFalse();
+        assertThat(s.chaos().postgresRestart()).isEqualTo(PostgresRestart.CRASH);
+        assertThat(s.chaos().postgresRestartAtProgress()).isEqualTo(0.7);
+        assertThat(s.workerJvmArgs()).containsExactly("-Xmx256m", "-XX:+UseSerialGC");
+    }
+
+    @Test
+    void forkedFleetWithoutChaosIsJustAFleetChoice() {
+        BenchmarkOptions o =
+                BenchmarkOptions.parse("--bench.scenario=throughput", "--bench.fleet=forked");
+        assertThat(o.scenario().fleet()).isEqualTo(FleetMode.FORKED);
+        assertThat(o.scenario().chaos().any()).isFalse();
     }
 
     @Test

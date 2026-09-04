@@ -27,8 +27,22 @@ All notable changes to this project are documented here. Format follows
   Testcontainers. The `smoke` preset also runs as `BenchmarkSmokeIT`
   under `-P it`. The system under test is an interface, so a second
   outbox implementation can be measured with the same scenarios from an
-  adapter kept outside this repository. Phase 2 (forked worker JVMs,
-  `SIGKILL` chaos, PostgreSQL restart) is a follow-up.
+  adapter kept outside this repository.
+- **Benchmark harness phase 2: forked fleet and chaos (ADR-0034
+  amendment).** `--bench.fleet=forked` runs one JVM per worker (forked
+  with the driver's own code, spec file, ready marker, per-worker log)
+  writing into a `bench.handled` ledger table. Chaos actions fire from
+  the drain loop at a handled-progress trigger: `--bench.kill-workers`
+  `SIGKILL`s workers (respawned by default), `--bench.pg-restart=fast|crash`
+  restarts the disposable PostgreSQL in place (fixed host port; `fast`
+  = `SIGINT`, `crash` = `SIGKILL` + WAL replay). Duplicates within
+  ±10 s of a kill of their own worker or of a database restart are
+  attributable and do not fail the run; leases owned by killed workers
+  or acquired before an outage are discounted by the storage check. New
+  presets `crash` and `pg-restart` with shortened recovery timers; new
+  ITs `BenchmarkCrashIT` and `BenchmarkPostgresRestartIT`. A crash
+  restart resets `pg_stat`, so the database-cost figure is then marked
+  unreliable in the report.
 
 
 ## [0.7.0] — 2026-09-03
