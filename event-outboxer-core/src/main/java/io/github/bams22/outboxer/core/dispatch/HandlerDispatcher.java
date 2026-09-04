@@ -23,6 +23,7 @@ import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
+import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
@@ -236,7 +237,7 @@ public final class HandlerDispatcher {
         LockHandle lock = null;
         try {
             if (lockKey != null) {
-                lock = tryAcquireLock(claimed, lockKey, cfg.lockTtl());
+                lock = tryAcquireLock(claimed, lockKey, cfg, handle);
                 if (lock == null) {
                     // busy or acquisition error — already rescheduled inside tryAcquireLock
                     return;
@@ -411,19 +412,42 @@ public final class HandlerDispatcher {
         return handler.extractLockKey(payload);
     }
 
+    /**
+     * Acquire the entity lock for {@code lockKey}, waiting up to the type's {@code lockWait} on a
+     * busy key (ADR-0035). Returns the handle, or {@code null} once the event has been put back on
+     * the existing busy/error path: released with {@code lockBusyRetryDelay}, no attempt consumed.
+     *
+     * <p>With {@code lockWait} zero the call is the plain non-blocking {@code tryLock} of ADR-0012;
+     * otherwise the bounded overload keeps the claimed, deserialized event on this thread while it
+     * retries. The wait ends early on an interrupt, which is what makes the release below delicate:
+     * a watchdog interrupt is consumed first (its force-reclaim already invalidated our claimed
+     * version, so the release is a harmless no-op), and an interrupt this dispatch did not cause —
+     * the executor's {@code shutdownNow()} at the drain deadline — skips the release altogether: an
+     * interrupted JDBC call could kill a pooled connection, and the engine's shutdown release of
+     * every claim this worker still holds returns the row to {@code PENDING} anyway.
+     */
     private @Nullable LockHandle tryAcquireLock(
-            ClaimedEvent claimed, String lockKey, Duration ttl) {
+            ClaimedEvent claimed, String lockKey, EventTypeConfig cfg, DispatchHandle handle) {
+        Instant waitStart = clock.now();
         Optional<LockHandle> held;
         try {
-            held = locker.tryLock(lockKey, ttl);
+            held =
+                    cfg.lockWait().isZero()
+                            ? locker.tryLock(lockKey, cfg.lockTtl())
+                            : locker.tryLock(lockKey, cfg.lockTtl(), cfg.lockWait());
         } catch (RuntimeException ex) {
+            Duration waited = Duration.between(waitStart, clock.now());
             listener.onLockAcquisitionFailed(
                     new LockAcquisitionInfo(
                             claimed.id(),
                             claimed.eventType(),
                             lockKey,
                             LockAcquisitionInfo.Outcome.ERROR,
+                            waited,
                             ex));
+            if (interruptedBeyondThisDispatch(claimed, lockKey, handle)) {
+                return null;
+            }
             Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
             // release, not markForRetry: the handler never ran, so lock contention or a flaky lock
             // backend must not consume the retry budget (MaxRetriesFailureHandler counts attempts).
@@ -435,6 +459,7 @@ public final class HandlerDispatcher {
                     when);
             return null;
         }
+        Duration waited = Duration.between(waitStart, clock.now());
         if (held.isEmpty()) {
             listener.onLockAcquisitionFailed(
                     new LockAcquisitionInfo(
@@ -442,7 +467,11 @@ public final class HandlerDispatcher {
                             claimed.eventType(),
                             lockKey,
                             LockAcquisitionInfo.Outcome.BUSY,
+                            waited,
                             null));
+            if (interruptedBeyondThisDispatch(claimed, lockKey, handle)) {
+                return null;
+            }
             Instant when = clock.now().plus(dispatcherConfig.lockBusyRetryDelay());
             boolean ok =
                     store.release(
@@ -464,7 +493,30 @@ public final class HandlerDispatcher {
             }
             return null;
         }
+        listener.onLockAcquired(
+                new LockAcquiredInfo(claimed.id(), claimed.eventType(), lockKey, waited));
         return held.get();
+    }
+
+    /**
+     * Clear a watchdog interrupt that landed during lock acquisition and report whether the thread
+     * is still interrupted afterwards — an interrupt from outside this dispatch (executor {@code
+     * shutdownNow()}), on which no storage call may run. See {@link
+     * DispatchHandle#consumeInterrupt}.
+     */
+    private boolean interruptedBeyondThisDispatch(
+            ClaimedEvent claimed, String lockKey, DispatchHandle handle) {
+        handle.consumeInterrupt();
+        if (!Thread.currentThread().isInterrupted()) {
+            return false;
+        }
+        log.debug(
+                "lock acquisition for eventId={} type={} key={} interrupted by executor shutdown;"
+                        + " leaving the claim to the shutdown release",
+                claimed.id(),
+                claimed.eventType(),
+                lockKey);
+        return true;
     }
 
     private void closeLock(

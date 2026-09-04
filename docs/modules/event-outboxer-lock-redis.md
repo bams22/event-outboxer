@@ -39,7 +39,9 @@ Failure semantics: Redis unreachable on acquire →
 `LockAcquisitionException` → the dispatcher reschedules the event
 after `lock-busy-retry-delay` *without consuming an attempt*;
 unreachable on release → absorbed (`onLockReleaseFailed`), key frees
-at TTL.
+at TTL. A busy key with a per-type `lock-wait` (ADR-0035) is polled
+with `SET NX PX` every 2–10 ms until the wait is spent — the
+inherited default; a pub/sub wake-up is a possible refinement.
 
 ## When to use it
 

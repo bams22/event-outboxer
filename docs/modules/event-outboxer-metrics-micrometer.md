@@ -21,7 +21,7 @@ Datadog / OTLP with zero glue code.
 
 ## What it does
 
-**`MicrometerOutboxListener`** implements all 28 callbacks; each is an
+**`MicrometerOutboxListener`** implements all 29 callbacks; each is an
 O(1) meter update, safe on the dispatcher hot path. The meter set is
 deliberately non-redundant: throughput counters that would merely
 duplicate a timer's `_count` series (claimed, processed, stuck
@@ -43,6 +43,7 @@ catalogue in [OBSERVABILITY.md §Micrometer metrics reference](../OBSERVABILITY.
 | `event_outboxer.poller.claim_time` | timer | `event_type` |
 | `event_outboxer.poller.saturated` | counter | `event_type` |
 | `event_outboxer.lock.acquisition_failed` | counter | `event_type`, `outcome` (`busy`/`error`) |
+| `event_outboxer.lock.wait_time` | timer | `event_type`, `outcome` (`acquired`/`busy`) — the bounded lock wait of ADR-0035 |
 | `event_outboxer.lock.release_failed` | counter | `event_type` |
 | `event_outboxer.storage.errors` | counter | `operation` (`claim[TYPE]`/`save`/`finalize`/`release`) |
 | `event_outboxer.maintenance.runs` | counter | `task` (6 stable names), `result` (`ok`/`failed`) |

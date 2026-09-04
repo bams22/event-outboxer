@@ -416,6 +416,14 @@ public class OutboxProperties {
         private @Nullable Duration lockTtl;
 
         /**
+         * Bounded wait for a busy entity lock (ADR-0035): how long the handler thread keeps
+         * retrying the lock before the event is released with {@code
+         * dispatcher.lock-busy-retry-delay}. Library default {@code 0} = one non-blocking attempt.
+         * Must be {@code < handler-max-runtime}.
+         */
+        private @Nullable Duration lockWait;
+
+        /**
          * Retry / failure policy for this type (ADR-0030). Thin merge like the fields above: a
          * per-type entry overrides only the {@code failure.*} keys it sets, everything else comes
          * from {@code defaults.failure.*} and then from the library chain {@code

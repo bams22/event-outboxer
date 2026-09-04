@@ -139,8 +139,19 @@ public interface OutboxListener {
     }
 
     /**
+     * Called when {@code EntityLocker.tryLock(...)} yielded the lock for a handler that declares a
+     * lock key, immediately before the handler runs. Fires for every acquisition; {@code
+     * info.waited()} separates the immediate ones from those that needed the bounded wait of
+     * ADR-0035.
+     */
+    default void onLockAcquired(LockAcquiredInfo info) {
+        // no-op
+    }
+
+    /**
      * Called when {@code EntityLocker.tryLock(...)} returned empty because the key is held by
-     * another worker. This is the normal busy-lock path, not a technical failure.
+     * another worker — after the type's bounded {@code lockWait} elapsed, if one is configured
+     * (ADR-0035). This is the normal busy-lock path, not a technical failure.
      */
     default void onLockAcquisitionFailed(LockAcquisitionInfo info) {
         // no-op

@@ -22,6 +22,7 @@ import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
+import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
@@ -127,6 +128,11 @@ public final class LoggingOutboxListener implements OutboxListener {
     @Override
     public void onEventSerializationError(SerializationErrorInfo info) {
         log.warn("serialization error {}", info);
+    }
+
+    @Override
+    public void onLockAcquired(LockAcquiredInfo info) {
+        log.trace("lock acquired {}", info);
     }
 
     @Override

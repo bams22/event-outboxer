@@ -89,6 +89,35 @@ class EventTypeConfigTest {
     }
 
     @Test
+    void lockWaitDefaultsToZeroAndStaysBelowHandlerMaxRuntime() {
+        EventTypeConfig d = EventTypeConfig.defaults();
+        // ADR-0035: zero = one non-blocking attempt until the validation plan fixes a value.
+        assertThat(d.lockWait()).isEqualTo(Duration.ZERO);
+
+        assertThatThrownBy(() -> d.toBuilder().lockWait(Duration.ofMillis(-1)).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lockWait");
+        // The wait spends the watchdog's budget: equal to handlerMaxRuntime is already too much.
+        assertThatThrownBy(
+                        () ->
+                                d.toBuilder()
+                                        .handlerMaxRuntime(Duration.ofSeconds(1))
+                                        .lockTtl(Duration.ofSeconds(2))
+                                        .lockWait(Duration.ofSeconds(1))
+                                        .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lockWait")
+                .hasMessageContaining("handlerMaxRuntime");
+        EventTypeConfig ok =
+                d.toBuilder()
+                        .handlerMaxRuntime(Duration.ofSeconds(1))
+                        .lockTtl(Duration.ofSeconds(2))
+                        .lockWait(Duration.ofMillis(999))
+                        .build();
+        assertThat(ok.lockWait()).isEqualTo(Duration.ofMillis(999));
+    }
+
+    @Test
     void providerReturnsOverrideWhenPresent() {
         EventTypeConfig alt = EventTypeConfig.defaults().toBuilder().claimBatchSize(99).build();
         EventTypeConfigProvider provider =

@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.api.observer;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -21,10 +22,17 @@ import org.jspecify.annotations.Nullable;
  * unreachable). In both cases the engine releases the event back to {@code PENDING} with a short
  * delay without consuming its retry budget.
  *
+ * <p>With a non-zero per-type {@code lockWait} (ADR-0035) the dispatcher waits for the key before
+ * giving up; {@link #waited()} is how long that took, so {@link Outcome#BUSY} means "still busy
+ * after the bounded wait". The successful counterpart is {@link
+ * OutboxListener#onLockAcquired(LockAcquiredInfo)}.
+ *
  * @param eventId identifier of the event whose lock could not be acquired
  * @param eventType event type string
  * @param lockKey the contested lock key
  * @param outcome whether the lock was busy or the locker backend failed
+ * @param waited wall time spent in {@code EntityLocker.tryLock(...)} before the outcome — the whole
+ *     bounded wait for {@link Outcome#BUSY}; a single attempt when {@code lockWait} is zero
  * @param cause the backend exception for {@link Outcome#ERROR}, always null for {@link
  *     Outcome#BUSY}
  */
@@ -33,6 +41,7 @@ public record LockAcquisitionInfo(
         String eventType,
         String lockKey,
         Outcome outcome,
+        Duration waited,
         @Nullable Throwable cause) {
 
     public LockAcquisitionInfo {
@@ -40,11 +49,15 @@ public record LockAcquisitionInfo(
         Objects.requireNonNull(eventType, "eventType must not be null");
         Objects.requireNonNull(lockKey, "lockKey must not be null");
         Objects.requireNonNull(outcome, "outcome must not be null");
+        Objects.requireNonNull(waited, "waited must not be null");
     }
 
     /** Why the lock acquisition did not yield a lock. Bounded set, safe as a metric tag. */
     public enum Outcome {
-        /** The lock key is currently held by another worker — the normal contention path. */
+        /**
+         * The lock key is held by another worker — the normal contention path. With a non-zero
+         * {@code lockWait} it means the key stayed busy for the whole bounded wait.
+         */
         BUSY,
         /**
          * The locker backend threw while trying to acquire — a technical failure, not contention.

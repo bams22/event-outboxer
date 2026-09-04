@@ -22,6 +22,7 @@ import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
+import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
@@ -61,6 +62,8 @@ public final class RecordingOutboxListener implements OutboxListener {
     private final CopyOnWriteArrayList<UnknownEventTypeInfo> unknownType =
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SerializationErrorInfo> serializationErrors =
+            new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<LockAcquiredInfo> lockAcquired =
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<LockAcquisitionInfo> lockAcquisitionFailed =
             new CopyOnWriteArrayList<>();
@@ -110,6 +113,7 @@ public final class RecordingOutboxListener implements OutboxListener {
         handlerErrors.clear();
         unknownType.clear();
         serializationErrors.clear();
+        lockAcquired.clear();
         lockAcquisitionFailed.clear();
         lockReleaseFailed.clear();
         workersRegistered.clear();
@@ -186,6 +190,11 @@ public final class RecordingOutboxListener implements OutboxListener {
     @Override
     public void onEventSerializationError(SerializationErrorInfo info) {
         serializationErrors.add(info);
+    }
+
+    @Override
+    public void onLockAcquired(LockAcquiredInfo info) {
+        lockAcquired.add(info);
     }
 
     @Override
@@ -319,6 +328,10 @@ public final class RecordingOutboxListener implements OutboxListener {
 
     public List<SerializationErrorInfo> serializationErrors() {
         return List.copyOf(serializationErrors);
+    }
+
+    public List<LockAcquiredInfo> lockAcquired() {
+        return List.copyOf(lockAcquired);
     }
 
     public List<LockAcquisitionInfo> lockAcquisitionFailed() {

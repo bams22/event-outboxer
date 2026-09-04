@@ -21,6 +21,7 @@ import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
+import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
@@ -358,16 +359,65 @@ class MicrometerOutboxListenerTest {
     }
 
     @Test
-    void lockAcquisitionFailedTagsOutcome() {
+    void lockWaitTimerRecordsPerOutcome() {
+        listener.onLockAcquired(
+                new LockAcquiredInfo(UUID.randomUUID(), "ORDER", "k-1", Duration.ofMillis(7)));
+        listener.onLockAcquired(
+                new LockAcquiredInfo(UUID.randomUUID(), "ORDER", "k-2", Duration.ZERO));
         listener.onLockAcquisitionFailed(
                 new LockAcquisitionInfo(
-                        UUID.randomUUID(), "ORDER", "k-1", LockAcquisitionInfo.Outcome.BUSY, null));
+                        UUID.randomUUID(),
+                        "ORDER",
+                        "k-1",
+                        LockAcquisitionInfo.Outcome.BUSY,
+                        Duration.ofMillis(100),
+                        null));
         listener.onLockAcquisitionFailed(
                 new LockAcquisitionInfo(
                         UUID.randomUUID(),
                         "ORDER",
                         "k-1",
                         LockAcquisitionInfo.Outcome.ERROR,
+                        Duration.ofMillis(3),
+                        new RuntimeException("redis down")));
+
+        var acquired =
+                registry.timer(
+                        "event_outboxer.lock.wait_time",
+                        "event_type",
+                        "ORDER",
+                        "outcome",
+                        "acquired");
+        // Every acquisition is recorded, immediate ones included: _count is the acquisition total.
+        assertThat(acquired.count()).isEqualTo(2L);
+        assertThat(acquired.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(7.0);
+        var busy =
+                registry.timer(
+                        "event_outboxer.lock.wait_time", "event_type", "ORDER", "outcome", "busy");
+        assertThat(busy.count()).isEqualTo(1L);
+        assertThat(busy.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(100.0);
+        // A backend error is not a wait: the counter tags it, the timer does not.
+        assertThat(registry.find("event_outboxer.lock.wait_time").tag("outcome", "error").timer())
+                .isNull();
+    }
+
+    @Test
+    void lockAcquisitionFailedTagsOutcome() {
+        listener.onLockAcquisitionFailed(
+                new LockAcquisitionInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        "k-1",
+                        LockAcquisitionInfo.Outcome.BUSY,
+                        Duration.ofMillis(100),
+                        null));
+        listener.onLockAcquisitionFailed(
+                new LockAcquisitionInfo(
+                        UUID.randomUUID(),
+                        "ORDER",
+                        "k-1",
+                        LockAcquisitionInfo.Outcome.ERROR,
+                        Duration.ZERO,
                         new RuntimeException("redis down")));
 
         assertThat(

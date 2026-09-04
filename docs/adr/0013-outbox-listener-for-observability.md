@@ -15,7 +15,11 @@ handlers that outlive `abandoned-handler-grace`; amended 2026-08-31:
 (ADR-0021 coalescing became observable) and `onMaintenanceRunCompleted`
 joined the Maintenance group (every periodic task run, OK or FAILED, is
 now reported by the scheduler's guarded wrapper); `HandlerErrorInfo`
-and `PollCompletedInfo` gained a `duration` component)
+and `PollCompletedInfo` gained a `duration` component); amended
+2026-09-04: 28 → 29 methods — `onLockAcquired` joined the Errors
+group's lock pair so the bounded lock wait of ADR-0035 is observable on
+the success side too, and `LockAcquisitionInfo` gained a `waited`
+component)
 
 ## Date
 
@@ -48,7 +52,7 @@ separate `event-outboxer-metrics-micrometer` module with
 
 ### API
 
-28 methods in `OutboxListener`, all with a default no-op. Arguments are
+29 methods in `OutboxListener`, all with a default no-op. Arguments are
 records (protection against breaking changes when adding fields).
 
 Groups:
@@ -174,7 +178,7 @@ no dedicated enable/disable property.
 
 ### Negative consequences
 
-- 28 methods — a noticeable API surface. Adding a new one is a breaking
+- 29 methods — a noticeable API surface. Adding a new one is a breaking
   change.
 - Listeners must be thread-safe and fast.
 - A little more boilerplate when creating a custom listener.

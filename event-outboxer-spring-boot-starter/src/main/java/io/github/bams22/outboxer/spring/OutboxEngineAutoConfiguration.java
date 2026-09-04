@@ -538,6 +538,7 @@ public class OutboxEngineAutoConfiguration {
                                 ? e.getInterruptStuckHandler()
                                 : base.interruptStuckHandler())
                 .lockTtl(e.getLockTtl() != null ? e.getLockTtl() : base.lockTtl())
+                .lockWait(e.getLockWait() != null ? e.getLockWait() : base.lockWait())
                 .build();
     }
 

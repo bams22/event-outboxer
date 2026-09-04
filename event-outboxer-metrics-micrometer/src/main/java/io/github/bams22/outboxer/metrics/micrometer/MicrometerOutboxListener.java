@@ -21,6 +21,7 @@ import io.github.bams22.outboxer.api.observer.EventSkippedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerAbandonedInfo;
 import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
+import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
@@ -206,6 +207,11 @@ public final class MicrometerOutboxListener implements OutboxListener {
     }
 
     @Override
+    public void onLockAcquired(LockAcquiredInfo info) {
+        recordLockWait(info.eventType(), "acquired", info.waited());
+    }
+
+    @Override
     public void onLockAcquisitionFailed(LockAcquisitionInfo info) {
         registry.counter(
                         metric("lock.acquisition_failed"),
@@ -214,6 +220,20 @@ public final class MicrometerOutboxListener implements OutboxListener {
                         "outcome",
                         tagValue(info.outcome()))
                 .increment();
+        if (info.outcome() == LockAcquisitionInfo.Outcome.BUSY) {
+            recordLockWait(info.eventType(), "busy", info.waited());
+        }
+    }
+
+    /**
+     * Time spent in {@code EntityLocker.tryLock(...)} per outcome (ADR-0035). Immediate
+     * acquisitions record ~0, so the {@code acquired} series' {@code _count} is the total number of
+     * acquisitions and its histogram shows which share needed the bounded wait; {@code busy}
+     * records the whole spent {@code lockWait} budget.
+     */
+    private void recordLockWait(String eventType, String outcome, java.time.Duration waited) {
+        registry.timer(metric("lock.wait_time"), "event_type", eventType, "outcome", outcome)
+                .record(waited.toNanos(), TimeUnit.NANOSECONDS);
     }
 
     @Override

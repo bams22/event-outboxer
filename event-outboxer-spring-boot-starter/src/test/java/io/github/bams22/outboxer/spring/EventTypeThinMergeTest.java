@@ -55,6 +55,41 @@ class EventTypeThinMergeTest {
         assertThat(merged.handlerMaxRuntime()).isEqualTo(base.handlerMaxRuntime());
         assertThat(merged.interruptStuckHandler()).isEqualTo(base.interruptStuckHandler());
         assertThat(merged.lockTtl()).isEqualTo(base.lockTtl());
+        assertThat(merged.lockWait()).isEqualTo(base.lockWait());
+    }
+
+    @Test
+    @DisplayName("lock-wait overrides per type and falls back to the base (ADR-0035)")
+    void lockWaitThinMerge() {
+        EventTypeConfig base = EventTypeConfig.defaults();
+        assertThat(base.lockWait()).isEqualTo(Duration.ZERO);
+
+        OutboxProperties.EventType override = new OutboxProperties.EventType();
+        override.setLockWait(Duration.ofMillis(100));
+
+        EventTypeConfig merged = OutboxEngineAutoConfiguration.mergeEventType(override, base);
+        assertThat(merged.lockWait()).isEqualTo(Duration.ofMillis(100));
+        assertThat(merged.lockTtl()).isEqualTo(base.lockTtl());
+        assertThat(
+                        OutboxEngineAutoConfiguration.mergeEventType(
+                                        new OutboxProperties.EventType(), merged)
+                                .lockWait())
+                .isEqualTo(Duration.ofMillis(100));
+    }
+
+    @Test
+    @DisplayName("lock-wait at or above handler-max-runtime fails the merge")
+    void lockWaitMustStayBelowHandlerMaxRuntime() {
+        OutboxProperties.EventType override = new OutboxProperties.EventType();
+        override.setHandlerMaxRuntime(Duration.ofSeconds(1));
+        override.setLockWait(Duration.ofSeconds(1));
+
+        assertThatThrownBy(
+                        () ->
+                                OutboxEngineAutoConfiguration.mergeEventType(
+                                        override, EventTypeConfig.defaults()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lockWait");
     }
 
     @Test

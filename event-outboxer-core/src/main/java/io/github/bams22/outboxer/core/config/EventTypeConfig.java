@@ -49,6 +49,11 @@ import lombok.Builder;
  *     entity lock expire while a legitimate handler is still running, breaking per-key
  *     serialization. Recommended {@code >= 2 x handlerMaxRuntime} — the TTL is the crash-release
  *     mechanism, and the margin covers a zombie handler that outlives its force-reclaimed claim
+ * @param lockWait how long the dispatcher keeps retrying a busy entity lock on the handler thread
+ *     before it gives up and releases the event with {@code lockBusyRetryDelay} (ADR-0035). Zero
+ *     (the library default until the benchmark validation fixes a value) means one non-blocking
+ *     attempt — the pre-ADR-0035 behaviour. Must be {@code < handlerMaxRuntime} (validated): the
+ *     wait runs inside the in-flight window and spends the watchdog's budget
  */
 @Builder(toBuilder = true)
 public record EventTypeConfig(
@@ -61,13 +66,15 @@ public record EventTypeConfig(
         int handlerQueueCapacity,
         Duration handlerMaxRuntime,
         boolean interruptStuckHandler,
-        Duration lockTtl) {
+        Duration lockTtl,
+        Duration lockWait) {
 
     public EventTypeConfig {
         Objects.requireNonNull(pollMinInterval, "pollMinInterval must not be null");
         Objects.requireNonNull(pollMaxInterval, "pollMaxInterval must not be null");
         Objects.requireNonNull(handlerMaxRuntime, "handlerMaxRuntime must not be null");
         Objects.requireNonNull(lockTtl, "lockTtl must not be null");
+        Objects.requireNonNull(lockWait, "lockWait must not be null");
         if (pollMinInterval.isNegative() || pollMinInterval.isZero()) {
             throw new IllegalArgumentException(
                     "pollMinInterval must be positive, got " + pollMinInterval);
@@ -125,6 +132,19 @@ public record EventTypeConfig(
                             + " serialization for TTL-honouring lockers (Redis). Recommended:"
                             + " lockTtl >= 2 x handlerMaxRuntime.");
         }
+        if (lockWait.isNegative()) {
+            throw new IllegalArgumentException("lockWait must not be negative, got " + lockWait);
+        }
+        if (lockWait.compareTo(handlerMaxRuntime) >= 0) {
+            throw new IllegalArgumentException(
+                    "lockWait ("
+                            + lockWait
+                            + ") must be < handlerMaxRuntime ("
+                            + handlerMaxRuntime
+                            + "): the bounded lock wait runs inside the in-flight window and spends"
+                            + " the watchdog's budget; a wait as long as the budget would let the"
+                            + " watchdog reclaim events that never reached their handler.");
+        }
     }
 
     /**
@@ -147,6 +167,9 @@ public record EventTypeConfig(
                 // a zombie handler finishing after its row was already force-reclaimed by the
                 // watchdog.
                 .lockTtl(Duration.ofMinutes(10))
+                // Zero = one non-blocking attempt (ADR-0012). ADR-0035 proposes 100 ms; the value
+                // is fixed by the benchmark validation plan, not here.
+                .lockWait(Duration.ZERO)
                 .build();
     }
 }

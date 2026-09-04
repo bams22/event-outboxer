@@ -83,7 +83,15 @@ on the dead holder's key cycle claim → busy → release every
 `lock-busy-retry-delay` (default 1 s) until the lease TTL (default
 10 m) expires — attempts are not consumed. Raise
 `event-outboxer.dispatcher.lock-busy-retry-delay` to shrink the noise
-(ADR-0022 §Consequences).
+(ADR-0022 §Consequences). With a per-type `lock-wait` (ADR-0035) each
+cycle additionally spends that budget on the handler thread before the
+release, so a large wait next to a dead holder's lease is the case to
+size against.
+
+Under live contention the lease locker inherits the polling bounded
+wait of `EntityLocker.tryLock(key, ttl, maxWait)`: every probe is the
+same autocommit upsert, issued every 2–10 ms until the lock is obtained
+or the type's `lock-wait` is spent.
 
 ## How to configure it
 

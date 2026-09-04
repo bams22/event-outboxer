@@ -262,8 +262,10 @@ For each claimedEvent:
         │            .deserialize(payload, handler.payloadType())
         │          (routed by the format stored at publish time, ADR-0025)
         │       3. lockKey = handler.extractLockKey(payload)
-        │       4. if lockKey != null: locker.tryLock(lockKey, ttl)
-        │          if busy: release(lockBusyDelay) — attempts not consumed; return
+        │       4. if lockKey != null: locker.tryLock(lockKey, ttl[, lockWait])
+        │          busy: wait up to the type's lockWait on this thread (ADR-0035;
+        │          0 = one attempt), then release(lockBusyDelay) — attempts not
+        │          consumed; return
         │       5. try:
         │            outcome = handler.handle(ctx, payload)
         │            switch outcome:

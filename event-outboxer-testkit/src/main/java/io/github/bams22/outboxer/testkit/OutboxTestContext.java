@@ -512,6 +512,7 @@ public final class OutboxTestContext {
                     .handlerMaxRuntime(Duration.ofMinutes(1))
                     .interruptStuckHandler(true)
                     .lockTtl(Duration.ofMinutes(1))
+                    .lockWait(Duration.ZERO)
                     .build();
         }
 

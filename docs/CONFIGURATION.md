@@ -114,6 +114,7 @@ event-outboxer:
       handler-max-runtime: 5m        # watchdog threshold for a stuck handler
       interrupt-stuck-handler: true  # interrupt the handler thread after force-reclaim
       lock-ttl: 10m                  # entity-lock TTL; must be >= handler-max-runtime (2x recommended)
+      lock-wait: 0                   # bounded wait for a busy entity lock before release (ADR-0035); must be < handler-max-runtime
       failure:                       # retry policy — thin merge like the fields above (ADR-0030)
         strategy: exponential        # exponential (default) | fixed | none
         max-attempts: 10             # then exhausted-action; ignored for strategy none
@@ -649,7 +650,11 @@ Cross-type dispatcher knobs.
 - `unknown-handler-retry-delay` — reschedule delay for `SKIP`.
 - `lock-busy-retry-delay` — reschedule delay when the entity lock is
   busy or errored. Lock contention does not consume the attempts
-  budget. With the lease locker (`lock.type=postgres-lease`), expect a burst
+  budget. Note that the released event re-enters the claim order by
+  `run_at`, i.e. behind every pending event with an earlier `run_at` —
+  under a backlog the real penalty of a busy hit is that queue
+  position, not this delay; the per-type `lock-wait` (ADR-0035) is the
+  knob that avoids the round trip. With the lease locker (`lock.type=postgres-lease`), expect a burst
   of busy-retries after a JVM crash: orphan recovery returns the dead
   worker's events after ~`dead-threshold` (30s), but the dead holder's
   lease blocks the key until `lock-ttl` expires — at the default 1s
@@ -1250,6 +1255,8 @@ refresh:
 | `claim-batch-size > 0`, `handler-pool-size > 0`, `handler-queue-capacity >= 0` | `EventTypeConfig` | Pool is fixed-size and bounded |
 | `claim-min-free` in `[1, handler-pool-size + handler-queue-capacity]` | `EventTypeConfig` | A refill threshold above the in-flight budget would never be reached |
 | `handler-max-runtime > 0`, `lock-ttl > 0` | `EventTypeConfig` | Sanity |
+| `lock-ttl >= handler-max-runtime` | `EventTypeConfig` | A TTL shorter than the handler budget would let the entity lock expire mid-handler (ADR-0012 amendment) |
+| `lock-wait >= 0`, `lock-wait < handler-max-runtime` | `EventTypeConfig` | The bounded lock wait spends the watchdog's budget (ADR-0035) |
 | `abandoned-handler-grace >= 0` | `MaintenanceConfig` | Sanity |
 | retry delays not negative | `DispatcherConfig` | Sanity |
 | `failure.max-attempts >= 1`, `failure.base-delay > 0`, `failure.multiplier > 1.0`, `failure.max-delay > 0`, `failure.jitter` in `[0, 1]`, `failure.fixed-delay > 0` | `FailurePolicyFactory` (starter) | Each checked on the layer that sets it — the error names the exact property, e.g. `event-outboxer.event-types.overrides.SEND_EMAIL.failure.multiplier must be > 1.0` |

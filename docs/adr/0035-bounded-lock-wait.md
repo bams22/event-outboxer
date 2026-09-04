@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed — design agreed 2026-09-04, implementation deferred. Nothing
-in the code implements this yet; the current behaviour is the one
-ADR-0012 specifies (one non-blocking attempt, then reschedule).
+Proposed — design agreed 2026-09-04; implemented 2026-09-04 behind a
+library default of `lock-wait: 0`, which keeps the ADR-0012 behaviour
+(one non-blocking attempt, then reschedule) until the validation plan
+below has been run and the default fixed by measurement. Acceptance,
+the default and the ADR-0012 amendment follow that session.
 
 ## Date
 
