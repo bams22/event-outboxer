@@ -88,10 +88,33 @@ for a single JVM that has to sustain several thousand finalizes per
 second on sub-millisecond storage, or when a pool sized for fully
 parallel commits is cheaper than the statements saved.
 
+## Hot keys after the fix: unchanged, as expected
+
+The `hot-key` preset (5 000 events on 8 keys, 5 ms of work, 3 workers
+× 1 type, pool 3) re-run on the fixed code, `fsync=on`:
+
+| Mode | Locker | batching on | batching off | before the fix (on) |
+|---|---|---|---|---|
+| backlog | lease | 273 | 251 | — |
+| backlog | Redis | 337 | 403 | 289–326 |
+| steady state | lease | 235 | — | 213, 249 |
+| steady state | Redis | 360 | — | 336 |
+
+All within the run-to-run noise of the earlier sessions, invariants
+intact. The statement counts show why: 3 800 (lease) to 6 500 (Redis)
+lock-busy releases per 5 000 events, claims of 1.3–2.5 rows, and
+finalizes that arrive alone (batched statements of 2.0 rows, almost
+all single) because three threads per JVM with 5 ms of work each
+rarely coincide. The convoy fix shortens what a finalize waits for; on
+hot keys the event's time goes to the claim → busy → release →
+back-of-the-backlog cycle, which is
+[ADR-0035](../adr/0035-bounded-lock-wait.md)'s subject and untouched
+here.
+
 ## Next
 
-1. The `hot-key` path is unchanged by this fix (ADR-0035 is the
-   proposal there); its numbers were not re-run.
+1. The `hot-key` path: ADR-0035 (bounded wait for a busy lock) is the
+   proposal; the numbers above are its "before".
 2. `claim-min-free` remains a two-sided knob; with the convoy gone the
    default of 1 no longer costs a claim per event under batching (2.1
    rows per claim here), so its session can wait.
