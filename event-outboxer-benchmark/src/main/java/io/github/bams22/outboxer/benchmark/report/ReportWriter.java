@@ -125,6 +125,15 @@ public final class ReportWriter {
                 pr.endToEndLatency().maxMs(),
                 pr.totalHandlings(),
                 pr.retries());
+        ConcurrencyStats cc = pr.concurrency();
+        out.printf(
+                Locale.ROOT,
+                "concurrency  peak in-flight handlers %d (busiest worker %d)   handler threads %d"
+                        + "   JVM peak platform threads %s%n",
+                cc.peakInFlight(),
+                cc.peakPerWorker(),
+                cc.distinctThreads(),
+                cc.peakPlatformThreads() == null ? "n/a (forked)" : cc.peakPlatformThreads());
         BenchmarkReport.DatabaseMetrics db = report.database();
         out.printf(
                 Locale.ROOT,

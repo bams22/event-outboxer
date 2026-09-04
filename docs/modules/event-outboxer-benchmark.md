@@ -58,10 +58,20 @@ event-outboxer  scenario=smoke  events=200 workers=2 types=1 lockKeys=16 pool=3 
 environment  java 25.0.2  Linux 7.0.0 (amd64)  cpus=20 heap=7904MB  postgres 15.17 (testcontainers:postgres:15)  library working-tree
 publish      200 in 55ms = 3579/s   p50 0.8ms p95 1.3ms p99 11.6ms max 12.1ms
 processing   drained 200/200 in 1.4s = 141/s   e2e p50 181ms p95 198ms p99 1380ms max 1387ms   handlings=200 retries=0
+concurrency  peak in-flight handlers 6 (busiest worker 3)   handler threads 6   JVM peak platform threads 61
 database     1035 row writes (ins 414, upd 217, del 404) = 5.18/event
 invariants   lost=0 duplicates=0 unexpected=0 lockOverlaps=0 (graded)   storage: events=0 locks=0
 RESULT       PASS
 ```
+
+The `concurrency` line is measured, not read off the configuration:
+the peak is the largest number of ledger entries whose
+`startedAt`–`finishedAt` intervals overlap, fleet-wide and within the
+busiest worker; `handler threads` counts distinct thread names (one
+per handling with the virtual-thread executor); the JVM figure is
+`ThreadMXBean`'s peak platform thread count of the process that ran
+the fleet (driver threads included, `n/a` for a forked fleet) —
+virtual threads are not in it, which is the point of printing it.
 
 The invariant half also runs as tests under
 `./mvnw -pl event-outboxer-benchmark -P it verify`: `BenchmarkSmokeIT`

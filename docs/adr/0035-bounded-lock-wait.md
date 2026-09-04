@@ -194,6 +194,18 @@ first: `hot-key` with `claim-batch-size=3` and
 thread count. It measures mechanism 3 alone and may inform the
 defaults recommended for hot-key workloads.
 
+The executor comparison of 2026-09-04
+([session](../benchmarks/2026-09-04-laptop-executors.md)) measured the
+other side of the same mechanism: with `handler-executor.type:
+virtual` every claimed event of the in-flight budget dispatches at
+once, so 103 dispatches of a type attempt eight keys simultaneously
+instead of three. Busy hits went from 0.75 to 7.7 per event, row
+writes from 6.6 to 21, throughput from 237/s to 96/s. A bounded wait
+would turn most of those attempts into a short park instead of a
+release-and-reclaim round trip; the session is a fifth validation
+cell for this ADR, and until it lands, virtual threads on keyed types
+should be configured with the concurrency close to the live key count.
+
 ## Consequences
 
 **Users.** Contended keys get faster and cheaper on the database with

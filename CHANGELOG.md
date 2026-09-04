@@ -37,6 +37,13 @@ All notable changes to this project are documented here. Format follows
   `true`; the amendment records when to turn it off.
 
 ### Added
+- **Benchmark report: measured handler concurrency.** The `processing`
+  metrics carry a `concurrency` block (peak in-flight handlers
+  fleet-wide and per worker from the ledger's interval overlap,
+  distinct handler threads, and the JVM's peak platform thread count
+  for an in-process fleet), printed as its own summary line, so the
+  `platform` vs `virtual` executor comparison shows what ran at once
+  rather than what was configured.
 - **Benchmark and invariant harness — `event-outboxer-benchmark`
   (ADR-0034, never published).** A reactor module that drives the
   library as deployed (Spring Boot starter + PostgreSQL storage + lease

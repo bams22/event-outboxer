@@ -22,7 +22,8 @@ import org.jspecify.annotations.Nullable;
  * @param eventType the event type name
  * @param attempt the library's attempt counter, 1-based
  * @param workerId worker that ran the handler
- * @param thread handler thread name (or id for unnamed virtual threads)
+ * @param thread handler thread name and id ({@code name#id}); the id keeps threads of different
+ *     per-type executors apart, their names repeat
  * @param lockKey lock key the handler returned, {@code null} when keys are off
  * @param startedAt wall-clock start of the handler body
  * @param finishedAt wall-clock end of the handler body, before the outcome is returned

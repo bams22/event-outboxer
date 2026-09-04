@@ -128,6 +128,7 @@ public record BenchmarkReport(
      * @param perSecond {@code handled / duration}
      * @param endToEndLatency publish call start to first successful handling end, per event
      * @param retries handlings with {@code attempt > 1}
+     * @param concurrency how many handlers actually ran at once, from the ledger
      */
     public record ProcessingMetrics(
             boolean drained,
@@ -136,7 +137,8 @@ public record BenchmarkReport(
             Duration duration,
             double perSecond,
             LatencyStats endToEndLatency,
-            long retries) {}
+            long retries,
+            ConcurrencyStats concurrency) {}
 
     /**
      * Row writes in the outbox schema between the opening and closing {@code pg_stat} samples.

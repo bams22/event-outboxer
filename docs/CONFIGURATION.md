@@ -741,6 +741,36 @@ and entity-lock acquisition, not just `handler.handle()`.
   `ContextPropagatingExecutorService`. Pin-free with
   `synchronized`-heavy JDBC drivers thanks to JEP 491.
 
+The switch changes *how many* handlers of a type run at once, not only
+what kind of thread runs them. With `platform`, `handler-pool-size`
+dispatches execute and the rest of the in-flight budget waits in the
+queue; with `virtual` there is no queue, so every claimed event of the
+budget (`handler-pool-size + handler-queue-capacity`, 104 by default)
+runs the moment it is claimed. Measured with the benchmark harness
+([session](benchmarks/2026-09-04-laptop-executors.md)):
+
+- At equal concurrency the two are equal: same throughput, same
+  statements and row writes per event. The difference is threads —
+  2 000 concurrent blocking handlers cost 2 022 platform threads
+  against 45.
+- Flipping the switch on an otherwise unchanged configuration raises
+  the executing concurrency 26× (4 → 104 per type). For a blocking
+  handler that multiplies throughput until the database is the limit,
+  and it feeds group commit whole claims: finalize batches of 40–120
+  rows instead of 3–10, about 1.05 statements per event instead of
+  1.5–2.5.
+- Under lock contention the same multiplication lands on the busy
+  path: 103 dispatches of a type try a handful of keys at once, and
+  every busy hit is two row writes. The `hot-key` preset went from
+  237/s to 96/s and from 6.6 to 21 row writes per event (ADR-0035 is
+  the planned fix).
+
+So configure `virtual` deliberately rather than flipping it:
+`handler-pool-size` = the concurrency the handler's downstream and
+`spring.datasource.hikari.maximum-pool-size` can take,
+`handler-queue-capacity: 0`, and for keyed types a concurrency near
+the number of keys that are live at once.
+
 ### `event-outboxer.metrics.*`
 
 Micrometer listener settings. `MicrometerOutboxListener` registers

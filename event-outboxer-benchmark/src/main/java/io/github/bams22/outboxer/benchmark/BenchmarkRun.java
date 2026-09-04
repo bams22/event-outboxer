@@ -23,6 +23,7 @@ import io.github.bams22.outboxer.benchmark.ledger.JdbcLedger;
 import io.github.bams22.outboxer.benchmark.ledger.Ledger;
 import io.github.bams22.outboxer.benchmark.ledger.LedgerDump;
 import io.github.bams22.outboxer.benchmark.report.BenchmarkReport;
+import io.github.bams22.outboxer.benchmark.report.ConcurrencyStats;
 import io.github.bams22.outboxer.benchmark.report.LatencyStats;
 import io.github.bams22.outboxer.benchmark.scenario.Chaos;
 import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
@@ -37,6 +38,8 @@ import io.github.bams22.outboxer.benchmark.target.TargetSession;
 import io.github.bams22.outboxer.benchmark.verify.ChaosEvent;
 import io.github.bams22.outboxer.benchmark.verify.InvariantChecker;
 import io.github.bams22.outboxer.benchmark.verify.InvariantReport;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.net.InetAddress;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -93,6 +96,8 @@ public final class BenchmarkRun {
     public BenchmarkReport run() throws InterruptedException {
         Scenario scenario = options.scenario();
         Instant runStart = Instant.now();
+        ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+        threads.resetPeakThreadCount();
         Path workDir =
                 options.reportDir()
                         .resolve("work")
@@ -181,6 +186,14 @@ public final class BenchmarkRun {
                                         scenario.lockType().exclusive(),
                                         chaos);
                 ProcessingSummary processing = summarize(publish, handlings, drain, scenario);
+                // The in-process fleet lives in this JVM, so its peak is the fleet's (plus the
+                // driver's own threads, the same in every variant). Forked workers are other
+                // processes: nothing honest to report from here.
+                Integer peakPlatformThreads =
+                        scenario.fleet() == FleetMode.IN_PROCESS
+                                ? threads.getPeakThreadCount()
+                                : null;
+                ConcurrencyStats concurrency = ConcurrencyStats.of(handlings, peakPlatformThreads);
                 if (!invariants.passed() || !storage.clean() || !drain.drained) {
                     Path dump = LedgerDump.write(workDir.resolve("handlings.csv"), handlings);
                     log.warn("Invariants failed; ledger dumped to {}", dump);
@@ -211,7 +224,8 @@ public final class BenchmarkRun {
                                         processing.duration,
                                         rate(invariants.succeeded(), processing.duration),
                                         processing.endToEnd,
-                                        invariants.retries()))
+                                        invariants.retries(),
+                                        concurrency))
                         .database(
                                 new BenchmarkReport.DatabaseMetrics(
                                         writes,

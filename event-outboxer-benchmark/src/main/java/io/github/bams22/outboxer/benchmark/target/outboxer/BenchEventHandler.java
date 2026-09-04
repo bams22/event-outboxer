@@ -120,9 +120,13 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
         }
     }
 
+    /**
+     * Name plus id: executor thread names repeat across the per-type executors of one worker
+     * ({@code outbox-handler-1} exists in every pool), so the name alone undercounts threads.
+     */
     private static String threadLabel() {
         Thread t = Thread.currentThread();
         String name = t.getName();
-        return name.isBlank() ? "thread-" + t.threadId() : name;
+        return (name.isBlank() ? "thread" : name) + "#" + t.threadId();
     }
 }
