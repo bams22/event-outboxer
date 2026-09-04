@@ -10,14 +10,15 @@
 package io.github.bams22.outboxer.benchmark.scenario;
 
 /**
- * Entity locker under test, bound to {@code event-outboxer.lock.type}. {@link #REDIS} needs a
- * Redis/KeyDB: {@code --bench.redis-uri}, or a disposable container when absent.
+ * Entity locker under test, bound to {@code event-outboxer.lock.type}. {@link #REDIS} and {@link
+ * #REDISSON} need a Redis/KeyDB: {@code --bench.redis-uri}, or a disposable container when absent.
  */
 public enum LockType {
     NOOP("noop"),
     POSTGRES_LEASE("postgres-lease"),
     POSTGRES_ADVISORY("postgres-advisory"),
-    REDIS("redis");
+    REDIS("redis"),
+    REDISSON("redisson");
 
     private final String property;
 
@@ -38,6 +39,11 @@ public enum LockType {
         return this != NOOP;
     }
 
+    /** Whether the locker talks to Redis — decides if the harness opens a Redis side and probe. */
+    public boolean usesRedis() {
+        return this == REDIS || this == REDISSON;
+    }
+
     /** Parses the command-line spelling (the starter property value, case-insensitive). */
     public static LockType parse(String value) {
         for (LockType type : values()) {
@@ -48,6 +54,6 @@ public enum LockType {
         throw new IllegalArgumentException(
                 "Unknown lock type '"
                         + value
-                        + "', expected noop, postgres-lease, postgres-advisory or redis");
+                        + "', expected noop, postgres-lease, postgres-advisory, redis or redisson");
     }
 }

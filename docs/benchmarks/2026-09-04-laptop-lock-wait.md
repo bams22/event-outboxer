@@ -298,3 +298,58 @@ gain, a commit-serialization trap, and `LISTEN` cannot work behind
 pgBouncer transaction pooling — the deployment the lease locker exists
 for. The lease locker's bounded wait is the SPI's polling default; the
 Redis locker keeps its pub/sub wake-up.
+
+## Addendum (2026-09-05): Redisson locker
+
+A fourth locker, `event-outboxer-lock-redisson`
+([ADR-0036](../adr/0036-redisson-entity-locker-module.md)): a Redisson
+`RLock` with an explicit lease (watchdog off) whose bounded wait is
+Redisson's own `tryLock(waitTime, leaseTime)` — pub/sub inside the
+client, no second connection. Same host and containers; the Lettuce
+cells are the pub/sub wake-up of the first addendum, re-run in this
+session for a same-session comparison. Redis commands per event count
+every call a Lua script makes.
+
+| Cell | Locker | `lock-wait` | handled/s | e2e p50 | e2e p95 | e2e max | PG writes/event | Redis cmds/event |
+|---|---|---|---|---|---|---|---|---|
+| `hot-key`, platform | Lettuce, pub/sub | 100 ms | 574 | 1 483 ms | 3 090 ms | 3 359 ms | 3.00 | 6.96 |
+| | Redisson | 0 | 335 | 1 428 ms | 7 045 ms | 12 358 ms | 5.47 | 16.93 |
+| | Redisson | 100 ms | 513 | 2 155 ms | 3 250 ms | 3 360 ms | 3.00 | 17.21 |
+| | Redisson, `fair` | 100 ms | 520 | 1 678 ms | 2 841 ms | 2 927 ms | 3.00 | 29.14 |
+| `hot-key`, virtual uncapped | Lettuce, pub/sub | 100 ms | 326 | 318 ms | 7 819 ms | 12 580 ms | 5.92 | 24.62 |
+| | Redisson | 100 ms | 410 | 1 155 ms | 5 843 ms | 11 746 ms | 5.44 | 33.99 |
+| `throughput`, unique keys | Lettuce | — | 1 567 | 56 ms | 95 ms | 177 ms | 3.00 | 5.00 |
+| | Redisson | — | 1 312 | 58 ms | 101 ms | 131 ms | 3.00 | 12.00 |
+
+What the cells say:
+
+1. **Same mechanism, same place.** With the 100 ms wait both lockers
+   sit on the engine's 3.00-row floor with no busy round trips, and
+   the drain rates and tails are within run-to-run noise of each other
+   (574 vs 513/s; max 3.36 s both). Redisson's `tryLock(0, lease)`
+   without a wait behaves like the Lettuce locker without one (335/s,
+   5.47 writes) — the wait is what matters, not the client.
+2. **Redisson costs 2.4× the Redis commands per event.** 12 against 5
+   on unique keys: an `RLock` acquire and release are Lua scripts of
+   several calls each (`hexists`, `hincrby`, `pexpire`, `publish`),
+   where the Lettuce locker is one `SET NX PX` and one three-call
+   script. Under contention the gap widens with the wait's
+   subscription traffic (17 vs 7 per event). On a Redis that is not
+   the bottleneck this is invisible — throughput on unique keys
+   (1 312 vs 1 567/s) is within the noise of a shared laptop — but it is
+   the number to take to whoever owns the Redis.
+3. **`fair` costs another 12 commands per event and buys a tighter
+   tail** (p95 2.8 s vs 3.3 s, max 2.9 s vs 3.4 s at the same rate):
+   arrival-order grants stop any one waiter from being starved by the
+   crowd. Not a default — the outbox promises no per-key ordering —
+   but a real option for a type whose latency tail matters.
+4. **On the uncapped virtual executor Redisson's wait fares a little
+   better** (410 vs 326/s, fewer busy hits): its subscription is
+   per-lock inside the client and its wake-up hands the lock over
+   without the waiters' re-probe storm. The in-flight cap on keyed
+   virtual types still applies to both.
+
+**Decision.** The module is chosen for the client the application
+already has and for topology (Cluster, Sentinel, master-replica), not
+for speed: it lands where the Lettuce locker lands and spends more
+Redis commands doing so. ADR-0036 records it as such.

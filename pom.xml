@@ -43,6 +43,7 @@
         <!-- Relocation stub for the retired pre-0.3.0 coordinate; no code. -->
         <module>event-outboxer-lock-postgres</module>
         <module>event-outboxer-lock-redis</module>
+        <module>event-outboxer-lock-redisson</module>
         <module>event-outboxer-cache-redis</module>
         <module>event-outboxer-metrics-micrometer</module>
         <module>event-outboxer-tracing-otel</module>
@@ -89,6 +90,8 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <spring-boot.version>3.5.6</spring-boot.version>
+        <!-- Not managed by the Spring Boot BOM: the Redisson entity locker's client (ADR-0036). -->
+        <redisson.version>3.52.0</redisson.version>
 
         <!-- Plugin versions -->
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
@@ -264,6 +267,16 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>event-outboxer-lock-redis</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>event-outboxer-lock-redisson</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>${redisson.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>

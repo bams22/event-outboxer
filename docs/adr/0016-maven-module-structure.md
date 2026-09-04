@@ -35,6 +35,7 @@ event-outboxer (root parent pom)
 ├── event-outboxer-lock-postgres-advisory   pg_advisory_lock EntityLocker (postgres-advisory opt-out)
 ├── event-outboxer-lock-postgres-lease      lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
+├── event-outboxer-lock-redisson            Redisson RLock EntityLocker (ADR-0036)
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
 ├── event-outboxer-tracing-otel             OpenTelemetry OutboxTracer (ADR-0023)
@@ -76,6 +77,7 @@ Why `groupId=io.github.bams22` (rather than
 | `-lock-postgres-advisory` | `io.github.bams22.outboxer.lock.postgres.advisory.*` |
 | `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
+| `-lock-redisson` | `io.github.bams22.outboxer.lock.redisson.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
 | `-tracing-otel` | `io.github.bams22.outboxer.tracing.otel.*` |
 | `-tracing-micrometer` | `io.github.bams22.outboxer.tracing.micrometer.*` |

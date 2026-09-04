@@ -95,7 +95,8 @@ Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `workers`, `publisher-threads`, `handler-pool-size`, `claim-batch-size`,
 `poll-min-interval`, `poll-max-interval`, `executor` (`platform` |
 `virtual`), `lock` (`noop` | `postgres-lease` | `postgres-advisory` |
-`redis` — with `redis-uri`, or a disposable `redis-image` container),
+`redis` | `redisson` — the two Redis lockers with `redis-uri`, or a
+disposable `redis-image` container),
 `payload` (`jackson` | `protobuf`: the write format, same three fields
 either way),
 `finalize-batching`, `handler-work-time`, `slow-key-share` +

@@ -57,6 +57,10 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-lock-redis</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-lock-redisson</artifactId>
+        </dependency>
         <!-- Second write format under test (the bench.payload=protobuf option, ADR-0026). -->
         <dependency>
             <groupId>${project.groupId}</groupId>

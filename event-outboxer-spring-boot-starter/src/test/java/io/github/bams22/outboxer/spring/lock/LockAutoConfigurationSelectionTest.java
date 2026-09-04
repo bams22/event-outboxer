@@ -13,7 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.bams22.outboxer.lock.postgres.advisory.PgAdvisoryLocker;
 import io.github.bams22.outboxer.lock.postgres.lease.PgLeaseEntityLocker;
+import io.github.bams22.outboxer.lock.redisson.RedissonEntityLocker;
 import io.github.bams22.outboxer.spi.EntityLocker;
+import io.github.bams22.outboxer.spring.OutboxRedissonClient;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -21,6 +23,7 @@ import java.sql.SQLException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.redisson.api.RedissonClient;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -42,7 +45,8 @@ class LockAutoConfigurationSelectionTest {
                                     NoOpLockAutoConfiguration.class,
                                     PostgresLeaseLockAutoConfiguration.class,
                                     PostgresAdvisoryLockAutoConfiguration.class,
-                                    RedisLockAutoConfiguration.class))
+                                    RedisLockAutoConfiguration.class,
+                                    RedissonLockAutoConfiguration.class))
                     .withUserConfiguration(StubDataSourceConfiguration.class);
 
     @Test
@@ -56,6 +60,69 @@ class LockAutoConfigurationSelectionTest {
                                     .isInstanceOf(PgLeaseEntityLocker.class);
                             assertThat(ctx).hasSingleBean(PgLeaseSweepScheduler.class);
                             assertThat(ctx).hasSingleBean(PgLeaseTableProbe.class);
+                        });
+    }
+
+    @Test
+    @DisplayName("lock.type=redisson rides the application's unique RedissonClient (ADR-0036)")
+    void redissonSelectsRedissonLocker() {
+        runner.withUserConfiguration(SingleRedissonClientConfiguration.class)
+                .withPropertyValues("event-outboxer.lock.type=redisson")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            RedissonEntityLocker locker =
+                                    (RedissonEntityLocker) ctx.getBean(EntityLocker.class);
+                            assertThat(locker.keyFor("k")).isEqualTo("outbox:rlock:k");
+                            assertThat(locker.fair()).isFalse();
+                            assertThat(locker.nativeWait()).isTrue();
+                        });
+        runner.withUserConfiguration(SingleRedissonClientConfiguration.class)
+                .withPropertyValues(
+                        "event-outboxer.lock.type=redisson",
+                        "event-outboxer.lock.key-prefix=app:locks:",
+                        "event-outboxer.lock.fair=true",
+                        "event-outboxer.lock.wakeup=false")
+                .run(
+                        ctx -> {
+                            RedissonEntityLocker locker =
+                                    (RedissonEntityLocker) ctx.getBean(EntityLocker.class);
+                            assertThat(locker.keyFor("k")).isEqualTo("app:locks:k");
+                            assertThat(locker.fair()).isTrue();
+                            assertThat(locker.nativeWait()).isFalse();
+                        });
+    }
+
+    @Test
+    @DisplayName("lock.type=redisson: the @OutboxRedissonClient bean wins among several")
+    void redissonQualifiedClientWins() {
+        runner.withUserConfiguration(TwoRedissonClientsConfiguration.class)
+                .withPropertyValues("event-outboxer.lock.type=redisson")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            assertThat(ctx.getBean(EntityLocker.class))
+                                    .isInstanceOf(RedissonEntityLocker.class);
+                        });
+    }
+
+    @Test
+    @DisplayName("lock.type=redisson without a RedissonClient bean fails fast, diagnosed")
+    void redissonWithoutClientFailsFast() {
+        runner.withPropertyValues("event-outboxer.lock.type=redisson")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasFailed();
+                            assertThat(ctx.getStartupFailure())
+                                    .hasStackTraceContaining("needs a RedissonClient bean");
+                        });
+        runner.withUserConfiguration(TwoUnmarkedRedissonClientsConfiguration.class)
+                .withPropertyValues("event-outboxer.lock.type=redisson")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasFailed();
+                            assertThat(ctx.getStartupFailure())
+                                    .hasStackTraceContaining("OutboxRedissonClient");
                         });
     }
 
@@ -209,5 +276,63 @@ class LockAutoConfigurationSelectionTest {
             return stub(rt, failOnPrepare);
         }
         return null;
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SingleRedissonClientConfiguration {
+
+        @Bean
+        RedissonClient redissonClient() {
+            return stubRedissonClient();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class TwoRedissonClientsConfiguration {
+
+        @Bean
+        @OutboxRedissonClient
+        RedissonClient outboxRedisson() {
+            return stubRedissonClient();
+        }
+
+        @Bean
+        RedissonClient otherRedisson() {
+            return stubRedissonClient();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class TwoUnmarkedRedissonClientsConfiguration {
+
+        @Bean
+        RedissonClient redissonA() {
+            return stubRedissonClient();
+        }
+
+        @Bean
+        RedissonClient redissonB() {
+            return stubRedissonClient();
+        }
+    }
+
+    /** Never reaches a Redis: the locker only stores the client at construction. */
+    private static RedissonClient stubRedissonClient() {
+        return (RedissonClient)
+                Proxy.newProxyInstance(
+                        LockAutoConfigurationSelectionTest.class.getClassLoader(),
+                        new Class<?>[] {RedissonClient.class},
+                        (proxy, method, args) -> {
+                            if (method.getName().equals("toString")) {
+                                return "stub RedissonClient";
+                            }
+                            if (method.getName().equals("hashCode")) {
+                                return System.identityHashCode(proxy);
+                            }
+                            if (method.getName().equals("equals")) {
+                                return proxy == args[0];
+                            }
+                            return null;
+                        });
     }
 }

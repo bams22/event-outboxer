@@ -209,7 +209,19 @@ public class OutboxProperties {
          */
         private LockType type = LockType.noop;
 
-        private String keyPrefix = "outbox:lock:";
+        /**
+         * Prefix of the lock keys of the Redis-backed lockers. Unset = each locker's own default:
+         * {@code outbox:lock:} for {@code redis}, {@code outbox:rlock:} for {@code redisson} — kept
+         * apart on purpose, the two store different value types and must never share a key.
+         */
+        private @Nullable String keyPrefix;
+
+        /**
+         * Redisson locker only: use {@code RFairLock}, which grants waiters in arrival order at the
+         * price of extra bookkeeping per acquisition. The outbox contract promises no ordering, so
+         * the default is the plain {@code RLock}.
+         */
+        private boolean fair = false;
 
         /**
          * Redis locker only: park a waiting handler thread on the holder's release notification
@@ -217,7 +229,8 @@ public class OutboxProperties {
          * lock-wait} (ADR-0035). Needs a second, pub/sub connection — created by the starter next
          * to the command connection when {@code event-outboxer.redis.*} is set, or a user-defined
          * {@code StatefulRedisPubSubConnection<String, String>} bean. {@code false} keeps the
-         * polling wait and opens no pub/sub connection.
+         * polling wait and opens no pub/sub connection. The Redisson locker waits inside {@code
+         * RLock.tryLock} on its own client; {@code false} makes it poll too.
          */
         private boolean wakeup = true;
     }
@@ -230,7 +243,8 @@ public class OutboxProperties {
         noop,
         postgres_lease,
         postgres_advisory,
-        redis
+        redis,
+        redisson
     }
 
     @Getter

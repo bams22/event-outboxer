@@ -410,8 +410,24 @@ default is `noop` and other backends are opt-in:
   [Selecting the Redis connection](#selecting-the-redis-connection-outboxredisconnection)).
   With neither, startup fails fast naming both remedies — `redis` is
   an explicit opt-in, so there is no silent back-off.
-- `key-prefix` — prefix for lock keys, default `outbox:lock:`
-  (Redis locker only; the PG lockers store/hash the raw key).
+- `type: redisson` — Redis/KeyDB locker over a Redisson `RLock`
+  (ADR-0036); requires `event-outboxer-lock-redisson` on the classpath
+  and a `RedissonClient` bean of the application's own (the starter
+  never creates one; with several, see
+  [Selecting the Redisson client](#selecting-the-redisson-client-outboxredissonclient)).
+  For applications that already run Redisson, or need Cluster /
+  Sentinel / master-replica topologies. The bounded `lock-wait` runs
+  inside `RLock.tryLock` on Redisson's own pub/sub. Same guarantee
+  level as `redis` (TTL honoured, watchdog off, no fencing); different
+  key type and prefix, so **never mix the two Redis lockers in one
+  fleet**.
+- `key-prefix` — prefix for lock keys. Unset = each locker's own
+  default: `outbox:lock:` for `redis`, `outbox:rlock:` for `redisson`
+  (kept apart on purpose — the two store different value types). The
+  PG lockers store/hash the raw key.
+- `fair` — `redisson` only, default `false`: use `RFairLock`, which
+  grants waiters in arrival order at the price of extra bookkeeping
+  per acquisition. The outbox contract promises no per-key ordering.
 - `wakeup` — Redis locker only, default `true`: a handler thread
   waiting out the per-type `lock-wait` (ADR-0035) parks on the holder's
   release notification (the release script `PUBLISH`es on
@@ -424,9 +440,11 @@ default is `noop` and other backends are opt-in:
   `@OutboxRedisConnection` when there are several), or the locker
   polls and says so at INFO. `false` opens no pub/sub connection and
   keeps the polling wait — for Redis proxies that do not forward
-  pub/sub. The lease locker always polls: its `LISTEN/NOTIFY` variant
-  was built, measured and removed (ADR-0022 amendment of 2026-09-05 —
-  no gain, and unusable behind pgBouncer transaction pooling).
+  pub/sub. The `redisson` locker waits inside `RLock.tryLock` on its
+  own client; `false` makes it poll too. The lease locker always polls:
+  its `LISTEN/NOTIFY` variant was built, measured and removed
+  (ADR-0022 amendment of 2026-09-05 — no gain, and unusable behind
+  pgBouncer transaction pooling).
 
 Upgrade note: before ADR-0022 there was a single `type: postgres`
 value (the advisory locker). It was split into `postgres-lease` and
@@ -441,8 +459,9 @@ and new pods form disjoint exclusion domains for the rollout window
 
 With pgBouncer in **transaction** (or statement) pooling mode:
 
-- Polling, claim, finalize, heartbeat and the `postgres-lease` and
-  `redis` lockers are safe — no session state.
+- Polling, claim, finalize, heartbeat and the `postgres-lease`,
+  `redis` and `redisson` lockers are safe — no session state on the
+  PostgreSQL side.
 - `postgres-advisory` is **not** usable: session-scoped advisory locks
   silently lose mutual exclusion when statements multiplex across
   server connections. Use the lease locker, the Redis locker, or a
@@ -1366,6 +1385,25 @@ Notes:
   participates via the primary/unique rule instead.
 - User-defined `ConnectionSupplier` / `EntityLocker` beans still
   override the outbox JDBC wiring entirely.
+
+### Selecting the Redisson client (`@OutboxRedissonClient`)
+
+`event-outboxer.lock.type: redisson` needs a `RedissonClient` bean —
+the application's own, typically from `redisson-spring-boot-starter`;
+the starter never creates one (ADR-0036). With a single bean nothing
+is needed. With several, mark the one the outbox should use:
+
+```java
+@Bean
+@OutboxRedissonClient
+public RedissonClient outboxRedisson(Config config) {
+    return Redisson.create(config);
+}
+```
+
+Resolution mirrors `@OutboxRedisConnection`: the qualified bean wins
+(even over an unrelated `@Primary`), else the unique/`@Primary` bean,
+else startup fails fast naming the candidates and the fix.
 
 ### Selecting the Redis connection (`@OutboxRedisConnection`)
 

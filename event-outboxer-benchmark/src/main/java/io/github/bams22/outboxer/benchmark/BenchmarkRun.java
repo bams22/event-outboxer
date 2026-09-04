@@ -27,7 +27,6 @@ import io.github.bams22.outboxer.benchmark.report.ConcurrencyStats;
 import io.github.bams22.outboxer.benchmark.report.LatencyStats;
 import io.github.bams22.outboxer.benchmark.scenario.Chaos;
 import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
-import io.github.bams22.outboxer.benchmark.scenario.LockType;
 import io.github.bams22.outboxer.benchmark.scenario.PostgresRestart;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
 import io.github.bams22.outboxer.benchmark.target.BenchmarkEnvironment;
@@ -251,7 +250,7 @@ public final class BenchmarkRun {
     }
 
     private RedisSide openRedis(Scenario scenario) {
-        if (scenario.lockType() != LockType.REDIS) {
+        if (!scenario.lockType().usesRedis()) {
             return RedisSide.NONE;
         }
         RedisHandle handle =
@@ -537,7 +536,7 @@ public final class BenchmarkRun {
 
         static final RedisSide NONE = new RedisSide(null, null);
 
-        private static final String LOCK_PREFIX = "outbox:lock:";
+        private static final String LOCK_PREFIX = "outbox:";
 
         @Nullable String uri() {
             return handle == null ? null : handle.uri();

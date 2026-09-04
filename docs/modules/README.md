@@ -36,6 +36,7 @@ see [ARCHITECTURE.md](../ARCHITECTURE.md).
 | [event-outboxer-lock-postgres-lease](event-outboxer-lock-postgres-lease.md) | Recommended PG locker: lease table, TTL honoured, pgBouncer-safe, no pinned connections. |
 | [event-outboxer-lock-postgres-advisory](event-outboxer-lock-postgres-advisory.md) | `pg_advisory_lock` opt-out: immediate clean-crash release, at the cost of pinned connections. |
 | [event-outboxer-lock-redis](event-outboxer-lock-redis.md) | Redis/KeyDB locker: `SET NX PX` + fencing-token release. |
+| [event-outboxer-lock-redisson](event-outboxer-lock-redisson.md) | Redis/KeyDB locker over a Redisson `RLock`: the application's own client, its topologies, its pub/sub wait (ADR-0036). |
 | [event-outboxer-cache-redis](event-outboxer-cache-redis.md) | Shared metrics-snapshot cache — one consistent backlog view per fleet. |
 
 ## Observability

@@ -93,6 +93,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-lock-postgres-advisory   pg_advisory_lock EntityLocker (postgres-advisory opt-out)
 ├── event-outboxer-lock-postgres-lease      lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-redis               Redis/KeyDB EntityLocker
+├── event-outboxer-lock-redisson            Redisson RLock EntityLocker (ADR-0036)
 ├── event-outboxer-cache-redis              Redis/KeyDB MetricsSnapshotCache
 ├── event-outboxer-metrics-micrometer       MicrometerOutboxListener
 ├── event-outboxer-tracing-otel             OpenTelemetry OutboxTracer (ADR-0023)
@@ -138,6 +139,7 @@ Packages mirror the modules 1-to-1 under `io.github.bams22.outboxer.*`:
 | `-lock-postgres-advisory` | `io.github.bams22.outboxer.lock.postgres.advisory.*` |
 | `-lock-postgres-lease` | `io.github.bams22.outboxer.lock.postgres.lease.*` |
 | `-lock-redis` | `io.github.bams22.outboxer.lock.redis.*` |
+| `-lock-redisson` | `io.github.bams22.outboxer.lock.redisson.*` |
 | `-serializer-jackson` | `io.github.bams22.outboxer.serializer.jackson.*` |
 | `-serializer-protobuf` | `io.github.bams22.outboxer.serializer.protobuf.*` |
 | `-metrics-micrometer` | `io.github.bams22.outboxer.metrics.micrometer.*` |
@@ -171,7 +173,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 |---|---|---|
 | `EventStore` | PostgreSQL, InMemory | CRUD + claim + finalize + reclaim |
 | `WorkerRegistry` | PostgreSQL, InMemory | register / heartbeat / findDead / deregister |
-| `EntityLocker` | PostgreSQL (lease table; advisory opt-out), Redis, NoOp | Lock by lockKey |
+| `EntityLocker` | PostgreSQL (lease table; advisory opt-out), Redis (Lettuce or Redisson), NoOp | Lock by lockKey |
 | `EventSerializer` | Jackson, Protobuf | Serialize/deserialize payload; `format()` id persisted per event, reads routed via `EventSerializerRegistry` (ADR-0025) |
 | `Clock` | SystemClock, SettableClock | Time source (testability) |
 | `OutboxTracer` | OpenTelemetry, Micrometer Tracing, NoOp | Trace continuity publish → handle (ADR-0023) |

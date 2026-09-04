@@ -137,5 +137,6 @@ new OutboxEngineBuilder().entityLocker(locker)/*...*/.build();
 
 ## Related
 
+- [event-outboxer-lock-redisson](event-outboxer-lock-redisson.md) — the same guarantees on the application's Redisson client (Cluster/Sentinel, fair option); a different key type and prefix, never mixed with this one in a fleet.
 - [event-outboxer-lock-postgres-lease](event-outboxer-lock-postgres-lease.md) — guarantee comparison across all lockers.
 - ADRs: [0012](../adr/0012-extract-lock-key-on-handler.md), [0022](../adr/0022-lease-table-postgres-entity-locker.md) (§guarantee table), [0035](../adr/0035-bounded-lock-wait.md) (bounded wait and its wake-up).

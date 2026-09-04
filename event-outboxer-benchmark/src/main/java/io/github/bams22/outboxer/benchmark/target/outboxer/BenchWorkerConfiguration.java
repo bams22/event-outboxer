@@ -9,18 +9,35 @@
  */
 package io.github.bams22.outboxer.benchmark.target.outboxer;
 
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
+import org.springframework.context.annotation.Bean;
 
 /**
- * Root configuration of every context the target boots. Deliberately empty: the starter's
+ * Root configuration of every context the target boots. Nearly empty: the starter's
  * autoconfiguration does the wiring, handlers are registered programmatically per context (one per
- * event type, bound to the shared ledger), and everything else is a property.
+ * event type, bound to the shared ledger), and everything else is a property. The one bean here is
+ * what an application would bring itself: the {@code RedissonClient} the {@code redisson} locker
+ * rides (the starter never creates one, ADR-0036).
  *
  * <p>Spring Boot's own Flyway autoconfiguration is excluded: the outbox schema is migrated by the
  * starter-managed instance (ADR-0028) and the harness has no application migrations of its own.
  */
 @SpringBootConfiguration
 @EnableAutoConfiguration(exclude = FlywayAutoConfiguration.class)
-public class BenchWorkerConfiguration {}
+public class BenchWorkerConfiguration {
+
+    @Bean(destroyMethod = "shutdown")
+    @ConditionalOnProperty("bench.redisson.address")
+    public RedissonClient benchRedissonClient(@Value("${bench.redisson.address}") String address) {
+        Config config = new Config();
+        config.useSingleServer().setAddress(address);
+        return Redisson.create(config);
+    }
+}

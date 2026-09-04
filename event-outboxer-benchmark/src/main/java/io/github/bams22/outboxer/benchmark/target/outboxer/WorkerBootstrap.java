@@ -100,8 +100,9 @@ final class WorkerBootstrap {
             Scenario s,
             String workerId,
             boolean publishOnly) {
-        if (s.lockType() == LockType.REDIS && redisUri == null) {
-            throw new IllegalArgumentException("lock=redis needs a Redis URI");
+        if (s.lockType().usesRedis() && redisUri == null) {
+            throw new IllegalArgumentException(
+                    "lock=" + s.lockType().property() + " needs a Redis URI");
         }
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("spring.datasource.url", database.jdbcUrl());
@@ -116,9 +117,13 @@ final class WorkerBootstrap {
         p.put("event-outboxer.worker.id", workerId);
         p.put("event-outboxer.publish-only", publishOnly);
         p.put("event-outboxer.lock.type", s.lockType().property());
-        if (redisUri != null) {
+        if (redisUri != null && s.lockType() == LockType.REDIS) {
             p.put("event-outboxer.redis.uri", redisUri);
             p.put("event-outboxer.redis.client-name", workerId);
+        }
+        if (redisUri != null && s.lockType() == LockType.REDISSON) {
+            // The starter never creates a RedissonClient; the harness context defines one.
+            p.put("bench.redisson.address", redisUri);
         }
         p.put("event-outboxer.handler-executor.type", s.executorType().property());
         p.put("event-outboxer.dispatcher.finalize-batching", s.finalizeBatching());

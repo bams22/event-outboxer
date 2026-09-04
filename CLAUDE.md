@@ -10,7 +10,7 @@ an embedded, per-service outbox (not a cross-service shared-DB bridge —
 see [ADR-0001](docs/adr/0001-local-embedded-outbox-scope.md)).
 
 Architecture is fully designed before implementation — see
-[docs/](docs/) and the 35 ADRs in [docs/adr/](docs/adr/). Treat the
+[docs/](docs/) and the 36 ADRs in [docs/adr/](docs/adr/). Treat the
 ADRs as the source of truth: if implementation must deviate from an
 ADR, amend the ADR in the same PR.
 
@@ -28,7 +28,7 @@ ADR, amend the ADR in the same PR.
 - PostgreSQL 15+, KeyDB 6 / Redis 7 (adapter-level).
 - JUnit 5 + AssertJ + Testcontainers for testing.
 
-## Module layout (20 published modules + 1 relocation stub + 1 unpublished harness)
+## Module layout (21 published modules + 1 relocation stub + 1 unpublished harness)
 
 ```
 event-outboxer (parent pom)
@@ -44,6 +44,7 @@ event-outboxer (parent pom)
 ├── event-outboxer-lock-postgres-lease     lease-table EntityLocker — PostgreSQL default (ADR-0022)
 ├── event-outboxer-lock-postgres           pom-only relocation stub → -lock-postgres-advisory (retired coordinate, no code)
 ├── event-outboxer-lock-redis              Redis/KeyDB EntityLocker (Lettuce)
+├── event-outboxer-lock-redisson           Redis/KeyDB EntityLocker over a Redisson RLock (ADR-0036)
 ├── event-outboxer-cache-redis             Redis/KeyDB MetricsSnapshotCache (Lettuce)
 ├── event-outboxer-metrics-micrometer      MicrometerOutboxListener
 ├── event-outboxer-tracing-otel            OpenTelemetry OutboxTracer (ADR-0023)
@@ -194,7 +195,7 @@ in a new or amended ADR.
 - **PostgreSQL schema and SQL**: [docs/STORAGE.md](docs/STORAGE.md)
 - **Terminology**: [docs/GLOSSARY.md](docs/GLOSSARY.md)
 - **Rationale for every design decision**:
-  [docs/adr/README.md](docs/adr/README.md) (35 ADRs)
+  [docs/adr/README.md](docs/adr/README.md) (36 ADRs)
 - **Implementation roadmap (phases P0–P10)**: see the plan file noted
   in the user's plan tooling.
 
