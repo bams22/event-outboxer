@@ -189,9 +189,12 @@ invariants   lost=0 duplicates=0 (attributable 0, unexplained 0) unexpected=0 lo
 1. `backlog` preset with `finalize-batching` on and off on the same
    database: the only way to measure group commit (ADR-0014 amendment)
    separately from the publisher.
-2. An issue for the hot-key path: reproduce with
-   `--bench.scenario=hot-key` (30 s), find why a busy-released event
-   waits seconds before its next attempt, and evaluate key-aware
-   claiming or a short wait on the lock instead of a release.
+2. The hot-key path: the "seconds before the next attempt" question
+   was answered the same day — a busy-released event carries
+   `run_at = now + delay` and the claim query orders by `run_at`, so it
+   re-enters at the back of the backlog. The proposed fix is a bounded
+   wait for the lock, [ADR-0035](../adr/0035-bounded-lock-wait.md)
+   (proposed, implementation deferred), with its validation plan built
+   on this preset.
 3. A session on separate hardware with an external PostgreSQL before
    any number reaches the README.

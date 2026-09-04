@@ -63,6 +63,7 @@ why, which alternatives were considered and rejected. The format is based on
 - [ADR-0021: Dedup key — single in-flight event per key](0021-dedup-key-single-inflight-per-key.md)
 - [ADR-0033: Archive dedup key + replay from archive](0033-archive-dedup-key-and-replay-from-archive.md)
 - [ADR-0034: Benchmark and invariant harness module](0034-benchmark-and-invariant-harness.md)
+- [ADR-0035: Bounded wait for a busy entity lock](0035-bounded-lock-wait.md) *(proposed)*
 
 ### Code conventions
 
