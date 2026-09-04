@@ -61,6 +61,19 @@ import org.slf4j.LoggerFactory;
  * stays held until {@code close()} runs or the connection dies — the pool never recycles a
  * checked-out connection. After a hard crash (power loss, network partition) the backend holds the
  * lock until TCP keepalive reaps it. See ADR-0022 §Guarantee table.
+ *
+ * <h2>Bounded wait (ADR-0035)</h2>
+ *
+ * {@link #tryLock(String, Duration, Duration)} blocks natively in {@code pg_advisory_lock} under a
+ * transaction-local {@code statement_timeout} equal to {@code maxWait}, instead of polling {@code
+ * pg_try_advisory_lock} from the pool: PostgreSQL's lock manager wakes the waiter the moment the
+ * holder releases, and the connection is pinned for the wait anyway. A timeout surfaces as SQLState
+ * {@code 57014} and is reported as busy. The one subtlety is the grant/cancel race: a session-level
+ * advisory lock granted an instant before the cancel is processed survives the transaction's
+ * rollback, so the timeout path issues a defensive {@code pg_advisory_unlock} before the connection
+ * goes back to the pool — a no-op when nothing was granted. Interrupts cannot cut a blocking JDBC
+ * call short on a platform thread; the wait ends at {@code maxWait} at the latest with the
+ * interrupt status untouched, which is what the SPI contract permits for native adapters.
  */
 public final class PgAdvisoryLocker implements EntityLocker {
 
@@ -104,6 +117,94 @@ public final class PgAdvisoryLocker implements EntityLocker {
             }
             throw new LockAcquisitionException(
                     "pg_try_advisory_lock failed for key '" + key + "'", ex);
+        }
+    }
+
+    @Override
+    public Optional<LockHandle> tryLock(String key, Duration ttl, Duration maxWait) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        Objects.requireNonNull(maxWait, "maxWait must not be null");
+        if (maxWait.isNegative()) {
+            throw new IllegalArgumentException("maxWait must not be negative, got " + maxWait);
+        }
+        if (maxWait.isZero()) {
+            return tryLock(key, ttl);
+        }
+        long hash = hash(key);
+        // statement_timeout takes integer milliseconds; a sub-millisecond budget rounds up to 1.
+        long timeoutMillis = Math.max(1, maxWait.toMillis());
+
+        Connection conn = null;
+        try {
+            conn = dataSource.getConnection();
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps =
+                        conn.prepareStatement("SELECT set_config('statement_timeout', ?, true)")) {
+                    ps.setString(1, Long.toString(timeoutMillis));
+                    ps.execute();
+                }
+                try (PreparedStatement ps = conn.prepareStatement("SELECT pg_advisory_lock(?)")) {
+                    ps.setLong(1, hash);
+                    ps.execute();
+                }
+                // Ends the transaction (and with it the SET LOCAL); the session-level lock stays.
+                conn.commit();
+            } catch (SQLException ex) {
+                rollbackQuietly(conn);
+                if (!QUERY_CANCELED.equals(ex.getSQLState())) {
+                    throw ex;
+                }
+                // Timed out waiting. The grant may have raced the cancel: a session-level lock
+                // survives the rollback, so release it defensively before returning the connection.
+                unlockQuietly(conn, key, hash);
+                conn.setAutoCommit(true);
+                conn.close();
+                return Optional.empty();
+            }
+            conn.setAutoCommit(true);
+            return Optional.of(new PgLockHandle(conn, key, hash));
+        } catch (SQLException ex) {
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException _) {
+                    // best-effort
+                }
+            }
+            throw new LockAcquisitionException(
+                    "pg_advisory_lock(maxWait=" + maxWait + ") failed for key '" + key + "'", ex);
+        }
+    }
+
+    /** SQLState PostgreSQL raises when {@code statement_timeout} cancels the running statement. */
+    private static final String QUERY_CANCELED = "57014";
+
+    private static void rollbackQuietly(Connection conn) {
+        try {
+            conn.rollback();
+        } catch (SQLException ex) {
+            log.debug("rollback after advisory-lock wait failed: {}", ex.toString());
+        }
+    }
+
+    private static void unlockQuietly(Connection conn, String key, long hash) {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+            ps.setLong(1, hash);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next() && rs.getBoolean(1)) {
+                    log.debug(
+                            "advisory lock for key '{}' was granted as the wait timed out —"
+                                    + " released it before returning the connection",
+                            key);
+                }
+            }
+        } catch (SQLException ex) {
+            log.warn(
+                    "defensive pg_advisory_unlock after a timed-out wait failed for key '{}': {}",
+                    key,
+                    ex.toString());
         }
     }
 
