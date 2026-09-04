@@ -67,12 +67,14 @@ public final class ReportWriter {
         Scenario s = report.scenario();
         out.printf(
                 Locale.ROOT,
-                "%s  scenario=%s  fleet=%s events=%d workers=%d types=%d lockKeys=%d pool=%d"
-                        + " batch=%d poll=%s lock=%s exec=%s finalizeBatching=%s work=%s"
-                        + " failureRate=%.2f%n",
+                "%s  scenario=%s  fleet=%s payload=%s/%dB events=%d workers=%d types=%d"
+                        + " lockKeys=%d pool=%d batch=%d poll=%s lock=%s exec=%s"
+                        + " finalizeBatching=%s work=%s failureRate=%.2f%n",
                 report.target(),
                 s.name(),
                 s.fleet().option(),
+                s.payloadFormat().property(),
+                s.payloadBytes(),
                 s.events(),
                 s.workers(),
                 s.eventTypes(),
@@ -126,12 +128,16 @@ public final class ReportWriter {
         BenchmarkReport.DatabaseMetrics db = report.database();
         out.printf(
                 Locale.ROOT,
-                "database     %d row writes (ins %d, upd %d, del %d) = %.2f/event%n",
+                "database     %d row writes (ins %d, upd %d, del %d) = %.2f/event   WAL %s ="
+                        + " %s/event   events table after publish %s%n",
                 db.writes().total(),
                 db.writes().inserts(),
                 db.writes().updates(),
                 db.writes().deletes(),
-                db.writesPerEvent());
+                db.writesPerEvent(),
+                bytes(db.walBytes()),
+                bytes((long) db.walBytesPerEvent()),
+                bytes(db.eventsTableBytesAfterPublish()));
         if (db.caveat() != null) {
             out.println("             " + db.caveat());
         }
@@ -179,6 +185,19 @@ public final class ReportWriter {
             out.println("             unexplained duplicated seqs: " + inv.duplicateSample());
         }
         out.println(report.passed() ? "RESULT       PASS" : "RESULT       FAIL");
+    }
+
+    private static String bytes(long b) {
+        if (b < 1_024) {
+            return b + "B";
+        }
+        if (b < 1_024 * 1_024) {
+            return String.format(Locale.ROOT, "%.1fKB", b / 1024.0);
+        }
+        if (b < 1_024L * 1_024 * 1_024) {
+            return String.format(Locale.ROOT, "%.1fMB", b / (1024.0 * 1024));
+        }
+        return String.format(Locale.ROOT, "%.2fGB", b / (1024.0 * 1024 * 1024));
     }
 
     private static String human(Duration d) {

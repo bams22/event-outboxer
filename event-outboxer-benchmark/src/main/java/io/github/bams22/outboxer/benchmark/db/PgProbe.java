@@ -67,6 +67,59 @@ public final class PgProbe {
         }
     }
 
+    /**
+     * Bytes of WAL written since server start ({@code pg_current_wal_lsn} as an offset). Two
+     * samples bracket a run; the difference is the write-ahead volume the run generated, every
+     * table and index included.
+     */
+    public long walBytes() {
+        try (Connection c = open();
+                Statement st = c.createStatement();
+                ResultSet rs =
+                        st.executeQuery("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')")) {
+            rs.next();
+            return rs.getBigDecimal(1).longValue();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot read the WAL position", e);
+        }
+    }
+
+    /** {@code pg_total_relation_size} of a table: heap, indexes and TOAST. */
+    public long relationBytes(String qualifiedTable) {
+        try (Connection c = open();
+                PreparedStatement ps = c.prepareStatement("SELECT pg_total_relation_size(?)")) {
+            ps.setString(1, qualifiedTable);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot read the size of " + qualifiedTable, e);
+        }
+    }
+
+    /**
+     * {@code VACUUM FULL} on a table if it exists: rewrites heap and indexes without the dead
+     * tuples a previous run left behind. Without it the next run claims through a bloated index and
+     * reports a table size that includes the previous run's garbage — the run order would
+     * masquerade as a difference between variants. The harness assumes a dedicated database.
+     *
+     * @return {@code true} when the table existed and was vacuumed
+     */
+    public boolean vacuumFull(String qualifiedTable) {
+        try (Connection c = open()) {
+            if (!exists(c, qualifiedTable)) {
+                return false;
+            }
+            try (Statement st = c.createStatement()) {
+                st.execute("VACUUM FULL " + qualifiedTable);
+            }
+            return true;
+        } catch (SQLException e) {
+            throw new IllegalStateException("VACUUM FULL failed for " + qualifiedTable, e);
+        }
+    }
+
     /** Blocks until a connection succeeds or {@code timeout} passes. */
     public void awaitReady(Duration timeout) {
         Instant deadline = Instant.now().plus(timeout);

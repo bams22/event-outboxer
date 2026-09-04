@@ -67,6 +67,7 @@ class ScenarioTest {
         assertThat(s.chaos()).isEqualTo(Chaos.none());
         assertThat(s.chaos().any()).isFalse();
         assertThat(s.workerJvmArgs()).containsExactly("-Xmx1g");
+        assertThat(s.payloadFormat()).isEqualTo(PayloadFormat.JACKSON);
         assertThat(s.handlerWorkTime()).isZero();
         assertThat(s.failureRate()).isZero();
         assertThat(s.workerProperties()).isEmpty();

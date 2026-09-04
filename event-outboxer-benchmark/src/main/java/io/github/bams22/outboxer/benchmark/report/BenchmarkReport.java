@@ -142,12 +142,22 @@ public record BenchmarkReport(
      *
      * @param writes the counter difference
      * @param writesPerEvent {@code writes.total() / events}
-     * @param caveat why the figure is not to be trusted, {@code null} when it is. A crash restart
-     *     of PostgreSQL resets the cumulative statistics, so the closing sample only covers the
-     *     part of the run after it; a fast restart persists them.
+     * @param walBytes write-ahead log generated between the opening and closing samples
+     * @param walBytesPerEvent {@code walBytes / events}
+     * @param eventsTableBytesAfterPublish {@code pg_total_relation_size} of the events table right
+     *     after the publish phase — the full backlog on disk in backlog mode, a partial snapshot in
+     *     steady state (workers were already draining)
+     * @param caveat why the figures are not to be trusted, {@code null} when they are. A crash
+     *     restart of PostgreSQL resets the cumulative statistics, so the closing sample only covers
+     *     the part of the run after it; a fast restart persists them.
      */
     public record DatabaseMetrics(
-            TableWrites writes, double writesPerEvent, @Nullable String caveat) {}
+            TableWrites writes,
+            double writesPerEvent,
+            long walBytes,
+            double walBytesPerEvent,
+            long eventsTableBytesAfterPublish,
+            @Nullable String caveat) {}
 
     /**
      * What the {@code redis} locker cost the Redis server, from {@code INFO stats} sampled before

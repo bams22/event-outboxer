@@ -57,6 +57,8 @@ import org.jspecify.annotations.Nullable;
  * @param fleet in-process contexts or forked JVMs
  * @param workerJvmArgs JVM options for forked workers; ignored in-process
  * @param chaos what goes wrong on purpose during the drain
+ * @param payloadFormat which serializer writes the payload: Jackson (JSONB lane) or Protobuf (BYTEA
+ *     lane)
  */
 @Builder(toBuilder = true)
 public record Scenario(
@@ -82,7 +84,8 @@ public record Scenario(
         Map<String, String> workerProperties,
         FleetMode fleet,
         List<String> workerJvmArgs,
-        Chaos chaos) {
+        Chaos chaos,
+        PayloadFormat payloadFormat) {
 
     /** Names of the shipped presets, in documentation order. */
     public static final List<String> PRESETS =
@@ -152,6 +155,7 @@ public record Scenario(
         fleet = fleet == null ? FleetMode.IN_PROCESS : fleet;
         workerJvmArgs = workerJvmArgs == null ? List.of("-Xmx1g") : List.copyOf(workerJvmArgs);
         chaos = chaos == null ? Chaos.none() : chaos;
+        payloadFormat = payloadFormat == null ? PayloadFormat.JACKSON : payloadFormat;
         if (chaos.killWorkers() > 0 && fleet != FleetMode.FORKED) {
             throw new IllegalArgumentException(
                     "chaos.killWorkers requires fleet=forked: an in-process context cannot be"

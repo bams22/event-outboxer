@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.benchmark.scenario.Chaos;
 import io.github.bams22.outboxer.benchmark.scenario.ExecutorType;
 import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
 import io.github.bams22.outboxer.benchmark.scenario.LockType;
+import io.github.bams22.outboxer.benchmark.scenario.PayloadFormat;
 import io.github.bams22.outboxer.benchmark.scenario.PostgresRestart;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
 import java.nio.file.Path;
@@ -90,6 +91,7 @@ public record BenchmarkOptions(
                             "workers-after-publish",
                             "drain-timeout",
                             "payload-bytes",
+                            "payload",
                             "connection-pool-size",
                             "fleet",
                             "worker-jvm-args",
@@ -157,6 +159,7 @@ public record BenchmarkOptions(
                 v -> b.workersStartAfterPublish(bool("workers-after-publish", v)));
         applyDuration(kv, "drain-timeout", b::drainTimeout);
         applyInt(kv, "payload-bytes", b::payloadBytes);
+        apply(kv, "payload", v -> b.payloadFormat(PayloadFormat.parse(v)));
         applyInt(kv, "connection-pool-size", b::connectionPoolSize);
         apply(kv, "fleet", v -> b.fleet(FleetMode.parse(v)));
         apply(kv, "worker-jvm-args", v -> b.workerJvmArgs(List.of(v.trim().split("\\s+"))));

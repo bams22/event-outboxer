@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.bams22.outboxer.benchmark.scenario.ExecutorType;
 import io.github.bams22.outboxer.benchmark.scenario.FleetMode;
 import io.github.bams22.outboxer.benchmark.scenario.LockType;
+import io.github.bams22.outboxer.benchmark.scenario.PayloadFormat;
 import io.github.bams22.outboxer.benchmark.scenario.PostgresRestart;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -130,6 +131,19 @@ class BenchmarkOptionsTest {
         BenchmarkOptions disposable = BenchmarkOptions.parse("--bench.lock=redis");
         assertThat(disposable.redisUri()).isNull();
         assertThat(disposable.redisImage()).isEqualTo("redis:7-alpine");
+    }
+
+    @Test
+    void payloadFormatAcceptsShortAndFormatIdSpellings() {
+        assertThat(BenchmarkOptions.parse("--bench.payload=protobuf").scenario().payloadFormat())
+                .isEqualTo(PayloadFormat.PROTOBUF);
+        assertThat(
+                        BenchmarkOptions.parse("--bench.payload=jackson-json")
+                                .scenario()
+                                .payloadFormat())
+                .isEqualTo(PayloadFormat.JACKSON);
+        assertThatThrownBy(() -> BenchmarkOptions.parse("--bench.payload=avro"))
+                .hasMessageContaining("protobuf");
     }
 
     @Test

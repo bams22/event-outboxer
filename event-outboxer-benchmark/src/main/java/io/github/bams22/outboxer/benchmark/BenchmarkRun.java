@@ -105,6 +105,9 @@ public final class BenchmarkRun {
             PgProbe probe = new PgProbe(db.coordinates());
             String postgresVersion = probe.serverVersion();
             String schema = target.storageSchema();
+            if (probe.vacuumFull(schema + ".events")) {
+                log.info("VACUUM FULL {}.events done: no bloat from a previous run", schema);
+            }
             try (RedisSide redis = openRedis(scenario);
                     LedgerHandle ledgerHandle = openLedger(db, scenario)) {
                 Ledger ledger = ledgerHandle.ledger;
@@ -120,6 +123,8 @@ public final class BenchmarkRun {
                 PublishPhase publish;
                 Drain drain;
                 TableWrites before;
+                long walBefore;
+                long eventsBytesAfterPublish;
                 long redisBefore = 0;
                 List<ChaosEvent> chaos = new ArrayList<>();
                 try (TargetSession session = target.open(env)) {
@@ -127,9 +132,11 @@ public final class BenchmarkRun {
                         session.startWorkers();
                     }
                     before = probe.tableWrites(schema);
+                    walBefore = probe.walBytes();
                     redisBefore = redis.commandsProcessed();
                     Instant phaseStart = Instant.now();
                     publish = publishAll(session.publisher(), scenario);
+                    eventsBytesAfterPublish = probe.relationBytes(schema + ".events");
                     if (scenario.workersStartAfterPublish()) {
                         phaseStart = Instant.now();
                         session.startWorkers();
@@ -139,6 +146,7 @@ public final class BenchmarkRun {
                 }
                 Thread.sleep(STATS_SETTLE);
                 TableWrites writes = probe.tableWrites(schema).minus(before);
+                long walBytes = probe.walBytes() - walBefore;
                 BenchmarkReport.@Nullable RedisMetrics redisMetrics =
                         redis.metrics(redisBefore, scenario.events());
                 long totalHandlings = ledger.total();
@@ -185,6 +193,9 @@ public final class BenchmarkRun {
                                 new BenchmarkReport.DatabaseMetrics(
                                         writes,
                                         (double) writes.total() / scenario.events(),
+                                        walBytes,
+                                        (double) walBytes / scenario.events(),
+                                        eventsBytesAfterPublish,
                                         databaseCaveat(scenario, chaos)))
                         .redis(redisMetrics)
                         .invariants(invariants)
@@ -226,7 +237,7 @@ public final class BenchmarkRun {
         int n = s.events();
         long[] publishedAtMicros = new long[n];
         long[] latencyNanos = new long[n];
-        String padding = "x".repeat(s.payloadBytes());
+        String padding = padding(s.payloadBytes());
         AtomicLong next = new AtomicLong();
         ExecutorService pool = Executors.newFixedThreadPool(s.publisherThreads());
         Instant start = Instant.now();
@@ -419,6 +430,20 @@ public final class BenchmarkRun {
             duration = Duration.ofNanos(Math.max(1, lastFinish - phaseStartMicros) * 1_000L);
         }
         return new ProcessingSummary(duration, LatencyStats.of(e2eNanos, count));
+    }
+
+    /**
+     * Alphanumeric filler from a fixed seed: the same bytes in every run and every format, and
+     * incompressible enough that TOAST cannot shrink a large payload behind the measurement.
+     */
+    private static String padding(int bytes) {
+        String alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        java.util.Random random = new java.util.Random(20260904L);
+        StringBuilder sb = new StringBuilder(bytes);
+        for (int i = 0; i < bytes; i++) {
+            sb.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return sb.toString();
     }
 
     private static double rate(long count, Duration d) {

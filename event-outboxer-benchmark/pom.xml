@@ -57,6 +57,15 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>event-outboxer-lock-redis</artifactId>
         </dependency>
+        <!-- Second write format under test (the bench.payload=protobuf option, ADR-0026). -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>event-outboxer-serializer-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
         <!-- JSON report goes through the library's own ObjectMapper factory. -->
         <dependency>
             <groupId>${project.groupId}</groupId>
@@ -115,6 +124,27 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Compiles src/main/protobuf/bench.proto into target/generated-sources; protoc is
+                pinned to ${protobuf.version} in the parent pluginManagement (ADR-0026).
+            -->
+            <plugin>
+                <groupId>io.github.ascopes</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generate-bench-protos</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
     <profiles>
         <!--

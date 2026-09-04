@@ -49,6 +49,14 @@ All notable changes to this project are documented here. Format follows
   `redis` block (commands processed per event from `INFO stats`, lock
   keys left after the stop) and the environment records the Redis
   origin and version. `BenchmarkRedisLockIT` under `-P it`.
+- **Benchmark harness: payload format and database-size figures.**
+  `--bench.payload=jackson|protobuf` selects the write format (a
+  protoc-generated `BenchPayloadProto` with the same fields as the
+  Jackson record; `write-format` set on every context). The report's
+  database block gains WAL bytes per event and the events table size
+  after the publish phase, and every run now begins with `VACUUM FULL`
+  on the events table so a previous run's bloat cannot pose as a
+  difference between variants. `BenchmarkProtobufIT` under `-P it`.
 
 
 ## [0.7.0] — 2026-09-03

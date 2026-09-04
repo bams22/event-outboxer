@@ -1,0 +1,14 @@
+// Benchmark payload for --bench.payload=protobuf: the same three fields as the
+// Jackson record BenchPayload, so both formats carry identical content.
+syntax = "proto3";
+
+package outboxer.bench;
+
+option java_package = "io.github.bams22.outboxer.benchmark.target.outboxer.proto";
+option java_multiple_files = true;
+
+message BenchPayloadProto {
+  int64 seq = 1;
+  string lock_key = 2;   // empty = no lock key
+  string padding = 3;
+}

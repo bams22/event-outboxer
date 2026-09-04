@@ -86,6 +86,8 @@ Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `poll-min-interval`, `poll-max-interval`, `executor` (`platform` |
 `virtual`), `lock` (`noop` | `postgres-lease` | `postgres-advisory` |
 `redis` — with `redis-uri`, or a disposable `redis-image` container),
+`payload` (`jackson` | `protobuf`: the write format, same three fields
+either way),
 `finalize-batching`, `handler-work-time`, `failure-rate`,
 `workers-after-publish`, `drain-timeout`, `payload-bytes`,
 `connection-pool-size`, `fleet` (`in-process` | `forked`),
@@ -119,8 +121,13 @@ Numbers — publish and end-to-end latency percentiles, handled/s,
 retries, row writes per event — are information. They never fail a
 run and are never a CI gate.
 
-The database cost figure comes from `pg_stat_user_tables` over the
-`event_outboxer` schema, sampled before publishing and after the fleet
+A run starts with `VACUUM FULL` on the events table, so a previous
+run's dead rows neither slow the claims nor inflate the size figures —
+the harness assumes a dedicated database. The database cost figures
+are row writes from `pg_stat_user_tables` over the `event_outboxer`
+schema, WAL bytes from `pg_current_wal_lsn` (both sampled before
+publishing and after the fleet has stopped) and the events table size
+right after the publish phase. Row writes are sampled before publishing and after the fleet
 has stopped (a PostgreSQL backend flushes its counters on exit; idle
 backends may hold them back for up to ten seconds, which is why the
 closing sample waits for the connections to close). Heartbeats and
@@ -196,6 +203,9 @@ Second: [2026-09-04, locks](../benchmarks/2026-09-04-laptop-locks.md)
 event, the Redis locker none (four Redis commands instead). When the
 scenario uses the Redis locker the report carries a `redis` block:
 commands per event from `INFO stats` and lock keys left behind.
+Third: [2026-09-04, payload formats](../benchmarks/2026-09-04-laptop-payload-formats.md)
+— Jackson and Protobuf cost the database the same for text payloads;
+the run-order trap that led to `VACUUM FULL` at run start.
 
 ## Reporting policy
 
