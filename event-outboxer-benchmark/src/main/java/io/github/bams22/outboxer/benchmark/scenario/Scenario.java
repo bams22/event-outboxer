@@ -46,6 +46,11 @@ import org.jspecify.annotations.Nullable;
  * @param finalizeBatching group-commit finalize batching on or off (ADR-0014 amendment); boxed so
  *     that "unset" can take the library default, {@code true}
  * @param handlerWorkTime simulated work per handling ({@code Thread.sleep})
+ * @param slowKeyShare share of events routed to one dedicated "slow" lock key ({@link #SLOW_KEY})
+ *     instead of the round-robin keys, 0..1; {@code 0} = off. Models the mixed workload of one slow
+ *     hot key next to many cool ones (ADR-0035 §Negative). Requires {@code lockKeyCardinality > 0}
+ * @param slowKeyWorkTime simulated work per handling on the slow key; {@code null} or zero = the
+ *     same as {@code handlerWorkTime}
  * @param failureRate share of events whose <em>first</em> attempt returns {@code retry}, 0..1
  * @param workersStartAfterPublish {@code true} = backlog mode: publish everything, then start the
  *     fleet
@@ -76,6 +81,8 @@ public record Scenario(
         LockType lockType,
         Boolean finalizeBatching,
         Duration handlerWorkTime,
+        double slowKeyShare,
+        Duration slowKeyWorkTime,
         double failureRate,
         boolean workersStartAfterPublish,
         Duration drainTimeout,
@@ -86,6 +93,9 @@ public record Scenario(
         List<String> workerJvmArgs,
         Chaos chaos,
         PayloadFormat payloadFormat) {
+
+    /** The lock key that receives the {@code slowKeyShare} of events. */
+    public static final String SLOW_KEY = "key-slow";
 
     /** Names of the shipped presets, in documentation order. */
     public static final List<String> PRESETS =
@@ -137,6 +147,21 @@ public record Scenario(
         handlerWorkTime = handlerWorkTime == null ? Duration.ZERO : handlerWorkTime;
         if (handlerWorkTime.isNegative()) {
             throw new IllegalArgumentException("handlerWorkTime must not be negative");
+        }
+        if (slowKeyShare < 0.0 || slowKeyShare > 1.0) {
+            throw new IllegalArgumentException(
+                    "slowKeyShare must be within [0, 1], got " + slowKeyShare);
+        }
+        if (slowKeyShare > 0.0 && lockKeyCardinality == 0) {
+            throw new IllegalArgumentException(
+                    "slowKeyShare needs lock keys: set lockKeyCardinality > 0");
+        }
+        slowKeyWorkTime =
+                slowKeyWorkTime == null || slowKeyWorkTime.isZero()
+                        ? handlerWorkTime
+                        : slowKeyWorkTime;
+        if (slowKeyWorkTime.isNegative()) {
+            throw new IllegalArgumentException("slowKeyWorkTime must not be negative");
         }
         if (failureRate < 0.0 || failureRate > 1.0) {
             throw new IllegalArgumentException(
@@ -306,9 +331,32 @@ public record Scenario(
                 .build();
     }
 
-    /** The lock key for a sequence number under this scenario, {@code null} when keys are off. */
+    /**
+     * The lock key for a sequence number under this scenario, {@code null} when keys are off. With
+     * a {@code slowKeyShare}, that share of sequence numbers (deterministic in {@code seq}, spread
+     * evenly along the run) goes to {@link #SLOW_KEY}; the rest keep the round-robin keys.
+     */
     public @Nullable String lockKeyFor(long seq) {
-        return lockKeyCardinality == 0 ? null : "key-" + Math.floorMod(seq, lockKeyCardinality);
+        if (lockKeyCardinality == 0) {
+            return null;
+        }
+        if (slowKeyShare > 0.0 && slowKeyBucket(seq) < Math.round(slowKeyShare * 1000)) {
+            return SLOW_KEY;
+        }
+        return "key-" + Math.floorMod(seq, lockKeyCardinality);
+    }
+
+    /** Simulated work for a handling on {@code lockKey}. */
+    public Duration workTimeFor(@Nullable String lockKey) {
+        return SLOW_KEY.equals(lockKey) ? slowKeyWorkTime : handlerWorkTime;
+    }
+
+    /**
+     * Fibonacci hashing spreads consecutive seqs over 1 000 buckets; a different shift than the
+     * handler's failure injection keeps the two choices uncorrelated.
+     */
+    private static long slowKeyBucket(long seq) {
+        return Math.floorMod((seq + 7) * 0x9E3779B97F4A7C15L >>> 24, 1000L);
     }
 
     /** The event-type index for a sequence number (round-robin). */

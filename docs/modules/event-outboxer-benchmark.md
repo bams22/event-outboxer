@@ -98,7 +98,10 @@ Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `redis` — with `redis-uri`, or a disposable `redis-image` container),
 `payload` (`jackson` | `protobuf`: the write format, same three fields
 either way),
-`finalize-batching`, `handler-work-time`, `failure-rate`,
+`finalize-batching`, `handler-work-time`, `slow-key-share` +
+`slow-key-work-time` (route a share of events to one dedicated slow lock
+key `key-slow` with its own work time: the mixed workload of ADR-0035),
+`failure-rate`,
 `workers-after-publish`, `drain-timeout`, `payload-bytes`,
 `connection-pool-size`, `fleet` (`in-process` | `forked`),
 `worker-jvm-args`, `kill-workers`, `kill-at`, `respawn-killed`,

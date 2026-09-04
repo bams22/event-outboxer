@@ -38,7 +38,7 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
 
     private final EventType<T> type;
     private final Ledger ledger;
-    private final Duration workTime;
+    private final Scenario scenario;
     private final int failPerMille;
     private final ToLongFunction<T> seqOf;
     private final Function<T, @Nullable String> lockKeyOf;
@@ -55,8 +55,7 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
             Function<T, @Nullable String> lockKeyOf) {
         this.type = Objects.requireNonNull(type, "type must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
-        Objects.requireNonNull(scenario, "scenario must not be null");
-        this.workTime = scenario.handlerWorkTime();
+        this.scenario = Objects.requireNonNull(scenario, "scenario must not be null");
         this.failPerMille = (int) Math.round(scenario.failureRate() * 1000);
         this.seqOf = Objects.requireNonNull(seqOf, "seqOf must not be null");
         this.lockKeyOf = Objects.requireNonNull(lockKeyOf, "lockKeyOf must not be null");
@@ -75,12 +74,13 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
     @Override
     public EventOutcome handle(EventContext ctx, T payload) {
         long seq = seqOf.applyAsLong(payload);
+        String lockKey = lockKeyOf.apply(payload);
         Instant started = Instant.now();
         Handling.Outcome verdict;
         if (ctx.attempt() == 1 && injectFailure(seq)) {
             verdict = Handling.Outcome.RETRY;
         } else {
-            simulateWork();
+            simulateWork(scenario.workTimeFor(lockKey));
             verdict = Handling.Outcome.SUCCESS;
         }
         ledger.record(
@@ -90,7 +90,7 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
                         .attempt(ctx.attempt())
                         .workerId(ctx.workerId().value())
                         .thread(threadLabel())
-                        .lockKey(lockKeyOf.apply(payload))
+                        .lockKey(lockKey)
                         .startedAt(started)
                         .finishedAt(Instant.now())
                         .outcome(verdict)
@@ -109,7 +109,7 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
         return bucket < failPerMille;
     }
 
-    private void simulateWork() {
+    private static void simulateWork(Duration workTime) {
         if (workTime.isZero()) {
             return;
         }

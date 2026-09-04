@@ -69,7 +69,7 @@ public final class ReportWriter {
                 Locale.ROOT,
                 "%s  scenario=%s  fleet=%s payload=%s/%dB events=%d workers=%d types=%d"
                         + " lockKeys=%d pool=%d batch=%d poll=%s lock=%s exec=%s"
-                        + " finalizeBatching=%s work=%s failureRate=%.2f%n",
+                        + " finalizeBatching=%s work=%s slowKey=%.2f/%s failureRate=%.2f%n",
                 report.target(),
                 s.name(),
                 s.fleet().option(),
@@ -86,6 +86,8 @@ public final class ReportWriter {
                 s.executorType().property(),
                 s.finalizeBatching(),
                 human(s.handlerWorkTime()),
+                s.slowKeyShare(),
+                human(s.slowKeyWorkTime()),
                 s.failureRate());
         BenchmarkReport.Environment env = report.environment();
         out.printf(

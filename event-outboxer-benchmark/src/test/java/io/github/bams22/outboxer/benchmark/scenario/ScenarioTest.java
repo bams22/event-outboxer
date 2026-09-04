@@ -69,8 +69,39 @@ class ScenarioTest {
         assertThat(s.workerJvmArgs()).containsExactly("-Xmx1g");
         assertThat(s.payloadFormat()).isEqualTo(PayloadFormat.JACKSON);
         assertThat(s.handlerWorkTime()).isZero();
+        assertThat(s.slowKeyShare()).isZero();
+        assertThat(s.slowKeyWorkTime()).isZero();
         assertThat(s.failureRate()).isZero();
         assertThat(s.workerProperties()).isEmpty();
+    }
+
+    @Test
+    void slowKeyRoutesItsShareAndCarriesItsOwnWorkTime() {
+        Scenario s =
+                Scenario.builder()
+                        .name("x")
+                        .events(10_000)
+                        .lockKeyCardinality(8)
+                        .handlerWorkTime(Duration.ofMillis(5))
+                        .slowKeyShare(0.2)
+                        .slowKeyWorkTime(Duration.ofMillis(200))
+                        .build();
+        long slow = 0;
+        for (long seq = 0; seq < 10_000; seq++) {
+            if (Scenario.SLOW_KEY.equals(s.lockKeyFor(seq))) {
+                slow++;
+            } else {
+                assertThat(s.lockKeyFor(seq)).startsWith("key-");
+            }
+        }
+        // Deterministic hashing lands within a percent of the requested share.
+        assertThat(slow).isBetween(1_900L, 2_100L);
+        assertThat(s.workTimeFor(Scenario.SLOW_KEY)).isEqualTo(Duration.ofMillis(200));
+        assertThat(s.workTimeFor("key-3")).isEqualTo(Duration.ofMillis(5));
+        assertThat(s.workTimeFor(null)).isEqualTo(Duration.ofMillis(5));
+        // Unset slow work time falls back to the regular work time.
+        Scenario sameWork = s.toBuilder().slowKeyWorkTime(null).build();
+        assertThat(sameWork.workTimeFor(Scenario.SLOW_KEY)).isEqualTo(Duration.ofMillis(5));
     }
 
     @Test
@@ -79,6 +110,10 @@ class ScenarioTest {
                 .hasMessageContaining("events");
         assertThatThrownBy(() -> Scenario.builder().name("x").events(1).failureRate(1.5).build())
                 .hasMessageContaining("failureRate");
+        assertThatThrownBy(() -> Scenario.builder().name("x").events(1).slowKeyShare(1.5).build())
+                .hasMessageContaining("slowKeyShare");
+        assertThatThrownBy(() -> Scenario.builder().name("x").events(1).slowKeyShare(0.1).build())
+                .hasMessageContaining("lockKeyCardinality");
         assertThatThrownBy(
                         () ->
                                 Scenario.builder()

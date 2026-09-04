@@ -87,6 +87,8 @@ public record BenchmarkOptions(
                             "lock",
                             "finalize-batching",
                             "handler-work-time",
+                            "slow-key-share",
+                            "slow-key-work-time",
                             "failure-rate",
                             "workers-after-publish",
                             "drain-timeout",
@@ -152,6 +154,8 @@ public record BenchmarkOptions(
         apply(kv, "lock", v -> b.lockType(LockType.parse(v)));
         apply(kv, "finalize-batching", v -> b.finalizeBatching(bool("finalize-batching", v)));
         applyDuration(kv, "handler-work-time", b::handlerWorkTime);
+        apply(kv, "slow-key-share", v -> b.slowKeyShare(Double.parseDouble(v)));
+        applyDuration(kv, "slow-key-work-time", b::slowKeyWorkTime);
         apply(kv, "failure-rate", v -> b.failureRate(Double.parseDouble(v)));
         apply(
                 kv,

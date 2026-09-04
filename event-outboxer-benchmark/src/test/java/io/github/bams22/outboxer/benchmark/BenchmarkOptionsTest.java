@@ -44,6 +44,8 @@ class BenchmarkOptionsTest {
                         "--bench.executor=virtual",
                         "--bench.poll-min-interval=50ms",
                         "--bench.handler-work-time=2ms",
+                        "--bench.slow-key-share=0.2",
+                        "--bench.slow-key-work-time=200ms",
                         "--bench.finalize-batching=off",
                         "--bench.failure-rate=0.25",
                         "--bench.workers-after-publish=true");
@@ -56,6 +58,8 @@ class BenchmarkOptionsTest {
         assertThat(s.executorType()).isEqualTo(ExecutorType.VIRTUAL);
         assertThat(s.pollMinInterval()).isEqualTo(Duration.ofMillis(50));
         assertThat(s.handlerWorkTime()).isEqualTo(Duration.ofMillis(2));
+        assertThat(s.slowKeyShare()).isEqualTo(0.2);
+        assertThat(s.slowKeyWorkTime()).isEqualTo(Duration.ofMillis(200));
         assertThat(s.finalizeBatching()).isFalse();
         assertThat(s.failureRate()).isEqualTo(0.25);
         assertThat(s.workersStartAfterPublish()).isTrue();
