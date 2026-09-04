@@ -210,6 +210,16 @@ public class OutboxProperties {
         private LockType type = LockType.noop;
 
         private String keyPrefix = "outbox:lock:";
+
+        /**
+         * Redis locker only: park a waiting handler thread on the holder's release notification
+         * (Redis pub/sub) instead of polling {@code SET NX PX} during the per-type {@code
+         * lock-wait} (ADR-0035). Needs a second, pub/sub connection — created by the starter next
+         * to the command connection when {@code event-outboxer.redis.*} is set, or a user-defined
+         * {@code StatefulRedisPubSubConnection<String, String>} bean. {@code false} keeps the
+         * polling wait and opens no pub/sub connection.
+         */
+        private boolean wakeup = true;
     }
 
     /**

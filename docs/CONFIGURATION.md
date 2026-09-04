@@ -360,8 +360,15 @@ and closes both on context shutdown (connection first, then client).
   bounds how long a down Redis can block application startup.
 - `client-name` — reported via `CLIENT SETNAME`.
 
+With `lock.type=redis` and `lock.wakeup=true` (the default) the
+starter opens a second, pub/sub connection on the same client — bean
+`outboxRedisPubSubConnection`, unqualified, closed first on shutdown —
+for the locker's release notifications (ADR-0035).
+
 A user-defined `StatefulRedisConnection` bean always wins: the starter
-then creates nothing and these properties are inert. Redis Cluster or
+then creates nothing and these properties are inert. A pub/sub
+connection bean is never taken as the command connection, so a plain
+connection next to a pub/sub one still resolves. Redis Cluster or
 custom `ClientResources` are deliberately not covered — define your
 own connection bean for those.
 
@@ -405,6 +412,19 @@ default is `noop` and other backends are opt-in:
   an explicit opt-in, so there is no silent back-off.
 - `key-prefix` — prefix for lock keys, default `outbox:lock:`
   (Redis locker only; the PG lockers store/hash the raw key).
+- `wakeup` — Redis locker only, default `true`: a handler thread
+  waiting out the per-type `lock-wait` (ADR-0035) parks on the holder's
+  release notification (the release script `PUBLISH`es on
+  `<key-prefix>released:<key>`) instead of polling `SET NX PX` every
+  2–10 ms, and re-probes every 25 ms as a safety net. Needs a second,
+  pub/sub connection: the starter opens `outboxRedisPubSubConnection`
+  next to its command connection when `event-outboxer.redis.*` is set;
+  with a user-provided connection add a
+  `StatefulRedisPubSubConnection<String, String>` bean (qualified with
+  `@OutboxRedisConnection` when there are several), or the locker
+  polls and says so at INFO. `false` opens no pub/sub connection and
+  keeps the polling wait — for Redis proxies that do not forward
+  pub/sub.
 
 Upgrade note: before ADR-0022 there was a single `type: postgres`
 value (the advisory locker). It was split into `postgres-lease` and
@@ -574,12 +594,16 @@ per-type overrides adjust individual fields (see
   the cool keys' latency, and shows up as a saturated pool and a stalled
   type when overdone. The shipped lockers inherit a polling wait (probe
   every 2–10 ms) except `lock.type=postgres-advisory`, which blocks
-  natively under a statement timeout. **Cap the in-flight budget near
+  natively under a statement timeout, and `lock.type=redis` with
+  `lock.wakeup` (default), which parks on the holder's release
+  notification. **Cap the in-flight budget near
   the key count on keyed types with `handler-executor.type: virtual`**:
   there every claimed event dispatches at once, and thousands of
   waiters polling a handful of keys cost more than the round trips the
   wait saves (measured: 89/s → 53/s on the `hot-key` preset with an
-  uncapped virtual executor). Observe the wait through
+  uncapped virtual executor and the lease locker; with the Redis locker
+  and its pub/sub wake-up the same cell improves, 142/s → 405/s, at
+  ~22 Redis commands per event). Observe the wait through
   `event_outboxer.lock.wait_time{outcome=acquired|busy}`.
 
 #### Sizing the handler queue

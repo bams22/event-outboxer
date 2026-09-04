@@ -161,9 +161,13 @@ public interface EntityLocker {
   autocommit upsert, cheap at a 5–10 ms cadence, and bounded by
   `maxWait`. The `setQueryTimeout` lease-shortening note in ADR-0022
   applies per probe, not to the whole wait.
-- `RedisEntityLocker` keeps the default polling in the first cut.
-  A pub/sub wake-up (release script `PUBLISH`es, waiters subscribe)
-  is a possible refinement with no new dependency.
+- `RedisEntityLocker` kept the default polling in the first cut; on
+  2026-09-05 it gained the pub/sub wake-up (release script `PUBLISH`es
+  on the key's channel, waiters subscribe through a second Lettuce
+  connection and park; a 25 ms fallback probe covers lost messages and
+  expiry). The starter opens that connection next to its command
+  connection (ADR-0027 amendment); `lock.wakeup: false` restores
+  polling.
 - No fairness among waiters is promised — none of the backends offer
   it, and per-key ordering is not part of the outbox contract.
 
@@ -269,8 +273,10 @@ What the cells say:
    The executor session already required capping the in-flight budget
    near the key count on keyed virtual types; this ADR makes that a
    documented rule rather than a new mechanism. A wake-up instead of
-   polling (Redis pub/sub, `LISTEN/NOTIFY` on the lease table) would
-   remove the cost and is the natural follow-up.
+   polling removes the probe cost: done for the Redis locker on
+   2026-09-05 (pub/sub, measured in the
+   [wake-up addendum](../benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-redis-pubsub-wake-up));
+   `LISTEN/NOTIFY` on the lease table remains open for PostgreSQL.
 
 ## Consequences
 

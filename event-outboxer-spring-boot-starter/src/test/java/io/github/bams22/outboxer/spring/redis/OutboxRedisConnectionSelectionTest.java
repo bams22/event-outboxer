@@ -20,6 +20,7 @@ import io.github.bams22.outboxer.spring.cache.RedisCacheAutoConfiguration;
 import io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
@@ -76,6 +77,61 @@ class OutboxRedisConnectionSelectionTest {
                             assertThat(ctx).hasNotFailed();
                             assertThat(ctx.getBean(ResolvedHolder.class).connection)
                                     .isSameAs(ctx.getBean("outboxRedis"));
+                        });
+    }
+
+    @Test
+    @DisplayName(
+            "a pub/sub connection next to a plain one is never taken as the command connection")
+    void pubSubBeanIsIgnoredForTheCommandConnection() {
+        strictRunner
+                .withUserConfiguration(PlainPlusPubSubConfiguration.class)
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            assertThat(ctx.getBean(ResolvedHolder.class).connection)
+                                    .isSameAs(ctx.getBean("commandRedis"));
+                        });
+    }
+
+    @Test
+    @DisplayName("both qualified: the command connection wins, the pub/sub one is the wake-up")
+    void qualifiedPubSubBeanIsIgnoredForTheCommandConnection() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(
+                        StrictCaptureConfiguration.class, BothQualifiedConfiguration.class)
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            assertThat(ctx.getBean(ResolvedHolder.class).connection)
+                                    .isSameAs(ctx.getBean("commandRedis"));
+                        });
+    }
+
+    @Test
+    @DisplayName("the Redis locker picks the pub/sub bean up for the wake-up")
+    void lockerTakesThePubSubConnection() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(RedisLockAutoConfiguration.class))
+                .withUserConfiguration(PlainPlusPubSubConfiguration.class)
+                .withPropertyValues("event-outboxer.lock.type=redis")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            RedisEntityLocker locker =
+                                    (RedisEntityLocker) ctx.getBean(EntityLocker.class);
+                            assertThat(locker.wakeupEnabled()).isTrue();
+                        });
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(RedisLockAutoConfiguration.class))
+                .withUserConfiguration(SingleConnectionConfiguration.class)
+                .withPropertyValues("event-outboxer.lock.type=redis")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            RedisEntityLocker locker =
+                                    (RedisEntityLocker) ctx.getBean(EntityLocker.class);
+                            assertThat(locker.wakeupEnabled()).isFalse();
                         });
     }
 
@@ -374,6 +430,36 @@ class OutboxRedisConnectionSelectionTest {
     }
 
     @Configuration(proxyBeanMethods = false)
+    static class PlainPlusPubSubConfiguration {
+
+        @Bean
+        StatefulRedisConnection<String, String> commandRedis() {
+            return stubConnection();
+        }
+
+        @Bean
+        StatefulRedisPubSubConnection<String, String> pubSubRedis() {
+            return stubPubSubConnection();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class BothQualifiedConfiguration {
+
+        @Bean
+        @OutboxRedisConnection
+        StatefulRedisConnection<String, String> commandRedis() {
+            return stubConnection();
+        }
+
+        @Bean
+        @OutboxRedisConnection
+        StatefulRedisPubSubConnection<String, String> pubSubRedis() {
+            return stubPubSubConnection();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
     static class SingleConnectionConfiguration {
 
         @Bean
@@ -406,6 +492,12 @@ class OutboxRedisConnectionSelectionTest {
     @SuppressWarnings("unchecked")
     private static StatefulRedisConnection<String, String> stubConnection() {
         return (StatefulRedisConnection<String, String>) stub(StatefulRedisConnection.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static StatefulRedisPubSubConnection<String, String> stubPubSubConnection() {
+        return (StatefulRedisPubSubConnection<String, String>)
+                stub(StatefulRedisPubSubConnection.class);
     }
 
     private static Object stub(Class<?> type) {

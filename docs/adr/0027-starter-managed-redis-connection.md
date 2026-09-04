@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted — amended 2026-09-05 (a second, pub/sub connection for the
+Redis locker's lock-wait wake-up, ADR-0035; see the Amendment section
+at the bottom).
 
 ## Date
 
@@ -130,6 +132,23 @@ uses *this* one" — the same gap ADR-0024 closed for `DataSource`.
 - `RedisLockAutoConfiguration` / `RedisCacheAutoConfiguration` are
   ordered `after = RedisConnectionAutoConfiguration.class`; keep that
   ordering if any bean-presence gate is ever reintroduced.
+
+## Amendment (2026-09-05): the pub/sub connection for the lock-wait wake-up
+
+ADR-0035's bounded wait needs a pub/sub subscription to end early on the
+holder's release, and a Lettuce connection cannot run commands while
+subscribed. The same lifecycle owner therefore opens a **second**
+connection, `client.connectPubSub()`, lazily on first use and closes it
+first on shutdown. It is exposed as the bean
+`outboxRedisPubSubConnection` only with `lock.type=redis` and
+`lock.wakeup=true` (default), and it carries **no** `@OutboxRedisConnection`
+qualifier: the command connection remains the one qualified bean, and
+the locker resolves the pub/sub connection by its own type (qualified
+bean, else unique, else none — the wake-up is an optimisation, so the
+locker polls and logs at INFO rather than failing). Since a
+`StatefulRedisPubSubConnection` is a `StatefulRedisConnection`, the
+resolver ignores pub/sub beans when that alone removes an ambiguity, so
+a user's plain connection next to their pub/sub one still resolves.
 
 ## Related decisions
 

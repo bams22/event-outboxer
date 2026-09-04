@@ -16,6 +16,9 @@ import io.github.bams22.outboxer.spring.OutboxRedisConnection;
 import io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionResolver;
 import io.github.bams22.outboxer.spring.redis.RedisConnectionAutoConfiguration;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -33,6 +36,11 @@ import org.springframework.context.annotation.Conditional;
  * at all, startup fails fast with an actionable diagnosis — {@code lock.type=redis} is an explicit
  * opt-in, so silent back-off would only surface later as a cryptic missing-{@code EntityLocker}
  * error.
+ *
+ * <p>The pub/sub connection for the bounded wait's wake-up (ADR-0035) is optional: with {@code
+ * event-outboxer.lock.wakeup=true} (default) the locker takes the qualified or unique {@code
+ * StatefulRedisPubSubConnection} bean — the starter opens one next to its command connection — and
+ * logs which mode it runs in; without one it polls.
  */
 @AutoConfiguration(after = RedisConnectionAutoConfiguration.class)
 @ConditionalOnClass(RedisEntityLocker.class)
@@ -40,16 +48,35 @@ import org.springframework.context.annotation.Conditional;
 @EnableConfigurationProperties(OutboxProperties.class)
 public class RedisLockAutoConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(RedisLockAutoConfiguration.class);
+
     @Bean
     @ConditionalOnMissingBean(EntityLocker.class)
     public EntityLocker outboxEntityLocker(
             @OutboxRedisConnection
                     ObjectProvider<StatefulRedisConnection<String, String>> qualified,
             ObjectProvider<StatefulRedisConnection<String, String>> connections,
+            @OutboxRedisConnection
+                    ObjectProvider<StatefulRedisPubSubConnection<String, String>> qualifiedPubSub,
+            ObjectProvider<StatefulRedisPubSubConnection<String, String>> pubSubConnections,
             ListableBeanFactory beanFactory,
             OutboxProperties properties) {
-        return new RedisEntityLocker(
-                OutboxRedisConnectionResolver.resolve(qualified, connections, beanFactory),
-                properties.getLock().getKeyPrefix());
+        StatefulRedisPubSubConnection<String, String> wakeup =
+                properties.getLock().isWakeup()
+                        ? OutboxRedisConnectionResolver.resolvePubSub(
+                                qualifiedPubSub, pubSubConnections)
+                        : null;
+        if (properties.getLock().isWakeup() && wakeup == null) {
+            log.info(
+                    "Redis entity locker: no StatefulRedisPubSubConnection bean — a busy lock is"
+                            + " polled during lock-wait; define one (or set event-outboxer.redis.*)"
+                            + " for release notifications");
+        }
+        return RedisEntityLocker.builder()
+                .connection(
+                        OutboxRedisConnectionResolver.resolve(qualified, connections, beanFactory))
+                .keyPrefix(properties.getLock().getKeyPrefix())
+                .wakeupConnection(wakeup)
+                .build();
     }
 }

@@ -13,7 +13,9 @@ import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import java.time.Duration;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.util.StringUtils;
 
@@ -23,11 +25,16 @@ import org.springframework.util.StringUtils;
  * context shutdown closes the connection before shutting the client down. The exposed connection
  * bean deliberately suppresses Spring's inferred {@code close()} so this class stays the only owner
  * — no double-close, correct ordering.
+ *
+ * <p>The pub/sub connection the Redis locker uses for release notifications (ADR-0035 wake-up) is
+ * opened lazily by {@link #getPubSubConnection()} — only the locker asks for it — and closed first
+ * on shutdown.
  */
 final class OutboxLettuceConnectionManager implements DisposableBean {
 
     private final RedisClient client;
     private final StatefulRedisConnection<String, String> connection;
+    private @Nullable StatefulRedisPubSubConnection<String, String> pubSubConnection;
 
     OutboxLettuceConnectionManager(OutboxProperties.Redis properties) {
         RedisURI uri = buildUri(properties);
@@ -50,8 +57,19 @@ final class OutboxLettuceConnectionManager implements DisposableBean {
         return connection;
     }
 
+    /** The pub/sub connection for lock release notifications, opened on first use. */
+    synchronized StatefulRedisPubSubConnection<String, String> getPubSubConnection() {
+        if (pubSubConnection == null) {
+            pubSubConnection = client.connectPubSub();
+        }
+        return pubSubConnection;
+    }
+
     @Override
-    public void destroy() {
+    public synchronized void destroy() {
+        if (pubSubConnection != null) {
+            pubSubConnection.close();
+        }
         connection.close();
         client.shutdown(Duration.ZERO, Duration.ofSeconds(2));
     }

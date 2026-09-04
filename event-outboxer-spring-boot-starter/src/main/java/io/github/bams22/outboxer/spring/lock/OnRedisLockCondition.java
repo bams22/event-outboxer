@@ -11,10 +11,13 @@ package io.github.bams22.outboxer.spring.lock;
 
 import io.github.bams22.outboxer.spring.OutboxProperties;
 
-/** Matches when {@code event-outboxer.lock.type} binds to {@code redis}. */
-class OnRedisLockCondition extends LockTypeCondition {
+/**
+ * Matches when {@code event-outboxer.lock.type} binds to {@code redis}. Public because the Redis
+ * connection auto-configuration gates the pub/sub connection on it as well.
+ */
+public class OnRedisLockCondition extends LockTypeCondition {
 
-    OnRedisLockCondition() {
+    public OnRedisLockCondition() {
         super(OutboxProperties.LockType.redis);
     }
 }

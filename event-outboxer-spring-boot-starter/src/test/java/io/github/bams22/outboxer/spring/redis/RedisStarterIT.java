@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spring.cache.RedisCacheAutoConfiguration;
 import io.github.bams22.outboxer.spring.lock.RedisLockAutoConfiguration;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -80,6 +81,78 @@ class RedisStarterIT {
                         });
         // The runner closed the context; the manager must have closed its connection.
         assertThat(captured[0].isOpen()).isFalse();
+    }
+
+    @Test
+    void lockTypeRedisOpensAPubSubConnectionForTheWakeupAndClosesItWithTheContext() {
+        StatefulRedisPubSubConnection<?, ?>[] captured = new StatefulRedisPubSubConnection<?, ?>[1];
+        runner().withPropertyValues(
+                        "event-outboxer.redis.host=" + REDIS.getHost(),
+                        "event-outboxer.redis.port=" + REDIS.getMappedPort(6379),
+                        "event-outboxer.lock.type=redis")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            RedisEntityLocker locker =
+                                    (RedisEntityLocker) ctx.getBean(EntityLocker.class);
+                            assertThat(locker.wakeupEnabled()).isTrue();
+                            assertThat(ctx).hasBean("outboxRedisPubSubConnection");
+                            captured[0] =
+                                    ctx.getBean(
+                                            "outboxRedisPubSubConnection",
+                                            StatefulRedisPubSubConnection.class);
+                            // The command connection is still the one qualified bean.
+                            assertThat(ctx.getBean("outboxRedisConnection"))
+                                    .isNotInstanceOf(StatefulRedisPubSubConnection.class);
+                            // A waiter really parks on the notification: hold, release, acquire.
+                            try (var handle =
+                                    locker.tryLock("wake-42", Duration.ofSeconds(30))
+                                            .orElseThrow()) {
+                                assertThat(
+                                                locker.tryLock(
+                                                        "wake-42",
+                                                        Duration.ofSeconds(30),
+                                                        Duration.ofMillis(50)))
+                                        .isEmpty();
+                            }
+                            assertThat(
+                                            locker.tryLock(
+                                                    "wake-42",
+                                                    Duration.ofSeconds(30),
+                                                    Duration.ofMillis(50)))
+                                    .isPresent();
+                        });
+        assertThat(captured[0].isOpen()).isFalse();
+    }
+
+    @Test
+    void wakeupOffKeepsPollingAndOpensNoPubSubConnection() {
+        runner().withPropertyValues(
+                        "event-outboxer.redis.host=" + REDIS.getHost(),
+                        "event-outboxer.redis.port=" + REDIS.getMappedPort(6379),
+                        "event-outboxer.lock.type=redis",
+                        "event-outboxer.lock.wakeup=false")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            assertThat(ctx).doesNotHaveBean("outboxRedisPubSubConnection");
+                            RedisEntityLocker locker =
+                                    (RedisEntityLocker) ctx.getBean(EntityLocker.class);
+                            assertThat(locker.wakeupEnabled()).isFalse();
+                        });
+    }
+
+    @Test
+    void cacheOnlyOpensNoPubSubConnection() {
+        runner().withPropertyValues(
+                        "event-outboxer.redis.host=" + REDIS.getHost(),
+                        "event-outboxer.redis.port=" + REDIS.getMappedPort(6379),
+                        "event-outboxer.cache.type=redis")
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            assertThat(ctx).doesNotHaveBean("outboxRedisPubSubConnection");
+                        });
     }
 
     @Test

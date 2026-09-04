@@ -11,8 +11,10 @@ package io.github.bams22.outboxer.spring.redis;
 
 import io.github.bams22.outboxer.spring.OutboxRedisConnection;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import java.util.Collection;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
@@ -50,6 +52,12 @@ public final class OutboxRedisConnectionResolver {
         try {
             qualifiedBean = qualified.getIfAvailable();
         } catch (NoUniqueBeanDefinitionException ex) {
+            // A pub/sub connection is a StatefulRedisConnection too, but never a command
+            // connection for the outbox: ignore it when that alone resolves the ambiguity.
+            StatefulRedisConnection<String, String> commandOnly = soleCommandConnection(qualified);
+            if (commandOnly != null) {
+                return commandOnly;
+            }
             throw AmbiguousOutboxRedisConnectionException.multipleQualified(namesFrom(ex));
         }
         if (qualifiedBean != null) {
@@ -59,6 +67,10 @@ public final class OutboxRedisConnectionResolver {
         if (unique != null) {
             return unique;
         }
+        StatefulRedisConnection<String, String> commandOnly = soleCommandConnection(all);
+        if (commandOnly != null) {
+            return commandOnly;
+        }
         List<String> candidates =
                 List.of(
                         beanFactory.getBeanNamesForType(
@@ -67,6 +79,39 @@ public final class OutboxRedisConnectionResolver {
             throw AmbiguousOutboxRedisConnectionException.noneAvailable();
         }
         throw AmbiguousOutboxRedisConnectionException.noneQualified(candidates);
+    }
+
+    /**
+     * The pub/sub connection for lock release notifications (ADR-0035 wake-up): the
+     * {@code @OutboxRedisConnection}-qualified {@code StatefulRedisPubSubConnection} bean, else the
+     * unique one, else {@code null} — the wake-up is an optimisation, so nothing fails without it.
+     *
+     * @param qualified provider injected with {@code @OutboxRedisConnection
+     *     ObjectProvider<StatefulRedisPubSubConnection<String, String>>}
+     * @param all provider injected without a qualifier
+     */
+    public static @Nullable StatefulRedisPubSubConnection<String, String> resolvePubSub(
+            ObjectProvider<StatefulRedisPubSubConnection<String, String>> qualified,
+            ObjectProvider<StatefulRedisPubSubConnection<String, String>> all) {
+        StatefulRedisPubSubConnection<String, String> qualifiedBean;
+        try {
+            qualifiedBean = qualified.getIfAvailable();
+        } catch (NoUniqueBeanDefinitionException ex) {
+            throw AmbiguousOutboxRedisConnectionException.multipleQualified(namesFrom(ex));
+        }
+        if (qualifiedBean != null) {
+            return qualifiedBean;
+        }
+        return all.getIfUnique();
+    }
+
+    private static @Nullable StatefulRedisConnection<String, String> soleCommandConnection(
+            ObjectProvider<StatefulRedisConnection<String, String>> provider) {
+        List<StatefulRedisConnection<String, String>> commandOnly =
+                provider.stream()
+                        .filter(c -> !(c instanceof StatefulRedisPubSubConnection))
+                        .toList();
+        return commandOnly.size() == 1 ? commandOnly.get(0) : null;
     }
 
     private static Collection<String> namesFrom(NoUniqueBeanDefinitionException ex) {

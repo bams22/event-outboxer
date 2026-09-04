@@ -198,6 +198,51 @@ its evidence; ADR-0012 is amended.
 
 ## Follow-ups
 
-- Wake-up instead of polling for the lease and Redis lockers.
+- Wake-up instead of polling for the lease locker (`LISTEN/NOTIFY`);
+  done for Redis, see the addendum below.
 - The harness could count `onLockAcquired.waited` directly instead of
   deriving busy hits from statement counts.
+
+## Addendum (2026-09-05): Redis pub/sub wake-up
+
+The Redis locker's release script now `PUBLISH`es on the key's channel
+and a waiter parks on a second, pub/sub connection instead of probing
+`SET NX PX` every 2–10 ms (`event-outboxer.lock.wakeup`, default
+`true`; a 25 ms fallback probe covers lost notifications and expiry).
+Same host and containers as above; `hot-key` preset with the Redis
+locker; the polling cells set `lock.wakeup=false`. Redis commands per
+event now include one `PUBLISH` per release in every cell.
+
+| Executor | `lock-wait` | wait | handled/s | e2e p50 | e2e p95 | e2e max | PG writes/event | busy hits | Redis cmds/event |
+|---|---|---|---|---|---|---|---|---|---|
+| platform | 100 ms | polling | 464 | 2 346 ms | 4 187 ms | 7 283 ms | 3.01 | 8 | 6.29 |
+| platform | 100 ms | **pub/sub** | **555** | **1 671 ms** | **2 761 ms** | **2 868 ms** | 3.00 | 4 | 6.92 |
+| virtual, uncapped | 0 | — | 142 | 5 402 ms | 18 069 ms | 32 918 ms | 15.88 | 32 192 | 11.44 |
+| virtual, uncapped | 100 ms | polling | 371 | 194 ms | 5 987 ms | 12 028 ms | 5.49 | 6 227 | 25.46 |
+| virtual, uncapped | 100 ms | pub/sub | 405 | 1 186 ms | 5 953 ms | 10 631 ms | 5.53 | 6 328 | 22.20 |
+| virtual, uncapped | 500 ms | pub/sub | **489** | 452 ms | 3 736 ms | 8 587 ms | **3.95** | 2 361 | 35.43 |
+
+What changed:
+
+1. **On the platform executor the wake-up buys a fifth more drain
+   rate and a much shorter tail.** Both cells sit on the engine's
+   3.00-row floor and have no busy hits left; the difference is when a
+   waiter learns of the release — at the next probe versus at once —
+   which shows as e2e p95 4.2 s → 2.8 s and max 7.3 s → 2.9 s. The
+   extra Redis traffic is 0.6 commands per event: the subscribe and
+   unsubscribe of a shared per-key subscription, plus the fallback
+   probes of the few waits that outlast 25 ms.
+2. **The Redis locker never had the lease locker's probe problem on
+   the virtual executor.** With ~5 000 dispatches on eight keys, even
+   the polling wait helps here (142 → 371/s) because a `SET NX PX`
+   probe costs microseconds where a lease upsert costs a PostgreSQL
+   round trip with a tuple lock; 25 Redis commands per event is
+   affordable. The wake-up trims that to 22 and adds a little rate
+   (405/s); a 500 ms wait chains most of the crowd behind the holder
+   (busy hits 1.25 → 0.47 per event, PG writes 5.5 → 3.95, 489/s) at
+   35 commands per event, most of them fallback probes of waiters that
+   park for hundreds of milliseconds. The rule for keyed virtual types
+   stands — cap the in-flight budget near the key count — but with the
+   Redis locker breaking it is now merely expensive, not slower.
+3. The subscription bookkeeping left nothing behind: `lock keys
+   left=0` and no channel subscribed after each run.

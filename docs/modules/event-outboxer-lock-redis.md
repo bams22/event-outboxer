@@ -9,7 +9,7 @@ the single-instance Redlock recipe.
 | Coordinates | `io.github.bams22:event-outboxer-lock-redis` |
 | Java package | `io.github.bams22.outboxer.lock.redis` |
 | Depends on | [`event-outboxer-api`](event-outboxer-api.md), [`event-outboxer-spi`](event-outboxer-spi.md), `io.lettuce:lettuce-core` (6.x) |
-| Requires | Redis 7+ / KeyDB 6+, and a `StatefulRedisConnection<String, String>` — starter-managed via `event-outboxer.redis.*` (ADR-0027) or user-provided |
+| Requires | Redis 7+ / KeyDB 6+, and a `StatefulRedisConnection<String, String>` — starter-managed via `event-outboxer.redis.*` (ADR-0027) or user-provided; optionally a `StatefulRedisPubSubConnection<String, String>` for the lock-wait wake-up (starter-managed too) |
 | Enable with | `event-outboxer.lock.type: redis` |
 
 ## What it does
@@ -21,8 +21,20 @@ the single-instance Redlock recipe.
   UUID per acquisition.
 - **Release** — a Lua script deletes the key **only if it still holds
   this acquisition's token**, so a zombie handler whose TTL expired
-  can never free the next holder's lock. A `0` result (expired /
-  taken over) is a debug-logged no-op.
+  can never free the next holder's lock, and then `PUBLISH`es the token
+  on the key's channel `<keyPrefix>released:<key>` for waiters. A `0`
+  result (expired / taken over) is a debug-logged no-op.
+- **Bounded wait with a wake-up (ADR-0035)** — given a second, pub/sub
+  connection, a handler thread that finds the key busy during its
+  type's `lock-wait` subscribes to that channel and parks until the
+  holder releases: the first waiter of a key subscribes, later ones
+  share the subscription, the last one unsubscribes. A parked waiter
+  still re-probes every 25 ms (`fallbackProbeInterval`) because
+  pub/sub is at-most-once — a notification lost across a reconnect or
+  a key that expired instead of being released must not cost the whole
+  budget. Without a pub/sub connection the wait polls `SET NX PX`
+  every 2–10 ms (the SPI default). `PUBLISH` is issued either way: one
+  cheap command, and the waiters may sit in another JVM.
 - **TTL always honoured** — exclusion holds until `min(close(), ttl)`;
   after a crash the key self-frees at TTL. There is no renewal: a
   handler outliving the TTL can overlap with the next holder, which is
@@ -39,9 +51,8 @@ Failure semantics: Redis unreachable on acquire →
 `LockAcquisitionException` → the dispatcher reschedules the event
 after `lock-busy-retry-delay` *without consuming an attempt*;
 unreachable on release → absorbed (`onLockReleaseFailed`), key frees
-at TTL. A busy key with a per-type `lock-wait` (ADR-0035) is polled
-with `SET NX PX` every 2–10 ms until the wait is spent — the
-inherited default; a pub/sub wake-up is a possible refinement.
+at TTL. Pub/sub unreachable when a waiter subscribes → that wait polls
+instead (warned once per occurrence); the command path is unaffected.
 
 ## When to use it
 
@@ -70,12 +81,16 @@ event-outboxer:
   lock:
     type: redis
     key-prefix: "outbox:lock:"   # default
+    wakeup: true                 # default: park waiters on release notifications (pub/sub)
 ```
 
 That is all — with `event-outboxer.redis.uri` (or `.host`) set, the
 starter creates and owns the Lettuce connection (ADR-0027), shares it
 with [`event-outboxer-cache-redis`](event-outboxer-cache-redis.md),
-and closes it on shutdown.
+and closes it on shutdown. With `lock.type: redis` it opens a second,
+pub/sub connection on the same client for the wake-up
+(`outboxRedisPubSubConnection`, closed first on shutdown); `lock.wakeup:
+false` skips it and keeps the polling wait.
 
 Alternatively, bring your own connection — any user-defined
 `StatefulRedisConnection` bean wins and makes `event-outboxer.redis.*`
@@ -96,7 +111,12 @@ public StatefulRedisConnection<String, String> redisConnection(RedisClient clien
 ```
 
 With `lock.type: redis` and neither properties nor a bean, startup
-fails fast naming both remedies.
+fails fast naming both remedies. When you bring your own connection,
+add a `StatefulRedisPubSubConnection<String, String>` bean as well to
+keep the wake-up (`client.connectPubSub()`); the locker takes the
+`@OutboxRedisConnection`-qualified or the unique one, and polls with an
+INFO line if there is none. A pub/sub bean is never picked as the
+command connection.
 
 The lock TTL passed to `tryLock` is the per-type
 `event-outboxer.event-types.*.lock-ttl` (default 10 m).
@@ -104,12 +124,18 @@ The lock TTL passed to `tryLock` is the per-type
 ### Without Spring
 
 ```java
-EntityLocker locker = new RedisEntityLocker(connection);            // default prefix
+EntityLocker locker = new RedisEntityLocker(connection);            // default prefix, polling wait
 // or: new RedisEntityLocker(connection, "myapp:outbox:lock:")
+// with the wake-up:
+EntityLocker locker = RedisEntityLocker.builder()
+        .connection(client.connect())
+        .wakeupConnection(client.connectPubSub())
+        .keyPrefix("myapp:outbox:lock:")        // optional
+        .build();
 new OutboxEngineBuilder().entityLocker(locker)/*...*/.build();
 ```
 
 ## Related
 
 - [event-outboxer-lock-postgres-lease](event-outboxer-lock-postgres-lease.md) — guarantee comparison across all lockers.
-- ADRs: [0012](../adr/0012-extract-lock-key-on-handler.md), [0022](../adr/0022-lease-table-postgres-entity-locker.md) (§guarantee table).
+- ADRs: [0012](../adr/0012-extract-lock-key-on-handler.md), [0022](../adr/0022-lease-table-postgres-entity-locker.md) (§guarantee table), [0035](../adr/0035-bounded-lock-wait.md) (bounded wait and its wake-up).
