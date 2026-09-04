@@ -712,9 +712,13 @@ Maintenance-process parameters.
 - `stale-claim-threshold` — age of a `PROCESSING` claim before the
   stale-claim sweeper returns it to `PENDING` (last line of defence
   for rows invisible to the watchdog and orphan recovery). Default:
-  derived as 2 × the largest per-type `handler-max-runtime`. An
-  explicit value must exceed every `handler-max-runtime` — validated
-  at startup. Heterogeneous fleets (a rolling deploy raising
+  derived as 2 × the largest per-type `handler-max-runtime` of the
+  types *this instance polls*. A publish-only instance (ADR-0029)
+  polls none and therefore runs **no sweeper** unless this property is
+  set explicitly (before 2026-09-04 it derived zero and reset every
+  in-flight claim of the fleet on each sweep). An explicit value must
+  exceed every `handler-max-runtime` — validated at startup.
+  Heterogeneous fleets (a rolling deploy raising
   `handler-max-runtime`) should set it explicitly with headroom.
   Dispatches waiting in a handler queue are claims too and are not
   watched by the watchdog — a deep queue behind slow handlers can push

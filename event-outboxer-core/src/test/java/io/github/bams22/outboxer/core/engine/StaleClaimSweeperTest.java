@@ -128,6 +128,86 @@ class StaleClaimSweeperTest {
     }
 
     @Test
+    @DisplayName("a publish-only engine without an explicit threshold never sweeps")
+    void publishOnlyWithoutExplicitThresholdDoesNotSweep() throws Exception {
+        // No handler types on this instance: 2 x max(handlerMaxRuntime) over nothing would be
+        // ZERO, and a zero threshold resets every in-flight claim of the fleet on each sweep.
+        engine =
+                engineWith(cfg -> cfg, m -> m.staleClaimSweepInterval(Duration.ofMillis(200)))
+                        .publishOnly(true)
+                        .build();
+        engine.start();
+        UUID id = claimedByZombie();
+        offset.updateAndGet(o -> o.plusHours(1));
+        Thread.sleep(800);
+        assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
+    }
+
+    @Test
+    @DisplayName("a publish-only engine with an explicit threshold sweeps with it")
+    void publishOnlyWithExplicitThresholdSweeps() {
+        engine =
+                engineWith(
+                                cfg -> cfg,
+                                m ->
+                                        m.staleClaimSweepInterval(Duration.ofMillis(200))
+                                                .staleClaimThreshold(Duration.ofSeconds(1)))
+                        .publishOnly(true)
+                        .build();
+        engine.start();
+        UUID id = claimedByZombie();
+        offset.updateAndGet(o -> o.plusSeconds(10));
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> store.findById(id).orElseThrow().status() == EventStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("threshold resolution: none without types, explicit wins, 2x max otherwise")
+    void thresholdResolution() {
+        MaintenanceConfig derived = MaintenanceConfig.defaults();
+        MaintenanceConfig explicit =
+                MaintenanceConfig.builder()
+                        .heartbeatInterval(derived.heartbeatInterval())
+                        .deadThreshold(derived.deadThreshold())
+                        .orphanRecoveryInterval(derived.orphanRecoveryInterval())
+                        .watchdogInterval(derived.watchdogInterval())
+                        .abandonedHandlerGrace(derived.abandonedHandlerGrace())
+                        .reclaimBatchSize(derived.reclaimBatchSize())
+                        .shutdownTimeout(derived.shutdownTimeout())
+                        .staleClaimSweepInterval(derived.staleClaimSweepInterval())
+                        .staleClaimThreshold(Duration.ofMinutes(30))
+                        .build();
+        EventTypeConfig tenMinutes =
+                EventTypeConfig.defaults().toBuilder()
+                        .handlerMaxRuntime(Duration.ofMinutes(10))
+                        .lockTtl(Duration.ofMinutes(20))
+                        .build();
+        assertThat(OutboxEngineBuilder.resolveStaleClaimThreshold(derived, List.of())).isNull();
+        assertThat(OutboxEngineBuilder.resolveStaleClaimThreshold(explicit, List.of()))
+                .isEqualTo(Duration.ofMinutes(30));
+        assertThat(OutboxEngineBuilder.resolveStaleClaimThreshold(derived, List.of(tenMinutes)))
+                .isEqualTo(Duration.ofMinutes(20));
+    }
+
+    private UUID claimedByZombie() {
+        UUID id = UUID.randomUUID();
+        store.save(
+                PendingEvent.builder()
+                        .id(id)
+                        .eventType("ORPHANED_TYPE")
+                        .payload(SerializedPayload.ofText("\"x\""))
+                        .payloadFormat(StringEventSerializer.FORMAT)
+                        .payloadClass("java.lang.String")
+                        .priority((short) 0)
+                        .runAt(clock.now().minusSeconds(1))
+                        .traceContext(Map.of())
+                        .build());
+        store.claim(new ClaimRequest("ORPHANED_TYPE", new WorkerId("zombie"), 10));
+        assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
+        return id;
+    }
+
+    @Test
     @DisplayName("explicit staleClaimThreshold <= handlerMaxRuntime fails the build")
     void thresholdValidation() {
         assertThatThrownBy(

@@ -64,6 +64,34 @@ that explains itself instead of a log line.
   `event_outboxer.workers` and in the health endpoint; per-type backlog
   gauges are registered only for the handlers a polling instance runs.
 
+## Amendment (2026-09-04): no derived stale-claim threshold without handlers
+
+The Decision above lists the stale-claim sweep among the maintenance a
+publish-only engine keeps running. Its threshold, when not configured,
+is derived as 2 × the largest `handler-max-runtime` of the types the
+instance polls — and a publish-only instance polls none, so the
+derivation produced **zero**: every `stale-claim-sweep-interval` the
+publish-only instance returned *every* `PROCESSING` row of the whole
+fleet to `PENDING` with `attempts + 1`, including rows sitting in live
+workers' executor queues. Each of those was then handled by its
+original claimer from its in-memory queue *and* by whoever re-claimed
+it: duplicates by the hundreds and an attempts budget burning down on
+a 5-minute cadence. The benchmark harness (ADR-0034) found it through
+its `crash` preset, whose driver holds a publish-only context: 390
+duplicates on 5 000 events, 186 of them far from the kill.
+
+**Change.** `OutboxEngineBuilder` resolves the threshold to *none* when
+the instance polls no event type and no explicit
+`maintenance.stale-claim-threshold` is set; the sweeper is then not
+scheduled at all and startup logs why. With an explicit threshold a
+publish-only instance sweeps with it — an operator who wants the
+safety net to live on the API tier can still have it, with a value
+chosen for the fleet. Polling instances are unaffected: they derive
+from their own handlers as before.
+
+**Consequence for ADR-0029's Decision.** Read "stale-claim sweep" in the
+maintenance list as "stale-claim sweep, when it has a threshold".
+
 ## Related decisions
 
 - [ADR-0004](0004-per-event-type-worker-isolation.md) — one poller per

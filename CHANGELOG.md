@@ -7,6 +7,19 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **A publish-only engine no longer resets every in-flight claim of the
+  fleet (ADR-0029 amendment, 2026-09-04).** The stale-claim threshold
+  is derived from the `handler-max-runtime` of the types an instance
+  polls; a publish-only instance polls none, so the derived value was
+  zero and its sweeper returned every `PROCESSING` row to `PENDING`
+  (`attempts + 1`) every `stale-claim-sweep-interval` — events queued
+  in live workers were then handled twice. Found by the benchmark
+  harness's `crash` preset (390 duplicates on 5 000 events, most of
+  them nowhere near the kill). Now an instance that polls no type runs
+  the sweeper only when `maintenance.stale-claim-threshold` is set
+  explicitly, and says so at startup.
+
 ### Changed
 - **Group-commit finalize batching no longer convoys on its flush lock
   (ADR-0014 amendment, 2026-09-04).** `GroupCommitEventStore` waiters
@@ -73,6 +86,14 @@ All notable changes to this project are documented here. Format follows
   after the publish phase, and every run now begins with `VACUUM FULL`
   on the events table so a previous run's bloat cannot pose as a
   difference between variants. `BenchmarkProtobufIT` under `-P it`.
+- **Benchmark harness: targets name their tables, failed runs dump the
+  ledger, recovery events are logged.** `BenchmarkTarget` gains
+  `eventsTable()` / `leaseTable()` so vacuum, size and cleanliness
+  checks work for any target; a run that fails an invariant writes
+  `handlings.csv` to its work directory; every context the
+  event-outboxer target boots registers a listener that logs orphan
+  reclaims, stale sweeps, stuck-handler reclaims, abandoned handlers,
+  non-busy retries and storage errors with the worker id.
 - **Benchmark harness: statement counts.** When the server preloads
   `pg_stat_statements`, the report's database block carries calls and
   rows per statement class (claim, insert, batched/single finalize,

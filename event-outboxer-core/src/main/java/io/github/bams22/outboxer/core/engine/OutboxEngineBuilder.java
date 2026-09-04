@@ -570,16 +570,24 @@ public final class OutboxEngineBuilder {
                 admin != null && retentionConfig.enabled()
                         ? new RetentionTask(admin, listener, clock, retentionConfig)
                         : null;
-        StaleClaimSweeperTask staleClaimSweeper =
-                StaleClaimSweeperTask.builder()
-                        .store(eventStore)
-                        .listener(listener)
-                        .threshold(
-                                resolveStaleClaimThreshold(
-                                        maintenanceConfig, executorConfigs.values()))
-                        .interval(maintenanceConfig.staleClaimSweepInterval())
-                        .batchSize(maintenanceConfig.reclaimBatchSize())
-                        .build();
+        Duration staleClaimThreshold =
+                resolveStaleClaimThreshold(maintenanceConfig, executorConfigs.values());
+        StaleClaimSweeperTask staleClaimSweeper = null;
+        if (staleClaimThreshold != null) {
+            staleClaimSweeper =
+                    StaleClaimSweeperTask.builder()
+                            .store(eventStore)
+                            .listener(listener)
+                            .threshold(staleClaimThreshold)
+                            .interval(maintenanceConfig.staleClaimSweepInterval())
+                            .batchSize(maintenanceConfig.reclaimBatchSize())
+                            .build();
+        } else {
+            log.info(
+                    "stale-claim sweeper disabled on this instance: it polls no event type, so"
+                        + " there is no handler-max-runtime to derive a safe threshold from; set"
+                        + " maintenance.stale-claim-threshold explicitly to sweep from here");
+        }
         MaintenanceScheduler maintenance =
                 MaintenanceScheduler.builder()
                         .heartbeat(heartbeat)
@@ -617,7 +625,14 @@ public final class OutboxEngineBuilder {
      * value that violates the invariant fails the build. Heterogeneous fleets (a rolling deploy
      * that raises {@code handlerMaxRuntime}) should set the threshold explicitly with headroom.
      */
-    static Duration resolveStaleClaimThreshold(
+    /**
+     * The sweeper's threshold: the explicit {@code staleClaimThreshold}, else twice the largest
+     * per-type {@code handlerMaxRuntime} of the types this instance polls. An instance that polls
+     * no type — publish-only (ADR-0029) — has nothing to derive from and gets {@code null}: no
+     * sweeper. Deriving {@code ZERO} there would make it reset every in-flight claim of the whole
+     * fleet on each sweep (ADR-0029 amendment of 2026-09-04).
+     */
+    static @Nullable Duration resolveStaleClaimThreshold(
             MaintenanceConfig maintenance, Collection<EventTypeConfig> typeConfigs) {
         Duration maxRuntime = Duration.ZERO;
         for (EventTypeConfig cfg : typeConfigs) {
@@ -627,7 +642,7 @@ public final class OutboxEngineBuilder {
         }
         Duration explicit = maintenance.staleClaimThreshold();
         if (explicit == null) {
-            return maxRuntime.multipliedBy(2);
+            return typeConfigs.isEmpty() ? null : maxRuntime.multipliedBy(2);
         }
         if (explicit.compareTo(maxRuntime) <= 0) {
             throw new IllegalArgumentException(

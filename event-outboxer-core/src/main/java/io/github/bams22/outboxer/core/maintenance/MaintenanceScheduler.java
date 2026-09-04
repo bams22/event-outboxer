@@ -47,7 +47,7 @@ public final class MaintenanceScheduler {
     private final WatchdogTask watchdog;
     private final EngineHealthCheckTask engineHealthCheck;
     private final @Nullable RetentionTask retention;
-    private final StaleClaimSweeperTask staleClaimSweeper;
+    private final @Nullable StaleClaimSweeperTask staleClaimSweeper;
     private final MaintenanceConfig config;
     private final OutboxListener listener;
 
@@ -55,9 +55,10 @@ public final class MaintenanceScheduler {
 
     /**
      * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
-     * heartbeat}, {@code orphanRecovery}, {@code watchdog}, {@code engineHealthCheck}, {@code
-     * staleClaimSweeper}. {@code retention} is genuinely optional — {@code null} means retention is
-     * disabled; {@code config} defaults to {@link MaintenanceConfig#defaults()}; {@code listener}
+     * heartbeat}, {@code orphanRecovery}, {@code watchdog}, {@code engineHealthCheck}. {@code
+     * retention} and {@code staleClaimSweeper} are genuinely optional — {@code null} means the task
+     * is disabled (retention off; no sweeper on an instance that polls no type and has no explicit
+     * threshold); {@code config} defaults to {@link MaintenanceConfig#defaults()}; {@code listener}
      * defaults to {@link OutboxListener#NOOP}.
      */
     @Builder
@@ -67,7 +68,7 @@ public final class MaintenanceScheduler {
             WatchdogTask watchdog,
             EngineHealthCheckTask engineHealthCheck,
             @Nullable RetentionTask retention,
-            StaleClaimSweeperTask staleClaimSweeper,
+            @Nullable StaleClaimSweeperTask staleClaimSweeper,
             @Nullable MaintenanceConfig config,
             @Nullable OutboxListener listener) {
         this.heartbeat = Objects.requireNonNull(heartbeat, "heartbeat must not be null");
@@ -77,8 +78,7 @@ public final class MaintenanceScheduler {
         this.engineHealthCheck =
                 Objects.requireNonNull(engineHealthCheck, "engineHealthCheck must not be null");
         this.retention = retention;
-        this.staleClaimSweeper =
-                Objects.requireNonNull(staleClaimSweeper, "staleClaimSweeper must not be null");
+        this.staleClaimSweeper = staleClaimSweeper;
         this.config = config != null ? config : MaintenanceConfig.defaults();
         this.listener = listener != null ? listener : OutboxListener.NOOP;
     }
@@ -100,8 +100,13 @@ public final class MaintenanceScheduler {
         if (retention != null) {
             scheduleFixed(executor, "retention", retention, retention.interval());
         }
-        scheduleFixed(
-                executor, "stale_claim_sweeper", staleClaimSweeper, staleClaimSweeper.interval());
+        if (staleClaimSweeper != null) {
+            scheduleFixed(
+                    executor,
+                    "stale_claim_sweeper",
+                    staleClaimSweeper,
+                    staleClaimSweeper.interval());
+        }
     }
 
     /**
