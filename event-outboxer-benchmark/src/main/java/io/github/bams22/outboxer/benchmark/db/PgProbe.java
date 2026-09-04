@@ -182,12 +182,32 @@ public final class PgProbe {
                 || (q.startsWith("with") && q.contains("event_archive") && q.contains("values"))) {
             return "finalizeBatch";
         }
-        if (q.startsWith("delete from " + events + " where id = $1")
+        if (q.startsWith("delete from " + events + " where id = ")
                 || (q.startsWith("with") && q.contains("event_archive"))) {
             return "finalizeSingle";
         }
-        if (q.startsWith("update " + events) && q.contains("'pending'")) {
-            return "release";
+        // pg_stat_statements normalises literals to $n (and may keep some), so the UPDATE shapes
+        // are told apart by their SET lists rather than by the status value.
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile(
+                                "^update "
+                                        + java.util.regex.Pattern.quote(events)
+                                        + "( e)? set status = \\S+, (.*)$")
+                        .matcher(q);
+        if (m.matches()) {
+            String rest = m.group(2);
+            if (rest.contains("where id in (select")) {
+                return "other"; // stale-claim sweep
+            }
+            if (rest.contains("attempts = attempts + ")) {
+                return "retry"; // markForRetry, markForRetryAll, orphan reclaim
+            }
+            if (rest.contains("run_at = ")) {
+                return "release";
+            }
+            if (rest.contains("last_fail_reason")) {
+                return "disabled";
+            }
         }
         return "other";
     }

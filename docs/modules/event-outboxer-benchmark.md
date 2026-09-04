@@ -133,8 +133,10 @@ exit, and idle backends may hold them back for up to ten seconds.
 When the server preloads `pg_stat_statements`
 (`shared_preload_libraries`), the report also carries a `statements`
 block: calls and rows per statement class — claim, insert, batched
-and single finalize, release, other — so a change in round trips per
-event is visible directly. Heartbeats and
+and single finalize, release, retry, disabled, other — so a change in
+round trips per event is visible directly. The `UPDATE` shapes are
+told apart by their SET lists, since `pg_stat_statements` normalises
+literals. Heartbeats and
 worker registration during the run are included: they are real cost.
 A *crash* restart of PostgreSQL resets the cumulative statistics; the
 report then marks the figure unreliable. A fast restart persists them.
@@ -215,7 +217,10 @@ the run-order trap that led to `VACUUM FULL` at run start. Fourth:
 group-commit flush lock convoys, and every laptop number was bound by
 a ~5 ms commit. Fifth:
 [2026-09-04, group-commit matrix](../benchmarks/2026-09-04-laptop-group-commit-matrix.md)
-— batching on vs off across 16 cells; it lost in 15.
+— batching on vs off across 16 cells; it lost in 15. Sixth:
+[2026-09-04, group commit + Redis locker](../benchmarks/2026-09-04-laptop-group-commit-redis.md)
+— with a locker's round trips jittering the arrivals, batching wins on
+unique keys under fsync and is irrelevant on hot keys.
 
 ## Reporting policy
 

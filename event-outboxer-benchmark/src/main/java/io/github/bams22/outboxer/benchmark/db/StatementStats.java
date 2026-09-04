@@ -24,7 +24,9 @@ import java.util.TreeMap;
  *   <li>{@code finalizeBatch} — the group-commit multi-row {@code DELETE ... USING (VALUES ...)}
  *       (or the archive CTE)
  *   <li>{@code finalizeSingle} — the single-row {@code DELETE ... WHERE id = $1 AND version = $2}
- *   <li>{@code release} — {@code UPDATE ... SET status = 'PENDING'} (lock busy, finalize failure)
+ *   <li>{@code release} — the claim given back with a retry delay (lock busy, finalize failure)
+ *   <li>{@code retry} — {@code markForRetry}: attempts incremented, run_at rescheduled
+ *   <li>{@code disabled} — {@code markDisabled}
  *   <li>{@code other} — everything else against the schema (heartbeats, maintenance, leases)
  * </ul>
  *

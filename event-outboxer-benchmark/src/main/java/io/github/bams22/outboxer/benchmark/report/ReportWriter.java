@@ -143,7 +143,8 @@ public final class ReportWriter {
             out.printf(
                     Locale.ROOT,
                     "statements   %d calls = %.2f/event   claim %d calls x %.1f rows   finalize"
-                            + " batched %d calls x %.1f rows, single %d   release %d   other %d%n",
+                            + " batched %d calls x %.1f rows, single %d   release %d   retry %d"
+                            + "   other %d%n",
                     st.totalCalls(),
                     (double) st.totalCalls() / p.events(),
                     st.calls("claim"),
@@ -152,6 +153,7 @@ public final class ReportWriter {
                     st.rowsPerCall("finalizeBatch"),
                     st.calls("finalizeSingle"),
                     st.calls("release"),
+                    st.calls("retry"),
                     st.calls("other"));
         }
         if (db.caveat() != null) {

@@ -60,7 +60,8 @@ All notable changes to this project are documented here. Format follows
 - **Benchmark harness: statement counts.** When the server preloads
   `pg_stat_statements`, the report's database block carries calls and
   rows per statement class (claim, insert, batched/single finalize,
-  release, other) sampled before and after the run — the direct
+  release, retry, disabled, other; the `UPDATE` shapes told apart by
+  their SET lists) sampled before and after the run — the direct
   measure of round trips per event that the group-commit sessions
   needed.
 
