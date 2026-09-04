@@ -36,13 +36,24 @@ import java.util.function.Function;
  * into multi-row statements via <em>group commit</em> — the same idea databases use to amortize WAL
  * fsyncs.
  *
- * <p>A finalizing handler thread enqueues its mark and acquires the flush lock. If the lock is free
- * (idle engine), the thread flushes its own single entry immediately — behaviour and latency are
- * identical to a direct call. Under load, while the current lock owner's batch statement is in
- * flight, other handler threads enqueue and block on the lock; whichever thread ends up flushing
- * next drains everything accumulated into one {@link EventStore#markProcessedAll} / {@link
- * EventStore#markForRetryAll} statement. The batch forms naturally out of the SQL round-trip time —
- * no timers, no dedicated flusher thread, no added latency floor.
+ * <p>A finalizing handler thread enqueues its mark and <em>tries</em> the flush lock. If the lock
+ * is free (idle engine), the thread flushes everything queued — its own single entry, typically —
+ * immediately: behaviour and latency are identical to a direct call. Under load, while the current
+ * lock owner's batch statement is in flight, other handler threads enqueue and wait <em>on their
+ * own future</em>, never on the lock; the owner's drain picks them all up into one {@link
+ * EventStore#markProcessedAll} / {@link EventStore#markForRetryAll} statement and completes their
+ * futures. The batch forms naturally out of the SQL round-trip time — no timers, no dedicated
+ * flusher thread, no added latency floor.
+ *
+ * <p><b>Hand-off.</b> An owner flushes exactly once per lock acquisition (bounded duty: its own
+ * event's entity lock and in-flight slot stay held only for that one statement) and then releases.
+ * Entries enqueued after its drain are still queued; if the owner leaves the queues non-empty it
+ * completes the current {@code flusherWanted} generation, which wakes every waiter; one of them
+ * wins {@code tryLock} and flushes, the others go back to waiting on their futures and on the next
+ * generation. Waiters never block on the lock: the 2026-09-04 amendment of ADR-0014 records the
+ * convoy the previous {@code lock()}-then-check design formed under commit-bound round trips —
+ * parked threads whose entries were already flushed kept losing the unfair lock to newly arriving
+ * threads, each of which ran a full round trip while they waited.
  *
  * <p>The call stays <strong>synchronous</strong>, which is what preserves the dispatcher's
  * invariants untouched: finalize still completes before the entity lock is closed and before the
@@ -52,10 +63,16 @@ import java.util.function.Function;
  * no extra draining is needed: once the handler executors have drained, every finalize has already
  * returned.
  *
- * <p>Correctness sketch: an entry is enqueued <em>before</em> the lock is acquired, so it is either
- * flushed by a preceding lock owner (its future is done by the time the thread gets the lock) or by
- * the thread itself in {@link #drainAndFlushOnce()}. The lock is always released, every drained
- * entry's future is always completed, and the post-loop {@code join()} therefore never blocks.
+ * <p>Correctness sketch (liveness): an entry {@code E} is enqueued at time {@code t}, before its
+ * thread tries the lock. If the thread wins the lock it drains {@code E} itself. If it loses, some
+ * owner {@code O} holds the lock; either {@code O}'s drain happened after {@code t} and included
+ * {@code E}, or it happened before {@code t} — then {@code O} unlocks and checks the queues
+ * <em>after</em> unlocking, finds {@code E}, and completes the generation that {@code E}'s thread
+ * snapshotted before it started waiting (the snapshot is taken after the failed {@code tryLock},
+ * hence before {@code O}'s post-unlock signal). A thread that snapshots a generation and then sees
+ * the lock free does not wait but retries the lock, which closes the window between {@code O}'s
+ * unlock and its signal. Every drained entry's future is always completed, exceptionally on a
+ * delegate failure, so the final {@code join()} never blocks.
  *
  * <p>Only {@code markProcessed} (Success, Skip and Delete outcomes all route through it) and {@code
  * markForRetry} are batched — the queues are engine-wide, so finalizations of different event types
@@ -71,6 +88,13 @@ public final class GroupCommitEventStore implements EventStore {
     private final Queue<Entry<ProcessedMark>> processedQueue = new ConcurrentLinkedQueue<>();
     private final Queue<Entry<RetryMark>> retryQueue = new ConcurrentLinkedQueue<>();
     private final ReentrantLock flushLock = new ReentrantLock();
+
+    /**
+     * Hand-off generation: completed by an owner that releases the lock with work still queued, so
+     * a waiter can take over. Replaced before it is completed, so late readers wait on a fresh one.
+     * Volatile: read by waiters without the lock.
+     */
+    private volatile CompletableFuture<Void> flusherWanted = new CompletableFuture<>();
 
     /**
      * Creates the decorator.
@@ -113,16 +137,31 @@ public final class GroupCommitEventStore implements EventStore {
     }
 
     private boolean awaitFlushed(Entry<?> entry) {
-        flushLock.lock();
-        try {
-            while (!entry.result.isDone()) {
-                drainAndFlushOnce();
+        while (!entry.result.isDone()) {
+            if (flushLock.tryLock()) {
+                try {
+                    drainAndFlushOnce();
+                } finally {
+                    flushLock.unlock();
+                }
+                // One flush per acquisition. Anything enqueued after the drain is handed to the
+                // waiters — after the unlock, so the winner of the hand-off can take the lock.
+                if (!queuesEmpty()) {
+                    signalFlusherWanted();
+                }
+                continue;
             }
-        } finally {
-            flushLock.unlock();
+            // Snapshot the generation first: an owner that signals after this point completes
+            // exactly this future. Then re-check the lock — an owner that released between our
+            // tryLock and here may have signalled an older generation, so retry instead of waiting.
+            CompletableFuture<Void> wanted = flusherWanted;
+            if (entry.result.isDone() || !flushLock.isLocked()) {
+                continue;
+            }
+            // handle(): a failed verdict must surface through the unwrap below, not from here.
+            CompletableFuture.anyOf(entry.result, wanted).handle((v, ex) -> null).join();
         }
-        // Done by this point — either a preceding lock owner flushed the entry, or the loop above
-        // did. join() therefore never blocks; it only unwraps the verdict or the storage failure.
+        // Done by this point; join() only unwraps the verdict or the storage failure.
         try {
             return entry.result.join();
         } catch (CompletionException ex) {
@@ -132,6 +171,21 @@ public final class GroupCommitEventStore implements EventStore {
             }
             throw ex;
         }
+    }
+
+    private boolean queuesEmpty() {
+        return processedQueue.isEmpty() && retryQueue.isEmpty();
+    }
+
+    /**
+     * Wakes every waiter of the current generation so one of them becomes the next flusher. The
+     * generation is replaced first: a waiter that reads {@code flusherWanted} after this point must
+     * wait on the next hand-off, not on one that already happened.
+     */
+    private void signalFlusherWanted() {
+        CompletableFuture<Void> previous = flusherWanted;
+        flusherWanted = new CompletableFuture<>();
+        previous.complete(null);
     }
 
     /**

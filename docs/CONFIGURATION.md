@@ -662,11 +662,19 @@ Cross-type dispatcher knobs.
   Backpressure does not consume the attempts budget either.
 - `finalize-batching` — group-commit batching of `markProcessed` /
   `markForRetry` statements (ADR-0014, batch form): concurrent
-  finalizations coalesce into one multi-row statement, cutting finalize
-  round-trips on hot types up to ~batch-size×. The batch forms while
-  the previous statement is in flight — no timers, no added latency; an
-  idle engine degrades to plain single-row calls. `true` by default;
-  disable only as a kill-switch.
+  finalizations coalesce into one multi-row statement. The batch forms
+  while the previous statement is in flight — no timers, no added
+  latency; waiters wait on their own result, never on the flush lock
+  (ADR-0014 amendment of 2026-09-04); an idle engine degrades to plain
+  single-row calls. Measured on the benchmark harness: a third fewer
+  statements per event, batches of 8–10 rows, and a higher drain rate
+  wherever a commit is expensive and the connection pool is ordinary.
+  `true` by default. Turn it off when a single JVM must sustain
+  several thousand finalizes per second on storage that commits in
+  sub-millisecond time, or when a pool large enough for every handler
+  thread to commit concurrently is cheaper than the statements saved —
+  there one statement per round trip caps the flusher below what
+  parallel single-row commits achieve.
 - `finalize-batch-max-size` — cap on rows per flushed finalize
   statement (default 128).
 

@@ -5,7 +5,8 @@
 Accepted (amended 2026-07-27: batch form of the finalize invariant —
 group-commit finalize batching; amended 2026-08-16: the losing side is
 interrupted — stuck-handler cancellation and abandoned-thread
-reporting)
+reporting; amended 2026-09-04: convoy-free flush path — waiters wait on
+their future, not on the flush lock)
 
 ## Date
 
@@ -109,6 +110,95 @@ statement surfaces to every affected caller, whose finalize-failure
 release path runs per event as before. A batch statement does finalize
 its rows atomically (all-or-nothing on storage failure), which is
 strictly within at-least-once semantics.
+
+### Convoy-free flush path (amendment, 2026-09-04)
+
+**What the benchmark harness found (ADR-0034, sessions 4–6 of
+2026-09-04).** The group-commit implementation of the 2026-07-27
+amendment made every finalizing thread take the flush lock — even a
+thread whose entry a previous owner had already flushed, which needed
+the lock only to observe `isDone()`. The lock is unfair. Under a
+commit-bound round trip (a ~5 ms `fsync` on the benchmark host) a
+newly arriving thread whose entry was *not* yet flushed could barge
+ahead of parked threads whose entries *were*, run a full round trip,
+and leave them parked for another cycle. Wall-clock JFR showed one
+park per event in `awaitFlushed`, 32–44 ms each — six to eight flush
+cycles — while batches stayed at 2–3 rows because threads stuck in the
+convoy kept the executor saturated and the capacity-coupled poller
+topped up one event per freed slot. Net effect: with batching on, more
+statements per event than with it off (2.37 vs 2.21), and 1.5–6.4×
+lower drain rates in 15 of 16 measured configurations. A locker in the
+path (two Redis round trips per event) jittered the arrivals enough to
+flip the sign in some cells, which only confirmed that the outcome
+depended on arrival *phase*, not rate.
+
+**Change.** `GroupCommitEventStore.awaitFlushed` no longer blocks on
+the lock:
+
+1. enqueue the entry; `tryLock()`;
+2. the winner drains everything queued (up to `maxBatchSize` per
+   statement kind), flushes it as one statement, completes every
+   drained future, releases the lock — **one flush per acquisition**, so
+   the owner's own entity lock and in-flight slot are held for one
+   statement only;
+3. if the queues are still non-empty after the release, the owner
+   completes the current *hand-off generation* (a `CompletableFuture`
+   that is replaced before being completed), which wakes every waiter;
+   one of them wins the next `tryLock`;
+4. a thread that loses `tryLock` snapshots the generation, re-checks
+   its own future and the lock (an owner that released between the
+   failed `tryLock` and the snapshot may have signalled an older
+   generation, so it retries instead of waiting), then waits on
+   `anyOf(ownFuture, generation)`.
+
+Liveness sketch: an entry enqueued at `t` is drained either by its own
+thread (won the lock), by the owner whose drain came after `t`, or —
+when the owner's drain came before `t` — by the hand-off the owner
+signals after its post-unlock check, which necessarily sees the entry.
+The generation snapshot is taken after the failed `tryLock`, hence
+before that signal. Every drained future is completed, exceptionally
+on a delegate failure, so the final `join()` never blocks. Waiters
+never touch the lock after their failed `tryLock`, so no convoy can
+form; batches are bounded by the arrival rate during one round trip.
+
+**Measured (same host, same day, 10 000 events, backlog mode;
+`finalize-batching` on vs off, events/s):**
+
+| Configuration | before: on | before: off | after: on | after: off |
+|---|---|---|---|---|
+| fsync, 1 JVM × 4 types, pool 8 | 318 | 1 390 | **1 662** | 1 342 |
+| fsync, 1 × 4, pool 32 | 365 | 2 326 | 1 981 | **3 012** |
+| fsync, 3 JVMs × 4 types, pool 8 | 1 626 | 3 564 | **4 836** | 3 187 |
+| fsync, 1 × 4, pool 8, `claim-min-free 25` | 499 | 1 525 | 1 648 | 1 687 |
+| fsync, Redis locker, unique keys, 1 × 4 | 1 478 | 1 202 | 1 293 | 1 285 |
+| fsync, Redis locker, unique keys, 3 × 4 | 3 889 | 2 465 | **4 172** | 2 472 |
+| no fsync, 1 × 4, pool 8 | 2 679 | 10 681 | 5 537 | **10 270** |
+| no fsync, 3 × 4, pool 8 | 6 225 | 6 219 | 6 004 | 6 146 |
+
+Batched finalizes now carry 8–10 rows (before: 2–3); single-row
+finalizes vanish (before: thousands); statements per event drop to
+1.5–1.8 with batching on against 2.2–2.5 off, in every cell.
+
+**What the numbers say about the feature.** Group commit trades
+parallelism for statements: one flusher per JVM, one statement per
+round trip. It wins where a round trip is expensive and connections
+are scarce (commit-bound storage, a pool of 8: +24 % in one JVM,
++52 % in three, +69 % with the Redis locker in three), is neutral where
+the claim side is already batched, and loses where commits are cheap
+or the pool is large enough for every thread to commit concurrently
+(−35 % at pool 32 under fsync, −46 % in one JVM without fsync) — there
+PostgreSQL's own WAL group commit does the batching. It always cuts
+statements per event by about a third.
+
+**Default.** `event-outboxer.dispatcher.finalize-batching` stays
+`true`: it now reduces database round trips by a third and is
+throughput-neutral or better under the storage most services run on.
+Turn it off for a single JVM that must sustain more than ~5 000
+finalizes per second on storage that commits in sub-millisecond time,
+or whenever a pool large enough for every handler thread to commit in
+parallel is cheaper than the statements saved. The recommendation
+recorded in the benchmark sessions of 2026-09-04 ("`false` until the
+flush path is fixed") is superseded by this amendment.
 
 ### The losing side is interrupted (amendment, 2026-08-16)
 
@@ -273,3 +363,6 @@ short, `deadThreshold` too short).
 - [ADR-0015](0015-at-least-once-semantics.md) — version races are part of
   the at-least-once model: duplicates are possible, the handler is
   idempotent.
+- [ADR-0034](0034-benchmark-and-invariant-harness.md) — the harness
+  that found the flush-lock convoy and measured the 2026-09-04
+  amendment; sessions under `docs/benchmarks/`.

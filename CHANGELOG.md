@@ -7,6 +7,22 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+- **Group-commit finalize batching no longer convoys on its flush lock
+  (ADR-0014 amendment, 2026-09-04).** `GroupCommitEventStore` waiters
+  now wait on their own future instead of blocking on the lock; the
+  lock is taken with `tryLock` only, an owner flushes once per
+  acquisition, and an owner that leaves work queued hands off to the
+  waiters through a generation future. Found by the benchmark harness:
+  under commit-bound round trips every finalize parked 32–44 ms while
+  newly arriving threads barged ahead of parked ones whose entries were
+  already flushed, batches stayed at 2–3 rows and the drain ran 1.5–6.4×
+  slower than with batching off. After the fix batches carry 8–10
+  rows, single-row flushes vanish, statements per event drop by a
+  third, and batching on beats off on commit-bound storage with
+  ordinary pools (+24 % in one JVM, +52 % in three). The default stays
+  `true`; the amendment records when to turn it off.
+
 ### Added
 - **Benchmark and invariant harness — `event-outboxer-benchmark`
   (ADR-0034, never published).** A reactor module that drives the

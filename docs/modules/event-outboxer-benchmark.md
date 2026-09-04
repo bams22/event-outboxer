@@ -220,7 +220,11 @@ a ~5 ms commit. Fifth:
 — batching on vs off across 16 cells; it lost in 15. Sixth:
 [2026-09-04, group commit + Redis locker](../benchmarks/2026-09-04-laptop-group-commit-redis.md)
 — with a locker's round trips jittering the arrivals, batching wins on
-unique keys under fsync and is irrelevant on hot keys.
+unique keys under fsync and is irrelevant on hot keys. Seventh:
+[2026-09-04, group commit after the fix](../benchmarks/2026-09-04-laptop-group-commit-after-fix.md)
+— the harness's first before/after of an engine change: the
+convoy-free flush path (ADR-0014 amendment), validated on the same
+matrix.
 
 ## Reporting policy
 

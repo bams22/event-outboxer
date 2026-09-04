@@ -98,6 +98,12 @@ convoy then queues them one flush at a time.
 
 ## What to do with this
 
+> **Superseded on the same day.** The flush path was fixed
+> ([ADR-0014 amendment](../adr/0014-optimistic-locking-via-version-field.md#convoy-free-flush-path-amendment-2026-09-04));
+> the [seventh session](2026-09-04-laptop-group-commit-after-fix.md)
+> re-measures these cells. The recommendation below describes the
+> code *before* the fix and is kept for the record.
+
 - **Until the flush path is fixed, `event-outboxer.dispatcher.finalize-batching: false`
   is the better setting in every configuration measured here.** The
   default is `true`; changing it is a decision for an ADR-0014

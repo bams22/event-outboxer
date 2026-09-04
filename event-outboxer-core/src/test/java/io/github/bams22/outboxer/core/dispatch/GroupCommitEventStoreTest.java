@@ -163,6 +163,68 @@ class GroupCommitEventStoreTest {
     }
 
     @Test
+    @DisplayName(
+            "an entry enqueued during a flush is handed off to a waiter, not flushed by the owner")
+    void entriesEnqueuedDuringAFlushAreHandedOffAndFlushedByAWaiter() throws Exception {
+        BlockingStore delegate = new BlockingStore();
+        GroupCommitEventStore store = new GroupCommitEventStore(delegate, WORKER, 128);
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        delegate.acceptAll(List.of(first, second));
+        ExecutorService exec = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> owner = exec.submit(() -> store.markProcessed(first, WORKER, 1));
+            assertThat(delegate.entered.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<Boolean> waiter = exec.submit(() -> store.markProcessed(second, WORKER, 1));
+            // The waiter cannot progress while the owner's statement is in flight.
+            assertThatThrownBy(() -> waiter.get(200, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(java.util.concurrent.TimeoutException.class);
+            delegate.release.countDown();
+            assertThat(owner.get(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(waiter.get(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            exec.shutdownNow();
+        }
+        assertThat(delegate.batches).containsExactly(List.of(first), List.of(second));
+    }
+
+    @Test
+    @DisplayName("every waiter that queued during one flush lands in the next batch together")
+    void manyWaitersDuringOneFlushCoalesceIntoTheNextBatch() throws Exception {
+        BlockingStore delegate = new BlockingStore();
+        GroupCommitEventStore store = new GroupCommitEventStore(delegate, WORKER, 128);
+        UUID first = UUID.randomUUID();
+        List<UUID> rest = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            rest.add(UUID.randomUUID());
+        }
+        delegate.acceptAll(rest);
+        delegate.acceptAll(List.of(first));
+        ExecutorService exec = Executors.newFixedThreadPool(9);
+        try {
+            Future<Boolean> owner = exec.submit(() -> store.markProcessed(first, WORKER, 1));
+            assertThat(delegate.entered.await(5, TimeUnit.SECONDS)).isTrue();
+            List<Future<Boolean>> waiters = new ArrayList<>();
+            for (UUID id : rest) {
+                waiters.add(exec.submit(() -> store.markProcessed(id, WORKER, 1)));
+            }
+            // Give the eight waiters time to enqueue behind the in-flight statement.
+            Thread.sleep(200);
+            delegate.release.countDown();
+            assertThat(owner.get(5, TimeUnit.SECONDS)).isTrue();
+            for (Future<Boolean> w : waiters) {
+                assertThat(w.get(5, TimeUnit.SECONDS)).isTrue();
+            }
+        } finally {
+            exec.shutdownNow();
+        }
+        // First statement: the owner alone. Second: every waiter in one hand-off batch.
+        assertThat(delegate.batches).hasSize(2);
+        assertThat(delegate.batches.get(0)).containsExactly(first);
+        assertThat(delegate.batches.get(1)).containsExactlyInAnyOrderElementsOf(rest);
+    }
+
+    @Test
     @DisplayName("maxBatchSize must be positive")
     void rejectsNonPositiveMaxBatchSize() {
         assertThatThrownBy(() -> new GroupCommitEventStore(new InMemoryEventStore(), WORKER, 0))
@@ -214,6 +276,47 @@ class GroupCommitEventStoreTest {
             return results;
         } finally {
             exec.shutdownNow();
+        }
+    }
+
+    /**
+     * Delegate double whose first batch statement blocks until released, so a test can enqueue
+     * callers while an owner is provably inside its flush.
+     */
+    private static final class BlockingStore extends ForwardingEventStore {
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final List<List<UUID>> batches = java.util.Collections.synchronizedList(new ArrayList<>());
+        private final Set<UUID> accepted = ConcurrentHashMap.newKeySet();
+        private final AtomicInteger calls = new AtomicInteger();
+
+        BlockingStore() {
+            super(new InMemoryEventStore());
+        }
+
+        void acceptAll(List<UUID> ids) {
+            accepted.addAll(ids);
+        }
+
+        @Override
+        public Set<UUID> markProcessedAll(List<EventStore.ProcessedMark> marks, WorkerId workerId) {
+            List<UUID> ids = marks.stream().map(EventStore.ProcessedMark::id).toList();
+            batches.add(ids);
+            if (calls.getAndIncrement() == 0) {
+                entered.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            Set<UUID> applied = ConcurrentHashMap.newKeySet();
+            for (UUID id : ids) {
+                if (accepted.contains(id)) {
+                    applied.add(id);
+                }
+            }
+            return applied;
         }
     }
 

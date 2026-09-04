@@ -90,6 +90,12 @@ not where its time goes.
 
 ### 4. The recommendation gets a second clause
 
+> **Superseded on the same day.** The flush path was fixed
+> ([ADR-0014 amendment](../adr/0014-optimistic-locking-via-version-field.md#convoy-free-flush-path-amendment-2026-09-04));
+> the [seventh session](2026-09-04-laptop-group-commit-after-fix.md)
+> re-measures these cells. The recommendation below describes the
+> code *before* the fix and is kept for the record.
+
 - Handlers **without** lock keys, or on **hot** keys:
   `finalize-batching: false` (previous session; unchanged).
 - Handlers **with** keys on a locker, against commit-bound storage:
