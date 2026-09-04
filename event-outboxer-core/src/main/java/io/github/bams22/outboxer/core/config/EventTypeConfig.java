@@ -50,10 +50,11 @@ import lombok.Builder;
  *     serialization. Recommended {@code >= 2 x handlerMaxRuntime} — the TTL is the crash-release
  *     mechanism, and the margin covers a zombie handler that outlives its force-reclaimed claim
  * @param lockWait how long the dispatcher keeps retrying a busy entity lock on the handler thread
- *     before it gives up and releases the event with {@code lockBusyRetryDelay} (ADR-0035). Zero
- *     (the library default until the benchmark validation fixes a value) means one non-blocking
- *     attempt — the pre-ADR-0035 behaviour. Must be {@code < handlerMaxRuntime} (validated): the
- *     wait runs inside the in-flight window and spends the watchdog's budget
+ *     before it gives up and releases the event with {@code lockBusyRetryDelay} (ADR-0035). Default
+ *     100 ms, set by the benchmark session of 2026-09-04: it removes practically every busy round
+ *     trip for handlers in the millisecond range and gives up quickly on slow holders. Zero means
+ *     one non-blocking attempt — the pre-ADR-0035 behaviour. Must be {@code < handlerMaxRuntime}
+ *     (validated): the wait runs inside the in-flight window and spends the watchdog's budget
  */
 @Builder(toBuilder = true)
 public record EventTypeConfig(
@@ -167,9 +168,10 @@ public record EventTypeConfig(
                 // a zombie handler finishing after its row was already force-reclaimed by the
                 // watchdog.
                 .lockTtl(Duration.ofMinutes(10))
-                // Zero = one non-blocking attempt (ADR-0012). ADR-0035 proposes 100 ms; the value
-                // is fixed by the benchmark validation plan, not here.
-                .lockWait(Duration.ZERO)
+                // ADR-0035: measured on the hot-key, mixed and crash presets (2026-09-04 session);
+                // 100 ms turned 0.8 busy round trips per event into none on 5 ms holds and gave up
+                // fast enough on a 200 ms holder. Zero restores the one-attempt flow of ADR-0012.
+                .lockWait(Duration.ofMillis(100))
                 .build();
     }
 }

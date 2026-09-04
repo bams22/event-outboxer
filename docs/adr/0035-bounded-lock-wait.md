@@ -2,11 +2,11 @@
 
 ## Status
 
-Proposed — design agreed 2026-09-04; implemented 2026-09-04 behind a
-library default of `lock-wait: 0`, which keeps the ADR-0012 behaviour
-(one non-blocking attempt, then reschedule) until the validation plan
-below has been run and the default fixed by measurement. Acceptance,
-the default and the ADR-0012 amendment follow that session.
+Accepted — design agreed 2026-09-04; implemented the same day behind a
+`lock-wait: 0` default, then validated on the benchmark harness (see
+§Validation results) and accepted with the default fixed at **100 ms**.
+[ADR-0012](0012-extract-lock-key-on-handler.md) is amended
+accordingly (worker-side flow: wait, then release).
 
 ## Date
 
@@ -101,7 +101,7 @@ note in CONFIGURATION.md) — hundreds of claim → busy → release cycles.
   and events of *other* keys wait in the database. Rejected in favour
   of the bounded form below.
 
-## Decision (proposed)
+## Decision
 
 ### 1. A bounded wait in front of the existing busy path
 
@@ -125,9 +125,10 @@ milliseconds today on the release and the next claim.
 - `event-outboxer.event-types.defaults.lock-wait` (thin-merged per
   type like every other `EventTypeConfig` field). `0` = today's
   behaviour, no waiting.
-- Proposed default: **100 ms** — covers handlers in the millisecond
-  range and gives up quickly on slow ones. **A hypothesis, to be set
-  by measurement** (see Validation), not by taste.
+- Default: **100 ms** — covers handlers in the millisecond range and
+  gives up quickly on slow ones. Proposed as a hypothesis and confirmed
+  by the validation session below: the code shipped with `0` until the
+  session had run, so the value is set by measurement, not by taste.
 - Validation in `EventTypeConfig`: `lock-wait < handler-max-runtime`.
   The wait runs inside the in-flight window and spends the watchdog's
   budget.
@@ -208,16 +209,87 @@ release-and-reclaim round trip; the session is a fifth validation
 cell for this ADR, and until it lands, virtual threads on keyed types
 should be configured with the concurrency close to the live key count.
 
+## Validation results (2026-09-04)
+
+Recorded in the
+[lock-wait session](../benchmarks/2026-09-04-laptop-lock-wait.md);
+same laptop and standalone PostgreSQL 15 / Redis 7 containers as the
+earlier sessions, one run per cell, so read cells against each other.
+Every cell passed its invariants: `lost = 0`, `lockOverlaps = 0`,
+storage clean. The busy-hit figure is the `release` statement count per
+event.
+
+| Cell | `lock-wait` | handled/s | busy hits/event | PG writes/event | e2e p50 / p95 |
+|---|---|---|---|---|---|
+| `hot-key`, lease, 3 workers | 0 | 256 | 0.79 | 6.65 | 4.6 s / 13.1 s |
+| | 20 ms | 253 | 0.04 | 5.16 | 5.5 s / 9.6 s |
+| | **100 ms** | **337** | **0.00** | **5.04** | 4.7 s / 8.3 s |
+| | 500 ms | 294 | 0.00 | 5.08 | 5.5 s / 9.8 s |
+| `hot-key`, lease, 1 worker | 0 / 100 ms | 137 / 141 | 0.00 / 0.00 | 5.00 / 5.00 | 14.6 s / 27 s both |
+| `throughput`, no key | 0 / 100 ms | 1 496 / 1 311 | — | 3.00 / 3.00 | 51 ms / 92–94 ms |
+| `hot-key`, Redis locker | 0 / 100 ms | 315 / 412 | 1.19 / 0.00 | 5.38 / **3.01** | 1.4 s / 7.2 s → 2.9 s / 4.8 s |
+| mixed: 64 keys, 2 % on a 200 ms key | 0 | 80 | 0.23 | 5.48 | 3.3 s / 5.9 s (p99 12.7 s, max 57 s) |
+| | 100 ms | 180 | 0.04 | 5.09 | 3.9 s / 7.1 s (p99 7.5 s, max 24 s) |
+| | 500 ms | 219 | 0.01 | 5.04 | 5.2 s / 10.1 s |
+| `crash`, lease, forked fleet | 0 / 100 ms | 175 / 190 | 0.66 / 0.10 | 6.44 / 5.34 | 13.8 s / 25 s → 16.0 s / 27 s |
+| `hot-key`, **virtual** executor, uncapped | 0 / 100 ms | 89 / **53** | 7.7 / 7.4 | 21.1 / 20.9 | 17 s / 36 s → 44 s / 87 s |
+
+What the cells say:
+
+1. **The wait removes the round trip.** At 100 ms the lease locker's
+   write cost drops to its floor of 5.00 rows per event (the lease
+   insert and delete) and the Redis locker's to the engine's floor of
+   3.00; busy hits per event go from 0.8–1.2 to zero. Drain rate rises
+   by about a third with either locker. 20 ms already removes 95 % of
+   the busy hits but not the throughput gap — the remaining releases
+   still land at the back of the backlog; 500 ms gains nothing over
+   100 ms on 5 ms holds.
+2. **Cross-JVM collisions are the whole story.** One worker alone
+   produces two busy hits in 5 000 events with or without the wait;
+   the local key-affinity alternative would have had nothing to do.
+3. **Invisible where no key is declared.** `throughput` is unchanged
+   in cost and shape; the rate difference is run-to-run noise
+   (the publisher was slower by the same amount).
+4. **The mixed workload did not produce the feared regression.** With
+   a 200 ms holder next to 63 cool keys, `lock-wait: 0` is the worst
+   cell (80/s, max latency 57 s): every collision on the slow key costs
+   a 1 s delay plus a trip to the back of the backlog. 100 ms more than
+   doubles the drain rate at the price of 0.6 s on the cool keys'
+   median; 500 ms chains waiters behind the slow holder and is faster
+   still, but the cool keys pay 2 s of median latency for it — the
+   trade-off the default has to strike, and 100 ms strikes it.
+5. **After a crash the wait degrades as designed.** Survivors probing
+   the dead holder's lease give up after 100 ms and fall back to the
+   release path: busy cycles drop from 0.66 to 0.10 per event, nothing
+   stalls until `lock-ttl`, duplicates stay attributable to the kill.
+6. **The one loser: an uncapped virtual executor on hot keys.** With
+   every claimed event dispatching at once, ~5 000 waiters poll eight
+   keys every 2–10 ms; the probes (35 statements per event) cost more
+   than the round trips they save and the cell gets slower (89 → 53/s).
+   The executor session already required capping the in-flight budget
+   near the key count on keyed virtual types; this ADR makes that a
+   documented rule rather than a new mechanism. A wake-up instead of
+   polling (Redis pub/sub, `LISTEN/NOTIFY` on the lease table) would
+   remove the cost and is the natural follow-up.
+
 ## Consequences
 
 **Users.** Contended keys get faster and cheaper on the database with
 no API change; `lock-wait: 0` restores today's semantics. Per-type
-tuning follows the existing thin-merge pattern.
+tuning follows the existing thin-merge pattern. Upgrade note: a type
+whose `handler-max-runtime` is 100 ms or less — a test configuration,
+never a production one — now fails validation until its `lock-wait` is
+lowered as well; the message names both knobs, and the testkit's own
+defaults keep `lock-wait: 0` so contention surfaces immediately in
+tests.
 
 **Maintainers.** ADR-0012's worker-side flow gains one step (wait,
-then release); the amendment goes into ADR-0012 when this ADR is
-accepted. Third-party `EntityLocker` implementations keep working
-through the default method.
+then release; amended 2026-09-04). Third-party `EntityLocker`
+implementations keep working through the default method. The
+dispatcher consumes a watchdog interrupt before the busy-path release
+and skips storage on a foreign (`shutdownNow`) interrupt, since an
+interrupted JDBC call can kill a pooled connection — the engine's
+shutdown release returns the row.
 
 **Operations.** A new timer to watch; a large `lock-wait` next to a
 slow hot handler shows up as a saturated pool and a stalled type, the
@@ -225,15 +297,16 @@ exact symptom the bound is there to limit.
 
 **Negative.** Thread time is spent waiting where today it would be
 spent on other keys; on workloads with one slow hot key and many cool
-ones a non-zero default can cost throughput until tuned down. The
-bound and the per-type override are the mitigation, and the
-validation plan must include such a mixed workload before the default
-is fixed.
+ones the cool keys pay latency for it — measured at 0.6 s of median
+on the mixed cell at 100 ms, 2 s at 500 ms — and an uncapped virtual
+executor on a hot key turns the polling wait into a probe storm that
+costs more than it saves. The bound, the per-type override and the
+in-flight cap on keyed virtual types are the mitigation.
 
 ## Related decisions
 
 - [ADR-0012](0012-extract-lock-key-on-handler.md) — the busy-means-
-  reschedule flow this ADR extends; to be amended on acceptance.
+  reschedule flow this ADR extends; amended 2026-09-04.
 - [ADR-0022](0022-lease-table-postgres-entity-locker.md) — the lease
   locker whose probe is the default wait's building block.
 - [ADR-0004](0004-per-event-type-worker-isolation.md) — capacity-

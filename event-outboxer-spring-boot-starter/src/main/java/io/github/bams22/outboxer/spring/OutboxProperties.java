@@ -418,8 +418,8 @@ public class OutboxProperties {
         /**
          * Bounded wait for a busy entity lock (ADR-0035): how long the handler thread keeps
          * retrying the lock before the event is released with {@code
-         * dispatcher.lock-busy-retry-delay}. Library default {@code 0} = one non-blocking attempt.
-         * Must be {@code < handler-max-runtime}.
+         * dispatcher.lock-busy-retry-delay}. Library default {@code 100ms}; {@code 0} = one
+         * non-blocking attempt. Must be {@code < handler-max-runtime}.
          */
         private @Nullable Duration lockWait;
 

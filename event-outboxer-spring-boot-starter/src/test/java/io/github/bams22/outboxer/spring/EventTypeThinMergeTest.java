@@ -62,19 +62,19 @@ class EventTypeThinMergeTest {
     @DisplayName("lock-wait overrides per type and falls back to the base (ADR-0035)")
     void lockWaitThinMerge() {
         EventTypeConfig base = EventTypeConfig.defaults();
-        assertThat(base.lockWait()).isEqualTo(Duration.ZERO);
+        assertThat(base.lockWait()).isEqualTo(Duration.ofMillis(100));
 
         OutboxProperties.EventType override = new OutboxProperties.EventType();
-        override.setLockWait(Duration.ofMillis(100));
+        override.setLockWait(Duration.ZERO);
 
         EventTypeConfig merged = OutboxEngineAutoConfiguration.mergeEventType(override, base);
-        assertThat(merged.lockWait()).isEqualTo(Duration.ofMillis(100));
+        assertThat(merged.lockWait()).isZero();
         assertThat(merged.lockTtl()).isEqualTo(base.lockTtl());
         assertThat(
                         OutboxEngineAutoConfiguration.mergeEventType(
                                         new OutboxProperties.EventType(), merged)
                                 .lockWait())
-                .isEqualTo(Duration.ofMillis(100));
+                .isZero();
     }
 
     @Test

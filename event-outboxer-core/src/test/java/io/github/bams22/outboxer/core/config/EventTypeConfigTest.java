@@ -89,10 +89,11 @@ class EventTypeConfigTest {
     }
 
     @Test
-    void lockWaitDefaultsToZeroAndStaysBelowHandlerMaxRuntime() {
+    void lockWaitDefaultsTo100msAndStaysBelowHandlerMaxRuntime() {
         EventTypeConfig d = EventTypeConfig.defaults();
-        // ADR-0035: zero = one non-blocking attempt until the validation plan fixes a value.
-        assertThat(d.lockWait()).isEqualTo(Duration.ZERO);
+        // ADR-0035: the measured default; zero would be the one-attempt flow of ADR-0012.
+        assertThat(d.lockWait()).isEqualTo(Duration.ofMillis(100));
+        assertThat(d.toBuilder().lockWait(Duration.ZERO).build().lockWait()).isZero();
 
         assertThatThrownBy(() -> d.toBuilder().lockWait(Duration.ofMillis(-1)).build())
                 .isInstanceOf(IllegalArgumentException.class)

@@ -512,6 +512,8 @@ public final class OutboxTestContext {
                     .handlerMaxRuntime(Duration.ofMinutes(1))
                     .interruptStuckHandler(true)
                     .lockTtl(Duration.ofMinutes(1))
+                    // Test defaults keep the one-attempt busy path: a contended key surfaces as an
+                    // immediate LOCK_BUSY retry instead of parking the test for 100 ms (ADR-0035).
                     .lockWait(Duration.ZERO)
                     .build();
         }

@@ -96,6 +96,9 @@ class OutboxTestContextSmokeTest {
                         .defaultEventTypeConfig(
                                 EventTypeConfig.defaults().toBuilder()
                                         .handlerMaxRuntime(Duration.ofMillis(10))
+                                        // A budget below the 100 ms default lock wait needs the
+                                        // wait lowered too (ADR-0035 validation).
+                                        .lockWait(Duration.ZERO)
                                         .build())
                         .handler(
                                 stringHandler(

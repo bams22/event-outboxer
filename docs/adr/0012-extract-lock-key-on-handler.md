@@ -10,6 +10,8 @@ locker is now the lease table of
 [ADR-0022](0022-lease-table-postgres-entity-locker.md); the guarantee
 table below is updated accordingly); amended 2026-08-29 (interface shape: `EventType<T> type()`
 replaces the two abstract accessors — ADR-0031; see the Amendment
+section at the bottom); amended 2026-09-04 (the worker-side flow gains
+a bounded wait before the busy path — ADR-0035; see the Amendment
 section at the bottom)
 
 ## Date
@@ -256,6 +258,32 @@ Consequences and the measures added:
    the ADR-0022 lease table, which holds no connection during the
    handler and makes the scenario structurally impossible; the WARNING
    is re-gated accordingly.)*
+
+## Amendment (2026-09-04): bounded wait before the busy path (ADR-0035)
+
+The worker-side flow quoted above gains one step. When `tryLock`
+reports the key busy and the type's `lock-wait` is non-zero, the
+dispatcher keeps the claimed, deserialized event on the handler thread
+and retries the acquisition — through
+`EntityLocker.tryLock(key, ttl, maxWait)`, a default method that polls
+`tryLock` unless the adapter blocks natively — for at most `lock-wait`.
+Only then does the event take the busy path exactly as before: released
+with `lock-busy-retry-delay`, no attempt consumed,
+`onLockAcquisitionFailed(BUSY)`. `lock-wait: 0` is this ADR's original
+one-attempt flow. Rationale, configuration, SPI shape and the
+measurements behind the default live in
+[ADR-0035](0035-bounded-lock-wait.md).
+
+```java
+Optional<LockHandle> lockOpt =
+        lockWait.isZero()
+                ? locker.tryLock(lockKey, lockTtl)
+                : locker.tryLock(lockKey, lockTtl, lockWait);   // waits up to lockWait
+if (lockOpt.isEmpty()) {
+    release(event, "lock busy: " + lockKey, lockBusyDelay);      // unchanged
+    return;
+}
+```
 
 ## Amendment (2026-08-29): typed event key
 

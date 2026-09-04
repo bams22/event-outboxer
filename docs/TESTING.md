@@ -62,6 +62,7 @@ OutboxTestContext outbox = OutboxTestContext.builder()
     .defaultEventTypeConfig(
         EventTypeConfig.defaults().toBuilder()
             .handlerMaxRuntime(Duration.ofMillis(50))
+            .lockWait(Duration.ZERO)   // a budget below the 100 ms default wait needs this (ADR-0035)
             .build())
     .clock(SettableClock.atEpoch())
     .build();

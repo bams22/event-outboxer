@@ -114,7 +114,7 @@ event-outboxer:
       handler-max-runtime: 5m        # watchdog threshold for a stuck handler
       interrupt-stuck-handler: true  # interrupt the handler thread after force-reclaim
       lock-ttl: 10m                  # entity-lock TTL; must be >= handler-max-runtime (2x recommended)
-      lock-wait: 0                   # bounded wait for a busy entity lock before release (ADR-0035); must be < handler-max-runtime
+      lock-wait: 100ms               # bounded wait for a busy entity lock before release (ADR-0035); 0 = one attempt; must be < handler-max-runtime
       failure:                       # retry policy — thin merge like the fields above (ADR-0030)
         strategy: exponential        # exponential (default) | fixed | none
         max-attempts: 10             # then exhausted-action; ignored for strategy none
@@ -551,6 +551,36 @@ per-type overrides adjust individual fields (see
   starter warns when `Σ handler-pool-size >=
   spring.datasource.hikari.maximum-pool-size` (self-deadlock risk;
   does not apply to the default lease locker).
+- `lock-wait` — bounded wait for a busy entity lock (ADR-0035). When
+  `tryLock` reports the key busy, the handler thread keeps the claimed,
+  deserialized event and retries the acquisition for up to this long;
+  if the lock is obtained the handler runs as usual, otherwise the
+  event takes the busy path unchanged (released with
+  `dispatcher.lock-busy-retry-delay`, no attempt consumed). Library
+  default `100ms`, set by measurement (see the
+  [2026-09-04 lock-wait session](benchmarks/2026-09-04-laptop-lock-wait.md)):
+  on 5 ms holds it turned 0.8 busy round trips per event into none and
+  raised the drain rate by a third; `0` restores the one-attempt flow of
+  ADR-0012. The wait runs inside the in-flight window and spends the
+  watchdog's budget, so it **must be `< handler-max-runtime`**
+  (validated at startup — a test configuration with a handler budget of
+  100 ms or less has to lower `lock-wait` too; the testkit's own
+  defaults keep it at `0`). What a waiting thread gives up is other
+  events of the type for at most `lock-wait`; what it saves on a
+  contended key is two row writes, a trip to the back of the backlog
+  and a second deserialization. Size it to the handler's hold time:
+  100 ms covers millisecond handlers and gives up quickly on slow ones;
+  a larger value chains waiters behind a slow hot key at the price of
+  the cool keys' latency, and shows up as a saturated pool and a stalled
+  type when overdone. The shipped lockers inherit a polling wait (probe
+  every 2–10 ms) except `lock.type=postgres-advisory`, which blocks
+  natively under a statement timeout. **Cap the in-flight budget near
+  the key count on keyed types with `handler-executor.type: virtual`**:
+  there every claimed event dispatches at once, and thousands of
+  waiters polling a handful of keys cost more than the round trips the
+  wait saves (measured: 89/s → 53/s on the `hot-key` preset with an
+  uncapped virtual executor). Observe the wait through
+  `event_outboxer.lock.wait_time{outcome=acquired|busy}`.
 
 #### Sizing the handler queue
 
