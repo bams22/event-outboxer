@@ -390,8 +390,7 @@ default is `noop` and other backends are opt-in:
   Liquibase changelog `db/changelog/outbox/lock/changelog.xml`). The
   starter fail-fast probes the table at startup and names the
   migration in the error if it is missing. Holds **no** connection while the handler runs and is
-  safe behind pgBouncer transaction pooling (its opt-in `lock.wakeup`
-  listener excepted, see below). TTL (`lock-ttl`) is
+  safe behind pgBouncer transaction pooling. TTL (`lock-ttl`) is
   honoured: crash release ≤ ttl.
 - `type: postgres-advisory` — the pre-ADR-0022 session-scoped
   `pg_advisory_lock` locker (`event-outboxer-lock-postgres-advisory` on the
@@ -413,39 +412,21 @@ default is `noop` and other backends are opt-in:
   an explicit opt-in, so there is no silent back-off.
 - `key-prefix` — prefix for lock keys, default `outbox:lock:`
   (Redis locker only; the PG lockers store/hash the raw key).
-- `wakeup` — a handler thread waiting out the per-type `lock-wait`
-  (ADR-0035) parks on the holder's release notification instead of
-  polling the backend every 2–10 ms, re-probing every 25 ms as a
-  safety net for lost notifications and expired leases. Unset = the
-  backend's measured default: **on for the Redis locker, off for the
-  lease locker** (see the
-  [wake-up addenda](benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-redis-pubsub-wake-up):
-  a fifth more drain rate and half the tail on Redis; no measurable
-  gain on the lease locker, whose own commits dominate).
-  - Redis locker: the release script `PUBLISH`es on
-    `<key-prefix>released:<key>`; waiters subscribe on a second,
-    pub/sub connection — the starter opens `outboxRedisPubSubConnection`
-    next to its command connection when `event-outboxer.redis.*` is
-    set; with a user-provided connection add a
-    `StatefulRedisPubSubConnection<String, String>` bean (qualified with
-    `@OutboxRedisConnection` when there are several), or the locker
-    polls and says so at INFO.
-  - Lease locker (`true` to opt in): a release is followed by an
-    asynchronously committed `pg_notify` of the key on
-    `<schema>.entity_locks` (one extra round trip, no fsync — a notify
-    inside the delete would serialize every release commit of the
-    fleet); the locker holds **one pool connection** for the
-    application's life to `LISTEN`, verified with a probe on every
-    fresh session. **Not usable behind pgBouncer in transaction or
-    statement pooling mode** — `LISTEN` is session state the pooler
-    neither honours nor forwards; the probe never arrives, the listener
-    reports itself unsupported once at WARN, `UNLISTEN`s and the wait
-    polls (see [Running behind pgBouncer](#running-behind-pgbouncer)).
-    Configure a fleet uniformly — a JVM without the wake-up releases
-    without notifying.
-  - `false` opens no extra connection and keeps the polling wait —
-    for Redis proxies that do not forward pub/sub, or to save the pool
-    slot.
+- `wakeup` — Redis locker only, default `true`: a handler thread
+  waiting out the per-type `lock-wait` (ADR-0035) parks on the holder's
+  release notification (the release script `PUBLISH`es on
+  `<key-prefix>released:<key>`) instead of polling `SET NX PX` every
+  2–10 ms, and re-probes every 25 ms as a safety net. Needs a second,
+  pub/sub connection: the starter opens `outboxRedisPubSubConnection`
+  next to its command connection when `event-outboxer.redis.*` is set;
+  with a user-provided connection add a
+  `StatefulRedisPubSubConnection<String, String>` bean (qualified with
+  `@OutboxRedisConnection` when there are several), or the locker
+  polls and says so at INFO. `false` opens no pub/sub connection and
+  keeps the polling wait — for Redis proxies that do not forward
+  pub/sub. The lease locker always polls: its `LISTEN/NOTIFY` variant
+  was built, measured and removed (ADR-0022 amendment of 2026-09-05 —
+  no gain, and unusable behind pgBouncer transaction pooling).
 
 Upgrade note: before ADR-0022 there was a single `type: postgres`
 value (the advisory locker). It was split into `postgres-lease` and
@@ -462,21 +443,6 @@ With pgBouncer in **transaction** (or statement) pooling mode:
 
 - Polling, claim, finalize, heartbeat and the `postgres-lease` and
   `redis` lockers are safe — no session state.
-- **`lock.wakeup: true` on the lease locker is not usable here.** Its
-  release listener is a `LISTEN` session, i.e. session state: in
-  transaction or statement mode the subscription lands on whichever
-  server connection served that statement, the pooler never forwards
-  the notifications to the listener, and the server connection keeps
-  the subscription — a pooler may hand its notifications to whatever
-  client it links next, where pgjdbc queues them unread. The listener
-  detects the situation with a self-sent probe at startup, logs
-  `entity_locks release notifications are not delivered on this
-  connection` once at WARN, issues a best-effort `UNLISTEN *`, and the
-  locker stops notifying and polls exactly as without the option. Leave
-  `lock.wakeup` unset (its default for the lease locker is off) or
-  `false` behind such a pooler; session pooling or a direct connection
-  is required for the wake-up. The Redis locker's wake-up is
-  unaffected — it rides the Redis connection.
 - `postgres-advisory` is **not** usable: session-scoped advisory locks
   silently lose mutual exclusion when statements multiplex across
   server connections. Use the lease locker, the Redis locker, or a
@@ -630,9 +596,9 @@ per-type overrides adjust individual fields (see
   the cool keys' latency, and shows up as a saturated pool and a stalled
   type when overdone. The shipped lockers inherit a polling wait (probe
   every 2–10 ms) except `lock.type=postgres-advisory`, which blocks
-  natively under a statement timeout, and the Redis locker (and, opted
-  in, the lease locker) with `lock.wakeup`, which parks on the holder's
-  release notification. **Cap the in-flight budget near
+  natively under a statement timeout, and `lock.type=redis` with
+  `lock.wakeup` (default), which parks on the holder's release
+  notification. **Cap the in-flight budget near
   the key count on keyed types with `handler-executor.type: virtual`**:
   there every claimed event dispatches at once, and thousands of
   waiters polling a handful of keys cost more than the round trips the

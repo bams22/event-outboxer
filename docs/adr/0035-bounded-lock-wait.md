@@ -157,18 +157,13 @@ public interface EntityLocker {
 - `PgAdvisoryLocker` overrides with a native blocking
   `pg_advisory_lock` under a statement timeout equal to `maxWait`
   (the connection is pinned anyway).
-- `PgLeaseEntityLocker` kept the default in the first cut: each probe
-  is the same autocommit upsert, cheap at a 5–10 ms cadence, and
-  bounded by `maxWait`; the `setQueryTimeout` lease-shortening note in
-  ADR-0022 applies per probe, not to the whole wait. On 2026-09-05 it
-  gained an opt-in `LISTEN/NOTIFY` wake-up: an asynchronously committed
-  `pg_notify` per release on one channel per schema, a dedicated
-  session that listens, waiters that park (ADR-0022 amendment). It
-  measured no gain over polling — the lease's own commits are the
-  cycle — so the polling wait stays the default there; and it cannot
-  work behind pgBouncer transaction or statement pooling (`LISTEN` is
-  session state), which the listener detects with a probe and reports
-  once before falling back to polling.
+- `PgLeaseEntityLocker` keeps the default: each probe is the same
+  autocommit upsert, cheap at a 5–10 ms cadence, and bounded by
+  `maxWait`. The `setQueryTimeout` lease-shortening note in ADR-0022
+  applies per probe, not to the whole wait. A `LISTEN/NOTIFY` wake-up
+  was built, measured and removed on 2026-09-05 — no gain, a commit
+  serialization trap, unusable behind pgBouncer transaction pooling;
+  see the ADR-0022 amendment before trying again.
 - `RedisEntityLocker` kept the default polling in the first cut; on
   2026-09-05 it gained the pub/sub wake-up (release script `PUBLISH`es
   on the key's channel, waiters subscribe through a second Lettuce
@@ -282,11 +277,11 @@ What the cells say:
    near the key count on keyed virtual types; this ADR makes that a
    documented rule rather than a new mechanism. A wake-up instead of
    polling removes the probe cost where probes are what costs: done
-   for the Redis locker on 2026-09-05 (pub/sub, default on) and
-   measured in the
-   [wake-up addenda](../benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-redis-pubsub-wake-up);
-   the lease locker's `LISTEN/NOTIFY` variant measured no gain — its
-   probes are not what costs, its commits are — and ships opt-in.
+   for the Redis locker on 2026-09-05 (pub/sub, measured in the
+   [wake-up addendum](../benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-redis-pubsub-wake-up));
+   the lease locker's `LISTEN/NOTIFY` variant was built the same day,
+   measured no gain — its probes are not what costs, its commits are —
+   and was removed (ADR-0022 amendment).
 
 ## Consequences
 

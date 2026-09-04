@@ -11,9 +11,10 @@ the locker ships as its own Maven module
 the advisory module as originally written; the advisory module was
 renamed `event-outboxer-lock-postgres` →
 `event-outboxer-lock-postgres-advisory` in the same release — see the
-Amendment section. Amended 2026-09-05: the release statement notifies
-and an optional `LISTEN` listener ends ADR-0035's bounded wait early —
-see the second Amendment section.
+Amendment section. Amended 2026-09-05: a `LISTEN/NOTIFY` wake-up for
+ADR-0035's bounded wait was built, measured and removed the same day —
+see the second Amendment section for the three findings, so that it is
+not built again.
 
 ## Date
 
@@ -580,67 +581,54 @@ backends.
   off), and the held-lease Micrometer gauge as a `MeterBinder`
   (`<metrics.prefix>.entity_locks.held`, `NaN` on query failure).
 
-## Amendment (2026-09-05): release notifies, optional LISTEN wake-up (ADR-0035)
+## Amendment (2026-09-05): a LISTEN/NOTIFY wake-up was built, measured and removed
 
-With `releaseNotifications` (the starter's `lock.wakeup: true`; off by
-default for this locker, see the measurement below) a release is
-followed by a second autocommit statement on the same
-borrowed connection, `SELECT set_config('synchronous_commit', 'off',
-true), pg_notify('<schema>.entity_locks', lock_key)`, and the locker
-runs `PgLeaseReleaseListener` — one pooled connection held for its
-life that `LISTEN`s on the schema's channel, and a daemon thread — so
-a handler thread waiting out ADR-0035's `lock-wait` parks on the key's
-release instead of re-issuing the acquire upsert every few
-milliseconds. One channel per schema, the key in the payload, because
-channel names are limited to 63 bytes.
+ADR-0035's bounded lock wait polls this locker's acquire upsert every
+2–10 ms while a key is busy. The Redis locker got a pub/sub wake-up
+instead of polling and gained a fifth of drain rate, so the same was
+tried here: a `pg_notify` of the released key on one channel per schema
+(`<schema>.entity_locks`; channel names are limited to 63 bytes, keys
+to 512 characters), a dedicated session per JVM that `LISTEN`s on a
+pooled connection held for its life, and waiters parked on the shared
+`LockWaiters` registry of the SPI. It was removed before release for
+three reasons, each sufficient on its own; the measurements are in the
+[lock-wait session's addendum](../benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-postgresql-listennotify-wake-up-on-the-lease-locker).
 
-The notify is deliberately not part of the delete. The first cut put
-`pg_notify` into the delete's CTE, and the harness halved the hot-key
-drain rate for every cell, polling ones included: PostgreSQL's
-`PreCommit_Notify` serializes the commit of every notifying
-transaction in the cluster on one heavyweight lock, so with a
-synchronous delete each release waited for the previous release's
-fsync — a fleet-wide ceiling of one commit latency, ~200 releases/s on
-the laptop. As its own transaction with `synchronous_commit` off the
-notify's commit returns without a WAL flush, the serialized section is
-microseconds long, and the only thing at risk is the notification
-itself, which the waiters' fallback probe covers. The delete keeps its
-durability.
+1. **A notify inside the release serializes the fleet's commits.**
+   The first cut put `pg_notify` into the delete's CTE, and every
+   `hot-key` cell — polling ones included — halved (337/s → 180/s):
+   PostgreSQL's `PreCommit_Notify` takes one heavyweight lock for the
+   commit of every notifying transaction in the cluster, so each
+   synchronous release commit waited for the previous release's fsync,
+   a fleet-wide ceiling of one commit latency. Moving the notify into
+   its own autocommit statement with `synchronous_commit` off for that
+   transaction removed the ceiling. Anyone adding `NOTIFY` to a hot
+   synchronous statement of this library should expect the same.
+2. **No gain over polling.** With the notify asynchronous: 274 vs
+   275/s on `hot-key`, 195 vs 198/s on the mixed workload, 53 vs 55/s
+   on the uncapped virtual executor. The cycle of a hot key on this
+   locker is its own synchronous acquire and release, two fsync-bound
+   commits around the handler's work; a probe every 2–10 ms already
+   finds a freed key within one such commit, so the wake-up shaves a
+   latency that is not what costs — and where commits are cheap, so
+   are the probes.
+3. **Unusable behind pgBouncer transaction or statement pooling**, the
+   deployment this locker exists for. `LISTEN` is session state: the
+   subscription lands on whichever server connection served that
+   statement, the pooler never forwards the notifications to the
+   listener, and the server connection keeps the subscription, so the
+   pooler may deliver those notifications to whatever client it links
+   next, where pgjdbc queues them unread. A probe-based self-check
+   detected it, but a feature that must switch itself off in its
+   target environment is not worth a thread, a held pool connection and
+   an extra round trip per release.
 
-Measured with the notify in its own transaction
-([addendum](../benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-postgresql-listennotify-wake-up-on-the-lease-locker)):
-no gain over polling on any cell — 274 vs 275/s on the hot-key preset,
-53 vs 55/s on the uncapped virtual executor, 195 vs 198/s on the mixed
-workload. The lease's own synchronous acquire and release commits are
-the cycle on fsync-bound storage; the 2–10 ms probe cadence already
-finds a freed key within one such commit. The wake-up therefore ships
-**opt-in** (`lock.wakeup: true`) with its costs stated — one held pool
-connection, one thread, one extra asynchronous round trip per release
-— for deployments where commits are cheap and a hot key's waiters are
-the bottleneck; the polling wait stays the default.
-
-Two consequences for this ADR's guarantees. The JDBC contract is
-untouched — acquire and release stay single autocommit statements
-safe behind pgBouncer — but **the listener is session state and
-cannot work behind pgBouncer in transaction or statement pooling
-mode**, the very deployment this locker exists for. `LISTEN` lands on
-whichever server connection served that statement; the pooler never
-forwards the notifications to the listener, and the server connection
-keeps the subscription, so the pooler may deliver those notifications
-to whatever client it links to that server next, where pgjdbc queues
-them unread. The listener therefore proves the path with a self-sent
-probe on every fresh session; when the probe never arrives on the
-first one it reports itself unsupported once at WARN, issues a
-best-effort `UNLISTEN *`, the locker stops sending `NOTIFY`, and the
-wait polls exactly as before. The option is off by default for this
-locker and must stay off behind such a pooler; a session-pooled or
-direct listener connection would be needed for it (a dedicated
-listener URL after the `event-outboxer.flyway.url` pattern is a
-possible follow-up). A session lost later is reconnected with a
-back-off and wakes the parked waiters. And the "zero held
-connections" property now reads "zero held connections during a
-handler; one held connection per JVM for the listener when
-`lock.wakeup` is on".
+Decision: removed. The lease locker's bounded wait is the SPI's polling
+default and nothing else; acquire and release stay the single
+autocommit statements above, with no notify. `LockWaiters` stays in the
+SPI for the Redis locker. Revisiting this would need a listener on a
+direct or session-pooled connection *and* a measured case where probe
+cost, not commit cost, dominates — on fsync-bound storage there is none.
 
 ## Related decisions
 

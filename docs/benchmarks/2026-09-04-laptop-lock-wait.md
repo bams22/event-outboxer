@@ -293,9 +293,8 @@ parked waiter of the key re-probes at once, one wins — but the cell is
 bounded by busy hits either way, and at 500 ms the fallback probes of
 hundreds of long-parked waiters cost more than they save (33/s).
 
-**Decision.** The lease wake-up ships opt-in (`lock.wakeup: true`;
-the property is unset by default and resolves to on for Redis, off
-for the lease locker), with its costs stated. Try it where commits are
-cheap — no fsync wait, `synchronous_commit=off` at the database, or
-NVMe with a fast WAL — and a hot key's waiters are the bottleneck;
-measure before keeping it.
+**Decision.** Removed the same day (ADR-0022 amendment): no measured
+gain, a commit-serialization trap, and `LISTEN` cannot work behind
+pgBouncer transaction pooling — the deployment the lease locker exists
+for. The lease locker's bounded wait is the SPI's polling default; the
+Redis locker keeps its pub/sub wake-up.

@@ -12,7 +12,6 @@ package io.github.bams22.outboxer.lock.postgres.lease;
 import io.github.bams22.outboxer.domain.exception.LockAcquisitionException;
 import io.github.bams22.outboxer.domain.exception.LockReleaseException;
 import io.github.bams22.outboxer.spi.EntityLocker;
-import io.github.bams22.outboxer.spi.LockWaiters;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.sql.Connection;
@@ -24,7 +23,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
-import lombok.Builder;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,33 +79,8 @@ import org.slf4j.LoggerFactory;
  * expires_at} via the next acquirer's takeover — the crash-release mechanism. The engine enforces
  * {@code lockTtl >= handlerMaxRuntime} (default 2x); the margin also absorbs JVM-clock (watchdog)
  * vs DB-clock (lease) divergence.
- *
- * <h2>Bounded wait with a LISTEN/NOTIFY wake-up (ADR-0035)</h2>
- *
- * With {@code releaseNotifications} on, a release also {@code pg_notify}s the released key on the
- * schema's channel {@code <schema>.entity_locks} — as a second, asynchronously committed autocommit
- * statement on the same borrowed connection (see {@code NOTIFY_SQL} for why not inside the delete)
- * — and the locker runs a {@link PgLeaseReleaseListener} (one dedicated session, one daemon thread)
- * so that a waiter in {@link #tryLock(String, Duration, Duration)} parks on {@link LockWaiters}
- * until the holder's release arrives instead of re-issuing the acquire upsert every few
- * milliseconds. A parked waiter still re-probes every {@code fallbackProbeInterval} (default {@link
- * #DEFAULT_FALLBACK_PROBE_INTERVAL}) because notifications are at-most-once, an expired lease is
- * taken over without one, and a JVM with notifications off releases silently — configure a fleet
- * uniformly. Until the listener has proved the path the wait polls. <b>Behind pgBouncer in
- * transaction or statement pooling mode the wake-up cannot work</b>: {@code LISTEN} is session
- * state the pooler neither honours nor forwards; the listener detects it with its probe, reports
- * itself unsupported once, the locker stops notifying, and the wait polls exactly as without the
- * option — leave {@code releaseNotifications} off there. {@link #close()} stops the listener.
- *
- * <h2>Construction</h2>
- *
- * {@code PgLeaseEntityLocker.builder()}. Required: {@code dataSource}. Defaulted when {@code null}
- * or unset: {@code schema} ({@link #DEFAULT_SCHEMA}), {@code ownerWorker} ({@code
- * {hostname}-{pid}}), {@code releaseNotifications} ({@code false}: polling wait, no listener),
- * {@code fallbackProbeInterval} ({@link #DEFAULT_FALLBACK_PROBE_INTERVAL}). The three public
- * constructors keep the pre-wake-up shape.
  */
-public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
+public final class PgLeaseEntityLocker implements EntityLocker {
 
     private static final Logger log = LoggerFactory.getLogger(PgLeaseEntityLocker.class);
 
@@ -116,13 +89,6 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
 
     /** Maximum accepted lock-key length; matches the {@code VARCHAR(512)} column (V005). */
     public static final int MAX_KEY_LENGTH = 512;
-
-    /**
-     * Default re-probe cadence of a waiter parked on a release notification. Rarely reached: it
-     * matters when a notification was lost across a reconnect or a lease expired instead of being
-     * released.
-     */
-    public static final Duration DEFAULT_FALLBACK_PROBE_INTERVAL = Duration.ofMillis(25);
 
     /**
      * Bounds the tuple-lock wait under contention and, transitively, the lease shortening {@code
@@ -138,44 +104,21 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
 
     private final DataSource dataSource;
     private final String ownerWorker;
-    private final String channel;
     private final String acquireSql;
     private final String releaseSql;
-
-    /**
-     * The release notification, its own autocommit statement after the delete and only with {@code
-     * releaseNotifications} on. Why not inside the delete: PostgreSQL serializes the commit of
-     * every notifying transaction in the cluster on one lock ({@code PreCommit_Notify}), so a
-     * notify inside the synchronous delete would cap the fleet's release rate at one commit latency
-     * — measured at ~200 releases/s on fsync-bound storage. With {@code synchronous_commit}
-     * switched off for this one transaction (via {@code set_config(..., true)}, local to it) the
-     * commit returns without waiting for WAL, the serialized section shrinks to microseconds, and
-     * nothing durable is at stake: a notification lost to a crash costs one fallback probe.
-     */
-    private static final String NOTIFY_SQL =
-            "SELECT set_config('synchronous_commit', 'off', true), pg_notify(?, ?)";
-
     private final String sweepSql;
     private final String countSql;
-    private final Duration fallbackProbeInterval;
-    private final @Nullable LockWaiters waiters;
-    private final @Nullable PgLeaseReleaseListener listener;
 
     public PgLeaseEntityLocker(DataSource dataSource) {
-        this(dataSource, DEFAULT_SCHEMA, null, false, null);
+        this(dataSource, DEFAULT_SCHEMA, null);
     }
 
     public PgLeaseEntityLocker(DataSource dataSource, String schema) {
-        this(
-                dataSource,
-                Objects.requireNonNull(schema, "schema must not be null"),
-                null,
-                false,
-                null);
+        this(dataSource, schema, null);
     }
 
     /**
-     * Pre-wake-up constructor: polling bounded wait, no listener.
+     * Full constructor.
      *
      * @param dataSource the application pool. Must NOT be a transaction-aware proxy: lock
      *     statements must run in their own autocommit transactions, never joined to the caller's
@@ -187,45 +130,10 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
      *     predicates
      */
     public PgLeaseEntityLocker(DataSource dataSource, String schema, @Nullable String ownerWorker) {
-        this(
-                dataSource,
-                Objects.requireNonNull(schema, "schema must not be null"),
-                ownerWorker,
-                false,
-                null);
-    }
-
-    /**
-     * Builder-backed constructor; parameter names are the builder's method names.
-     *
-     * @param dataSource the application pool, never a transaction-aware proxy; required
-     * @param schema schema holding {@code entity_locks}; {@code null} = {@link #DEFAULT_SCHEMA}
-     * @param ownerWorker forensic worker identity; {@code null} = {@code {hostname}-{pid}}
-     * @param releaseNotifications run the {@code LISTEN} thread and park waiters on release
-     *     notifications; {@code false} = polling wait
-     * @param fallbackProbeInterval re-probe cadence of a parked waiter; {@code null} = {@link
-     *     #DEFAULT_FALLBACK_PROBE_INTERVAL}
-     */
-    @Builder
-    private PgLeaseEntityLocker(
-            DataSource dataSource,
-            @Nullable String schema,
-            @Nullable String ownerWorker,
-            boolean releaseNotifications,
-            @Nullable Duration fallbackProbeInterval) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-        String resolvedSchema = schema != null ? schema : DEFAULT_SCHEMA;
+        Objects.requireNonNull(schema, "schema must not be null");
         this.ownerWorker = ownerWorker != null ? ownerWorker : defaultOwnerWorker();
-        this.channel = resolvedSchema + ".entity_locks";
-        this.fallbackProbeInterval =
-                fallbackProbeInterval != null
-                        ? fallbackProbeInterval
-                        : DEFAULT_FALLBACK_PROBE_INTERVAL;
-        if (this.fallbackProbeInterval.isNegative() || this.fallbackProbeInterval.isZero()) {
-            throw new IllegalArgumentException(
-                    "fallbackProbeInterval must be positive, got " + this.fallbackProbeInterval);
-        }
-        String table = resolvedSchema + ".entity_locks";
+        String table = schema + ".entity_locks";
         this.acquireSql =
                 "INSERT INTO "
                         + table
@@ -241,79 +149,6 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
         this.releaseSql = "DELETE FROM " + table + " WHERE lock_key = ? AND owner_token = ?";
         this.sweepSql = "DELETE FROM " + table + " WHERE expires_at <= now()";
         this.countSql = "SELECT count(*) FROM " + table + " WHERE expires_at > now()";
-        if (releaseNotifications) {
-            LockWaiters registry = new LockWaiters(LockWaiters.Transport.NONE);
-            this.waiters = registry;
-            this.listener =
-                    new PgLeaseReleaseListener(
-                            dataSource, channel, registry::wake, registry::wakeAll);
-            this.listener.start();
-        } else {
-            this.waiters = null;
-            this.listener = null;
-        }
-    }
-
-    /** Notification channel of this schema's releases, {@code <schema>.entity_locks}. */
-    public String channel() {
-        return channel;
-    }
-
-    /** Whether the locker was built with release notifications ({@code releaseNotifications}). */
-    public boolean wakeupEnabled() {
-        return listener != null;
-    }
-
-    /**
-     * Whether the listener currently proves notifications arrive — waiters park instead of poll.
-     */
-    public boolean wakeupActive() {
-        return listener != null && listener.isActive();
-    }
-
-    /** The listener, for diagnostics; {@code null} without release notifications. */
-    public @Nullable PgLeaseReleaseListener listener() {
-        return listener;
-    }
-
-    /**
-     * Whether releases send a notification: configured, and the listener has not found the path
-     * unsupported (behind pgBouncer transaction pooling nobody could receive them) or been closed.
-     */
-    private boolean notificationsWanted() {
-        if (listener == null) {
-            return false;
-        }
-        PgLeaseReleaseListener.State state = listener.state();
-        return state == PgLeaseReleaseListener.State.CONNECTING
-                || state == PgLeaseReleaseListener.State.ACTIVE;
-    }
-
-    /** Number of lock keys with at least one waiter parked on a notification in this JVM. */
-    public int waitingKeys() {
-        return waiters != null ? waiters.waitingTopics() : 0;
-    }
-
-    /** Stops the release listener, if any. Idempotent. */
-    @Override
-    public void close() {
-        if (listener != null) {
-            listener.close();
-        }
-    }
-
-    @Override
-    public Optional<LockHandle> tryLock(String key, Duration ttl, Duration maxWait) {
-        Objects.requireNonNull(key, "key must not be null");
-        Objects.requireNonNull(ttl, "ttl must not be null");
-        Objects.requireNonNull(maxWait, "maxWait must not be null");
-        if (maxWait.isNegative()) {
-            throw new IllegalArgumentException("maxWait must not be negative, got " + maxWait);
-        }
-        if (waiters == null || listener == null || !listener.isActive() || maxWait.isZero()) {
-            return EntityLocker.super.tryLock(key, ttl, maxWait);
-        }
-        return waiters.tryLockWithWakeup(this, key, ttl, maxWait, key, fallbackProbeInterval);
     }
 
     @Override
@@ -451,26 +286,17 @@ public final class PgLeaseEntityLocker implements EntityLocker, AutoCloseable {
             closed = true;
             try (Connection conn = dataSource.getConnection()) {
                 prepareConnection(conn);
-                boolean released;
                 try (PreparedStatement ps = conn.prepareStatement(releaseSql)) {
                     ps.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
                     ps.setString(1, key);
                     ps.setString(2, token);
-                    released = ps.executeUpdate() > 0;
-                }
-                if (!released) {
-                    // Lease expired and was taken over (token mismatch — we must not touch the
-                    // successor's row) or was already swept.
-                    log.debug(
-                            "lease '{}' was already released (expired or taken over) by the"
-                                    + " time close() ran",
-                            key);
-                } else if (notificationsWanted()) {
-                    try (PreparedStatement ps = conn.prepareStatement(NOTIFY_SQL)) {
-                        ps.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                        ps.setString(1, channel);
-                        ps.setString(2, key);
-                        ps.execute();
+                    if (ps.executeUpdate() == 0) {
+                        // Lease expired and was taken over (token mismatch — we must not touch the
+                        // successor's row) or was already swept.
+                        log.debug(
+                                "lease '{}' was already released (expired or taken over) by the"
+                                        + " time close() ran",
+                                key);
                     }
                 }
             } catch (SQLException ex) {

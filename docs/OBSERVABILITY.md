@@ -693,24 +693,6 @@ after force-reclaim`). The engine is `UP` — this is not a crash.
 
 ---
 
-### 8. "entity_locks release notifications are not delivered on this connection" at startup
-
-**Symptom**: one WARN from `PgLeaseReleaseListener` shortly after
-startup; the lease locker's `lock.wakeup` was set to `true`.
-
-**Diagnose**: the listener's `LISTEN` session never received the probe
-it sent itself. Almost always the application reaches PostgreSQL
-through pgBouncer (or another pooler) in transaction or statement
-pooling mode, where `LISTEN` is session state the pooler neither
-honours nor forwards. Nothing is broken: the locker stopped notifying
-and the bounded lock wait polls, exactly as without the option;
-exclusion and TTL are unchanged.
-
-**Fix**: leave `event-outboxer.lock.wakeup` unset or `false` for the
-lease locker behind such a pooler (it is off by default there). If the
-wake-up is wanted, the listener needs a session-pooled or direct
-connection. The Redis locker's wake-up is unaffected.
-
 ## Related documents
 
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — engine design and data flows.

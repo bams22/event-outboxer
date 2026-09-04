@@ -54,12 +54,6 @@ import org.springframework.context.annotation.Configuration;
  * holder's release (ADR-0022 §JDBC contract). With several {@code DataSource} beans the {@link
  * OutboxDataSource @OutboxDataSource}-qualified one wins (ADR-0024), and a transaction-aware proxy
  * handed in that way is unwrapped back to its raw target.
- *
- * <p>With {@code event-outboxer.lock.wakeup=true} (opt-in for this locker — the measured default is
- * off, see ADR-0022's amendment) the locker runs its LISTEN/NOTIFY release listener (ADR-0035): one
- * pooled connection held for the context's life plus a daemon thread; the locker is {@code
- * AutoCloseable}, so Spring stops the listener on shutdown. Where notifications cannot be delivered
- * (pgBouncer transaction pooling) the listener says so once and the wait polls.
  */
 @AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @ConditionalOnClass(PgLeaseEntityLocker.class)
@@ -79,12 +73,8 @@ public class PostgresLeaseLockAutoConfiguration {
                 OutboxDataSourceResolver.unwrapTransactionAware(
                         OutboxDataSourceResolver.resolve(
                                 qualifiedDataSources, dataSources, beanFactory));
-        return PgLeaseEntityLocker.builder()
-                .dataSource(dataSource)
-                .schema(properties.getStorage().getSchema())
-                .ownerWorker(properties.getWorker().getId())
-                .releaseNotifications(properties.getLock().wakeupOr(false))
-                .build();
+        return new PgLeaseEntityLocker(
+                dataSource, properties.getStorage().getSchema(), properties.getWorker().getId());
     }
 
     /**

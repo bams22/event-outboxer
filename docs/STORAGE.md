@@ -271,10 +271,7 @@ empirically on PG 15, including 32-thread stampedes). The connection
 is borrowed from the pool **only for this statement** — the returned
 `LockHandle` holds `(dataSource, key, token)`, never a `Connection`,
 so no connection is pinned during the handler and the statement is
-safe behind pgBouncer transaction/statement pooling. (The lease
-locker's opt-in `lock.wakeup` release listener is the exception: a
-`LISTEN` session, unusable behind such a pooler — see the
-[module page](modules/event-outboxer-lock-postgres-lease.md#behind-pgbouncer).)
+safe behind pgBouncer transaction/statement pooling.
 
 Adapter-side requirements (load-bearing, see ADR-0022 §JDBC contract):
 autocommit forced on the borrowed connection (a busy probe takes a

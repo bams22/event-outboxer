@@ -7,10 +7,9 @@ replacing the never-built `afterDone` mitigation; see the Amendment
 section at the bottom); amended 2026-07-27 (the blanket pgbouncer
 claims in Consequences are re-scoped per lock backend — they were
 already false for the session-advisory entity locker; see the second
-Amendment); amended 2026-09-05 (`LISTEN` returns as an opt-in of the
-lease locker's bounded wait, with the pgbouncer caveat of this ADR
-detected at startup rather than documented only; see the third
-Amendment)
+Amendment); amended 2026-09-05 (`LISTEN` was tried as an opt-in of the
+lease locker's bounded wait and removed the same day — the pgbouncer
+caveat of this ADR confirmed in practice; see the third Amendment)
 
 ## Date
 
@@ -213,24 +212,20 @@ See ADR-0022 and the pgbouncer note in
 `prepareThreshold` / pgbouncer `max_prepared_statements` guidance,
 which applies to the storage adapter as well).
 
-## Amendment (2026-09-05): LISTEN returns as an opt-in of the lease locker
+## Amendment (2026-09-05): LISTEN tried for the lease locker's lock wait, removed
 
-ADR-0035's bounded lock wait gave the lease locker an optional
-`LISTEN/NOTIFY` wake-up (`event-outboxer.lock.wakeup: true`,
-[ADR-0022 amendment](0022-lease-table-postgres-entity-locker.md)):
-not for polling the outbox — this ADR's decision stands — but for
-ending a handler thread's wait on a busy lock key when the holder
-releases. It ships off by default for that locker (measured no gain)
-and it is exactly the feature this ADR's pgbouncer caveat is about:
-under transaction or statement pooling the `LISTEN` never reaches the
-listener and can leak onto a pooled server connection. The caveat is
-therefore enforced, not just documented: the listener proves the
-path with a self-sent probe on every fresh session, and when the probe
-never arrives it reports itself unsupported once at WARN, `UNLISTEN`s,
-stops the locker's `NOTIFY`s and leaves the wait polling — the
-"silent broken behavior" this ADR feared becomes a loud, harmless one.
-Behind such a pooler the option must stay off; a session-pooled or
-direct connection is required for it.
+Not for polling the outbox — this ADR's decision stands unchanged —
+but for ending a handler thread's wait on a busy lock key: ADR-0035's
+bounded wait got a `LISTEN/NOTIFY` variant for the lease locker
+(`event-outboxer-lock-postgres-lease`) on 2026-09-05 and lost it the
+same day. It measured no gain over polling, a notify inside the
+release statement serialized the fleet's commits, and it was unusable
+behind transaction-mode pgbouncer — this ADR's caveat, confirmed: the
+`LISTEN` never reached the listener and leaked onto a pooled server
+connection. The full record is the
+[ADR-0022 amendment](0022-lease-table-postgres-entity-locker.md). The
+Redis locker's pub/sub wake-up is unaffected — it rides the Redis
+connection, not the JDBC pool.
 
 ## Related decisions
 

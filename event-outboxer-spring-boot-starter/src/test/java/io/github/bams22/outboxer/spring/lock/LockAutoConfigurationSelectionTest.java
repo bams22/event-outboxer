@@ -60,27 +60,6 @@ class LockAutoConfigurationSelectionTest {
     }
 
     @Test
-    @DisplayName("lock.wakeup is opt-in for the lease locker: unset = polling, true = listener")
-    void leaseWakeupProperty() {
-        runner.withPropertyValues("event-outboxer.lock.type=postgres-lease")
-                .run(
-                        ctx -> {
-                            assertThat(ctx).hasNotFailed();
-                            assertThat(ctx.getBean(PgLeaseEntityLocker.class).wakeupEnabled())
-                                    .isFalse();
-                        });
-        runner.withPropertyValues(
-                        "event-outboxer.lock.type=postgres-lease",
-                        "event-outboxer.lock.wakeup=true")
-                .run(
-                        ctx -> {
-                            assertThat(ctx).hasNotFailed();
-                            assertThat(ctx.getBean(PgLeaseEntityLocker.class).wakeupEnabled())
-                                    .isTrue();
-                        });
-    }
-
-    @Test
     @DisplayName("relaxed-binding spellings of postgres-lease match too (Binder condition)")
     void leaseRelaxedSpellings() {
         for (String spelling : new String[] {"postgres_lease", "POSTGRES-LEASE"}) {
