@@ -212,14 +212,26 @@ public class OutboxProperties {
         private String keyPrefix = "outbox:lock:";
 
         /**
-         * Redis locker only: park a waiting handler thread on the holder's release notification
-         * (Redis pub/sub) instead of polling {@code SET NX PX} during the per-type {@code
-         * lock-wait} (ADR-0035). Needs a second, pub/sub connection — created by the starter next
-         * to the command connection when {@code event-outboxer.redis.*} is set, or a user-defined
-         * {@code StatefulRedisPubSubConnection<String, String>} bean. {@code false} keeps the
-         * polling wait and opens no pub/sub connection.
+         * Park a waiting handler thread on the holder's release notification instead of polling the
+         * backend during the per-type {@code lock-wait} (ADR-0035). Unset = the backend's measured
+         * default: <b>on</b> for the Redis locker (pub/sub on a second connection — created by the
+         * starter next to the command connection when {@code event-outboxer.redis.*} is set, or a
+         * user-defined {@code StatefulRedisPubSubConnection} bean; a fifth more drain rate and half
+         * the tail on hot keys), <b>off</b> for the lease locker ({@code LISTEN} on one pooled
+         * connection held for the context's life plus an asynchronous {@code NOTIFY} per release;
+         * measured no gain over polling, because the lease's own commits dominate). {@code false}
+         * keeps the polling wait and opens no extra connection; {@code true} on the lease locker
+         * verifies the path with a probe at startup and polls where notifications are not delivered
+         * (pgBouncer transaction pooling).
          */
-        private boolean wakeup = true;
+        private @Nullable Boolean wakeup;
+
+        /**
+         * Effective wake-up setting for a backend whose measured default is {@code backendDefault}.
+         */
+        public boolean wakeupOr(boolean backendDefault) {
+            return wakeup != null ? wakeup : backendDefault;
+        }
     }
 
     /**

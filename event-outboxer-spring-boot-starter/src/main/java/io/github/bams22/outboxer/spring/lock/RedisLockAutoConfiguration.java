@@ -62,11 +62,11 @@ public class RedisLockAutoConfiguration {
             ListableBeanFactory beanFactory,
             OutboxProperties properties) {
         StatefulRedisPubSubConnection<String, String> wakeup =
-                properties.getLock().isWakeup()
+                properties.getLock().wakeupOr(true)
                         ? OutboxRedisConnectionResolver.resolvePubSub(
                                 qualifiedPubSub, pubSubConnections)
                         : null;
-        if (properties.getLock().isWakeup() && wakeup == null) {
+        if (properties.getLock().wakeupOr(true) && wakeup == null) {
             log.info(
                     "Redis entity locker: no StatefulRedisPubSubConnection bean — a busy lock is"
                             + " polled during lock-wait; define one (or set event-outboxer.redis.*)"

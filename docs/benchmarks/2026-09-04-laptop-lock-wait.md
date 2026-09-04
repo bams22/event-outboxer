@@ -246,3 +246,56 @@ What changed:
    Redis locker breaking it is now merely expensive, not slower.
 3. The subscription bookkeeping left nothing behind: `lock keys
    left=0` and no channel subscribed after each run.
+
+## Addendum (2026-09-05): PostgreSQL LISTEN/NOTIFY wake-up on the lease locker
+
+The same idea for the lease locker: a release `pg_notify`s the key on
+one channel per schema, a dedicated session `LISTEN`s, waiters park
+(`event-outboxer.lock.wakeup=true`). Two rounds were needed.
+
+**Round one — notify inside the delete — halved every cell.** With
+`pg_notify` in the release statement's CTE the hot-key preset drained
+at 180/s polling and 215/s listening, against 337/s in the matrix
+above; the mixed workload fell from 180/s to 119/s. The cause is not
+the wake-up but the notify: PostgreSQL serializes the commit of every
+notifying transaction in the cluster on one heavyweight lock
+(`PreCommit_Notify`), so each synchronous release commit waited for
+the previous release's fsync — a fleet-wide ceiling of one commit
+latency, about 200 releases/s on this host. The notify was moved into
+its own autocommit statement with `synchronous_commit` off for that
+transaction (nothing durable in it; a lost notification costs one
+fallback probe), and the delete kept its durability.
+
+**Round two — notify as an asynchronous statement — no gain.** Same
+host and containers; `wakeup=false` is the pre-wake-up release path
+exactly.
+
+| Executor | `lock-wait` | wait | handled/s | e2e p50 | e2e p95 | e2e max | PG writes/event | statements/event | busy hits |
+|---|---|---|---|---|---|---|---|---|---|
+| platform | 100 ms | polling | 274 | 6 019 ms | 10 281 ms | 12 046 ms | 5.11 | 5.48 | 13 |
+| platform | 100 ms | LISTEN | 275 | 6 337 ms | 11 194 ms | 15 925 ms | 5.08 | 5.71 | 32 |
+| mixed, 64 keys, 2 % on a 200 ms key | 100 ms | polling | 195 | 3 782 ms | 7 086 ms | 21 690 ms | 5.10 | 5.48 | 221 |
+| mixed | 100 ms | LISTEN | 198 | 3 678 ms | 6 836 ms | 22 616 ms | 5.10 | 5.34 | 225 |
+| virtual, uncapped | 100 ms | polling | 53 | 45 031 ms | 88 652 ms | 94 004 ms | 21.13 | 35.86 | 37 781 |
+| virtual, uncapped | 100 ms | LISTEN | 55 | 42 542 ms | 85 093 ms | 91 082 ms | 17.14 | 29.80 | 28 418 |
+| virtual, uncapped | 500 ms | LISTEN | 33 | 76 401 ms | 145 104 ms | 151 903 ms | 16.77 | 48.16 | 27 784 |
+
+Why nothing moves where the Redis wake-up moved a fifth: on the lease
+locker the cycle of a hot key is its own synchronous acquire and
+release, two fsync-bound commits around 5 ms of work, and a probe
+every 2–10 ms already finds a freed key within one such commit. The
+wake-up can only shave the probe latency, which is not what costs; it
+adds one asynchronous round trip per release (5.48 → 5.71 statements
+per event) and a held pool connection per JVM. On the uncapped virtual
+executor it removes a fifth of the row writes (21 → 17 per event) by
+replacing timed probes with a thundering herd on each release — every
+parked waiter of the key re-probes at once, one wins — but the cell is
+bounded by busy hits either way, and at 500 ms the fallback probes of
+hundreds of long-parked waiters cost more than they save (33/s).
+
+**Decision.** The lease wake-up ships opt-in (`lock.wakeup: true`;
+the property is unset by default and resolves to on for Redis, off
+for the lease locker), with its costs stated. Try it where commits are
+cheap — no fsync wait, `synchronous_commit=off` at the database, or
+NVMe with a fast WAL — and a hot key's waiters are the bottleneck;
+measure before keeping it.

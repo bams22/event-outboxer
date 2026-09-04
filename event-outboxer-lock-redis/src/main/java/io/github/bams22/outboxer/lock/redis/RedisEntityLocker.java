@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.lock.redis;
 import io.github.bams22.outboxer.domain.exception.LockAcquisitionException;
 import io.github.bams22.outboxer.domain.exception.LockReleaseException;
 import io.github.bams22.outboxer.spi.EntityLocker;
+import io.github.bams22.outboxer.spi.LockWaiters;
 import io.lettuce.core.ScriptOutputType;
 import io.lettuce.core.SetArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -50,7 +51,7 @@ import org.slf4j.LoggerFactory;
  * waiter in {@link #tryLock(String, Duration, Duration)} subscribes to that channel and parks until
  * the holder releases instead of probing {@code SET NX PX} every few milliseconds — the first
  * waiter of a key subscribes, later ones share the subscription, the last one unsubscribes ({@link
- * LockWakeups}). A parked waiter still re-probes every {@code fallbackProbeInterval} (default
+ * LockWaiters}). A parked waiter still re-probes every {@code fallbackProbeInterval} (default
  * {@link #DEFAULT_FALLBACK_PROBE_INTERVAL}) because pub/sub is at-most-once: a message lost across
  * a reconnect, or a key that expired instead of being released, must not cost the whole budget.
  * Without a pub/sub connection the locker keeps the SPI's polling default. The {@code PUBLISH} is
@@ -108,7 +109,7 @@ public final class RedisEntityLocker implements EntityLocker {
     private final RedisCommands<String, String> commands;
     private final String keyPrefix;
     private final String channelPrefix;
-    private final @Nullable LockWakeups wakeups;
+    private final @Nullable LockWaiters wakeups;
     private final Duration fallbackProbeInterval;
 
     public RedisEntityLocker(StatefulRedisConnection<String, String> connection) {
@@ -152,7 +153,7 @@ public final class RedisEntityLocker implements EntityLocker {
                     "fallbackProbeInterval must be positive, got " + this.fallbackProbeInterval);
         }
         if (wakeupConnection != null) {
-            LockWakeups registry = new LockWakeups(new LettuceTransport(wakeupConnection));
+            LockWaiters registry = new LockWaiters(new LettuceTransport(wakeupConnection));
             wakeupConnection.addListener(
                     new RedisPubSubAdapter<String, String>() {
                         @Override
@@ -173,7 +174,7 @@ public final class RedisEntityLocker implements EntityLocker {
 
     /** Number of lock keys with at least one waiter parked on a notification in this JVM. */
     public int waitingKeys() {
-        return wakeups != null ? wakeups.waitingChannels() : 0;
+        return wakeups != null ? wakeups.waitingTopics() : 0;
     }
 
     /** Pub/sub channel the release of {@code key} is published on. */
@@ -213,15 +214,15 @@ public final class RedisEntityLocker implements EntityLocker {
         if (wakeups == null || maxWait.isZero()) {
             return EntityLocker.super.tryLock(key, ttl, maxWait);
         }
-        Optional<LockHandle> held = tryLock(key, ttl);
-        if (held.isPresent()) {
-            return held;
-        }
         long deadline = System.nanoTime() + maxWait.toNanos();
-        LockWakeups.Ticket ticket;
         try {
-            ticket = wakeups.register(channelFor(key));
+            return wakeups.tryLockWithWakeup(
+                    this, key, ttl, maxWait, channelFor(key), fallbackProbeInterval);
         } catch (RuntimeException ex) {
+            if (ex instanceof LockAcquisitionException) {
+                throw ex;
+            }
+            // The subscribe failed (pub/sub connection down): poll for what is left of the budget.
             log.warn(
                     "could not subscribe to lock release notifications for key '{}' — polling for"
                             + " this wait instead: {}",
@@ -232,36 +233,11 @@ public final class RedisEntityLocker implements EntityLocker {
                     ? Optional.empty()
                     : EntityLocker.super.tryLock(key, ttl, Duration.ofNanos(remaining));
         }
-        try {
-            while (true) {
-                // Read the generation before the probe: a release that lands between the probe
-                // and the park has moved it, and awaitNewer returns at once.
-                long seen = ticket.generation();
-                held = tryLock(key, ttl);
-                if (held.isPresent()) {
-                    return held;
-                }
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    return Optional.empty();
-                }
-                try {
-                    ticket.awaitNewer(
-                            seen,
-                            Duration.ofNanos(Math.min(remaining, fallbackProbeInterval.toNanos())));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return Optional.empty();
-                }
-            }
-        } finally {
-            wakeups.unregister(ticket);
-        }
     }
 
-    /** Lettuce pub/sub commands behind the {@link LockWakeups} registry. */
+    /** Lettuce pub/sub commands behind the {@link LockWaiters} registry. */
     private record LettuceTransport(StatefulRedisPubSubConnection<String, String> connection)
-            implements LockWakeups.Transport {
+            implements LockWaiters.Transport {
 
         @Override
         public void subscribe(String channel) {

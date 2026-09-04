@@ -44,7 +44,40 @@ infrastructure. The advisory locker remains available as an
   pool borrow: lock state is a row, not session state, so a different
   physical connection (or pgBouncer backend) is fine. A zero-row
   delete (lease expired / taken over) is a debug-logged no-op — a
-  zombie's late release can never free someone else's lease.
+  zombie's late release can never free someone else's lease. With
+  `releaseNotifications` on, a second autocommit statement on the same
+  borrowed connection `pg_notify`s the released key on the schema's
+  channel `<schema>.entity_locks` (one channel per schema: a channel
+  name is limited to 63 bytes, a key to 512 characters) with
+  `synchronous_commit` off for that one transaction. Not inside the
+  delete, on purpose: PostgreSQL serializes the commit of every
+  notifying transaction in the cluster on one lock, so a notify inside
+  the synchronous delete would cap the fleet's release rate at one
+  commit latency — about 200/s on fsync-bound storage in the harness.
+  The asynchronous notify commit holds that lock for microseconds and
+  risks nothing durable: a notification lost to a crash costs one
+  fallback probe.
+- **Bounded wait with a wake-up (ADR-0035), opt-in** — with
+  `releaseNotifications` on (the starter's `lock.wakeup: true`; the
+  measured default for this locker is off, see below), the locker
+  runs `PgLeaseReleaseListener`: one pooled
+  connection held for the locker's life that `LISTEN`s on the channel,
+  and a daemon thread that forwards every notified key to the waiters.
+  A handler thread that finds a key busy during its type's `lock-wait`
+  parks until that key's release arrives instead of re-issuing the
+  acquire upsert every 2–10 ms, re-probing every 25 ms
+  (`fallbackProbeInterval`) as a safety net for lost notifications and
+  leases that expired instead of being released. The listener proves
+  the path on every fresh session by sending itself a probe from a
+  second, briefly borrowed connection: where the probe never arrives
+  — pgBouncer transaction or statement pooling does not forward
+  `NOTIFY` — it reports itself unsupported once at WARN and the wait
+  polls, exactly as before; a session lost later is reconnected with
+  a back-off, and every reconnect wakes the parked waiters so a
+  release missed in the gap costs one probe. A JVM with notifications
+  off releases silently, so configure a fleet uniformly — waiters in
+  other JVMs then rely on the fallback probe. `close()` stops the
+  listener; the starter does that on shutdown.
 - **Clock model** — all expiry arithmetic uses the *database* clock
   (`now()` at write and compare), so a skewed application JVM can
   neither over-hold nor steal a lease.
@@ -106,6 +139,7 @@ or the type's `lock-wait` is spent.
 event-outboxer:
   lock:
     type: postgres-lease
+    wakeup: true        # opt-in: LISTEN for release notifications during lock-wait (default off)
 ```
 
 Nothing else: with the module on the classpath the starter-managed
@@ -113,6 +147,20 @@ Flyway instance applies V005 on the next start, whatever the state of
 the core migrations (ADR-0028).
 
 Notes:
+
+- `lock.wakeup: true` is off by default for this locker because the
+  harness measured no gain from it: on hot keys the lease's own
+  acquire and release commits dominate the cycle, and polling every
+  2–10 ms adds nothing a notification could remove (274/s polling vs
+  275/s with the listener; the virtual-executor cell 53 vs 55/s; see
+  the [2026-09-05 addendum](../benchmarks/2026-09-04-laptop-lock-wait.md#addendum-2026-09-05-postgresql-listennotify-wake-up-on-the-lease-locker)).
+  It holds **one pool connection** for the application's life (the
+  `LISTEN` session) — size the pool for it, and expect a leak-detection
+  warning if `leakDetectionThreshold` is set — and costs one extra
+  asynchronous round trip per release. Worth trying where commits are
+  cheap (no fsync wait) and a hot key's waiters are the bottleneck;
+  measure. Behind pgBouncer transaction pooling it reports itself
+  unsupported once and polls.
 
 - The starter **fail-fast probes** the `entity_locks` table at startup
   (ordered after the outbox migrations) and names migration V005, the
@@ -137,9 +185,16 @@ Notes:
 ### Without Spring
 
 ```java
-EntityLocker locker = new PgLeaseEntityLocker(rawDataSource);           // schema event_outboxer
+EntityLocker locker = new PgLeaseEntityLocker(rawDataSource);           // schema event_outboxer, polling wait
 // or: new PgLeaseEntityLocker(rawDataSource, "my_schema", "worker-7")
+// with the LISTEN/NOTIFY wake-up:
+PgLeaseEntityLocker locker = PgLeaseEntityLocker.builder()
+        .dataSource(rawDataSource)
+        .schema("my_schema")                 // optional
+        .releaseNotifications(true)
+        .build();
 new OutboxEngineBuilder().entityLocker(locker)/*...*/.build();
+// ... and locker.close() on shutdown to stop the listener
 ```
 
 Pass the raw pool, not a transaction-aware proxy, and schedule
@@ -149,4 +204,4 @@ Pass the raw pool, not a transaction-aware proxy, and schedule
 
 - [STORAGE.md §entity_locks](../STORAGE.md#optional-table-event_outboxerentity_locks) — DDL and admin queries.
 - [CONFIGURATION.md §event-outboxer.lock](../CONFIGURATION.md#event-outboxerlock) — all lock properties and the pgBouncer guidance.
-- ADRs: [0012](../adr/0012-extract-lock-key-on-handler.md), [0022](../adr/0022-lease-table-postgres-entity-locker.md).
+- ADRs: [0012](../adr/0012-extract-lock-key-on-handler.md), [0022](../adr/0022-lease-table-postgres-entity-locker.md), [0035](../adr/0035-bounded-lock-wait.md) (bounded wait and its LISTEN/NOTIFY wake-up).
