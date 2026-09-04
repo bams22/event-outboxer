@@ -10,9 +10,11 @@
 package io.github.bams22.outboxer.spi;
 
 import io.github.bams22.outboxer.domain.WorkerId;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Distributed-tracing port (ADR-0023). The engine calls this around every event insert (the
@@ -140,6 +142,10 @@ public interface OutboxTracer {
      *     already removed; never null (empty map allowed)
      * @param propagation how the span relates to {@code storedContext}; decided by the engine at
      *     publish time
+     * @param lockKey entity-lock key the handler runs under, {@code null} when it declares none
+     *     ({@link OutboxTraceAttributes#LOCK_KEY})
+     * @param lockWait time spent acquiring that lock, the bounded wait of ADR-0035 included; {@code
+     *     null} without a key ({@link OutboxTraceAttributes#LOCK_WAIT_MS})
      */
     record ProcessSpanInfo(
             UUID eventId,
@@ -147,7 +153,9 @@ public interface OutboxTracer {
             int attempt,
             WorkerId workerId,
             Map<String, String> storedContext,
-            Propagation propagation) {
+            Propagation propagation,
+            @Nullable String lockKey,
+            @Nullable Duration lockWait) {
 
         public ProcessSpanInfo {
             Objects.requireNonNull(eventId, "eventId must not be null");
@@ -156,6 +164,17 @@ public interface OutboxTracer {
             Objects.requireNonNull(storedContext, "storedContext must not be null");
             Objects.requireNonNull(propagation, "propagation must not be null");
             storedContext = Map.copyOf(storedContext);
+        }
+
+        /** Pre-lock-attribute shape (before 2026-09-05): no lock key. */
+        public ProcessSpanInfo(
+                UUID eventId,
+                String eventType,
+                int attempt,
+                WorkerId workerId,
+                Map<String, String> storedContext,
+                Propagation propagation) {
+            this(eventId, eventType, attempt, workerId, storedContext, propagation, null, null);
         }
 
         /** Pre-0.4.0 shape: {@link Propagation#CHILD}. */

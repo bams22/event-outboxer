@@ -23,6 +23,7 @@ import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
+import io.github.bams22.outboxer.api.observer.LockReleasedInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.PollCompletedInfo;
@@ -356,6 +357,18 @@ class MicrometerOutboxListenerTest {
                         registry.counter("event_outboxer.poller.saturated", "event_type", "ORDER")
                                 .count())
                 .isEqualTo(1.0);
+    }
+
+    @Test
+    void lockHoldTimerRecordsHeldDuration() {
+        listener.onLockReleased(
+                new LockReleasedInfo(UUID.randomUUID(), "ORDER", "k-1", Duration.ofMillis(12)));
+        listener.onLockReleased(
+                new LockReleasedInfo(UUID.randomUUID(), "ORDER", "k-2", Duration.ofMillis(8)));
+
+        var held = registry.timer("event_outboxer.lock.hold_time", "event_type", "ORDER");
+        assertThat(held.count()).isEqualTo(2L);
+        assertThat(held.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(20.0);
     }
 
     @Test

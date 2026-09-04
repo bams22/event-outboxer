@@ -5,8 +5,9 @@
 Accepted (amended 2026-08-16: the Micrometer adapter instruments
 through the Observation API instead of `Tracer` / `Propagator`
 directly; amended 2026-08-28: deferred events get a linked root
-consumer span instead of a child — see the amendment sections under
-Decision).
+consumer span instead of a child; amended 2026-09-05: the consumer span
+carries the entity-lock key and the lock acquisition time — see the
+amendment sections under Decision).
 
 ## Date
 
@@ -390,6 +391,20 @@ Considered for this amendment:
   whose backoff pushed it far out). Deferred to a later change: it
   needs `runAt` on `ClaimedEvent`, and the value of splitting a retry
   chain is less clear than the value of not splitting a backlog.
+
+### The consumer span carries the lock key and its wait (amendment, 2026-09-05)
+
+`ProcessSpanInfo` gained two nullable components, `lockKey` and
+`lockWait`, set by the dispatcher for handlers that declare
+`extractLockKey`. Both adapters put them on the consumer span as
+`event_outboxer.lock.key` (string) and `event_outboxer.lock.wait_ms`
+(the time spent acquiring the lock, ADR-0035's bounded wait included;
+a long in OTel, a high-cardinality key value in Micrometer). The key is
+high-cardinality by nature, which is exactly why it lives on the span:
+"which key is hot, and what did this event pay for it" is a per-event
+question, and the metrics (`lock.wait_time`, `lock.hold_time`) carry
+only `event_type`. The pre-2026-09-05 six-argument constructor stays as
+a delegating constructor, so custom tracers and tests keep compiling.
 
 ## Alternatives considered
 

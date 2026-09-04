@@ -44,6 +44,15 @@ the JSON before importing.
   `handler.executor.*` — are summed across pods;
   `heartbeat.last_success_age_seconds` is per-JVM too and is graphed
   per pod / aggregated with `max` (a sum of ages is meaningless).
+- **Entity locks row** (ADR-0035): lock wait p99/p50 by outcome and
+  hold time p99/avg by event type come from the `lock.wait_time` and
+  `lock.hold_time` histograms; the "waits exhausted" share is
+  `busy / (acquired + busy)` over the wait-time counts; "wake-ups by
+  result" (`lock.wakeups`, Redis locker with the pub/sub wake-up only)
+  is the one panel that shows a silently broken pub/sub path —
+  `probed` outgrowing `notified`. Per-key detail is deliberately not a
+  metric; it lives on the consumer span (`event_outboxer.lock.key`,
+  `event_outboxer.lock.wait_ms`).
 
 ## Requirements
 
@@ -53,10 +62,12 @@ the JSON before importing.
   `event_outboxer_events_published_total`,
   `event_outboxer_events_queue_time_seconds_bucket`, etc.
 - **Latency panels work out of the box.** The Spring Boot starter
-  automatically applies default SLO histogram buckets (10ms–1h for queue time, 10ms–10m for processing time)
-  to `events.queue_time` and `events.processing_time`, so the
-  `histogram_quantile` p99/p50 panels have data with zero
-  configuration; quantile precision is limited to the bucket grid.
+  automatically applies default SLO histogram buckets (10ms–1h for queue
+  time, 10ms–10m for processing time, 1ms–5s for the lock wait, 1ms–10m
+  for the lock hold) to `events.queue_time`, `events.processing_time`,
+  `lock.wait_time` and `lock.hold_time`, so the `histogram_quantile`
+  p99/p50 panels have data with zero configuration; quantile precision
+  is limited to the bucket grid.
   For finer buckets enable full percentile histograms on top:
 
   ```yaml

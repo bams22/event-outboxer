@@ -2225,6 +2225,363 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Time a handler thread spent acquiring an entity lock, the bounded lock-wait of ADR-0035 included (lock.wait_time). outcome=acquired: how long acquisitions took — a p99 near the type's lock-wait (default 100ms) means the wait is too short for the holders' hold time; outcome=busy: the whole budget was spent for nothing. Starter ships SLO buckets (1ms–5s grid).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 124
+      },
+      "id": 46,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, outcome) (rate(event_outboxer_lock_wait_time_seconds_bucket{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])))",
+          "legendFormat": "{{outcome}} p99",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(event_outboxer_lock_wait_time_seconds_bucket{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\",outcome=\"acquired\"}[$__rate_interval])))",
+          "legendFormat": "acquired p50",
+          "refId": "B"
+        }
+      ],
+      "title": "Lock wait p99 / p50 by outcome",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "How long a handler holds its entity lock, acquisition to release — handler plus finalize (lock.hold_time). The number lock-wait and lock-ttl are sized against: a wait shorter than the typical hold rarely pays off, a TTL not comfortably above the longest hold risks losing exclusion. Starter ships SLO buckets (1ms–10m grid).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 124
+      },
+      "id": 47,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, event_type) (rate(event_outboxer_lock_hold_time_seconds_bucket{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])))",
+          "legendFormat": "{{event_type}} p99",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (rate(event_outboxer_lock_hold_time_seconds_sum{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval])) / sum by (event_type) (rate(event_outboxer_lock_hold_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}} avg",
+          "refId": "B"
+        }
+      ],
+      "title": "Lock hold time p99 / avg by event type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Share of lock acquisitions that spent the whole lock-wait budget and went the busy path: busy / (acquired + busy) over the wait_time counts. Zero on a healthy hot key with 5ms holds; a growing share means the holders' hold time outgrew the wait (see hold time) or a dead holder's lease/key is blocking until lock-ttl (see the crash playbook).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.2
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 124
+      },
+      "id": 48,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type) (rate(event_outboxer_lock_wait_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\",outcome=\"busy\"}[$__rate_interval])) / sum by (event_type) (rate(event_outboxer_lock_wait_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Lock waits exhausted (share of attempts)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "How the Redis locker's bounded waits ended (lock.wakeups, starter-registered with lock.type=redis and lock.wakeup=true): notified = a release notification woke the waiter, probed = acquired on a probe no notification preceded, exhausted = budget spent, interrupted. The one signal that the pub/sub wake-up path works: probed outgrowing notified under contention means the pub/sub connection stopped delivering — waiters still succeed, on the 25ms fallback probe.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 132
+      },
+      "id": 49,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (result) (rate(event_outboxer_lock_wakeups_total{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Lock wake-ups by result (Redis locker)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Lock attempts per second per event type by outcome (the _count series of lock.wait_time): acquired = the handler ran under the lock, busy = released back to PENDING after the wait. Together with 'Lock acquisition failures by outcome' (which also carries error) this is the contention picture per type; the per-key picture lives in traces (event_outboxer.lock.key).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 132
+      },
+      "id": 50,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (event_type, outcome) (rate(event_outboxer_lock_wait_time_seconds_count{environment=~\"$environment\",service=~\"$service\",pod=~\"$pod\",event_type=~\"$eventType\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}: {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Lock acquisitions vs busy by event type",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "datasource": {
         "type": "prometheus",
@@ -2234,7 +2591,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 124
+        "y": 140
       },
       "id": 36,
       "panels": [],
@@ -2272,7 +2629,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 125
+        "y": 141
       },
       "id": 37,
       "options": {
@@ -2336,7 +2693,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 125
+        "y": 141
       },
       "id": 38,
       "options": {
@@ -2413,7 +2770,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 125
+        "y": 141
       },
       "id": 39,
       "options": {
@@ -2504,7 +2861,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 133
+        "y": 149
       },
       "id": 40,
       "options": {
@@ -2566,7 +2923,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 133,
+        "y": 149,
         "w": 12,
         "h": 8
       },

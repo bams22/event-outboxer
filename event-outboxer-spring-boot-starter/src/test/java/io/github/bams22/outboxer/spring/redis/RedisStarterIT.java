@@ -126,6 +126,50 @@ class RedisStarterIT {
     }
 
     @Test
+    void wakeupResultCountersFollowTheWaits() {
+        runner().withPropertyValues(
+                        "event-outboxer.redis.host=" + REDIS.getHost(),
+                        "event-outboxer.redis.port=" + REDIS.getMappedPort(6379),
+                        "event-outboxer.lock.type=redis")
+                .withBean(io.micrometer.core.instrument.simple.SimpleMeterRegistry.class)
+                .run(
+                        ctx -> {
+                            assertThat(ctx).hasNotFailed();
+                            var registry =
+                                    ctx.getBean(
+                                            io.micrometer.core.instrument.simple.SimpleMeterRegistry
+                                                    .class);
+                            ctx.getBean(io.micrometer.core.instrument.binder.MeterBinder.class)
+                                    .bindTo(registry);
+                            RedisEntityLocker locker =
+                                    (RedisEntityLocker) ctx.getBean(EntityLocker.class);
+                            // A wait that runs out of budget while the key stays held.
+                            try (var handle =
+                                    locker.tryLock("counted", Duration.ofSeconds(30))
+                                            .orElseThrow()) {
+                                assertThat(
+                                                locker.tryLock(
+                                                        "counted",
+                                                        Duration.ofSeconds(30),
+                                                        Duration.ofMillis(40)))
+                                        .isEmpty();
+                            }
+                            assertThat(
+                                            registry.get("event_outboxer.lock.wakeups")
+                                                    .tag("result", "exhausted")
+                                                    .functionCounter()
+                                                    .count())
+                                    .isEqualTo(1.0);
+                            assertThat(
+                                            registry.get("event_outboxer.lock.wakeups")
+                                                    .tag("result", "notified")
+                                                    .functionCounter()
+                                                    .count())
+                                    .isZero();
+                        });
+    }
+
+    @Test
     void wakeupOffKeepsPollingAndOpensNoPubSubConnection() {
         runner().withPropertyValues(
                         "event-outboxer.redis.host=" + REDIS.getHost(),

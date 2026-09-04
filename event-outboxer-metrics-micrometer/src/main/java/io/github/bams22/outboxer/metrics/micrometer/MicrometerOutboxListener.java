@@ -24,6 +24,7 @@ import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
+import io.github.bams22.outboxer.api.observer.LockReleasedInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
@@ -234,6 +235,13 @@ public final class MicrometerOutboxListener implements OutboxListener {
     private void recordLockWait(String eventType, String outcome, java.time.Duration waited) {
         registry.timer(metric("lock.wait_time"), "event_type", eventType, "outcome", outcome)
                 .record(waited.toNanos(), TimeUnit.NANOSECONDS);
+    }
+
+    @Override
+    public void onLockReleased(LockReleasedInfo info) {
+        // Hold time (handler + finalize): the number lock-wait and lock-ttl are sized against.
+        registry.timer(metric("lock.hold_time"), "event_type", info.eventType())
+                .record(info.held().toNanos(), TimeUnit.NANOSECONDS);
     }
 
     @Override

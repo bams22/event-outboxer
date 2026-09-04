@@ -158,6 +158,14 @@ public interface OutboxListener {
     }
 
     /**
+     * Called when the engine released an entity lock after the handler and its finalize; {@code
+     * info.held()} is the hold time, the number that sizes {@code lock-wait} and {@code lock-ttl}.
+     */
+    default void onLockReleased(LockReleasedInfo info) {
+        // no-op
+    }
+
+    /**
      * Called when {@code LockHandle.close()} swallowed a release error. The lock will free itself
      * when its TTL expires or the session ends.
      */

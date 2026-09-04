@@ -27,6 +27,7 @@ import io.micrometer.tracing.handler.PropagatingSenderTracingObservationHandler;
 import io.micrometer.tracing.propagation.Propagator;
 import io.micrometer.tracing.test.simple.SimpleSpan;
 import io.micrometer.tracing.test.simple.SimpleTracer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -125,6 +126,26 @@ class MicrometerOutboxTracerTest {
 
     private static OutboxTracer.ProcessSpanInfo processInfo(Map<String, String> stored) {
         return new OutboxTracer.ProcessSpanInfo(UUID.randomUUID(), "T", 3, WORKER, stored);
+    }
+
+    @Test
+    void consumerSpanCarriesTheLockKeyAndWaitWhenTheHandlerDeclaresOne() {
+        OutboxTracer.ProcessSpan process =
+                outboxTracer.startProcessSpan(
+                        new OutboxTracer.ProcessSpanInfo(
+                                UUID.randomUUID(),
+                                "T",
+                                1,
+                                WORKER,
+                                Map.of(),
+                                OutboxTracer.Propagation.CHILD,
+                                "order-42",
+                                Duration.ofMillis(37)));
+        process.close();
+
+        assertThat(tracer.onlySpan().getTags())
+                .containsEntry("event_outboxer.lock.key", "order-42")
+                .containsEntry("event_outboxer.lock.wait_ms", "37");
     }
 
     private static OutboxTracer.ProcessSpanInfo linkedInfo(Map<String, String> stored) {

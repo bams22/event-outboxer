@@ -177,6 +177,15 @@ public final class RedisEntityLocker implements EntityLocker {
         return wakeups != null ? wakeups.waitingTopics() : 0;
     }
 
+    /**
+     * How the bounded waits ended so far — {@code notified} should dominate; a silently broken
+     * pub/sub path shows up as every acquisition under {@code probed}. All zeros without a wake-up
+     * connection. The starter publishes these as {@code lock.wakeups{result}} counters.
+     */
+    public LockWaiters.WakeupStats wakeupStats() {
+        return wakeups != null ? wakeups.stats() : new LockWaiters.WakeupStats(0, 0, 0, 0);
+    }
+
     /** Pub/sub channel the release of {@code key} is published on. */
     public String channelFor(String key) {
         return channelPrefix + key;

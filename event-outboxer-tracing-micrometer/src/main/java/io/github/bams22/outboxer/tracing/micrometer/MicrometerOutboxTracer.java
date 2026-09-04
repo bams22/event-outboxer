@@ -224,6 +224,16 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
                                 OutboxTraceAttributes.ATTEMPT, String.valueOf(info.attempt()))
                         .highCardinalityKeyValue(
                                 OutboxTraceAttributes.WORKER_ID, info.workerId().value());
+        if (info.lockKey() != null) {
+            // Which key the handler ran under and what it cost to get it (ADR-0035): the span is
+            // where a per-key question belongs, metrics carry only the event type.
+            observation.highCardinalityKeyValue(OutboxTraceAttributes.LOCK_KEY, info.lockKey());
+            if (info.lockWait() != null) {
+                observation.highCardinalityKeyValue(
+                        OutboxTraceAttributes.LOCK_WAIT_MS,
+                        String.valueOf(info.lockWait().toMillis()));
+            }
+        }
         if (info.propagation() == Propagation.LINK) {
             // The span shape itself (root + link) is OutboxReceiverTracingObservationHandler's job;
             // the observation only carries the breadcrumb.

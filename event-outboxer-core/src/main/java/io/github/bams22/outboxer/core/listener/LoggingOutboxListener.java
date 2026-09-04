@@ -25,6 +25,7 @@ import io.github.bams22.outboxer.api.observer.HeartbeatFailedInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
+import io.github.bams22.outboxer.api.observer.LockReleasedInfo;
 import io.github.bams22.outboxer.api.observer.MaintenanceRunInfo;
 import io.github.bams22.outboxer.api.observer.OrphansReclaimedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
@@ -138,6 +139,11 @@ public final class LoggingOutboxListener implements OutboxListener {
     @Override
     public void onLockAcquisitionFailed(LockAcquisitionInfo info) {
         log.debug("lock busy {}", info);
+    }
+
+    @Override
+    public void onLockReleased(LockReleasedInfo info) {
+        log.trace("lock released {}", info);
     }
 
     @Override

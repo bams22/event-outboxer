@@ -227,7 +227,9 @@ on top — boundaries merge.
 | `event_outboxer.handler.abandoned` | counter | `event_type` | a force-reclaimed dispatch was still running `abandonedHandlerGrace` later — it ignored the interrupt, or the type set `interrupt-stuck-handler: false` and was never asked to stop | **every increment is a handler thread this JVM cannot get back until the handler returns on its own** — normally blocked in something without a timeout; the row itself is safe (already back in PENDING). `HandlerAbandonedInfo.interrupted` and the log level (ERROR vs WARN) separate the runaway handler from the configured opt-out |
 | `event_outboxer.lock.acquisition_failed` | counter | `event_type`, `outcome` | `EntityLocker.tryLock(...)` returned empty (`outcome="busy"`) or threw (`outcome="error"`) | `busy` is normal contention, safe up to a point; `error` means the locker backend is failing — alert on it separately |
 | `event_outboxer.lock.wait_time` | timer | `event_type`, `outcome` | every `EntityLocker.tryLock(...)` for a handler that declares a lock key: `outcome="acquired"` records how long the acquisition took (≈0 when the key was free, up to the type's `lock-wait` when it was busy first); `outcome="busy"` records the whole spent `lock-wait` budget when the engine gave up (ADR-0035) | the `acquired` series' `_count` is the total number of acquisitions and its histogram shows which share needed the bounded wait — a large share near the `lock-wait` ceiling means the wait is too short for the holders' hold time; a growing `busy` count next to it means the wait is spent for nothing (slow holder, dead holder's lease) and `lock-wait` should come down for that type |
+| `event_outboxer.lock.hold_time` | timer | `event_type` | the engine released an entity lock after the handler and its finalize; records acquisition → release | **the number `lock-wait` and `lock-ttl` are sized against**: a wait shorter than the typical hold rarely pays off, a TTL not comfortably above the longest hold risks losing exclusion. Compare with `processing_time` — the difference is the finalize |
 | `event_outboxer.lock.release_failed` | counter | `event_type` | `LockHandle.close()` threw | Redis/PG returning errors on release — check the locker's backend |
+| `event_outboxer.lock.wakeups` | counter | `result` | Redis locker with its pub/sub wake-up only (`lock.type=redis`, `lock.wakeup=true`): every bounded wait that ended — `notified` (a release notification woke the waiter), `probed` (acquired on a probe no notification preceded), `exhausted` (budget spent), `interrupted` | the one signal that the wake-up path works: healthy pub/sub shows `notified` dominating; a silently broken pub/sub connection shows every acquisition under `probed` (the waiter still gets the lock, at the 25 ms fallback cadence) — alert when `probed` outgrows `notified` under contention. No `event_type` tag: the locker sits below the dispatcher |
 | `event_outboxer.workers.registered` | counter | — | once per `OutboxEngine.start()` (and once per heartbeat-driven re-registration after a peer reaped the row) | increases by 1 per app restart (and per replica) |
 | `event_outboxer.workers.graceful_stops` | counter | — | once per graceful shutdown, after `workers.graceful_stop = TRUE` | equal to `workers.registered` over long windows means no crashes |
 | `event_outboxer.heartbeat.failed` | counter | — | `WorkerRegistry.heartbeat(...)` threw or returned `false` | DB connectivity hiccup — sustained non-zero triggers orphan recovery from peers. Pair with the `heartbeat.last_success_age_seconds` gauge, which also catches the failure mode this counter cannot: a stalled maintenance scheduler |
@@ -367,23 +369,24 @@ you care about.
 | 10 | `onEventSerializationError` | errors | payload could not be deserialised into `handler.payloadType()` | `eventId`, `eventType`, `payloadClass`, `cause` |
 | 11 | `onLockAcquired` | dispatch | `EntityLocker.tryLock(...)` yielded the lock for a handler that declares a lock key, right before the handler runs — every acquisition, immediate ones included | `eventId`, `eventType`, `lockKey`, `waited` (≈0 when the key was free, up to `lock-wait` when it was busy first, ADR-0035) |
 | 12 | `onLockAcquisitionFailed` | errors | `EntityLocker.tryLock(...)` returned empty after the type's bounded `lock-wait`, if any (`outcome=BUSY` — normal contention, informational) or threw (`outcome=ERROR` — locker backend failure) | `eventId`, `eventType`, `lockKey`, `outcome`, `waited`, `cause` (null for BUSY) |
-| 13 | `onLockReleaseFailed` | errors | `LockHandle.close()` threw (locker backend refused release) | `eventId`, `eventType`, `lockKey`, `cause` |
-| 14 | `onWorkerRegistered` | worker | once per engine start, after the `event_outboxer.workers` row is inserted | `info` (full `WorkerInfo`) |
-| 15 | `onWorkerGracefulStop` | worker | once per graceful shutdown, after `graceful_stop = TRUE` | `workerId` |
-| 16 | `onWorkerDeregistered` | worker | once per graceful shutdown, after `DELETE FROM event_outboxer.workers` | `workerId` |
-| 17 | `onHeartbeatFailed` | worker | periodic heartbeat write threw or affected zero rows | `workerId`, `cause` |
-| 18 | `onOrphansReclaimed` | recovery | `OrphanRecoveryTask` moved ≥1 row back to `PENDING` | `deadWorkers` collection, `eventCount` |
-| 19 | `onStuckHandlerReclaimed` | recovery | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | `eventId`, `eventType`, `elapsed`, `workerId`, `interrupted` (whether the handler thread was interrupted) |
-| 20 | `onStorageError` | storage | any storage call raised a `StorageException` | `operation`, `cause` |
-| 21 | `onDispatchRejected` | dispatch | per-type handler executor rejected via `RejectedExecutionException` | `eventId`, `eventType`, `cause` |
-| 22 | `onEngineCrashed` | engine | the background health check detected that a critical component (typically a poller thread) is no longer alive | `reason`, `cause` (nullable — uncaught `Error` that killed the thread is usually lost), `at`, `workerId` |
-| 23 | `onPollCompleted` | polling | after every claim attempt of a per-type poller, including empty polls — the **highest-frequency callback** (up to once per `pollMinInterval` per type); keep implementations O(1) | `eventType`, `requested`, `claimed`, `duration` (wall time of the claim query) |
-| 24 | `onPollerSaturated` | polling | poller skipped a claim cycle because the handler executor had no free capacity (not fired while merely waiting for the `claim-min-free` refill threshold) | `eventType` |
-| 25 | `onStaleClaimsSwept` | maintenance | stale-claim sweeper released abandoned PROCESSING rows back to PENDING (fires only when ≥1 was swept) | `count`, `threshold` |
-| 26 | `onRetentionPurged` | maintenance | retention task deleted rows past their window (fires only when ≥1 was purged) | `archivedPurged`, `disabledPurged` |
-| 27 | `onHandlerAbandoned` | recovery | fires **once** per force-reclaimed dispatch that was still running `abandonedHandlerGrace` later — its thread keeps a slot of the type's pool until it returns. `interrupted=true`: the handler ignored the interrupt (logged ERROR); `interrupted=false`: the type set `interrupt-stuck-handler: false`, so it was never asked to stop (logged WARN) | `eventId`, `eventType`, `workerId`, `threadName`, `elapsed`, `interrupted` |
-| 28 | `onEventCoalesced` | publish | a keyed publish coalesced into an existing PENDING event instead of inserting (ADR-0021) — fires instead of `onEventPublished`, still **before the caller's transaction commits** | `existingEventId`, `eventType`, `dedupKey` (free-form — never a metric tag) |
-| 29 | `onMaintenanceRunCompleted` | maintenance | after every run of a periodic maintenance task, OK or FAILED — fired by the scheduler's guarded wrapper, which keeps a throwing task on its schedule | `task` (stable name, safe as a tag), `result`, `cause` (null on OK) |
+| 13 | `onLockReleased` | dispatch | the engine released an entity lock after the handler and its finalize (`LockHandle.close()` returned normally) | `eventId`, `eventType`, `lockKey`, `held` — the hold time `lock-wait` and `lock-ttl` are sized against |
+| 14 | `onLockReleaseFailed` | errors | `LockHandle.close()` threw (locker backend refused release) | `eventId`, `eventType`, `lockKey`, `cause` |
+| 15 | `onWorkerRegistered` | worker | once per engine start, after the `event_outboxer.workers` row is inserted | `info` (full `WorkerInfo`) |
+| 16 | `onWorkerGracefulStop` | worker | once per graceful shutdown, after `graceful_stop = TRUE` | `workerId` |
+| 17 | `onWorkerDeregistered` | worker | once per graceful shutdown, after `DELETE FROM event_outboxer.workers` | `workerId` |
+| 18 | `onHeartbeatFailed` | worker | periodic heartbeat write threw or affected zero rows | `workerId`, `cause` |
+| 19 | `onOrphansReclaimed` | recovery | `OrphanRecoveryTask` moved ≥1 row back to `PENDING` | `deadWorkers` collection, `eventCount` |
+| 20 | `onStuckHandlerReclaimed` | recovery | watchdog force-reclaimed a handler exceeding `handlerMaxRuntime` | `eventId`, `eventType`, `elapsed`, `workerId`, `interrupted` (whether the handler thread was interrupted) |
+| 21 | `onStorageError` | storage | any storage call raised a `StorageException` | `operation`, `cause` |
+| 22 | `onDispatchRejected` | dispatch | per-type handler executor rejected via `RejectedExecutionException` | `eventId`, `eventType`, `cause` |
+| 23 | `onEngineCrashed` | engine | the background health check detected that a critical component (typically a poller thread) is no longer alive | `reason`, `cause` (nullable — uncaught `Error` that killed the thread is usually lost), `at`, `workerId` |
+| 24 | `onPollCompleted` | polling | after every claim attempt of a per-type poller, including empty polls — the **highest-frequency callback** (up to once per `pollMinInterval` per type); keep implementations O(1) | `eventType`, `requested`, `claimed`, `duration` (wall time of the claim query) |
+| 25 | `onPollerSaturated` | polling | poller skipped a claim cycle because the handler executor had no free capacity (not fired while merely waiting for the `claim-min-free` refill threshold) | `eventType` |
+| 26 | `onStaleClaimsSwept` | maintenance | stale-claim sweeper released abandoned PROCESSING rows back to PENDING (fires only when ≥1 was swept) | `count`, `threshold` |
+| 27 | `onRetentionPurged` | maintenance | retention task deleted rows past their window (fires only when ≥1 was purged) | `archivedPurged`, `disabledPurged` |
+| 28 | `onHandlerAbandoned` | recovery | fires **once** per force-reclaimed dispatch that was still running `abandonedHandlerGrace` later — its thread keeps a slot of the type's pool until it returns. `interrupted=true`: the handler ignored the interrupt (logged ERROR); `interrupted=false`: the type set `interrupt-stuck-handler: false`, so it was never asked to stop (logged WARN) | `eventId`, `eventType`, `workerId`, `threadName`, `elapsed`, `interrupted` |
+| 29 | `onEventCoalesced` | publish | a keyed publish coalesced into an existing PENDING event instead of inserting (ADR-0021) — fires instead of `onEventPublished`, still **before the caller's transaction commits** | `existingEventId`, `eventType`, `dedupKey` (free-form — never a metric tag) |
+| 30 | `onMaintenanceRunCompleted` | maintenance | after every run of a periodic maintenance task, OK or FAILED — fired by the scheduler's guarded wrapper, which keeps a throwing task on its schedule | `task` (stable name, safe as a tag), `result`, `cause` (null on OK) |
 
 ### Writing custom listeners
 
@@ -445,6 +448,8 @@ The trace active at `publish()` continues into handler execution
 | `event_outboxer.worker.id` | consumer | worker executing the handler |
 | `event_outboxer.coalesced_into` | producer | id of the existing PENDING event this publish coalesced into (ADR-0021); the surviving row keeps the first publish's context |
 | `event_outboxer.propagation` | both | `link` on the spans of a deferred event — the consumer is a new root with a span link to the producer instead of its child; absent otherwise |
+| `event_outboxer.lock.key` | consumer | the entity-lock key the handler ran under (ADR-0012); absent when the handler declares none. High-cardinality by nature — the span is where "which key is hot" belongs, the metrics carry only `event_type` |
+| `event_outboxer.lock.wait_ms` | consumer | milliseconds spent acquiring that lock, the bounded wait of ADR-0035 included; absent without a key |
 
 ### Choosing an adapter
 
@@ -610,6 +615,15 @@ rollout; logs show `unknown event type …`.
 - Stuck holder: a handler that forgot to return and still holds a
   Redis lock. Look for the `event_outboxer.handler.stuck_time` count —
   if zero, the holder is alive but slow.
+- Holds longer than the wait: compare `event_outboxer.lock.hold_time`
+  with the type's `lock-wait` — waiters give up when the hold routinely
+  outlasts the budget. A trace of a slow event shows the key
+  (`event_outboxer.lock.key`) and what the acquisition cost
+  (`event_outboxer.lock.wait_ms`).
+- Wake-up silently degraded (Redis locker): `event_outboxer.lock.wakeups`
+  with `probed` outgrowing `notified` means the pub/sub connection no
+  longer delivers release notifications — waiters still succeed, on the
+  25 ms fallback probe.
 - Locker backend issue: `event_outboxer.lock.release_failed` non-zero hints
   at Redis / PG connectivity trouble.
 

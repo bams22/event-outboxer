@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import org.jspecify.annotations.Nullable;
@@ -67,6 +68,29 @@ public final class LockWaiters {
 
     private final Transport transport;
     private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
+    private final LongAdder notified = new LongAdder();
+    private final LongAdder probed = new LongAdder();
+    private final LongAdder exhausted = new LongAdder();
+    private final LongAdder interrupted = new LongAdder();
+
+    /**
+     * How the waits of {@link #tryLockWithWakeup} ended, cumulative since construction — the signal
+     * that the notification path works: healthy pub/sub shows {@code notified} dominating, a
+     * silently broken one shows every acquisition under {@code probed}.
+     *
+     * @param notified acquired right after a release notification woke the waiter
+     * @param probed acquired on a probe no notification preceded — the re-probe after subscribing,
+     *     or a fallback probe
+     * @param exhausted the budget ran out while the key stayed busy
+     * @param interrupted the waiting thread was interrupted
+     */
+    public record WakeupStats(long notified, long probed, long exhausted, long interrupted) {
+
+        /** Waits that ended by acquiring the lock, whichever way. */
+        public long acquired() {
+            return notified + probed;
+        }
+    }
 
     public LockWaiters(Transport transport) {
         this.transport = Objects.requireNonNull(transport, "transport must not be null");
@@ -111,6 +135,7 @@ public final class LockWaiters {
         }
         long deadline = System.nanoTime() + maxWait.toNanos();
         Ticket ticket = register(topic);
+        boolean woken = false;
         try {
             while (true) {
                 // Read the generation before the probe: a release that lands between the probe
@@ -118,24 +143,34 @@ public final class LockWaiters {
                 long seen = ticket.generation();
                 held = locker.tryLock(key, ttl);
                 if (held.isPresent()) {
+                    (woken ? notified : probed).increment();
                     return held;
                 }
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) {
+                    exhausted.increment();
                     return Optional.empty();
                 }
                 try {
-                    ticket.awaitNewer(
-                            seen,
-                            Duration.ofNanos(Math.min(remaining, fallbackProbeInterval.toNanos())));
+                    woken =
+                            ticket.awaitNewer(
+                                    seen,
+                                    Duration.ofNanos(
+                                            Math.min(remaining, fallbackProbeInterval.toNanos())));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    interrupted.increment();
                     return Optional.empty();
                 }
             }
         } finally {
             unregister(ticket);
         }
+    }
+
+    /** Snapshot of how the waits ended so far. */
+    public WakeupStats stats() {
+        return new WakeupStats(notified.sum(), probed.sum(), exhausted.sum(), interrupted.sum());
     }
 
     /**

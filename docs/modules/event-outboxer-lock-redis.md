@@ -34,7 +34,11 @@ the single-instance Redlock recipe.
   a key that expired instead of being released must not cost the whole
   budget. Without a pub/sub connection the wait polls `SET NX PX`
   every 2–10 ms (the SPI default). `PUBLISH` is issued either way: one
-  cheap command, and the waiters may sit in another JVM.
+  cheap command, and the waiters may sit in another JVM. The starter
+  publishes how the waits ended as `event_outboxer.lock.wakeups{result}`
+  (`notified` / `probed` / `exhausted` / `interrupted`): `probed`
+  outgrowing `notified` under contention means the pub/sub path stopped
+  delivering and the waiters live on the fallback probe.
 - **TTL always honoured** — exclusion holds until `min(close(), ttl)`;
   after a crash the key self-frees at TTL. There is no renewal: a
   handler outliving the TTL can overlap with the next holder, which is

@@ -114,6 +114,15 @@ public final class OtelOutboxTracer implements OutboxTracer {
                                 info.eventId().toString())
                         .setAttribute(OutboxTraceAttributes.ATTEMPT, (long) info.attempt())
                         .setAttribute(OutboxTraceAttributes.WORKER_ID, info.workerId().value());
+        if (info.lockKey() != null) {
+            // Which key the handler ran under and what it cost to get it (ADR-0035): the span is
+            // where a per-key question belongs, metrics carry only the event type.
+            builder.setAttribute(OutboxTraceAttributes.LOCK_KEY, info.lockKey());
+            if (info.lockWait() != null) {
+                builder.setAttribute(
+                        OutboxTraceAttributes.LOCK_WAIT_MS, info.lockWait().toMillis());
+            }
+        }
         Context scopeParent;
         if (info.propagation() == Propagation.LINK) {
             // Deferred event (ADR-0023, 2026-08-28 amendment): a new root that links to the stored

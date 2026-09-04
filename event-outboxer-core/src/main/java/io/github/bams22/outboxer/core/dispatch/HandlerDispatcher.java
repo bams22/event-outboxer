@@ -26,6 +26,7 @@ import io.github.bams22.outboxer.api.observer.HandlerErrorInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
 import io.github.bams22.outboxer.api.observer.LockReleaseInfo;
+import io.github.bams22.outboxer.api.observer.LockReleasedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.SerializationErrorInfo;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
@@ -234,7 +235,7 @@ public final class HandlerDispatcher {
 
         EventTypeConfig cfg = typeConfig.forType(claimed.eventType());
         String lockKey = extractLockKey(handler, payload);
-        LockHandle lock = null;
+        AcquiredLock lock = null;
         try {
             if (lockKey != null) {
                 lock = tryAcquireLock(claimed, lockKey, cfg, handle);
@@ -243,7 +244,7 @@ public final class HandlerDispatcher {
                     return;
                 }
             }
-            EventOutcome outcome = invokeHandler(claimed, handler, payload);
+            EventOutcome outcome = invokeHandler(claimed, handler, payload, lockKey, lock);
             // A watchdog interrupt has served its whole purpose the moment the handler unwound.
             // Clear it before any storage or locker call: an interrupted finalize can kill a pooled
             // JDBC connection — and under group-commit batching that failure is shared with every
@@ -426,7 +427,10 @@ public final class HandlerDispatcher {
      * interrupted JDBC call could kill a pooled connection, and the engine's shutdown release of
      * every claim this worker still holds returns the row to {@code PENDING} anyway.
      */
-    private @Nullable LockHandle tryAcquireLock(
+    /** An acquired entity lock with what it cost and when it started, for the release callback. */
+    private record AcquiredLock(LockHandle handle, Duration waited, Instant acquiredAt) {}
+
+    private @Nullable AcquiredLock tryAcquireLock(
             ClaimedEvent claimed, String lockKey, EventTypeConfig cfg, DispatchHandle handle) {
         Instant waitStart = clock.now();
         Optional<LockHandle> held;
@@ -495,7 +499,7 @@ public final class HandlerDispatcher {
         }
         listener.onLockAcquired(
                 new LockAcquiredInfo(claimed.id(), claimed.eventType(), lockKey, waited));
-        return held.get();
+        return new AcquiredLock(held.get(), waited, clock.now());
     }
 
     /**
@@ -520,21 +524,34 @@ public final class HandlerDispatcher {
     }
 
     private void closeLock(
-            ClaimedEvent claimed, @Nullable String lockKey, @Nullable LockHandle lock) {
+            ClaimedEvent claimed, @Nullable String lockKey, @Nullable AcquiredLock lock) {
         if (lock == null) {
             return;
         }
+        String key = lockKey != null ? lockKey : "";
         try {
-            lock.close();
+            lock.handle().close();
         } catch (RuntimeException ex) {
             listener.onLockReleaseFailed(
-                    new LockReleaseInfo(
-                            claimed.id(), claimed.eventType(), lockKey != null ? lockKey : "", ex));
+                    new LockReleaseInfo(claimed.id(), claimed.eventType(), key, ex));
+            return;
         }
+        // Hold time = handler + finalize: the lock is released after routeOutcome. That is the
+        // number lock-wait and lock-ttl are sized against.
+        listener.onLockReleased(
+                new LockReleasedInfo(
+                        claimed.id(),
+                        claimed.eventType(),
+                        key,
+                        Duration.between(lock.acquiredAt(), clock.now())));
     }
 
     private EventOutcome invokeHandler(
-            ClaimedEvent claimed, EventHandler<?> handler, Object payload) {
+            ClaimedEvent claimed,
+            EventHandler<?> handler,
+            Object payload,
+            @Nullable String lockKey,
+            @Nullable AcquiredLock lock) {
         Instant attemptStart = clock.now();
         // In-flight registration happens in dispatch() and brackets the whole pipeline.
         // The CONSUMER span (ADR-0023) wraps only the handler invocation: it restores the trace
@@ -552,7 +569,9 @@ public final class HandlerDispatcher {
                                 claimed.attempts() + 1,
                                 workerId,
                                 carrier,
-                                TracePropagationMarker.propagationOf(stored)))) {
+                                TracePropagationMarker.propagationOf(stored),
+                                lockKey,
+                                lock != null ? lock.waited() : null))) {
             try {
                 EventContext ctx =
                         new EventContext(

@@ -32,6 +32,7 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -73,6 +74,37 @@ class OtelOutboxTracerTest {
     private static OutboxTracer.ProcessSpanInfo processInfo(
             UUID eventId, Map<String, String> stored) {
         return new OutboxTracer.ProcessSpanInfo(eventId, "T", 1, WORKER, stored);
+    }
+
+    @Test
+    void consumerSpanCarriesTheLockKeyAndWaitWhenTheHandlerDeclaresOne() {
+        UUID id = UUID.randomUUID();
+        OutboxTracer.ProcessSpan process =
+                tracer.startProcessSpan(
+                        new OutboxTracer.ProcessSpanInfo(
+                                id,
+                                "T",
+                                1,
+                                WORKER,
+                                Map.of(),
+                                OutboxTracer.Propagation.CHILD,
+                                "order-42",
+                                Duration.ofMillis(37)));
+        process.close();
+
+        SpanData consumer = exporter.getFinishedSpanItems().get(0);
+        assertThat(consumer.getAttributes().get(AttributeKey.stringKey("event_outboxer.lock.key")))
+                .isEqualTo("order-42");
+        assertThat(
+                        consumer.getAttributes()
+                                .get(AttributeKey.longKey("event_outboxer.lock.wait_ms")))
+                .isEqualTo(37L);
+
+        exporter.reset();
+        tracer.startProcessSpan(processInfo(id, Map.of())).close();
+        SpanData keyless = exporter.getFinishedSpanItems().get(0);
+        assertThat(keyless.getAttributes().get(AttributeKey.stringKey("event_outboxer.lock.key")))
+                .isNull();
     }
 
     private static OutboxTracer.ProcessSpanInfo linkedInfo(

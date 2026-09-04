@@ -78,6 +78,21 @@ class MetricsDistributionDefaultsTest {
                             .histogramCounts();
             assertThat(stuck).hasSize(8);
             assertThat(stuck[0].bucket(TimeUnit.SECONDS)).isEqualTo(30.0);
+            // Lock wait: dense around the default 100 ms lock-wait budget (ADR-0035).
+            CountAtBucket[] wait =
+                    timer(registry, "event_outboxer.lock.wait_time")
+                            .takeSnapshot()
+                            .histogramCounts();
+            assertThat(wait).hasSize(12);
+            assertThat(wait[0].bucket(TimeUnit.MILLISECONDS)).isEqualTo(1.0);
+            assertThat(wait[6].bucket(TimeUnit.MILLISECONDS)).isEqualTo(100.0);
+            // Lock hold: the same grid plus the tail up to the default lock-ttl (10m).
+            CountAtBucket[] hold =
+                    timer(registry, "event_outboxer.lock.hold_time")
+                            .takeSnapshot()
+                            .histogramCounts();
+            assertThat(hold).hasSize(17);
+            assertThat(hold[16].bucket(TimeUnit.MINUTES)).isEqualTo(10.0);
 
             // SLO buckets only — the defaults deliberately publish no client-side percentiles.
             assertThat(timer(registry, TIMER).takeSnapshot().percentileValues()).isEmpty();

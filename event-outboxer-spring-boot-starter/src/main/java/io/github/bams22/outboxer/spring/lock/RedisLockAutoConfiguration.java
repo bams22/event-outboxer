@@ -17,6 +17,10 @@ import io.github.bams22.outboxer.spring.redis.OutboxRedisConnectionResolver;
 import io.github.bams22.outboxer.spring.redis.RedisConnectionAutoConfiguration;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import io.micrometer.core.instrument.FunctionCounter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.MeterBinder;
+import java.util.function.ToLongFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
@@ -27,6 +31,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * Registers {@link RedisEntityLocker} when {@code event-outboxer.lock.type=redis}. The connection
@@ -78,5 +83,47 @@ public class RedisLockAutoConfiguration {
                 .keyPrefix(properties.getLock().getKeyPrefix())
                 .wakeupConnection(wakeup)
                 .build();
+    }
+
+    /**
+     * {@code <metrics.prefix>.lock.wakeups{result}} — how the Redis locker's bounded waits ended
+     * (ADR-0035): {@code notified} (a release notification woke the waiter), {@code probed}
+     * (acquired on a probe no notification preceded), {@code exhausted} (budget spent), {@code
+     * interrupted}. The one signal that the pub/sub path works: a broken one shows every
+     * acquisition under {@code probed}. Registered as a {@link MeterBinder} so Boot applies it to
+     * every registry; absent without the wake-up connection.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass({MeterRegistry.class, MeterBinder.class})
+    static class WakeupMetricsConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(name = "outboxLockWakeupMeters")
+        public MeterBinder outboxLockWakeupMeters(
+                ObjectProvider<EntityLocker> lockerProvider, OutboxProperties properties) {
+            String name = properties.getMetrics().getPrefix() + ".lock.wakeups";
+            return registry -> {
+                if (!(lockerProvider.getIfAvailable() instanceof RedisEntityLocker locker)
+                        || !locker.wakeupEnabled()) {
+                    return;
+                }
+                register(registry, name, locker, "notified", s -> s.notified());
+                register(registry, name, locker, "probed", s -> s.probed());
+                register(registry, name, locker, "exhausted", s -> s.exhausted());
+                register(registry, name, locker, "interrupted", s -> s.interrupted());
+            };
+        }
+
+        private static void register(
+                MeterRegistry registry,
+                String name,
+                RedisEntityLocker locker,
+                String result,
+                ToLongFunction<io.github.bams22.outboxer.spi.LockWaiters.WakeupStats> field) {
+            FunctionCounter.builder(name, locker, l -> field.applyAsLong(l.wakeupStats()))
+                    .tag("result", result)
+                    .description("How the Redis locker's bounded lock waits ended (ADR-0035)")
+                    .register(registry);
+        }
     }
 }

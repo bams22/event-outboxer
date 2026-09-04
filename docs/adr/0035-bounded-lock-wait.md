@@ -181,6 +181,20 @@ Micrometer listener can publish a timer of time spent waiting and the
 share of acquisitions that succeeded after a wait; the `BUSY` outcome
 keeps meaning "gave up after `lock-wait`".
 
+*Added 2026-09-05:* three more signals close the gaps the first cut
+left. `onLockReleased` / `lock.hold_time{event_type}` reports the
+lock's hold time (handler plus finalize), the number `lock-wait` and
+`lock-ttl` are sized against and which no other meter carried
+(`processing_time` stops before the finalize). `lock.wakeups{result}`
+(starter-registered, Redis locker with the pub/sub wake-up) counts how
+each wait ended — `notified`, `probed`, `exhausted`, `interrupted` — so
+a pub/sub connection that silently stopped delivering shows up as
+`probed` outgrowing `notified` instead of as a slightly slower fleet.
+And the consumer span carries `event_outboxer.lock.key` and
+`event_outboxer.lock.wait_ms` (ADR-0023 amendment): the per-key
+question belongs to tracing, not to metric cardinality. The Grafana
+dashboard's *Entity locks* row shows all of them.
+
 ## Validation plan
 
 The benchmark harness (ADR-0034) exists for exactly this decision:

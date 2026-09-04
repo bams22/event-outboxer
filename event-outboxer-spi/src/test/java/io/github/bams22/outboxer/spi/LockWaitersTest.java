@@ -320,6 +320,66 @@ class LockWaitersTest {
     }
 
     @Test
+    @DisplayName("stats classify how each wait ended: notified, probed, exhausted, interrupted")
+    void statsClassifyWaitEndings() throws Exception {
+        LockWaiters waiters = new LockWaiters(new RecordingTransport());
+        AtomicBoolean free = new AtomicBoolean(false);
+        EntityLocker locker = (key, ttl) -> free.get() ? Optional.of(HANDLE) : Optional.empty();
+
+        // notified: parked, then woken, then acquired
+        Thread waiter =
+                new Thread(
+                        () ->
+                                waiters.tryLockWithWakeup(
+                                        locker,
+                                        "k",
+                                        Duration.ofSeconds(30),
+                                        Duration.ofSeconds(30),
+                                        "t",
+                                        Duration.ofSeconds(10)));
+        waiter.start();
+        Thread.sleep(50);
+        free.set(true);
+        waiters.wake("t");
+        waiter.join(TimeUnit.SECONDS.toMillis(5));
+        assertThat(waiters.stats().notified()).isEqualTo(1);
+
+        // probed: the key frees up while parked, found by the fallback probe
+        free.set(false);
+        Thread prober =
+                new Thread(
+                        () ->
+                                waiters.tryLockWithWakeup(
+                                        locker,
+                                        "k",
+                                        Duration.ofSeconds(30),
+                                        Duration.ofSeconds(30),
+                                        "t",
+                                        Duration.ofMillis(20)));
+        prober.start();
+        Thread.sleep(30);
+        free.set(true);
+        prober.join(TimeUnit.SECONDS.toMillis(5));
+        assertThat(waiters.stats().probed()).isEqualTo(1);
+
+        // exhausted: never freed within the budget
+        free.set(false);
+        assertThat(
+                        waiters.tryLockWithWakeup(
+                                locker,
+                                "k",
+                                Duration.ofSeconds(30),
+                                Duration.ofMillis(40),
+                                "t",
+                                Duration.ofMillis(10)))
+                .isEmpty();
+        LockWaiters.WakeupStats stats = waiters.stats();
+        assertThat(stats.exhausted()).isEqualTo(1);
+        assertThat(stats.interrupted()).isZero();
+        assertThat(stats.acquired()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("wakeAll() releases every parked waiter, whatever its topic")
     void wakeAllReleasesEveryTopic() throws Exception {
         LockWaiters waiters = new LockWaiters(new RecordingTransport());

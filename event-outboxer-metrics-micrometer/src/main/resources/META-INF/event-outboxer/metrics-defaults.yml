@@ -78,6 +78,44 @@ management:
           - 2m
           - 5m
           - 10m
+        # Time spent acquiring an entity lock, the bounded lock-wait of
+        # ADR-0035 included: a grid dense around the default 100 ms budget so
+        # the share of acquisitions that needed the wait — and how close to
+        # the ceiling they land — reads off the buckets.
+        "[event_outboxer.lock.wait_time]":
+          - 1ms
+          - 2ms
+          - 5ms
+          - 10ms
+          - 20ms
+          - 50ms
+          - 100ms
+          - 200ms
+          - 500ms
+          - 1s
+          - 2s
+          - 5s
+        # Entity-lock hold time (handler + finalize): the number lock-wait and
+        # lock-ttl are sized against, so the same grid as the wait plus the
+        # tail up to the default lock-ttl.
+        "[event_outboxer.lock.hold_time]":
+          - 1ms
+          - 2ms
+          - 5ms
+          - 10ms
+          - 20ms
+          - 50ms
+          - 100ms
+          - 200ms
+          - 500ms
+          - 1s
+          - 2s
+          - 5s
+          - 10s
+          - 30s
+          - 1m
+          - 5m
+          - 10m
         # Stuck-handler runtime at watchdog reclaim: always >= handlerMaxRuntime,
         # so the grid starts where the other timers end.
         "[event_outboxer.handler.stuck_time]":

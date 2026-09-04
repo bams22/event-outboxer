@@ -47,6 +47,19 @@ public final class OutboxTraceAttributes {
     public static final String WORKER_ID = "event_outboxer.worker.id";
 
     /**
+     * Entity-lock key the handler ran under (ADR-0012); consumer spans of handlers that declare a
+     * key only. High-cardinality by nature — the span is where "which key is hot" belongs, metrics
+     * must not carry it.
+     */
+    public static final String LOCK_KEY = "event_outboxer.lock.key";
+
+    /**
+     * Milliseconds the handler thread spent acquiring the entity lock, the bounded wait of ADR-0035
+     * included; consumer spans of handlers that declare a key only.
+     */
+    public static final String LOCK_WAIT_MS = "event_outboxer.lock.wait_ms";
+
+    /**
      * UUID of the existing PENDING event a publish coalesced into (ADR-0021); producer spans only.
      */
     public static final String COALESCED_INTO = "event_outboxer.coalesced_into";

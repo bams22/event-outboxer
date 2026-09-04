@@ -18,6 +18,7 @@ import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.EventRetryScheduledInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquiredInfo;
 import io.github.bams22.outboxer.api.observer.LockAcquisitionInfo;
+import io.github.bams22.outboxer.api.observer.LockReleasedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
@@ -164,6 +165,10 @@ class HandlerDispatcherLockWaitTest {
         LockAcquiredInfo acquired = listener.acquired.get(0);
         assertThat(acquired.lockKey()).isEqualTo(KEY);
         assertThat(acquired.waited()).isGreaterThanOrEqualTo(holdFor);
+        // Hold time is reported on release, key included.
+        assertThat(listener.released).hasSize(1);
+        assertThat(listener.released.get(0).lockKey()).isEqualTo(KEY);
+        assertThat(listener.released.get(0).held()).isGreaterThanOrEqualTo(Duration.ZERO);
         // The lock was released after the handler: the key is free again.
         assertThat(locker.tryLock(KEY, Duration.ofSeconds(1))).isPresent();
     }
@@ -402,10 +407,16 @@ class HandlerDispatcherLockWaitTest {
         final CopyOnWriteArrayList<LockAcquisitionInfo> failed = new CopyOnWriteArrayList<>();
         final CopyOnWriteArrayList<EventRetryScheduledInfo> retries = new CopyOnWriteArrayList<>();
         final CopyOnWriteArrayList<EventProcessedInfo> processed = new CopyOnWriteArrayList<>();
+        final CopyOnWriteArrayList<LockReleasedInfo> released = new CopyOnWriteArrayList<>();
 
         @Override
         public void onLockAcquired(LockAcquiredInfo info) {
             acquired.add(info);
+        }
+
+        @Override
+        public void onLockReleased(LockReleasedInfo info) {
+            released.add(info);
         }
 
         @Override
