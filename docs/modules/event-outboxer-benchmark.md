@@ -127,10 +127,9 @@ the harness assumes a dedicated database. The database cost figures
 are row writes from `pg_stat_user_tables` over the `event_outboxer`
 schema, WAL bytes from `pg_current_wal_lsn` (both sampled before
 publishing and after the fleet has stopped) and the events table size
-right after the publish phase. Row writes are sampled before publishing and after the fleet
-has stopped (a PostgreSQL backend flushes its counters on exit; idle
-backends may hold them back for up to ten seconds, which is why the
-closing sample waits for the connections to close). Heartbeats and
+right after the publish phase. The closing sample waits for every
+connection to close: a PostgreSQL backend flushes its counters on
+exit, and idle backends may hold them back for up to ten seconds. Heartbeats and
 worker registration during the run are included: they are real cost.
 A *crash* restart of PostgreSQL resets the cumulative statistics; the
 report then marks the figure unreliable. A fast restart persists them.
