@@ -97,10 +97,10 @@ CREATE INDEX idx_events_processing_claimed_at
     ON event_outboxer.events (claimed_at)
     WHERE status = 'PROCESSING';
 
--- Dedup coalescing (ADR-0037, V010): the claim's duplicate sweep looks up the due PENDING
--- rows of a key here. Plain, not unique — V004's unique index was the arbiter of the
--- publisher's ON CONFLICT insert and collided with every return of a PROCESSING event to
--- PENDING once a twin of its key existed; V010 replaced it.
+-- Dedup coalescing (ADR-0037, V004): the claim's duplicate sweep looks up the due PENDING
+-- rows of a key here. Plain, not unique — a unique index would arbitrate an ON CONFLICT
+-- insert at publish time and collide with every return of a PROCESSING event to PENDING
+-- once a twin of its key existed (the design ADR-0037 replaced).
 CREATE INDEX ix_events_pending_dedup_key
     ON event_outboxer.events (event_type, dedup_key)
     WHERE status = 'PENDING' AND dedup_key IS NOT NULL;
@@ -340,9 +340,8 @@ event-outboxer-storage-postgres/src/main/resources/event-outboxer/migration/
 ├── core/
 │   ├── V001__outbox_core.sql            ← events + workers + indexes
 │   ├── V003__outbox_admin_index.sql     ← DISABLED-listing index (ADR-0019)
-│   ├── V004__outbox_dedup_key.sql       ← dedup key column + unique index (ADR-0021)
-│   ├── V006__outbox_payload_format.sql  ← dual payload lane + format (ADR-0025)
-│   └── V010__outbox_dedup_index.sql     ← unique dedup index → plain (ADR-0037)
+│   ├── V004__outbox_dedup_key.sql       ← dedup key column + sweep index (ADR-0021, ADR-0037)
+│   └── V006__outbox_payload_format.sql  ← dual payload lane + format (ADR-0025)
 └── archive/
     ├── V002__outbox_archive.sql         ← event_archive
     ├── V007__outbox_archive_payload_format.sql ← archive payload lanes (ADR-0025)

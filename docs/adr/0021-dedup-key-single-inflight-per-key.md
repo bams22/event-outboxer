@@ -9,8 +9,8 @@ PENDING once a twin of its key was inserted (`23505` on retry, release,
 reclaim and reenable), and the benchmark harness measured the
 publisher-side pin as the expensive half of the design. ADR-0037 keeps
 the dedup key, its per-type scope and the visibility guarantee, and
-moves coalescing to the claim statement; migration V010 replaces the
-unique index with a plain one. The text below is kept as the record of
+moves coalescing to the claim statement; V004 was rewritten to create
+a plain index instead of the unique one (pre-1.0, no users). The text below is kept as the record of
 the insert-time design.
 
 Previously: Accepted (amended 2026-08-31: coalescing became observable — a

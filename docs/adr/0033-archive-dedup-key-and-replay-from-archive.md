@@ -5,7 +5,7 @@
 Accepted (amended 2026-09-07 by
 [ADR-0037](0037-claim-time-dedup-coalescing.md): coalescing moved to
 the claim, so the replay statement of §3 lost its `ON CONFLICT`
-arbiter — the V004 unique index it named was replaced by V010 — and
+arbiter — the V004 unique index it named no longer exists — and
 inserts plainly; `ReplayOutcome.COALESCED` and
 `ReplayAllResult.coalesced` are gone, a replayed row next to a live
 PENDING twin is collapsed by the next claim; and the archive

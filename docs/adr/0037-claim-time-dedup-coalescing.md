@@ -8,8 +8,10 @@ spike (see §Measured), implemented and accepted 2026-09-07. Supersedes
 [ADR-0033](0033-archive-dedup-key-and-replay-from-archive.md),
 [ADR-0013](0013-outbox-listener-for-observability.md) and
 [ADR-0023](0023-tracing-spi-port-and-adapters.md) as listed in
-§Implementation plan. The migration is **V010** (V009 was already the
-ADR-0033 replay index when this ADR was drafted; the draft said V009).
+§Implementation plan. The schema change was folded into **V004** rather
+than shipped as a new migration: the library has no users yet, so the
+draft's "V009" (already taken by the ADR-0033 replay index) became a
+rewrite of the migration that created the index in the first place.
 
 ## Date
 
@@ -109,10 +111,10 @@ inserted — always its own — and `onEventPublished` fires for every
 insert. Whether the row will run or be swept is not knowable at
 publish time and is not reported there.
 
-### 2. Index (migration V010)
+### 2. Index (migration V004, rewritten)
 
-`uq_events_pending_dedup_key` (V004) is dropped and replaced by a plain
-partial index with the same columns and predicate,
+V004 no longer creates the unique index `uq_events_pending_dedup_key`;
+it creates a plain partial index with the same columns and predicate,
 `ix_events_pending_dedup_key ON events (event_type, dedup_key) WHERE
 status = 'PENDING' AND dedup_key IS NOT NULL` — the sweep's lookup, no
 uniqueness. The `dedup_key` column and its archive copy (V008) are
@@ -327,13 +329,13 @@ workers, 2 ms of work; all cells pass the freshness invariant):
 
 **Operations**
 
-- **Migration V010 is a coordinated step.** The old adapter's insert
-  names the V004 index in its `ON CONFLICT` clause; once the index is
-  dropped, a keyed publish from an old JVM fails with *no unique or
-  exclusion constraint matching the ON CONFLICT specification*. Apply
-  V010 with the new version and do not run a mixed fleet that
-  publishes keyed events during the rollout. Keyless publishes are
-  unaffected.
+- **V004 was rewritten in place, pre-1.0 and without users.** A
+  database migrated by a pre-ADR-0037 build carries the old V004
+  checksum and the unique index; Flyway validation rejects it, and the
+  old adapter's `ON CONFLICT` insert would in any case fail against
+  the plain index. Such a database is recreated, not upgraded. Had the
+  library been released to users, this would have been a new migration
+  applied as a coordinated step with the adapter.
 - Dense duplicates now cost row writes, WAL and dead tuples (two
   writes and ~1 KB per duplicate) where they cost a conflicting no-op
   before; autovacuum settings on `events` matter for hot-key
@@ -345,8 +347,8 @@ workers, 2 ms of work; all cells pass the freshness invariant):
 
 ## Implementation plan
 
-1. Migration V010 (drop `uq_events_pending_dedup_key`, create
-   `ix_events_pending_dedup_key`); `docs/STORAGE.md` §Indexes, §Insert
+1. V004 rewritten to create `ix_events_pending_dedup_key` instead of
+   `uq_events_pending_dedup_key`; `docs/STORAGE.md` §Indexes, §Insert
    and §Claim.
 2. PostgreSQL adapter: plain insert, the sweeping claim statement with
    the archive variant, `RETURNING` of swept ids and trace contexts;

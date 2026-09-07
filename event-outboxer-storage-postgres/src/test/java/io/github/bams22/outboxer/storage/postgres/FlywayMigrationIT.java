@@ -35,8 +35,7 @@ class FlywayMigrationIT {
             assertIndexExists(st, "idx_events_processing_claimed_at");
             assertIndexExists(st, "idx_workers_heartbeat");
             assertIndexExists(st, "idx_archive_event_type_archived_at");
-            // ADR-0037 (V010): the dedup index is a plain partial index; the V004 unique one is
-            // gone.
+            // ADR-0037: V004 creates a plain partial dedup index; there is no unique one.
             assertIndexExists(st, "ix_events_pending_dedup_key");
             assertIndexAbsent(st, "uq_events_pending_dedup_key");
         }

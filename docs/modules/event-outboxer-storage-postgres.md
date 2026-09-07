@@ -73,7 +73,7 @@ between minor versions.
   so another worker's rows are skipped, never waited on — deleting
   them (or archiving them as `coalesced at claim`) in the same
   statement and returning their ids and carriers per representative.
-  The V004 unique index became a plain partial index in V010.
+  V004 creates the plain partial index the sweep uses.
 - **Dual payload lane** ([ADR-0025](../adr/0025-binary-capable-serializer-spi-and-payload-format.md)):
   text payloads land in `payload JSONB`, binary payloads in
   `payload_binary BYTEA` — exactly one is non-null (CHECK constraint)
@@ -95,7 +95,7 @@ them (ADR-0028):
 
 | Location | Contents | Applied by the starter? |
 |---|---|---|
-| `event-outboxer/migration/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key), V006 (payload format), V010 (plain dedup index, ADR-0037) | always |
+| `event-outboxer/migration/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key + sweep index), V006 (payload format) | always |
 | `event-outboxer/migration/archive` | V002, V007, V008, V009 (`event_archive`) | always (`storage.archive-enabled` only governs runtime) |
 | `event-outboxer/migration/lock` | V005 (`entity_locks`) | when [`event-outboxer-lock-postgres-lease`](event-outboxer-lock-postgres-lease.md) is on the classpath |
 | `db/changelog/outbox/{core,archive}/changelog.xml` | Liquibase changelogs delegating to the same SQL files | no — for `event-outboxer.flyway.enabled=false` setups |
