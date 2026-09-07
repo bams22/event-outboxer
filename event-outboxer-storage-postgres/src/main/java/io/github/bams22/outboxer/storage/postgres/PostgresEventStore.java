@@ -220,9 +220,9 @@ public final class PostgresEventStore implements EventStore {
      * skipping rows another worker holds, and {@code gone} deletes them (moving them to the archive
      * first when archiving is on, marked {@code coalesced at claim}). The final UPDATE claims the
      * picked rows minus the duplicates, so every row is touched by exactly one data-modifying
-     * sub-statement, as PostgreSQL requires; its {@code RETURNING} carries, per representative, the
-     * ids and stored carriers of the rows swept for its key, so the dispatcher can report and link
-     * them.
+     * sub-statement, as PostgreSQL requires; {@code swept} aggregates the swept rows once per key,
+     * and the {@code RETURNING} carries, per representative, the ids and stored carriers of the
+     * rows swept for its key, so the dispatcher can report and link them.
      *
      * <p>Correctness without a publisher-side pin: only committed rows are visible to {@code dup},
      * and the sweep precedes the handler by construction, so every publish that was swept had
@@ -275,18 +275,24 @@ public final class PostgresEventStore implements EventStore {
                 + "  FOR UPDATE OF d SKIP LOCKED"
                 + "), "
                 + gone
+                // One aggregation pass over the swept rows, joined per representative. Correlated
+                // array_agg subqueries in RETURNING ran once per returned row (2 x N scans of
+                // gone): ~1.6 ms on a 50-row claim, 0.50 -> 1.86 ms mean on the 1 024-key cell.
+                + ", swept AS ("
+                + "  SELECT dedup_key, array_agg(id ORDER BY id) AS ids,"
+                + " array_agg(trace_context::text ORDER BY id) AS contexts FROM gone GROUP BY"
+                + " dedup_key"
+                + ") "
                 + "UPDATE "
                 + events
                 + " e SET status = 'PROCESSING', claimed_by = ?, claimed_at = now(),"
-                + " version = version + 1 FROM picked WHERE e.id = picked.id"
+                + " version = version + 1 FROM picked LEFT JOIN swept s ON s.dedup_key ="
+                + " picked.dedup_key WHERE e.id = picked.id"
                 + " AND NOT EXISTS (SELECT 1 FROM dup WHERE dup.id = e.id)"
                 + " RETURNING e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,"
                 + " e.payload_class, e.priority, e.attempts, e.created_at, e.claimed_at,"
-                + " e.trace_context, e.version, e.dedup_key,"
-                + " (SELECT array_agg(g.id ORDER BY g.id) FROM gone g WHERE g.dedup_key ="
-                + " e.dedup_key) AS coalesced_ids,"
-                + " (SELECT array_agg(g.trace_context::text ORDER BY g.id) FROM gone g WHERE"
-                + " g.dedup_key = e.dedup_key) AS coalesced_contexts";
+                + " e.trace_context, e.version, e.dedup_key, s.ids AS coalesced_ids,"
+                + " s.contexts AS coalesced_contexts";
     }
 
     // ---------------------------------------------------------------------------------------------

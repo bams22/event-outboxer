@@ -545,23 +545,25 @@ WITH picked AS (                                  -- the batch, locked
     RETURNING e.id, e.dedup_key, e.trace_context
     -- archive-enabled: RETURNING every column, and an `archived AS (INSERT INTO
     -- event_archive ... SELECT ..., 'coalesced at claim', ..., now(), :worker_id FROM gone)`
+), swept AS (                                     -- swept rows aggregated once per key
+    SELECT dedup_key,
+           array_agg(id ORDER BY id)                  AS ids,
+           array_agg(trace_context::text ORDER BY id) AS contexts
+    FROM gone GROUP BY dedup_key
 )
 UPDATE event_outboxer.events e
 SET status      = 'PROCESSING',
     claimed_by  = :worker_id,
     claimed_at  = now(),
     version     = version + 1
-FROM picked
+FROM picked LEFT JOIN swept s ON s.dedup_key = picked.dedup_key
 WHERE e.id = picked.id
   AND NOT EXISTS (SELECT 1 FROM dup WHERE dup.id = e.id)
 RETURNING
     e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,
     e.payload_class, e.priority, e.attempts, e.created_at,
     e.claimed_at, e.trace_context, e.version, e.dedup_key,
-    (SELECT array_agg(g.id ORDER BY g.id) FROM gone g
-      WHERE g.dedup_key = e.dedup_key)                         AS coalesced_ids,
-    (SELECT array_agg(g.trace_context::text ORDER BY g.id) FROM gone g
-      WHERE g.dedup_key = e.dedup_key)                         AS coalesced_contexts;
+    s.ids AS coalesced_ids, s.contexts AS coalesced_contexts;
 ```
 
 Optimizations and semantics:
@@ -584,9 +586,12 @@ Optimizations and semantics:
   representative's handler starts — the ADR-0021 visibility guarantee,
   now without a publisher-side pin. Rows with a future `run_at` are
   never swept; a deferred twin is a separate intent.
-- The two `array_agg` columns carry, per representative, the swept ids
-  and their stored carriers, so the dispatcher can fire
+- `swept` aggregates the swept rows once per key and the two array
+  columns carry them per representative, so the dispatcher can fire
   `onEventCoalesced` and link the consumer span to each swept publish.
+  (Correlated `array_agg` subqueries in `RETURNING` ran once per
+  returned row and cost ~1.6 ms on a 50-row claim; measured and
+  replaced.)
 - The sweep is capped at 1 000 rows per claim (the harness measured
   ~5 µs per swept row); the remainder is swept by the next claim.
 - One round trip instead of SELECT-then-UPDATE.
