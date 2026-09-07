@@ -28,14 +28,20 @@ import org.jspecify.annotations.Nullable;
  * @param priority explicit priority; defaults to 0
  * @param traceContext W3C traceparent/baggage to attach; normally the publisher captures this from
  *     the current MDC/Observation context, but callers may override it
- * @param dedupKey coalescing key (ADR-0021): at most one PENDING event per {@code (eventType,
- *     dedupKey)} exists at a time. A publish that finds a PENDING event with the same key returns
- *     that event's id instead of inserting — with the guarantee that the coalesced-into event will
- *     only be handled AFTER the current transaction commits, so the handler always sees this
- *     transaction's changes. Events already PROCESSING do not coalesce (a new event is inserted and
- *     runs afterwards with fresh data); DISABLED events do not block the key. This is work
- *     coalescing ("single in-flight per key"), NOT exactly-once: once the event is processed the
- *     key is free again, and handler idempotency remains required (ADR-0015). Max 256 characters
+ * @param dedupKey coalescing key (ADR-0037): duplicates of a {@code (eventType, dedupKey)} are
+ *     collapsed when the type is claimed, not when they are published. Every keyed publish inserts
+ *     its own row and returns its own id. The next claim of the type keeps one representative among
+ *     the due {@code PENDING} rows of the key (highest priority, then oldest {@code runAt}) and
+ *     sweeps the others; a swept row never reaches a handler, and {@code
+ *     OutboxListener.onEventCoalesced} reports it together with the representative's id. The
+ *     representative's handler starts only after every swept publish has committed, so it sees
+ *     those transactions' changes. Only due {@code PENDING} rows take part: a publish while the
+ *     key's event is {@code PROCESSING} yields a fresh row that runs afterwards with fresh data, a
+ *     row with a future {@code runAt} is a separate intent (publish a few seconds ahead to fold a
+ *     burst into one deferred run), and {@code DISABLED} events do not block the key. This is
+ *     best-effort work coalescing, NOT exactly-once: duplicates claimed concurrently by different
+ *     workers run separately, and handler idempotency remains required (ADR-0015). Max 256
+ *     characters
  */
 @Builder
 public record PublishOptions(

@@ -74,25 +74,45 @@ public interface EventStore {
 
     /**
      * Claim up to {@code request.limit()} events of {@code request.eventType()} for processing by
-     * {@code request.workerId()}. The PostgreSQL adapter implements this with a CTE that runs
-     * {@code SELECT ... FOR UPDATE SKIP LOCKED} against the per-type index and then {@code UPDATE
-     * ... RETURNING *}. Claim semantics:
+     * {@code request.workerId()}. The contract is stated in terms of what a claim can <em>see</em>,
+     * so that it holds for any storage, not only one with row locks:
      *
      * <ul>
-     *   <li>Only rows with {@code status = PENDING AND run_at <= now()} are eligible.
-     *   <li>Rows are returned in priority-desc then {@code run_at}-asc order.
-     *   <li>Keyed rows are coalesced (ADR-0037): of the due {@code PENDING} rows sharing a {@code
-     *       (event_type, dedup_key)} exactly one — the best by the same order — is claimed and
-     *       returned; the others, inside the batch and beyond it, are removed (archived first when
-     *       archiving is on) and listed in the representative's {@link ClaimedEvent#coalesced()}.
-     *       Rows with a future {@code run_at}, rows another claim holds locked and uncommitted rows
-     *       are never swept. Only committed rows are visible to the sweep and it precedes any
-     *       handler, which is the ADR-0021 visibility guarantee.
-     *   <li>Every returned row has its {@code claimed_by}, {@code claimed_at}, {@code status =
-     *       PROCESSING} and {@code version} fields updated atomically; the {@code version} on the
-     *       returned {@link ClaimedEvent} is the <em>new</em> value, which the engine must echo
-     *       back to finalize methods.
+     *   <li><b>Eligible</b> is a row of the requested type that is {@code PENDING}, whose {@code
+     *       runAt} is not in the future and that is visible to this claim: committed by its
+     *       publisher and not already taken by a concurrent claim. How "taken" is detected is the
+     *       adapter's choice — a row lock ({@code FOR UPDATE SKIP LOCKED}), an atomic
+     *       compare-and-set on {@code status} and {@code version}, a monitor — but two concurrent
+     *       claims must never return the same row.
+     *   <li>Rows are picked and returned in priority-desc then {@code runAt}-asc order.
+     *   <li><b>Coalescing (ADR-0037).</b> Of the eligible rows sharing a {@code (eventType,
+     *       dedupKey)} exactly one — the best by the same order — is claimed and returned as the
+     *       representative. Every other eligible row of that key, inside the batch and beyond it,
+     *       is removed (archived first when archiving is on) and listed with its id and trace
+     *       context in the representative's {@link ClaimedEvent#coalesced()}. A row that is not
+     *       eligible is never swept: a deferred twin (future {@code runAt}) is a separate intent,
+     *       an uncommitted twin is invisible and runs on its own once committed, and a twin taken
+     *       by a concurrent claim runs there. Redundant runs are allowed (ADR-0015); silent loss is
+     *       not.
+     *   <li><b>Ordering guarantee.</b> A swept row was visible, hence committed, before the sweep,
+     *       and the sweep completes before the representative is returned, so before any handler
+     *       runs. Every keyed publish is therefore either handled under its own id or covered by a
+     *       handler run that started after that publish committed. This is the visibility guarantee
+     *       inherited from ADR-0021 and the invariant the benchmark harness grades.
+     *   <li>Every returned row has its {@code claimedBy}, {@code claimedAt}, {@code status =
+     *       PROCESSING} and {@code version} updated atomically with respect to other claims; the
+     *       {@code version} on the returned {@link ClaimedEvent} is the <em>new</em> value, which
+     *       the engine must echo back to finalize methods.
      * </ul>
+     *
+     * <p>Adapters are free in how they get there. The PostgreSQL adapter does it in one statement:
+     * lock the batch, elect the representatives, lock and delete their duplicates, update the rest,
+     * all in one CTE chain. A storage without multi-row locking meets every point above in two
+     * phases: take the best eligible row atomically and repeat up to the limit, then for each keyed
+     * row taken remove its remaining eligible duplicates one atomic operation at a time, reading
+     * each before it goes. The in-memory adapter is the reference for that shape. Whatever a sweep
+     * does not reach in one claim — an adapter-side cap, a row that became eligible in between — is
+     * swept by a later claim of the type.
      *
      * @throws EventStoreException if the claim query fails
      */

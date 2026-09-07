@@ -43,8 +43,10 @@ import org.jspecify.annotations.Nullable;
  * @param priority higher values are picked first; zero by default
  * @param runAt earliest wall-clock time the event is eligible for claim
  * @param traceContext optional W3C trace/baggage context; never null (empty map allowed)
- * @param dedupKey optional coalescing key: at most one PENDING event per {@code (eventType,
- *     dedupKey)} at a time (ADR-0021); {@code null} = no coalescing
+ * @param dedupKey optional coalescing key (ADR-0037). Keyed events insert unconditionally, so
+ *     several {@code PENDING} events of one {@code (eventType, dedupKey)} may exist at a time; the
+ *     claim that picks the type keeps one of the due ones and sweeps the others, whose publishes
+ *     are covered by the kept event's run. {@code null} = no coalescing
  */
 @Builder
 public record PendingEvent(
