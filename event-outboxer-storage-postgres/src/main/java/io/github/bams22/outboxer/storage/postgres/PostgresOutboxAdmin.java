@@ -9,6 +9,10 @@
  */
 package io.github.bams22.outboxer.storage.postgres;
 
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.ARCHIVE_COLUMNS;
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.EVENT_COLUMNS;
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.IMMUTABLE_COLUMNS;
+
 import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
@@ -16,8 +20,9 @@ import io.github.bams22.outboxer.domain.exception.EventStoreException;
 import io.github.bams22.outboxer.spi.AdminCursor;
 import io.github.bams22.outboxer.spi.ArchiveCursor;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
+import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
-import io.github.bams22.outboxer.storage.postgres.internal.FlatMapJson;
+import io.github.bams22.outboxer.storage.postgres.internal.EventRows;
 import io.github.bams22.outboxer.storage.postgres.internal.OutboxJdbcRunner;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -26,21 +31,43 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * PostgreSQL {@link OutboxAdmin}. Query shapes are documented in STORAGE.md §Admin operations;
  * {@code findByStatus} for {@code DISABLED} and both purge/reenable sweeps are served by the
  * partial index {@code idx_events_disabled_created_at} (migration V003).
  *
+ * <p>A sibling of {@link PostgresEventStore} over the same schema, not a layer above it: the
+ * operations here (a {@code DISABLED} row back to {@code PENDING}, an archive row back to the hot
+ * table, paged listings, deletes by age) have no counterpart in the {@code EventStore} port, so the
+ * admin carries its own statements. What the two classes share they share through {@link EventRows}
+ * — the column lists and row mappers — and through the {@link MetricsSnapshotCache}: the store
+ * serves {@code metricsSnapshot()} from that cache for up to its TTL, and every mutation here that
+ * changed rows invalidates it, so a re-enable, purge or replay shows on the next scrape rather than
+ * after the TTL. {@link #purgeArchive} does not invalidate: the snapshot does not cover the
+ * archive.
+ *
+ * <p>That freshness is a property of this adapter pair, not of the {@code OutboxAdmin} port — no
+ * other implementation is required to invalidate anything, and the in-memory admin used by the
+ * starter's test configuration does not. How far it reaches depends on the cache: the default
+ * per-JVM cache is invalidated only on the replica that served the admin call, while {@code
+ * cache.type=redis} makes it fleet-wide. When the admin runs inside a caller transaction the
+ * invalidation belongs after the commit, which the Spring Boot starter arranges for the admin bean
+ * it wires; plain-Java wiring that calls the admin inside its own transaction should invalidate
+ * once it has committed.
+ *
  * <p>{@link #findInArchive} and {@link #purgeArchive} require the archive migration (V002) to be
  * applied; calling them without it surfaces as an {@link EventStoreException}.
  */
 public final class PostgresOutboxAdmin implements OutboxAdmin {
+
+    private static final Logger log = LoggerFactory.getLogger(PostgresOutboxAdmin.class);
 
     private static final String REENABLE_SET =
             " SET status = 'PENDING', attempts = 0, claimed_by = NULL, claimed_at = NULL, version ="
@@ -50,11 +77,20 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
 
     private final OutboxJdbcRunner jdbc;
     private final SchemaResolver tables;
+    private final MetricsSnapshotCache metricsCache;
 
+    /**
+     * @param metricsCache the cache the {@link PostgresEventStore} of the same schema serves its
+     *     {@code metricsSnapshot()} from — pass the same instance, or {@link
+     *     MetricsSnapshotCache#noop()} when the store does not cache
+     */
     public PostgresOutboxAdmin(
-            ConnectionSupplier connections, PostgresStorageProperties properties) {
+            ConnectionSupplier connections,
+            PostgresStorageProperties properties,
+            MetricsSnapshotCache metricsCache) {
         this.jdbc = new OutboxJdbcRunner(Objects.requireNonNull(connections, "connections"));
         this.tables = new SchemaResolver(Objects.requireNonNull(properties, "properties"));
+        this.metricsCache = Objects.requireNonNull(metricsCache, "metricsCache must not be null");
     }
 
     @Override
@@ -65,12 +101,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
             @Nullable AdminCursor after) {
         Objects.requireNonNull(status, "status must not be null");
         requirePositive(limit);
-        StringBuilder sql =
-                new StringBuilder(
-                        "SELECT id, event_type, payload, payload_binary, payload_format,"
-                            + " payload_class, priority, attempts, status, created_at, run_at,"
-                            + " claimed_by, claimed_at, last_fail_reason, trace_context, version,"
-                            + " dedup_key FROM ");
+        StringBuilder sql = new StringBuilder("SELECT " + EVENT_COLUMNS + " FROM ");
         sql.append(tables.events()).append(" WHERE status = ?");
         List<Object> params = new ArrayList<>();
         params.add(status.name());
@@ -87,7 +118,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
         sql.append(" ORDER BY created_at DESC, id DESC LIMIT ?");
         params.add(limit);
         try {
-            return jdbc.queryList(sql.toString(), bind(params), PostgresEventStore::readEvent);
+            return jdbc.queryList(sql.toString(), bind(params), EventRows::readEvent);
         } catch (SQLException ex) {
             throw new EventStoreException("findByStatus(" + status + ") failed", ex);
         }
@@ -96,14 +127,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
     @Override
     public Optional<ArchivedEvent> findInArchive(UUID id) {
         Objects.requireNonNull(id, "id must not be null");
-        String sql =
-                "SELECT id, event_type, payload, payload_binary, payload_format, payload_class,"
-                    + " priority, attempts, created_at, run_at, last_fail_reason, trace_context,"
-                    + " archived_at, archived_by, dedup_key FROM "
-                        + tables.archive()
-                        + " WHERE id = ?";
+        String sql = "SELECT " + ARCHIVE_COLUMNS + " FROM " + tables.archive() + " WHERE id = ?";
         try {
-            return jdbc.queryOne(sql, ps -> ps.setObject(1, id), PostgresOutboxAdmin::readArchived);
+            return jdbc.queryOne(sql, ps -> ps.setObject(1, id), EventRows::readArchived);
         } catch (SQLException ex) {
             throw new EventStoreException("findInArchive(" + id + ") failed", ex);
         }
@@ -115,7 +141,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
         String sql =
                 "UPDATE " + tables.events() + REENABLE_SET + "WHERE id = ? AND status = 'DISABLED'";
         try {
-            return jdbc.update(sql, ps -> ps.setObject(1, id)) > 0;
+            int rows = jdbc.update(sql, ps -> ps.setObject(1, id));
+            invalidateIfChanged(rows);
+            return rows > 0;
         } catch (SQLException ex) {
             throw new EventStoreException("reenable(" + id + ") failed", ex);
         }
@@ -139,7 +167,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
         params.add(limit);
         String sql = "UPDATE " + tables.events() + REENABLE_SET + "WHERE id IN (" + sub + ")";
         try {
-            return jdbc.update(sql, bind(params));
+            int rows = jdbc.update(sql, bind(params));
+            invalidateIfChanged(rows);
+            return rows;
         } catch (SQLException ex) {
             throw new EventStoreException("reenableAll(" + eventType + ") failed", ex);
         }
@@ -163,7 +193,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
         params.add(limit);
         String sql = "DELETE FROM " + tables.events() + " WHERE id IN (" + sub + ")";
         try {
-            return jdbc.update(sql, bind(params));
+            int rows = jdbc.update(sql, bind(params));
+            invalidateIfChanged(rows);
+            return rows;
         } catch (SQLException ex) {
             throw new EventStoreException("purgeDisabled failed", ex);
         }
@@ -202,6 +234,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
             if (counts.found() == 0) {
                 return ReplayOutcome.NOT_FOUND;
             }
+            invalidateIfChanged(counts.inserted());
             if (counts.inserted() > 0) {
                 return ReplayOutcome.REPLAYED;
             }
@@ -249,6 +282,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
                                     bind(params),
                                     PostgresOutboxAdmin::readCounts)
                             .orElseThrow();
+            invalidateIfChanged(counts.inserted());
             return new ReplayAllResult(counts.inserted(), counts.idInUse(), counts.cursor());
         } catch (SQLException ex) {
             throw new EventStoreException("replayAllFromArchive(" + eventType + ") failed", ex);
@@ -289,8 +323,9 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
      */
     private String replaySql(String srcWhere) {
         return "WITH src AS MATERIALIZED ("
-                + "  SELECT id, event_type, payload, payload_binary, payload_format,"
-                + " payload_class, priority, trace_context, dedup_key, archived_at FROM "
+                + "  SELECT "
+                + IMMUTABLE_COLUMNS
+                + ", archived_at FROM "
                 + tables.archive()
                 + " "
                 + srcWhere
@@ -301,13 +336,14 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
                 + "), ins AS ("
                 + "  INSERT INTO "
                 + tables.events()
-                + " (id, event_type, payload, payload_binary, payload_format, payload_class,"
-                + " priority, attempts, status, created_at, run_at, last_fail_reason,"
-                + " trace_context, version, dedup_key)"
-                + "  SELECT id, event_type, payload, payload_binary, payload_format,"
-                + " payload_class, priority, 0, 'PENDING', now(), now(), '"
+                + " ("
+                + IMMUTABLE_COLUMNS
+                + ", attempts, status, created_at, run_at, last_fail_reason, version)"
+                + "  SELECT "
+                + IMMUTABLE_COLUMNS
+                + ", 0, 'PENDING', now(), now(), '"
                 + REPLAY_REASON
-                + "', trace_context, 0, dedup_key FROM src"
+                + "', 0 FROM src"
                 + "  WHERE id NOT IN (SELECT id FROM blocked)"
                 + "  RETURNING id"
                 + "), del AS ("
@@ -358,25 +394,38 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
         }
     }
 
-    private static ArchivedEvent readArchived(ResultSet rs) throws SQLException {
-        String traceJson = rs.getString("trace_context");
-        Map<String, String> traceContext =
-                traceJson == null || traceJson.isEmpty() ? Map.of() : FlatMapJson.parse(traceJson);
-        return new ArchivedEvent(
-                (UUID) rs.getObject("id"),
-                rs.getString("event_type"),
-                PostgresEventStore.readPayload(rs),
-                rs.getString("payload_format"),
-                rs.getString("payload_class"),
-                rs.getShort("priority"),
-                rs.getInt("attempts"),
-                rs.getTimestamp("created_at").toInstant(),
-                rs.getTimestamp("run_at").toInstant(),
-                rs.getString("last_fail_reason"),
-                traceContext,
-                rs.getTimestamp("archived_at").toInstant(),
-                rs.getString("archived_by"),
-                rs.getString("dedup_key"));
+    /**
+     * Every mutation of the hot table reports its row count through here: when rows changed, the
+     * shared {@link MetricsSnapshotCache} is invalidated so that the store's next {@code
+     * metricsSnapshot()} recomputes instead of serving the pre-mutation counts until the TTL. A
+     * sweep that matched nothing leaves the cache alone.
+     *
+     * <p>The row change is already applied when this runs, so a cache that throws must not turn a
+     * successful operation into a failed one — the caller would retry a replay that had in fact
+     * moved the row, and a retention sweep would abort mid-pass. {@link
+     * MetricsSnapshotCache#invalidate()} is contractually forbidden from propagating backend
+     * failures; this guard is what keeps a custom implementation that ignores the contract from
+     * costing correctness. Stale gauges for up to one TTL are the whole downside.
+     *
+     * <p>A bulk sweep invalidates once per batch, not once per pass: {@code RetentionTask} calls
+     * {@link #purgeDisabled} in a loop, and each batch genuinely changes the counts, so the cache
+     * would be serving numbers it knows to be wrong if the invalidation waited for the last one.
+     * The cost of a long catch-up pass is one extra invalidation per batch.
+     */
+    private void invalidateIfChanged(int rows) {
+        if (rows <= 0) {
+            return;
+        }
+        try {
+            metricsCache.invalidate();
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "metrics snapshot cache invalidation failed after an admin mutation of {}"
+                        + " row(s); backlog gauges may stay stale for up to one metrics-cache-ttl:"
+                        + " {}",
+                    rows,
+                    ex.toString());
+        }
     }
 
     private static void requirePositive(int limit) {

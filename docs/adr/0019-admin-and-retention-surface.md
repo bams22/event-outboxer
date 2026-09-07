@@ -107,6 +107,37 @@ of a bespoke user-written job.
   version-managed by the BOM.
 - `attempts = 0` on re-enable means a re-enabled poison event gets a
   full fresh retry budget before disabling again — deliberate.
+- (2026-09-07) `PostgresOutboxAdmin` takes the same `MetricsSnapshotCache`
+  as the store and invalidates it after every mutation that changed rows,
+  so a re-enable, purge or replay is visible in backlog gauges and health
+  on the next read, not after `metrics-cache-ttl`; `purgeArchive` does
+  not, the snapshot does not cover the archive. A bulk sweep invalidates
+  once per batch rather than once per `RetentionTask` pass: each batch
+  really does change the counts, and the adapter cannot see the pass.
+  The two adapters also share their column lists and row mappers
+  (`EventRows`, internal) so a column added to the store reaches the
+  admin's statements by construction. Neither changes the port — the
+  freshness is a property of this adapter pair, and the in-memory admin
+  makes no such promise.
+- (2026-09-07) Dropping the cached entry does not by itself make the next
+  read fresh, and the first cut of the change above did not: a snapshot
+  computation already in flight finishes after the invalidation and puts
+  its pre-mutation counts back, restoring exactly the TTL-long staleness
+  the invalidation was meant to remove; and inside a caller transaction
+  the invalidation ran at statement time while the rows became visible
+  only at commit. Two additions close both windows.
+  `MetricsSnapshotCache.put` is now conditional — a snapshot whose
+  `takenAt` predates the last `invalidate()` is refused, enforced in the
+  in-memory flavour by a second reference and in the Redis flavour by a
+  Lua compare-and-set against an `<prefix>invalidated-at` key, which also
+  gives the barrier a Clock so both sides of the comparison come from the
+  application's clock. And the starter wraps the cache handed to the admin
+  bean in `TransactionAwareMetricsCacheInvalidation`, which defers the
+  invalidation to after-commit when a transaction is active and drops it
+  on rollback. What remains, and is documented rather than fixed: the
+  Redis barrier compares millisecond timestamps stamped by different pods,
+  so it is only as good as their clock sync; the cost of losing that race
+  is one TTL of stale gauges, never a wrong number.
 - Deferred: `onEventReenabled` listener event (planned together with
   the OutboxListener split), a WebFlux variant of the REST module,
   any dashboard/UI.

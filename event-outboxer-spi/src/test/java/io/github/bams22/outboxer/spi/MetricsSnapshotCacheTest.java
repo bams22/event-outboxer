@@ -128,6 +128,65 @@ class MetricsSnapshotCacheTest {
         }
 
         @Test
+        void putIsRefusedWhenTheSnapshotWasTakenBeforeTheInvalidation() {
+            MetricsSnapshotCache cache =
+                    MetricsSnapshotCache.inMemory(clock, Duration.ofSeconds(30));
+            // SNAPSHOT was taken at the clock's starting instant: it stands for an aggregate that
+            // was already running when the admin mutation landed.
+            clock.advance(Duration.ofSeconds(1));
+            cache.invalidate();
+
+            cache.put(SNAPSHOT);
+
+            assertThat(cache.get())
+                    .as("pre-mutation counts must not be cached back after the invalidation")
+                    .isEmpty();
+        }
+
+        @Test
+        void putIsAcceptedWhenTheSnapshotWasTakenAfterTheInvalidation() {
+            MetricsSnapshotCache cache =
+                    MetricsSnapshotCache.inMemory(clock, Duration.ofSeconds(30));
+            cache.invalidate();
+
+            clock.advance(Duration.ofSeconds(1));
+            OutboxMetricsSnapshot fresh = snapshotTakenAt(clock.now());
+            cache.put(fresh);
+
+            assertThat(cache.get()).contains(fresh);
+        }
+
+        @Test
+        void aSnapshotTakenAtTheInvalidationInstantIsStored() {
+            // The barrier is strict: only a snapshot taken *before* it is refused. Equality means
+            // the two happened within one clock tick, and refusing there would leave a frozen
+            // clock unable to ever populate the cache again.
+            MetricsSnapshotCache cache =
+                    MetricsSnapshotCache.inMemory(clock, Duration.ofSeconds(30));
+            cache.invalidate();
+
+            OutboxMetricsSnapshot atTheBarrier = snapshotTakenAt(clock.now());
+            cache.put(atTheBarrier);
+
+            assertThat(cache.get()).contains(atTheBarrier);
+        }
+
+        @Test
+        void theBarrierNeverMovesBackwards() {
+            MetricsSnapshotCache cache =
+                    MetricsSnapshotCache.inMemory(clock, Duration.ofSeconds(30));
+            clock.advance(Duration.ofSeconds(10));
+            cache.invalidate();
+
+            // A late invalidation stamped by a lagging clock must not lower the barrier.
+            clock.advance(Duration.ofSeconds(-10));
+            cache.invalidate();
+            cache.put(snapshotTakenAt(clock.now().plusSeconds(5)));
+
+            assertThat(cache.get()).isEmpty();
+        }
+
+        @Test
         void rejectsNonPositiveTtl() {
             assertThatThrownBy(() -> MetricsSnapshotCache.inMemory(clock, Duration.ZERO))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -136,7 +195,19 @@ class MetricsSnapshotCacheTest {
         }
     }
 
-    /** Minimal mutable Clock for tests — testkit.SettableClock lives in a downstream module. */
+    private static OutboxMetricsSnapshot snapshotTakenAt(Instant takenAt) {
+        return OutboxMetricsSnapshot.builder()
+                .totalPending(1)
+                .totalProcessing(2)
+                .totalDisabled(3)
+                .takenAt(takenAt)
+                .perType(List.of())
+                .build();
+    }
+
+    /**
+     * Minimal mutable Clock for tests — testkit.SettableClock lives in a downstream module.
+     */
     private static final class FakeClock implements Clock {
         private final AtomicReference<Instant> now;
 

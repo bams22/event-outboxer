@@ -9,10 +9,15 @@
  */
 package io.github.bams22.outboxer.storage.postgres;
 
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.ARCHIVE_COLUMNS;
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.ARCHIVE_COPY_COLUMNS;
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.EVENT_COLUMNS;
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.IMMUTABLE_COLUMNS;
+import static io.github.bams22.outboxer.storage.postgres.internal.EventRows.qualified;
+
 import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.CoalescedEvent;
 import io.github.bams22.outboxer.domain.Event;
-import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -24,6 +29,7 @@ import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot.EventTypeStats;
+import io.github.bams22.outboxer.storage.postgres.internal.EventRows;
 import io.github.bams22.outboxer.storage.postgres.internal.FlatMapJson;
 import io.github.bams22.outboxer.storage.postgres.internal.JsonbHandler;
 import io.github.bams22.outboxer.storage.postgres.internal.OutboxJdbcRunner;
@@ -51,6 +57,10 @@ import org.jspecify.annotations.Nullable;
  * PostgreSQL implementation of {@link EventStore}. Every SQL statement is the one documented in
  * STORAGE.md §Key queries. The adapter is Spring-free: it only consumes a {@link
  * ConnectionSupplier} to participate in the caller's transaction (ADR-0002).
+ *
+ * <p>Column lists are not spelled out here: the insert, the lookups, the archive copies and the
+ * claim's {@code RETURNING} are built from {@link EventRows}, which {@link PostgresOutboxAdmin}
+ * shares, so a column is added in one place for both classes.
  */
 public final class PostgresEventStore implements EventStore {
 
@@ -93,10 +103,10 @@ public final class PostgresEventStore implements EventStore {
         this.sqlInsert =
                 "INSERT INTO "
                         + tables.events()
-                        + " (id, event_type, payload, payload_binary, payload_format,"
-                        + " payload_class, priority, status, created_at, run_at, trace_context,"
-                        + " dedup_key) VALUES (?, ?, ?::jsonb, ?, ?, ?, ?, 'PENDING', now(), ?,"
-                        + " ?::jsonb, ?)";
+                        + " ("
+                        + IMMUTABLE_COLUMNS
+                        + ", status, created_at, run_at) VALUES (?, ?, ?::jsonb, ?, ?, ?, ?,"
+                        + " ?::jsonb, ?, 'PENDING', now(), ?)";
 
         this.sqlClaim = claimSql();
 
@@ -115,17 +125,15 @@ public final class PostgresEventStore implements EventStore {
                         + "  DELETE FROM "
                         + tables.events()
                         + "  WHERE id = ? AND version = ? AND claimed_by = ? AND status ="
-                        + " 'PROCESSING'  RETURNING id, event_type, payload, payload_binary,"
-                        + " payload_format, payload_class, priority, attempts, created_at, run_at,"
-                        + " last_fail_reason, trace_context, dedup_key) INSERT INTO "
+                        + " 'PROCESSING'  RETURNING "
+                        + ARCHIVE_COPY_COLUMNS
+                        + ") INSERT INTO "
                         + tables.archive()
-                        + " (id, event_type, payload, payload_binary, payload_format,"
-                        + " payload_class, priority, attempts, created_at, run_at,"
-                        + " last_fail_reason, trace_context, dedup_key, archived_at, archived_by)"
-                        + " SELECT id,"
-                        + " event_type, payload, payload_binary, payload_format, payload_class,"
-                        + " priority, attempts, created_at, run_at, last_fail_reason,"
-                        + " trace_context, dedup_key, now(), ? FROM del";
+                        + " ("
+                        + ARCHIVE_COLUMNS
+                        + ") SELECT "
+                        + ARCHIVE_COPY_COLUMNS
+                        + ", now(), ? FROM del";
 
         this.sqlMarkForRetry =
                 "UPDATE "
@@ -185,12 +193,7 @@ public final class PostgresEventStore implements EventStore {
                         + " = NULL, claimed_at = NULL, version = version + 1, run_at = ? WHERE"
                         + " e.claimed_by = ANY(?) AND e.status = 'PROCESSING'";
 
-        this.sqlFindById =
-                "SELECT id, event_type, payload, payload_binary, payload_format, payload_class,"
-                        + " priority, attempts, status, created_at, run_at, claimed_by, claimed_at,"
-                        + " last_fail_reason, trace_context, version, dedup_key FROM "
-                        + tables.events()
-                        + " WHERE id = ?";
+        this.sqlFindById = "SELECT " + EVENT_COLUMNS + " FROM " + tables.events() + " WHERE id = ?";
 
         this.sqlMetrics =
                 "SELECT event_type, status, count(*) AS cnt, "
@@ -208,7 +211,9 @@ public final class PostgresEventStore implements EventStore {
      */
     static final int CLAIM_DEDUP_SWEEP_CAP = 1_000;
 
-    /** {@code last_fail_reason} of a swept duplicate in the archive (ADR-0037). */
+    /**
+     * {@code last_fail_reason} of a swept duplicate in the archive (ADR-0037).
+     */
     static final String COALESCED_REASON = "coalesced at claim";
 
     /**
@@ -236,20 +241,17 @@ public final class PostgresEventStore implements EventStore {
                 properties.archiveEnabled()
                         ? "gone AS (DELETE FROM "
                                 + events
-                                + " e USING dup WHERE e.id = dup.id RETURNING e.id, e.event_type,"
-                                + " e.payload, e.payload_binary, e.payload_format,"
-                                + " e.payload_class, e.priority, e.attempts, e.created_at,"
-                                + " e.run_at, e.trace_context, e.dedup_key), archived AS (INSERT"
-                                + " INTO "
-                                + tables.archive()
-                                + " (id, event_type, payload, payload_binary, payload_format,"
-                                + " payload_class, priority, attempts, created_at, run_at,"
-                                + " last_fail_reason, trace_context, dedup_key, archived_at,"
-                                + " archived_by) SELECT id, event_type, payload, payload_binary,"
-                                + " payload_format, payload_class, priority, attempts, created_at,"
-                                + " run_at, '"
+                                + " e USING dup WHERE e.id = dup.id RETURNING "
+                                + qualified("e", IMMUTABLE_COLUMNS)
+                                + ", e.attempts, e.created_at, e.run_at, '"
                                 + COALESCED_REASON
-                                + "', trace_context, dedup_key, now(), ? FROM gone) "
+                                + "' AS last_fail_reason), archived AS (INSERT INTO "
+                                + tables.archive()
+                                + " ("
+                                + ARCHIVE_COLUMNS
+                                + ") SELECT "
+                                + ARCHIVE_COPY_COLUMNS
+                                + ", now(), ? FROM gone) "
                         : "gone AS (DELETE FROM "
                                 + events
                                 + " e USING dup WHERE e.id = dup.id RETURNING e.id, e.dedup_key,"
@@ -289,9 +291,9 @@ public final class PostgresEventStore implements EventStore {
                 + " version = version + 1 FROM picked LEFT JOIN swept s ON s.dedup_key ="
                 + " picked.dedup_key WHERE e.id = picked.id"
                 + " AND NOT EXISTS (SELECT 1 FROM dup WHERE dup.id = e.id)"
-                + " RETURNING e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,"
-                + " e.payload_class, e.priority, e.attempts, e.created_at, e.claimed_at,"
-                + " e.trace_context, e.version, e.dedup_key, s.ids AS coalesced_ids,"
+                + " RETURNING "
+                + qualified("e", IMMUTABLE_COLUMNS)
+                + ", e.attempts, e.created_at, e.claimed_at, e.version, s.ids AS coalesced_ids,"
                 + " s.contexts AS coalesced_contexts";
     }
 
@@ -336,8 +338,7 @@ public final class PostgresEventStore implements EventStore {
     public Optional<Event> findById(UUID id) {
         Objects.requireNonNull(id, "id must not be null");
         try {
-            return jdbc.queryOne(
-                    sqlFindById, ps -> ps.setObject(1, id), PostgresEventStore::readEvent);
+            return jdbc.queryOne(sqlFindById, ps -> ps.setObject(1, id), EventRows::readEvent);
         } catch (SQLException ex) {
             throw new EventStoreException("findById(" + id + ") failed", ex);
         }
@@ -523,17 +524,15 @@ public final class PostgresEventStore implements EventStore {
                 + " e USING (VALUES "
                 + valuesRows(size, "(?::uuid, ?::bigint)", "(?, ?)")
                 + ") AS k(id, ver)   WHERE e.id = k.id AND e.version = k.ver AND e.claimed_by = ?"
-                + " AND e.status = 'PROCESSING'  RETURNING e.id, e.event_type, e.payload,"
-                + " e.payload_binary, e.payload_format, e.payload_class, e.priority, e.attempts,"
-                + " e.created_at, e.run_at, e.last_fail_reason, e.trace_context, e.dedup_key)"
-                + " INSERT INTO "
+                + " AND e.status = 'PROCESSING'  RETURNING "
+                + qualified("e", ARCHIVE_COPY_COLUMNS)
+                + ") INSERT INTO "
                 + tables.archive()
-                + " (id, event_type, payload, payload_binary, payload_format, payload_class,"
-                + " priority, attempts, created_at, run_at, last_fail_reason, trace_context,"
-                + " dedup_key, archived_at, archived_by) SELECT id, event_type, payload,"
-                + " payload_binary, payload_format, payload_class, priority, attempts, created_at,"
-                + " run_at, last_fail_reason, trace_context, dedup_key, now(), ? FROM del"
-                + " RETURNING id";
+                + " ("
+                + ARCHIVE_COLUMNS
+                + ") SELECT "
+                + ARCHIVE_COPY_COLUMNS
+                + ", now(), ? FROM del RETURNING id";
     }
 
     /**
@@ -703,8 +702,10 @@ public final class PostgresEventStore implements EventStore {
                                             rs.getString("event_type"),
                                             rs.getString("status"),
                                             rs.getLong("cnt"),
-                                            toInstantNullable(rs.getTimestamp("oldest_pending")),
-                                            toInstantNullable(rs.getTimestamp("oldest_claimed"))));
+                                            EventRows.instantOrNull(
+                                                    rs.getTimestamp("oldest_pending")),
+                                            EventRows.instantOrNull(
+                                                    rs.getTimestamp("oldest_claimed"))));
             long totalPending = 0;
             long totalProcessing = 0;
             long totalDisabled = 0;
@@ -803,34 +804,24 @@ public final class PostgresEventStore implements EventStore {
         ps.setString(5, event.payloadFormat());
         ps.setString(6, event.payloadClass());
         ps.setShort(7, event.priority());
-        ps.setTimestamp(8, Timestamp.from(event.runAt()));
-        ps.setObject(9, JsonbHandler.jsonb(FlatMapJson.serialize(event.traceContext())));
-        ps.setString(10, event.dedupKey());
-    }
-
-    /**
-     * Package-private: reused by {@link PostgresOutboxAdmin}. Reassembles the dual payload lane —
-     * the CHECK constraint guarantees exactly one column is non-null.
-     */
-    static SerializedPayload readPayload(ResultSet rs) throws SQLException {
-        byte[] binary = rs.getBytes("payload_binary");
-        return binary != null
-                ? SerializedPayload.ofBytes(binary)
-                : SerializedPayload.ofText(rs.getString("payload"));
+        // 1-9 follow IMMUTABLE_COLUMNS; run_at is the only bound lifecycle column.
+        ps.setObject(8, JsonbHandler.jsonb(FlatMapJson.serialize(event.traceContext())));
+        ps.setString(9, event.dedupKey());
+        ps.setTimestamp(10, Timestamp.from(event.runAt()));
     }
 
     private static ClaimedEvent readClaimed(ResultSet rs) throws SQLException {
         return new ClaimedEvent(
                 (UUID) rs.getObject("id"),
                 rs.getString("event_type"),
-                readPayload(rs),
+                EventRows.readPayload(rs),
                 rs.getString("payload_format"),
                 rs.getString("payload_class"),
                 rs.getShort("priority"),
                 rs.getInt("attempts"),
-                toInstant(rs.getTimestamp("created_at")),
-                toInstant(rs.getTimestamp("claimed_at")),
-                toTraceContext(rs.getString("trace_context")),
+                EventRows.instant(rs.getTimestamp("created_at")),
+                EventRows.instant(rs.getTimestamp("claimed_at")),
+                EventRows.traceContext(rs.getString("trace_context")),
                 rs.getLong("version"),
                 rs.getString("dedup_key"),
                 readCoalesced(rs));
@@ -853,48 +844,9 @@ public final class PostgresEventStore implements EventStore {
                         : (String[]) contextsArray.getArray();
         List<CoalescedEvent> out = new ArrayList<>(ids.length);
         for (int i = 0; i < ids.length; i++) {
-            out.add(new CoalescedEvent(ids[i], toTraceContext(contexts[i])));
+            out.add(new CoalescedEvent(ids[i], EventRows.traceContext(contexts[i])));
         }
         return out;
-    }
-
-    /** Package-private: reused by {@link PostgresOutboxAdmin}. */
-    static Event readEvent(ResultSet rs) throws SQLException {
-        String statusStr = rs.getString("status");
-        String claimedByStr = rs.getString("claimed_by");
-        Timestamp claimedAt = rs.getTimestamp("claimed_at");
-        return new Event(
-                (UUID) rs.getObject("id"),
-                rs.getString("event_type"),
-                readPayload(rs),
-                rs.getString("payload_format"),
-                rs.getString("payload_class"),
-                rs.getShort("priority"),
-                rs.getInt("attempts"),
-                EventStatus.valueOf(statusStr),
-                toInstant(rs.getTimestamp("created_at")),
-                toInstant(rs.getTimestamp("run_at")),
-                claimedByStr == null ? null : new WorkerId(claimedByStr),
-                toInstantNullable(claimedAt),
-                rs.getString("last_fail_reason"),
-                toTraceContext(rs.getString("trace_context")),
-                rs.getLong("version"),
-                rs.getString("dedup_key"));
-    }
-
-    private static Map<String, String> toTraceContext(@Nullable String json) {
-        if (json == null || json.isEmpty()) {
-            return Map.of();
-        }
-        return FlatMapJson.parse(json);
-    }
-
-    private static Instant toInstant(Timestamp ts) {
-        return ts.toInstant();
-    }
-
-    private static @Nullable Instant toInstantNullable(@Nullable Timestamp ts) {
-        return ts == null ? null : ts.toInstant();
     }
 
     private static String trim(String reason) {
@@ -902,7 +854,9 @@ public final class PostgresEventStore implements EventStore {
         return reason.length() <= max ? reason : reason.substring(0, max);
     }
 
-    /** Internal row type for the metrics GROUP BY query. */
+    /**
+     * Internal row type for the metrics GROUP BY query.
+     */
     private record MetricsRow(
             String eventType,
             String status,

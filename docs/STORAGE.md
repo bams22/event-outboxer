@@ -489,14 +489,24 @@ liquibase.update(new Contexts());
 
 ## Key queries
 
+The adapter does not spell a column list out per statement. The nine
+columns set at publish and never updated — `id, event_type, payload,
+payload_binary, payload_format, payload_class, priority, trace_context,
+dedup_key` — are one constant (`EventRows.IMMUTABLE_COLUMNS`, internal)
+that the insert, the lookups, both archive copies, the claim's
+`RETURNING` and the replay are built from, in `PostgresEventStore` and
+`PostgresOutboxAdmin` alike; the lifecycle columns (`status`, `attempts`,
+`run_at`, …) are named per statement because each statement treats them
+differently. The listings below show the expanded form.
+
 ### Insert (keyed or not)
 
 ```sql
 INSERT INTO event_outboxer.events (id, event_type, payload, payload_binary, payload_format,
-                                   payload_class, priority, status, created_at, run_at,
-                                   trace_context, dedup_key)
+                                   payload_class, priority, trace_context, dedup_key,
+                                   status, created_at, run_at)
 VALUES (:id, :type, :payload::jsonb, :payload_binary, :payload_format, :payload_class, :priority,
-        'PENDING', now(), :run_at, :trace::jsonb, :dedup_key);
+        :trace::jsonb, :dedup_key, 'PENDING', now(), :run_at);
 
 -- Exactly one of :payload / :payload_binary is non-NULL (SerializedPayload lane, ADR-0025).
 ```
@@ -543,8 +553,9 @@ WITH picked AS (                                  -- the batch, locked
 ), gone AS (                                      -- swept: deleted, or archived first
     DELETE FROM event_outboxer.events e USING dup WHERE e.id = dup.id
     RETURNING e.id, e.dedup_key, e.trace_context
-    -- archive-enabled: RETURNING every column, and an `archived AS (INSERT INTO
-    -- event_archive ... SELECT ..., 'coalesced at claim', ..., now(), :worker_id FROM gone)`
+    -- archive-enabled: RETURNING the archive copy of the row with
+    -- 'coalesced at claim' AS last_fail_reason, and an `archived AS (INSERT INTO
+    -- event_archive (...) SELECT ..., now(), :worker_id FROM gone)`
 ), swept AS (                                     -- swept rows aggregated once per key
     SELECT dedup_key,
            array_agg(id ORDER BY id)                  AS ids,
@@ -561,8 +572,8 @@ WHERE e.id = picked.id
   AND NOT EXISTS (SELECT 1 FROM dup WHERE dup.id = e.id)
 RETURNING
     e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,
-    e.payload_class, e.priority, e.attempts, e.created_at,
-    e.claimed_at, e.trace_context, e.version, e.dedup_key,
+    e.payload_class, e.priority, e.trace_context, e.dedup_key,
+    e.attempts, e.created_at, e.claimed_at, e.version,
     s.ids AS coalesced_ids, s.contexts AS coalesced_contexts;
 ```
 
@@ -772,17 +783,17 @@ WITH del AS (
       AND claimed_by = :worker_id
       AND status = 'PROCESSING'
     RETURNING id, event_type, payload, payload_binary, payload_format,
-              payload_class, priority, attempts, created_at, run_at,
-              last_fail_reason, trace_context, dedup_key
+              payload_class, priority, trace_context, dedup_key,
+              attempts, created_at, run_at, last_fail_reason
 )
 INSERT INTO event_outboxer.event_archive (
     id, event_type, payload, payload_binary, payload_format,
-    payload_class, priority, attempts, created_at, run_at,
-    last_fail_reason, trace_context, dedup_key, archived_at, archived_by
+    payload_class, priority, trace_context, dedup_key,
+    attempts, created_at, run_at, last_fail_reason, archived_at, archived_by
 )
 SELECT id, event_type, payload, payload_binary, payload_format,
-       payload_class, priority, attempts, created_at, run_at,
-       last_fail_reason, trace_context, dedup_key, now(), :worker_id
+       payload_class, priority, trace_context, dedup_key,
+       attempts, created_at, run_at, last_fail_reason, now(), :worker_id
 FROM del;
 ```
 
@@ -796,7 +807,8 @@ returned, so a row that does not move never loses its audit record.
 ```sql
 WITH src AS MATERIALIZED (
     SELECT id, event_type, payload, payload_binary, payload_format,
-           payload_class, priority, trace_context, dedup_key, archived_at
+           payload_class, priority, trace_context, dedup_key,
+           archived_at
     FROM event_outboxer.event_archive
     WHERE id = :event_id
     -- bulk variant instead:
@@ -810,12 +822,12 @@ WITH src AS MATERIALIZED (
 ), ins AS (
     INSERT INTO event_outboxer.events (
         id, event_type, payload, payload_binary, payload_format,
-        payload_class, priority, attempts, status, created_at, run_at,
-        last_fail_reason, trace_context, version, dedup_key
+        payload_class, priority, trace_context, dedup_key,
+        attempts, status, created_at, run_at, last_fail_reason, version
     )
     SELECT id, event_type, payload, payload_binary, payload_format,
-           payload_class, priority, 0, 'PENDING', now(), now(),
-           'replayed from archive', trace_context, 0, dedup_key
+           payload_class, priority, trace_context, dedup_key,
+           0, 'PENDING', now(), now(), 'replayed from archive', 0
     FROM src
     WHERE id NOT IN (SELECT id FROM blocked)
     RETURNING id
@@ -1093,6 +1105,30 @@ archive](#replay-from-archive-adr-0033) above). Consume it as a Spring
 bean, via the `event-outboxer-admin-actuator` endpoint, or via the
 opt-in `event-outboxer-admin-rest` controller — see
 [CONFIGURATION.md](CONFIGURATION.md#event-outboxeradminrest-and-the-admin-modules).
+
+The admin shares the `MetricsSnapshotCache` with the event store and
+invalidates it after every mutation that changed rows, so a re-enable,
+purge or replay is visible in `metricsSnapshot()` (backlog gauges,
+health) on the next read rather than after `metrics-cache-ttl`.
+`purgeArchive` is the exception: the snapshot does not cover the archive.
+
+Three qualifications belong next to that promise:
+
+- **Reach.** The default cache is per-JVM, so the invalidation refreshes
+  only the replica that served the admin call; the other pods keep their
+  own snapshot for up to the TTL. `event-outboxer.cache.type=redis` puts
+  every pod on one entry and makes it fleet-wide.
+- **Ordering.** Dropping the entry is not enough on its own — a scrape
+  whose aggregate was already running could store its pre-mutation counts
+  right afterwards. `MetricsSnapshotCache.put` therefore refuses a
+  snapshot whose `takenAt` predates the last invalidation. Inside a caller
+  transaction the changed rows become visible at commit, so the Spring
+  Boot starter defers the invalidation to after-commit for the admin bean
+  it wires; a rollback drops it.
+- **Scope.** This is behaviour of the PostgreSQL adapter pair, not of the
+  `OutboxAdmin` port: no other implementation is required to invalidate
+  anything, and the in-memory admin used by the starter test configuration
+  does not.
 
 Migration `V003__outbox_admin_index.sql` backs these operations with a
 partial index:

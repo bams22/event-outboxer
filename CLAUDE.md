@@ -152,6 +152,11 @@ in a new or amended ADR.
    * Description.
    */
   ```
+  google-java-format folds short Javadoc back onto one line, which used
+  to make this rule unenforceable; Spotless now runs it with
+  `<formatJavadoc>false</formatJavadoc>`, so Javadoc is left exactly as
+  written. Files untouched since that change still carry legacy
+  single-line Javadoc — fix them as you pass through, not in a sweep.
 - **Lombok allowed**: `@Builder`, `@AllArgsConstructor`,
   `@NoArgsConstructor`, `@RequiredArgsConstructor` — prefer these over
   hand-written constructors/builders.

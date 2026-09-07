@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.cache.redis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.lettuce.core.RedisClient;
@@ -20,6 +21,7 @@ import io.lettuce.core.api.StatefulRedisConnection;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,6 +61,8 @@ class LettuceMetricsSnapshotCacheIT {
         REDIS.stop();
     }
 
+    private final FakeClock clock = new FakeClock(Instant.parse("2026-04-22T12:02:00Z"));
+
     @BeforeEach
     void flushBetweenTests() {
         connection.sync().flushdb();
@@ -87,7 +91,7 @@ class LettuceMetricsSnapshotCacheIT {
     @Test
     void putThenGetReturnsDeserialisedSnapshot() {
         MetricsSnapshotCache cache =
-                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
 
         cache.put(SNAPSHOT);
 
@@ -97,7 +101,7 @@ class LettuceMetricsSnapshotCacheIT {
     @Test
     void getReturnsEmptyWhenKeyAbsent() {
         MetricsSnapshotCache cache =
-                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
 
         assertThat(cache.get()).isEmpty();
     }
@@ -105,7 +109,7 @@ class LettuceMetricsSnapshotCacheIT {
     @Test
     void invalidateRemovesEntry() {
         MetricsSnapshotCache cache =
-                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30));
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
         cache.put(SNAPSHOT);
 
         cache.invalidate();
@@ -116,7 +120,7 @@ class LettuceMetricsSnapshotCacheIT {
     @Test
     void serverSideTtlExpiresTheEntry() throws InterruptedException {
         MetricsSnapshotCache cache =
-                new LettuceMetricsSnapshotCache(connection, Duration.ofMillis(200));
+                new LettuceMetricsSnapshotCache(connection, Duration.ofMillis(200), clock);
         cache.put(SNAPSHOT);
         assertThat(cache.get()).as("entry present immediately after put").contains(SNAPSHOT);
 
@@ -132,17 +136,95 @@ class LettuceMetricsSnapshotCacheIT {
                         connection,
                         Duration.ofSeconds(30),
                         "tenant-a:outbox:metrics:",
-                        new JsonMapper().findAndRegisterModules());
+                        new JsonMapper().findAndRegisterModules(),
+                        clock);
         MetricsSnapshotCache b =
                 new LettuceMetricsSnapshotCache(
                         connection,
                         Duration.ofSeconds(30),
                         "tenant-b:outbox:metrics:",
-                        new JsonMapper().findAndRegisterModules());
+                        new JsonMapper().findAndRegisterModules(),
+                        clock);
 
         a.put(SNAPSHOT);
 
         assertThat(a.get()).contains(SNAPSHOT);
         assertThat(b.get()).isEmpty();
+    }
+
+    @Test
+    void putIsRefusedWhenTheSnapshotWasTakenBeforeTheInvalidation() {
+        MetricsSnapshotCache cache =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
+        OutboxMetricsSnapshot inFlight = snapshotTakenAt(clock.now());
+
+        // The admin mutation lands while `inFlight` is still being computed.
+        clock.advance(Duration.ofMillis(50));
+        cache.invalidate();
+        cache.put(inFlight);
+
+        assertThat(cache.get())
+                .as("a snapshot computed before the mutation must not re-poison the cache")
+                .isEmpty();
+    }
+
+    @Test
+    void putIsAcceptedWhenTheSnapshotWasTakenAfterTheInvalidation() {
+        MetricsSnapshotCache cache =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
+        cache.invalidate();
+
+        clock.advance(Duration.ofMillis(50));
+        OutboxMetricsSnapshot fresh = snapshotTakenAt(clock.now());
+        cache.put(fresh);
+
+        assertThat(cache.get()).contains(fresh);
+    }
+
+    @Test
+    void theBarrierIsSharedAcrossPods() {
+        // Two cache instances on the same key prefix stand in for two replicas: the invalidation
+        // one of them performs must also bar the other one's in-flight snapshot.
+        MetricsSnapshotCache podA =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
+        MetricsSnapshotCache podB =
+                new LettuceMetricsSnapshotCache(connection, Duration.ofSeconds(30), clock);
+        OutboxMetricsSnapshot inFlight = snapshotTakenAt(clock.now());
+
+        clock.advance(Duration.ofMillis(50));
+        podA.invalidate();
+        podB.put(inFlight);
+
+        assertThat(podB.get()).isEmpty();
+    }
+
+    private static OutboxMetricsSnapshot snapshotTakenAt(Instant takenAt) {
+        return OutboxMetricsSnapshot.builder()
+                .totalPending(7)
+                .totalProcessing(3)
+                .totalDisabled(1)
+                .takenAt(takenAt)
+                .perType(List.of())
+                .build();
+    }
+
+    /**
+     * Minimal mutable Clock — testkit.SettableClock lives in a module this one does not depend on.
+     */
+    private static final class FakeClock implements Clock {
+        private final AtomicReference<Instant> now;
+
+        FakeClock(Instant initial) {
+            this.now = new AtomicReference<>(initial);
+        }
+
+        @Override
+        public Instant now() {
+            return now.get();
+        }
+
+        void advance(Duration d) {
+            now.updateAndGet(prev -> prev.plus(d));
+        }
     }
 }

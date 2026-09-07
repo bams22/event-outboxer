@@ -26,6 +26,7 @@ import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.spi.OutboxAdmin.ReplayAllResult;
 import io.github.bams22.outboxer.spi.OutboxAdmin.ReplayOutcome;
+import io.github.bams22.outboxer.spi.OutboxMetricsSnapshot;
 import io.github.bams22.outboxer.spi.contracts.AbstractOutboxAdminContractTest;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -52,17 +53,179 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
 
     @Override
     protected EventStore newStore() {
-        return new PostgresEventStore(
-                PostgresTestEnvironment.connectionSupplier(),
-                PostgresStorageProperties.defaults(),
-                Clock.system(),
-                MetricsSnapshotCache.noop());
+        return storeWith(MetricsSnapshotCache.noop());
     }
 
     @Override
     protected OutboxAdmin newAdmin() {
+        return adminWith(MetricsSnapshotCache.noop());
+    }
+
+    private static PostgresEventStore storeWith(MetricsSnapshotCache cache) {
+        return new PostgresEventStore(
+                PostgresTestEnvironment.connectionSupplier(),
+                PostgresStorageProperties.defaults(),
+                Clock.system(),
+                cache);
+    }
+
+    private static PostgresOutboxAdmin adminWith(MetricsSnapshotCache cache) {
         return new PostgresOutboxAdmin(
-                PostgresTestEnvironment.connectionSupplier(), PostgresStorageProperties.defaults());
+                PostgresTestEnvironment.connectionSupplier(),
+                PostgresStorageProperties.defaults(),
+                cache);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // the metrics snapshot cache shared with the store
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("reenable() invalidates the metrics snapshot cache it shares with the store")
+    void reenable_invalidatesSharedMetricsCache() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        UUID id = disable(publishAndClaim(TYPE_A, "poison"));
+        // Prime the cache: one DISABLED row, nothing PENDING.
+        assertThat(cachedStore.metricsSnapshot().totalDisabled()).isEqualTo(1);
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isZero();
+
+        assertThat(cachedAdmin.reenable(id)).isTrue();
+
+        // Well inside the TTL, yet the next read is fresh.
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isEqualTo(1);
+        assertThat(cachedStore.metricsSnapshot().totalDisabled()).isZero();
+    }
+
+    @Test
+    @DisplayName("replayFromArchive() invalidates the cache: the replayed row counts at once")
+    void replayFromArchive_invalidatesSharedMetricsCache() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        UUID id = archiveOne("replay-me", null);
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isZero();
+
+        assertThat(cachedAdmin.replayFromArchive(id)).isEqualTo(ReplayOutcome.REPLAYED);
+
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a mutation that matched nothing leaves the cached snapshot in place")
+    void noopMutation_keepsTheCachedSnapshot() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        var primed = cachedStore.metricsSnapshot();
+
+        assertThat(cachedAdmin.reenable(UUID.randomUUID())).isFalse();
+        assertThat(cachedAdmin.reenableAll(TYPE_A, null, 10)).isZero();
+        assertThat(cachedAdmin.purgeDisabled(null, Instant.now(), 10)).isZero();
+        assertThat(cachedAdmin.replayFromArchive(UUID.randomUUID()))
+                .isEqualTo(ReplayOutcome.NOT_FOUND);
+
+        assertThat(cachedStore.metricsSnapshot()).isSameAs(primed);
+    }
+
+    @Test
+    @DisplayName("reenableAll() invalidates the cache: the re-enabled rows count at once")
+    void reenableAll_invalidatesSharedMetricsCache() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        disable(publishAndClaim(TYPE_A, "a1"));
+        disable(publishAndClaim(TYPE_A, "a2"));
+        assertThat(cachedStore.metricsSnapshot().totalDisabled()).isEqualTo(2);
+
+        assertThat(cachedAdmin.reenableAll(TYPE_A, null, 10)).isEqualTo(2);
+
+        assertThat(cachedStore.metricsSnapshot().totalDisabled()).isZero();
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("purgeDisabled() invalidates the cache: the purged rows stop counting at once")
+    void purgeDisabled_invalidatesSharedMetricsCache() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        disable(publishAndClaim(TYPE_A, "p1"));
+        assertThat(cachedStore.metricsSnapshot().totalDisabled()).isEqualTo(1);
+
+        assertThat(cachedAdmin.purgeDisabled(null, Instant.now().plus(Duration.ofMinutes(1)), 10))
+                .isEqualTo(1);
+
+        assertThat(cachedStore.metricsSnapshot().totalDisabled()).isZero();
+    }
+
+    @Test
+    @DisplayName("replayAllFromArchive() invalidates the cache: the replayed rows count at once")
+    void replayAllFromArchive_invalidatesSharedMetricsCache() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        archiveOne("r1", null);
+        archiveOne("r2", null);
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isZero();
+
+        assertThat(cachedAdmin.replayAllFromArchive("ARCH_T", null, null, 100, null).replayed())
+                .isEqualTo(2);
+
+        assertThat(cachedStore.metricsSnapshot().totalPending()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName(
+            "purgeArchive() deletes rows yet leaves the snapshot: it does not cover the archive")
+    void purgeArchive_keepsTheCachedSnapshot() {
+        MetricsSnapshotCache cache =
+                MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofMinutes(10));
+        PostgresEventStore cachedStore = storeWith(cache);
+        PostgresOutboxAdmin cachedAdmin = adminWith(cache);
+        archiveOne("gone", null);
+        OutboxMetricsSnapshot primed = cachedStore.metricsSnapshot();
+
+        assertThat(cachedAdmin.purgeArchive(Instant.now().plus(Duration.ofDays(1)), 100))
+                .isEqualTo(1);
+
+        assertThat(cachedStore.metricsSnapshot()).isSameAs(primed);
+    }
+
+    @Test
+    @DisplayName("a cache that throws does not fail the mutation that already happened")
+    void throwingCache_doesNotFailTheMutation() {
+        // The SPI forbids it, but a user-supplied @Bean MetricsSnapshotCache is not obliged to
+        // obey: the row is already re-enabled, so reporting a failure would send the operator
+        // retrying an operation that succeeded.
+        PostgresOutboxAdmin cachedAdmin =
+                adminWith(
+                        new MetricsSnapshotCache() {
+                            @Override
+                            public Optional<OutboxMetricsSnapshot> get() {
+                                return Optional.empty();
+                            }
+
+                            @Override
+                            public void put(OutboxMetricsSnapshot snapshot) {}
+
+                            @Override
+                            public void invalidate() {
+                                throw new IllegalStateException("cache backend down");
+                            }
+                        });
+        UUID id = disable(publishAndClaim(TYPE_A, "poison"));
+
+        assertThat(cachedAdmin.reenable(id)).isTrue();
+
+        assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -363,7 +526,9 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
     // helpers
     // ---------------------------------------------------------------------------------------------
 
-    /** Publishes a keyed event in archive mode, claims it and finalizes it into the archive. */
+    /**
+     * Publishes a keyed event in archive mode, claims it and finalizes it into the archive.
+     */
     private UUID archiveOne(String payload, @Nullable String dedupKey) {
         ClaimedEvent claimed = claimArchiveMode(pendingKeyed(payload, dedupKey));
         assertThat(archiveStore().markProcessed(claimed.id(), WORKER, claimed.claimedVersion()))
@@ -375,7 +540,9 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
         return pendingWithId(UUID.randomUUID(), payload, dedupKey);
     }
 
-    /** A publish that reuses an explicit UUID — how a replayed id ends up live again. */
+    /**
+     * A publish that reuses an explicit UUID — how a replayed id ends up live again.
+     */
     private PendingEvent pendingWithId(UUID id, String payload, @Nullable String dedupKey) {
         return PendingEvent.builder()
                 .id(id)
@@ -424,7 +591,9 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
         return archiveStore;
     }
 
-    /** Ages an archived row's {@code created_at} so a copied timestamp would be unmistakable. */
+    /**
+     * Ages an archived row's {@code created_at} so a copied timestamp would be unmistakable.
+     */
     private static void backdateArchivedCreatedAt(UUID id, Duration age) {
         try (Connection conn = PostgresTestEnvironment.dataSource().getConnection();
                 Statement st = conn.createStatement()) {

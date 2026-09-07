@@ -8,6 +8,36 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
+- **Backlog gauges and health no longer lag an admin mutation by a full
+  `metrics-cache-ttl` (ADR-0019 amendment, 2026-09-07).**
+  `PostgresOutboxAdmin` now shares the `MetricsSnapshotCache` with
+  `PostgresEventStore` and invalidates it after every mutation that
+  changed rows — re-enable, purge of `DISABLED` rows, replay;
+  `purgeArchive` does not, the snapshot does not cover the archive.
+  Dropping the entry was not enough on its own: a snapshot computation
+  already in flight put its pre-mutation counts straight back, and a
+  mutation made inside a caller transaction invalidated when its
+  statement ran while the rows became visible only at commit.
+  `MetricsSnapshotCache.put` is conditional now — a snapshot taken
+  before the last `invalidate()` is refused, by a second reference in
+  the in-memory flavour and a Lua compare-and-set against an
+  `<prefix>invalidated-at` key in the Redis one — and the starter defers
+  the admin bean's invalidation to after-commit. The freshness is a
+  property of the PostgreSQL adapter pair, not of the `OutboxAdmin`
+  port: with the default per-JVM cache it reaches only the replica that
+  served the admin call, `cache.type=redis` makes it fleet-wide.
+
+- **The batched archive finalize could silently stop copying a column.**
+  `markProcessedAll(...)` with archiving on kept a hand-written copy of
+  the archive column lists while the other statements moved onto the
+  shared `EventRows` constants. Both of its sides stayed consistent with
+  each other, so PostgreSQL raised nothing: a column added to the
+  immutable set (as ADR-0037 added `dedup_key`) would have been archived
+  by the single-row finalize and dropped by the batched one — the
+  default path, `finalize-batching` being on. Both are built from
+  `EventRows` now, and `EventRowsSchemaIT` checks the lists against the
+  migrated schema.
+
 - **A publish-only engine no longer resets every in-flight claim of the
   fleet (ADR-0029 amendment, 2026-09-04).** The stale-claim threshold
   is derived from the `handler-max-runtime` of the types an instance
@@ -21,6 +51,23 @@ All notable changes to this project are documented here. Format follows
   explicitly, and says so at startup.
 
 ### Changed
+- **`PostgresOutboxAdmin` and `LettuceMetricsSnapshotCache` constructors
+  changed (pre-1.0 break).** `new PostgresOutboxAdmin(connections,
+  properties)` becomes `new PostgresOutboxAdmin(connections, properties,
+  metricsCache)` — pass the same cache instance the store uses, or
+  `MetricsSnapshotCache.noop()` when the store does not cache. Both
+  `LettuceMetricsSnapshotCache` constructors gain a trailing `Clock`, so
+  the invalidation barrier and the store's `takenAt` are stamped by the
+  same clock. The Spring Boot starter wires both; only plain-Java wiring
+  needs the edit.
+
+- **`MetricsSnapshotCache` contract tightened.** `put(...)` must refuse a
+  snapshot whose `takenAt` predates the implementation's last
+  `invalidate()`, and no method may propagate a backend failure to its
+  caller. Ignoring the first only weakens freshness; the adapters guard
+  against the second so that a cache outage cannot turn a committed admin
+  mutation into a reported failure.
+
 - **Group-commit finalize batching no longer convoys on its flush lock
   (ADR-0014 amendment, 2026-09-04).** `GroupCommitEventStore` waiters
   now wait on their own future instead of blocking on the lock; the

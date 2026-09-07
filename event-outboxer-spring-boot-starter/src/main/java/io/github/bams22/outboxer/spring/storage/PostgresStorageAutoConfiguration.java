@@ -9,6 +9,7 @@
  */
 package io.github.bams22.outboxer.spring.storage;
 
+import io.github.bams22.outboxer.core.publish.TransactionContext;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.ConnectionSupplier;
 import io.github.bams22.outboxer.spi.EventStore;
@@ -18,6 +19,7 @@ import io.github.bams22.outboxer.spi.WorkerRegistry;
 import io.github.bams22.outboxer.spring.OutboxDataSource;
 import io.github.bams22.outboxer.spring.OutboxDataSourceResolver;
 import io.github.bams22.outboxer.spring.OutboxProperties;
+import io.github.bams22.outboxer.spring.publisher.SpringTransactionContext;
 import io.github.bams22.outboxer.storage.postgres.PostgresEventStore;
 import io.github.bams22.outboxer.storage.postgres.PostgresOutboxAdmin;
 import io.github.bams22.outboxer.storage.postgres.PostgresStorageProperties;
@@ -68,8 +70,19 @@ public class PostgresStorageAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(OutboxAdmin.class)
     public PostgresOutboxAdmin outboxAdmin(
-            ConnectionSupplier connections, PostgresStorageProperties properties) {
-        return new PostgresOutboxAdmin(connections, properties);
+            ConnectionSupplier connections,
+            PostgresStorageProperties properties,
+            MetricsSnapshotCache metricsCache,
+            ObjectProvider<TransactionContext> transactions) {
+        // The same cache bean the store serves metricsSnapshot() from: an admin mutation
+        // invalidates it, so a re-enable or purge shows on the next scrape, not after the TTL.
+        // Wrapped so that a mutation made inside a caller transaction invalidates at commit, when
+        // the changed rows become visible, rather than when its statement ran.
+        return new PostgresOutboxAdmin(
+                connections,
+                properties,
+                new TransactionAwareMetricsCacheInvalidation(
+                        metricsCache, transactions.getIfAvailable(SpringTransactionContext::new)));
     }
 
     @Bean

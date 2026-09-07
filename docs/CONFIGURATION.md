@@ -279,7 +279,15 @@ Storage adapter settings.
 - `metrics-cache-ttl` — TTL applied by the default in-memory cache and
   (when `event-outboxer.cache.type=redis`) as the PX expire on the Redis key.
   Ignored when `event-outboxer.cache.type=noop` or a custom
-  `@Bean MetricsSnapshotCache` takes over.
+  `@Bean MetricsSnapshotCache` takes over. An admin mutation that changed
+  rows (re-enable, purge of `DISABLED` rows, replay) invalidates the cache,
+  so it shows on the next scrape rather than after the TTL. How far that
+  reaches depends on the cache: the default in-memory cache is per-JVM, so
+  only the replica that served the admin call is refreshed and the others
+  keep their own snapshot for up to the TTL; `cache.type=redis` shares one
+  entry and makes the invalidation fleet-wide. A mutation performed inside a
+  caller transaction invalidates at commit, when its rows become visible,
+  not when its statement ran.
 
 ### `event-outboxer.flyway.*`
 

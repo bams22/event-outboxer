@@ -32,12 +32,42 @@ import java.util.Optional;
  *   <li>{@link #get()} returns {@link Optional#empty()} on a miss, expired entry, or any
  *       deserialisation / backend error (fail-safe: adapters must then fall back to computing the
  *       snapshot from scratch).
- *   <li>{@link #put(OutboxMetricsSnapshot)} replaces any existing entry unconditionally; TTL
+ *   <li>{@link #put(OutboxMetricsSnapshot)} replaces any existing entry, <em>unless</em> the
+ *       snapshot was taken before the last {@link #invalidate()} — see "Invalidation" below. TTL
  *       semantics are owned by the implementation.
- *   <li>{@link #invalidate()} drops the cached entry immediately. Used by tests and by operator
- *       tooling that needs the next read to be fresh.
+ *   <li>{@link #invalidate()} drops the cached entry immediately and bars any snapshot taken
+ *       before it from being stored afterwards.
  *   <li>Implementations MUST be thread-safe.
+ *   <li>No method may propagate a backend failure to its caller. {@link #get()} degrades to a
+ *       miss; {@link #put(OutboxMetricsSnapshot)} and {@link #invalidate()} log and return. A
+ *       cache that throws would turn a successful database mutation into a reported failure — the
+ *       adapters guard against it, but a custom implementation must not rely on that.
  * </ul>
+ *
+ * <h2>Invalidation</h2>
+ *
+ * The PostgreSQL {@code OutboxAdmin} calls {@link #invalidate()} after every mutation that changed
+ * rows (re-enable, purge of {@code DISABLED} rows, replay), so the store's next {@code
+ * metricsSnapshot()} reflects it instead of serving pre-mutation counts until the TTL runs out.
+ * Tests and operator tooling call it for the same reason.
+ *
+ * <p>Dropping the entry is not enough on its own: a snapshot computation that started before the
+ * mutation can finish after the invalidation and {@link #put(OutboxMetricsSnapshot)} its
+ * pre-mutation counts back, which would restore exactly the staleness the invalidation removed.
+ * That is why {@link #put(OutboxMetricsSnapshot)} is conditional — an implementation remembers when
+ * it was last invalidated and ignores a snapshot whose {@link OutboxMetricsSnapshot#takenAt()} is
+ * before that moment. {@code takenAt} is captured before the aggregate query runs, so "taken
+ * before the invalidation" means "cannot be trusted to include the mutation". The cost of a
+ * dropped {@code put} is one recomputation, never a wrong number.
+ *
+ * <p>Two limits are worth knowing. The comparison assumes the cache and the {@code EventStore}
+ * read the same wall clock — the built-in flavours and the starter's wiring do; a custom cache on
+ * a different {@link Clock} weakens it, and the Redis flavour compares timestamps written by
+ * different pods, so it is only as good as their clock sync. And an admin mutation that runs
+ * inside a caller transaction becomes visible at commit, not when its statement ran, so the
+ * invalidation has to be deferred to the commit — the Spring Boot starter does this for the admin
+ * bean it wires; plain-Java wiring that calls the admin inside its own transaction should invoke
+ * {@link #invalidate()} after committing.
  *
  * <h2>Built-in flavours</h2>
  *
@@ -46,7 +76,8 @@ import java.util.Optional;
  *       #put(OutboxMetricsSnapshot)} is dropped; adapters compute on each call.
  *   <li>{@link #inMemory(Clock, Duration)} — per-JVM {@code AtomicReference} with TTL. Matches the
  *       pre-SPI behaviour of {@code PostgresEventStore}; suitable for single-pod deployments or
- *       when cross-pod snapshot consistency does not matter.
+ *       when cross-pod snapshot consistency does not matter. Being per-JVM, an invalidation
+ *       reaches only the replica that performed the admin mutation.
  * </ul>
  *
  * <p>For cross-pod consistency see the {@code event-outboxer-cache-redis} module, which ships a
@@ -54,16 +85,27 @@ import java.util.Optional;
  */
 public interface MetricsSnapshotCache {
 
-    /** Returns the cached snapshot if present and not expired. */
+    /**
+     * Returns the cached snapshot if present and not expired.
+     */
     Optional<OutboxMetricsSnapshot> get();
 
-    /** Stores {@code snapshot}; callers pass a freshly-computed aggregate. */
+    /**
+     * Stores {@code snapshot}, unless it was taken before the last {@link #invalidate()} — a
+     * snapshot that old cannot be trusted to include the mutation that invalidated the cache, so it
+     * is dropped rather than cached. Callers pass a freshly-computed aggregate.
+     */
     void put(OutboxMetricsSnapshot snapshot);
 
-    /** Drops the cached entry. Next {@link #get()} misses. */
+    /**
+     * Drops the cached entry: the next {@link #get()} misses, and any snapshot taken before this
+     * call is refused by {@link #put(OutboxMetricsSnapshot)}.
+     */
     void invalidate();
 
-    /** Cache that never stores anything — every {@link #get()} misses. */
+    /**
+     * Cache that never stores anything — every {@link #get()} misses.
+     */
     static MetricsSnapshotCache noop() {
         return NoopMetricsSnapshotCache.INSTANCE;
     }

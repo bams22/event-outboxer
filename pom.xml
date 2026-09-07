@@ -456,6 +456,12 @@
                                 <version>1.28.0</version>
                                 <style>AOSP</style>
                                 <reflowLongStrings>true</reflowLongStrings>
+                                <!--
+                                    google-java-format folds any Javadoc that fits on one line
+                                    back into `/** ... */`, which contradicts the multi-line-only
+                                    rule in CLAUDE.md. Leave Javadoc alone and let the rule stand.
+                                -->
+                                <formatJavadoc>false</formatJavadoc>
                             </googleJavaFormat>
                             <removeUnusedImports/>
                             <trimTrailingWhitespace/>

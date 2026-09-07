@@ -12,6 +12,7 @@ package io.github.bams22.outboxer.spring.cache;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.github.bams22.outboxer.cache.redis.LettuceMetricsSnapshotCache;
+import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.MetricsSnapshotCache;
 import io.github.bams22.outboxer.spring.OutboxProperties;
 import io.github.bams22.outboxer.spring.OutboxRedisConnection;
@@ -35,7 +36,8 @@ import org.springframework.context.annotation.Bean;
  * cache.type=redis} is an explicit opt-in.
  *
  * <p>TTL comes from {@code event-outboxer.storage.metrics-cache-ttl}; the key prefix from {@code
- * event-outboxer.cache.redis.key-prefix} (default {@code outbox:metrics:}).
+ * event-outboxer.cache.redis.key-prefix} (default {@code outbox:metrics:}); the {@code Clock} that
+ * stamps the cache's invalidation barrier from the application's outbox {@code Clock} bean.
  */
 @AutoConfiguration(after = RedisConnectionAutoConfiguration.class)
 @ConditionalOnClass(LettuceMetricsSnapshotCache.class)
@@ -50,11 +52,16 @@ public class RedisCacheAutoConfiguration {
                     ObjectProvider<StatefulRedisConnection<String, String>> qualified,
             ObjectProvider<StatefulRedisConnection<String, String>> connections,
             ListableBeanFactory beanFactory,
-            OutboxProperties properties) {
+            OutboxProperties properties,
+            ObjectProvider<Clock> clocks) {
         return new LettuceMetricsSnapshotCache(
                 OutboxRedisConnectionResolver.resolve(qualified, connections, beanFactory),
                 properties.getStorage().getMetricsCacheTtl(),
                 properties.getCache().getRedis().getKeyPrefix(),
-                JsonMapper.builder().addModule(new JavaTimeModule()).build());
+                JsonMapper.builder().addModule(new JavaTimeModule()).build(),
+                // The application's outbox Clock, so the invalidation barrier and the store's
+                // snapshot timestamps share one time base. Absent only in slices that boot this
+                // auto-configuration without an engine, where the fallback is the same clock.
+                clocks.getIfAvailable(Clock::system));
     }
 }

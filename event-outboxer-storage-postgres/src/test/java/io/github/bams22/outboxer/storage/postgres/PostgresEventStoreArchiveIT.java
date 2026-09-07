@@ -232,7 +232,8 @@ class PostgresEventStoreArchiveIT {
                         .tablePrefix("")
                         .archiveEnabled(true)
                         .metricsCacheTtl(Duration.ofSeconds(30))
-                        .build());
+                        .build(),
+                MetricsSnapshotCache.noop());
     }
 
     private ClaimedEvent claimOne(PendingEvent p) {

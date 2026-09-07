@@ -32,13 +32,14 @@ infrastructure ([ADR-0020](../adr/0020-no-inmemory-storage-in-production.md)).
 |---|---|
 | `PostgresEventStore` | `EventStore`: save, claim (with the dedup sweep), finalize, reclaim, sweep, metrics snapshot. All SQL precomputed in the constructor. |
 | `PostgresWorkerRegistry` | `WorkerRegistry`: register / heartbeat / findDead / removeDead over `event_outboxer.workers`. |
-| `PostgresOutboxAdmin` | `OutboxAdmin` ([ADR-0019](../adr/0019-admin-and-retention-surface.md)): list by status (keyset pagination), archive lookup, re-enable, purge, replay-from-archive ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)). |
+| `PostgresOutboxAdmin` | `OutboxAdmin` ([ADR-0019](../adr/0019-admin-and-retention-surface.md)): list by status (keyset pagination), archive lookup, re-enable, purge, replay-from-archive ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)). Takes the same `MetricsSnapshotCache` as the store and invalidates it after a mutation that changed rows. |
 | `PostgresStorageProperties` | Plain record (`schema`, `tablePrefix`, `archiveEnabled`, `metricsCacheTtl`); `defaults()` = `event_outboxer` / `""` / `false` / `30s`. No Spring annotations. |
 | `SchemaResolver` | Builds fully-qualified table names once (`<schema>.<prefix>events`, `…workers`, `…event_archive`). |
 
 Classes under `…storage.postgres.internal` (`OutboxJdbcRunner`,
-`JsonbHandler`, `FlatMapJson`) are not public API and may change
-between minor versions.
+`JsonbHandler`, `FlatMapJson`, `EventRows` — the column lists and row
+mappers the store and the admin share) are not public API and may
+change between minor versions.
 
 ### Key behaviors
 
@@ -170,20 +171,33 @@ Flyway.configure()
     .load()
     .migrate();
 
+MetricsSnapshotCache metricsCache =
+    MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofSeconds(30));
+
 EventStore store = new PostgresEventStore(
-    connectionSupplier,
-    PostgresStorageProperties.defaults(),
-    Clock.system(),
-    MetricsSnapshotCache.inMemory(Clock.system(), Duration.ofSeconds(30)));
+    connectionSupplier, PostgresStorageProperties.defaults(), Clock.system(), metricsCache);
 
 WorkerRegistry registry =
     new PostgresWorkerRegistry(connectionSupplier, PostgresStorageProperties.defaults());
+
+// Optional: the admin surface and the retention task. Same cache instance as the store,
+// so an admin mutation is visible in metricsSnapshot() at once.
+OutboxAdmin admin =
+    new PostgresOutboxAdmin(connectionSupplier, PostgresStorageProperties.defaults(), metricsCache);
 ```
 
-Then pass both into `OutboxEngineBuilder` (see
+Then pass the store and the registry (and the admin, for retention) into
+`OutboxEngineBuilder` (see
 [core](event-outboxer-core.md#usage-without-spring)). For the caller's
 transaction to include `publish()`, your `ConnectionSupplier` must
 return the transaction's connection when one is active.
+
+If you call an admin mutation from inside your own transaction, invoke
+`metricsCache.invalidate()` again once you have committed: the admin
+invalidates when its statement runs, and until the commit the changed
+rows are invisible to the scrape that recomputes the snapshot. The
+Spring Boot starter does this for you (it defers the invalidation to
+after-commit for the admin bean it wires).
 
 ### pgBouncer note
 
