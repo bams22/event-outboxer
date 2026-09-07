@@ -94,6 +94,47 @@ the *due* duplicates of the keys it picked, before any handler runs.
   document, and the insert-time path keeps the collision unless it is
   fixed as well. Rejected: one mechanism. The spike's flag is
   scaffolding and is retired by the implementing change.
+- **Two claim statements: the plain one for keyless batches, the
+  sweeping one for keyed batches** (raised 2026-09-07, after the
+  implementation shipped). Not adopted, for three reasons.
+  1. *No measurable gain on the keyless path.* For a batch without a
+     key every added CTE is empty — `keep` filters everything out,
+     `dup` makes no probe, `gone` and `swept` never run. Measured
+     three ways: the insert-time and the sweeping statement at 0.77 ms
+     each on the keyless `throughput` cell (2026-09-05); the two
+     `RETURNING` shapes at 0.87 vs 0.80 ms in an interleaved A/B
+     (2026-09-07); `EXPLAIN ANALYZE` on a 3 000-row keyless backlog at
+     1.26 vs 1.57 ms median execution with a 2–3× spread between
+     consecutive runs of the same statement. The harness cannot tell
+     the shapes apart, and end-to-end throughput is identical.
+  2. *Nothing to split on.* The dedup key is a property of the publish
+     (`PublishOptions.dedupKey`), not of the type, so one batch of one
+     type mixes keyed and keyless rows and the engine cannot know that
+     a type never carries a key. A per-type configuration flag is a
+     footgun (a keyed publish into a `dedup: false` type either stops
+     coalescing silently or must be rejected by a publisher that has no
+     per-type configuration); a plain claim followed by a second
+     sweeping statement when the batch turns out keyed costs a round
+     trip on the keyed path to save microseconds on the keyless one;
+     an adaptive per-type switch (plain until the first keyed row is
+     seen, sweeping ever after) is correct under at-least-once but is
+     poller state bought for an invisible gain.
+  3. *The one place it would pay is planning without a plan cache.*
+     Planning the sweeping statement takes ~1.6 ms against ~0.6 ms for
+     the plain one (five CTEs against one; `EXPLAIN`, median of 7).
+     With pgjdbc's server-side prepared statements (`prepareThreshold`
+     5) that is paid once per pooled connection. Behind pgBouncer in
+     transaction pooling older than 1.21 the documentation itself
+     advises `prepareThreshold=0`, and then every claim is planned
+     anew: about +1 ms per claim, comparable to its execution.
+
+  **Reopen when** a deployment behind pgBouncer with
+  `prepareThreshold=0` is a target: measure the claim statement's
+  planning share on the harness with that JDBC setting first, and if
+  it is a visible fraction of claim latency, implement the adaptive
+  per-type switch — never the configuration flag — and decide on an
+  interleaved A/B, since single runs on the laptop do not resolve
+  claim-statement differences below ~2×.
 
 ## Decision
 
