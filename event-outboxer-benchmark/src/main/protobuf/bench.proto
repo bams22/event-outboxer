@@ -11,4 +11,5 @@ message BenchPayloadProto {
   int64 seq = 1;
   string lock_key = 2;   // empty = no lock key
   string padding = 3;
+  string dedup_key = 4;  // empty = no dedup key
 }

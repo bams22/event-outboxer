@@ -47,11 +47,15 @@ nullness checkers work out of the box.
   `NoTransactionException`; `IGNORE` writes anyway — tests only).
 - **`PublishOptions`** (record + builder) — optional per-call tuning:
   `runAt` (delay), `priority`, `traceContext` (explicit override),
-  `dedupKey`. A `dedupKey` gives *work coalescing*: at most one
-  `PENDING` event per `(eventType, dedupKey)`; a coalesced publish
-  returns the existing event's id
-  ([ADR-0021](../adr/0021-dedup-key-single-inflight-per-key.md)).
-  This is **not** exactly-once — handlers stay idempotent. There is
+  `dedupKey`. A `dedupKey` gives *work coalescing*: every publish
+  inserts and returns its own id, and the claim collapses the due
+  `PENDING` duplicates of a `(eventType, dedupKey)` into one handler
+  run — the swept events are reported through
+  `OutboxListener.onEventCoalesced`
+  ([ADR-0037](../adr/0037-claim-time-dedup-coalescing.md)). A publish
+  with a future `runAt` is a separate intent and is never collapsed
+  before it is due. This is **not** exactly-once — handlers stay
+  idempotent. There is
   deliberately no `lockKey` option: lock keys are derived at handle
   time by the handler ([ADR-0012](../adr/0012-extract-lock-key-on-handler.md)).
 - **`PublishRequest`** (record + builder) — one entry of a `publishAll` batch.

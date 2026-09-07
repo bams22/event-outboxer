@@ -31,7 +31,7 @@ import lombok.Builder;
  *     io.github.bams22.outboxer.spi.EventStore#metricsSnapshot()}; short so dashboards stay fresh
  *     but long enough not to hammer the DB.
  */
-@Builder
+@Builder(toBuilder = true)
 public record PostgresStorageProperties(
         String schema, String tablePrefix, boolean archiveEnabled, Duration metricsCacheTtl) {
 

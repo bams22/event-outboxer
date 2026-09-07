@@ -6,8 +6,12 @@ Accepted (amended 2026-08-16: the Micrometer adapter instruments
 through the Observation API instead of `Tracer` / `Propagator`
 directly; amended 2026-08-28: deferred events get a linked root
 consumer span instead of a child; amended 2026-09-05: the consumer span
-carries the entity-lock key and the lock acquisition time — see the
-amendment sections under Decision).
+carries the entity-lock key and the lock acquisition time; amended
+2026-09-07 by [ADR-0037](0037-claim-time-dedup-coalescing.md):
+coalescing is recorded on the consumer span — `coalesced_count` plus
+one span link per swept publish — and `PublishSpan.coalesced(UUID)` /
+`event_outboxer.coalesced_into` are gone — see the amendment sections
+under Decision).
 
 ## Date
 
@@ -68,7 +72,8 @@ share: OTel messaging semconv (`messaging.system=event_outboxer`,
 `messaging.operation.type=send|process`,
 `messaging.destination.name`, `messaging.message.id`) plus
 outbox-specific `event_outboxer.attempt`, `event_outboxer.worker.id`,
-`event_outboxer.coalesced_into`.
+`event_outboxer.coalesced_count` (the 2026-09-07 amendment; formerly
+`event_outboxer.coalesced_into` on the producer side).
 
 ### Engine integration (core)
 
@@ -405,6 +410,32 @@ high-cardinality by nature, which is exactly why it lives on the span:
 question, and the metrics (`lock.wait_time`, `lock.hold_time`) carry
 only `event_type`. The pre-2026-09-05 six-argument constructor stays as
 a delegating constructor, so custom tracers and tests keep compiling.
+
+### Coalescing is recorded on the consumer span (amendment, 2026-09-07, ADR-0037)
+
+ADR-0037 moved dedup coalescing from the insert to the claim, and with
+it the observability moved sides. Every mention of
+`PublishSpan.coalesced(UUID)` and of the producer attribute
+`event_outboxer.coalesced_into` above describes the insert-time design
+and no longer applies:
+
+- `PublishSpan` lost `coalesced(UUID)`: a publish cannot know whether
+  its row will be swept, and every publish is its own row with its own
+  producer span and stored carrier.
+- `ProcessSpanInfo` gained `coalescedContexts` — the stored carriers,
+  engine markers stripped, of the keyed events the claim swept as
+  duplicates of the one being processed
+  (`ClaimedEvent.coalesced()`). Both adapters record their number as
+  `event_outboxer.coalesced_count` (absent when zero) and add one
+  **span link** per carrier that parses to a valid span context — the
+  OTel adapter through `SpanBuilder.addLink`, the Micrometer adapter
+  through `OutboxReceiverTracingObservationHandler`, next to the
+  deferred-event link of the 2026-08-28 amendment, and whatever the
+  event's own propagation mode. The representative's run is thereby
+  causally tied to every publish it covers; on Brave, which has no
+  links, the count remains.
+- `OutboxTraceAttributes.COALESCED_INTO` is replaced by
+  `COALESCED_COUNT`.
 
 ## Alternatives considered
 

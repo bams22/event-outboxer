@@ -153,17 +153,15 @@ public final class AdminDtos {
         }
     }
 
-    /** Outcome of a single replay-from-archive: {@code REPLAYED} or {@code COALESCED}. */
+    /** Outcome of a single replay-from-archive: {@code REPLAYED}. */
     public record ReplayResponse(String outcome) {}
 
     /**
      * Counts of a bulk replay plus the cursor to continue from. Rows that stayed archived are
-     * reported per reason — {@code coalesced} (a live PENDING event holds the same dedup key),
-     * {@code idInUse} (the hot table already holds the id) — and neither stops the sweep: keep
-     * calling with {@code nextCursor} until it comes back null.
+     * reported as {@code idInUse} (the hot table already holds the id); they do not stop the sweep:
+     * keep calling with {@code nextCursor} until it comes back null.
      */
-    public record ReplayAllResponse(
-            int replayed, int coalesced, int idInUse, @Nullable String nextCursor) {}
+    public record ReplayAllResponse(int replayed, int idInUse, @Nullable String nextCursor) {}
 
     /** Row-count result of a bulk operation. */
     public record CountResponse(int count) {}

@@ -9,7 +9,6 @@
  */
 package io.github.bams22.outboxer.core.publish;
 
-import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.StorageErrorInfo;
@@ -173,12 +172,6 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         return publish(type, payload, PublishOptions.builder().runAt(runAt).build());
     }
 
-    /**
-     * Bounded retry for the coalescing race: the conditional insert conflicted, but the conflicting
-     * PENDING row got claimed or finalized before we could lock it — re-insert.
-     */
-    private static final int DEDUP_RACE_RETRIES = 3;
-
     @Override
     public <T> UUID publish(EventType<T> type, T payload, @Nullable PublishOptions options) {
         validate(type, payload);
@@ -193,102 +186,19 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
             PendingEvent pending = buildPending(id, eventType, payload, serialized, resolved, span);
             try {
-                if (pending.dedupKey() != null) {
-                    CoalescingResult result = saveCoalescing(pending);
-                    if (!result.inserted()) {
-                        // Coalesced into an existing PENDING event. No onEventPublished, no wake —
-                        // nothing new was inserted, and the existing row is pinned (FOR UPDATE)
-                        // inside this transaction, so claims skip it until we commit and its
-                        // handler is guaranteed to see our changes. onEventCoalesced is the
-                        // aggregate signal for this branch.
-                        UUID existingId =
-                                Objects.requireNonNull(
-                                        result.existingId(),
-                                        "coalesced result must carry the existing event id");
-                        span.coalesced(existingId);
-                        listener.onEventCoalesced(
-                                new EventCoalescedInfo(
-                                        existingId,
-                                        eventType,
-                                        Objects.requireNonNull(pending.dedupKey())));
-                        return existingId;
-                    }
-                } else {
-                    store.save(pending);
-                }
+                // Keyed or not, the insert is unconditional (ADR-0037): duplicates of a dedup key
+                // are collapsed by the claim, so publish always returns its own id.
+                store.save(pending);
             } catch (StorageException ex) {
                 span.error(ex);
                 listener.onStorageError(new StorageErrorInfo("save", ex));
                 throw new PublishFailedException(
                         "storage rejected event " + pending.id() + " of type " + eventType, ex);
-            } catch (PublishFailedException ex) {
-                span.error(ex);
-                throw ex;
             }
             emitPublished(pending);
             scheduleWake(Set.of(eventType));
             return pending.id();
         }
-    }
-
-    private record CoalescingResult(boolean inserted, @Nullable UUID existingId) {}
-
-    /**
-     * ADR-0021 coalescing insert. Each loop iteration ends in exactly one of three outcomes:
-     *
-     * <ol>
-     *   <li><b>Inserted</b> — no PENDING event with this {@code (type, key)} existed; the partial
-     *       unique index arbitrated atomically ({@code ON CONFLICT}), which is why the insert goes
-     *       FIRST: the common case (first publish of a key) resolves in a single statement, and a
-     *       lock-first ordering would have the mirrored insert-after-check race anyway.
-     *   <li><b>Coalesced</b> — the conflicting PENDING row was found and locked ({@code SELECT ...
-     *       FOR UPDATE}) inside the caller's transaction. From this moment the claim query ({@code
-     *       FOR UPDATE SKIP LOCKED}) skips the row until our commit, so its handler is guaranteed
-     *       to observe this transaction's changes. If the lock lands on a DIFFERENT row than the
-     *       one that caused the conflict (old one finalized, another publisher inserted anew), that
-     *       is equally correct: any pinned PENDING event of this key carries the work and runs
-     *       after our commit.
-     *   <li><b>Vanished</b> — the row that conflicted with our insert is no longer PENDING by the
-     *       time we try to lock it (claimed, possibly already finalized). This is not a missed race
-     *       but the semantically REQUIRED branch: an event claimed before our commit may run
-     *       against a snapshot without our changes, so coalescing into it would lose our update —
-     *       we must loop and insert our own event (the old row no longer occupies the
-     *       PENDING-scoped unique index, so the retry succeeds unless yet another publisher got
-     *       there first).
-     * </ol>
-     *
-     * <p>The lock probe cannot read stale state: if the row is being claimed concurrently, our
-     * {@code SELECT ... FOR UPDATE} blocks on the claim's row lock and PostgreSQL re-evaluates the
-     * {@code status = 'PENDING'} predicate against the committed row version afterwards
-     * (EvalPlanQual) — we either hold the lock on a genuinely PENDING row or see empty.
-     *
-     * <p>Reaching the retry bound requires a fresh PENDING row of the same key to appear AND
-     * disappear in the microsecond window between our conflict and our lock, {@code
-     * DEDUP_RACE_RETRIES} times in a row — a pathological churn that the bound converts from a
-     * theoretical livelock into a loud failure.
-     */
-    private CoalescingResult saveCoalescing(PendingEvent pending) {
-        String dedupKey =
-                Objects.requireNonNull(pending.dedupKey(), "saveCoalescing requires a dedupKey");
-        for (int attempt = 0; attempt < DEDUP_RACE_RETRIES; attempt++) {
-            if (store.save(pending)) {
-                return new CoalescingResult(true, null);
-            }
-            var existing = store.lockPendingByDedupKey(pending.eventType(), dedupKey);
-            if (existing.isPresent()) {
-                return new CoalescingResult(false, existing.get());
-            }
-            // The PENDING row vanished under us — loop and insert our own.
-        }
-        throw new PublishFailedException(
-                "could not publish event with dedupKey '"
-                        + dedupKey
-                        + "' of type "
-                        + pending.eventType()
-                        + " after "
-                        + DEDUP_RACE_RETRIES
-                        + " attempts (pathological claim/finalize churn on the key)",
-                null);
     }
 
     @Override
@@ -299,13 +209,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
         }
         enforceTransactionPolicy();
 
-        // Requests with a dedup key need per-row coalescing feedback and go through save(...) one
-        // by one; the rest batch through saveAll. Returned ids stay aligned with request order.
+        // Every request, keyed or not, batches through saveAll (ADR-0037). Returned ids stay
+        // aligned with request order.
         List<PendingEvent> batch = new ArrayList<>(requests.size());
         List<UUID> ids = new ArrayList<>(requests.size());
-        List<PendingEvent> inserted = new ArrayList<>(requests.size());
-        // PRODUCER spans of batch-path events stay open until saveAll below actually inserts them;
-        // dedup-path spans close per row inside the loop.
+        // PRODUCER spans stay open until saveAll below actually inserts the rows.
         List<OutboxTracer.PublishSpan> batchSpans = new ArrayList<>(requests.size());
         try {
             for (PublishRequest<?> r : requests) {
@@ -315,45 +223,13 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                 PublishOptions opts = r.options() == null ? PublishOptions.defaults() : r.options();
                 SerializedPayload serialized = serialize(eventType, r.payload());
                 UUID id = UUID.randomUUID();
-                if (opts.dedupKey() != null) {
-                    try (OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType)) {
-                        PendingEvent pe =
-                                buildPending(id, eventType, r.payload(), serialized, opts, span);
-                        try {
-                            CoalescingResult result = saveCoalescing(pe);
-                            if (result.inserted()) {
-                                inserted.add(pe);
-                                ids.add(pe.id());
-                            } else {
-                                UUID existingId =
-                                        Objects.requireNonNull(
-                                                result.existingId(),
-                                                "coalesced result must carry the existing event"
-                                                        + " id");
-                                span.coalesced(existingId);
-                                listener.onEventCoalesced(
-                                        new EventCoalescedInfo(
-                                                existingId,
-                                                eventType,
-                                                Objects.requireNonNull(opts.dedupKey())));
-                                ids.add(existingId);
-                            }
-                        } catch (StorageException | PublishFailedException ex) {
-                            span.error(ex);
-                            throw ex;
-                        }
-                    }
-                } else {
-                    OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType);
-                    batchSpans.add(span);
-                    PendingEvent pe =
-                            buildPending(id, eventType, r.payload(), serialized, opts, span);
-                    batch.add(pe);
-                    ids.add(pe.id());
-                }
+                OutboxTracer.PublishSpan span = tracer.startPublishSpan(id, eventType);
+                batchSpans.add(span);
+                PendingEvent pe = buildPending(id, eventType, r.payload(), serialized, opts, span);
+                batch.add(pe);
+                ids.add(pe.id());
             }
             store.saveAll(batch);
-            inserted.addAll(batch);
         } catch (StorageException ex) {
             for (OutboxTracer.PublishSpan span : batchSpans) {
                 span.error(ex);
@@ -365,11 +241,11 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
                 span.close();
             }
         }
-        for (PendingEvent pe : inserted) {
+        for (PendingEvent pe : batch) {
             emitPublished(pe);
         }
         Set<String> types = new LinkedHashSet<>();
-        for (PendingEvent pe : inserted) {
+        for (PendingEvent pe : batch) {
             types.add(pe.eventType());
         }
         scheduleWake(types);

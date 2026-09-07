@@ -60,9 +60,11 @@ public final class OutboxTraceAttributes {
     public static final String LOCK_WAIT_MS = "event_outboxer.lock.wait_ms";
 
     /**
-     * UUID of the existing PENDING event a publish coalesced into (ADR-0021); producer spans only.
+     * Consumer-span attribute: how many keyed events the claim swept as duplicates of the one being
+     * processed (ADR-0037). Present only when non-zero; each swept event whose stored carrier
+     * parses is also a span link, so the run is causally tied to every publish it covers.
      */
-    public static final String COALESCED_INTO = "event_outboxer.coalesced_into";
+    public static final String COALESCED_COUNT = "event_outboxer.coalesced_count";
 
     /**
      * How the consumer span relates to the context stored at publish time (ADR-0023, 2026-08-28

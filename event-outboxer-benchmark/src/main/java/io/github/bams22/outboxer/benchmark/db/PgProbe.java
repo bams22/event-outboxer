@@ -152,7 +152,10 @@ public final class PgProbe {
     public StatementStats statementStats(String schema) {
         Map<String, Long> calls = new TreeMap<>();
         Map<String, Long> rows = new TreeMap<>();
-        String sql = "SELECT query, calls, rows FROM pg_stat_statements WHERE query LIKE ?";
+        Map<String, Double> execMillis = new TreeMap<>();
+        String sql =
+                "SELECT query, calls, rows, total_exec_time FROM pg_stat_statements WHERE query"
+                        + " LIKE ?";
         try (Connection c = open();
                 PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, "%" + schema + ".%");
@@ -161,9 +164,10 @@ public final class PgProbe {
                     String cls = classify(rs.getString(1), schema);
                     calls.merge(cls, rs.getLong(2), Long::sum);
                     rows.merge(cls, rs.getLong(3), Long::sum);
+                    execMillis.merge(cls, rs.getDouble(4), Double::sum);
                 }
             }
-            return new StatementStats(calls, rows);
+            return new StatementStats(calls, rows, execMillis);
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot read pg_stat_statements", e);
         }
@@ -237,6 +241,15 @@ public final class PgProbe {
     /** Rows left in the events table and live leases in the lease table after a clean run. */
     public StorageState storageState(String eventsTable, @Nullable String leaseTable) {
         return storageState(eventsTable, leaseTable, List.of(), null);
+    }
+
+    /** Rows in {@code qualifiedTable} right now — the drain progress of a run with dedup keys. */
+    public long rowCount(String qualifiedTable) {
+        try (Connection c = open()) {
+            return count(c, qualifiedTable);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot count " + qualifiedTable, e);
+        }
     }
 
     /**

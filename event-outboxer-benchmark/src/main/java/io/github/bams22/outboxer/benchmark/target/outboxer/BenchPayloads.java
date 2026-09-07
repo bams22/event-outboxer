@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.benchmark.target.outboxer;
 
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.api.publish.PublishOptions;
 import io.github.bams22.outboxer.benchmark.ledger.Ledger;
 import io.github.bams22.outboxer.benchmark.scenario.PayloadFormat;
 import io.github.bams22.outboxer.benchmark.scenario.Scenario;
@@ -56,16 +57,29 @@ final class BenchPayloads {
                     ledger,
                     scenario,
                     BenchPayloadProto::getSeq,
-                    p -> p.getLockKey().isEmpty() ? null : p.getLockKey());
+                    p -> p.getLockKey().isEmpty() ? null : p.getLockKey(),
+                    p -> p.getDedupKey().isEmpty() ? null : p.getDedupKey());
         }
         @SuppressWarnings("unchecked")
         EventType<BenchPayload> record = (EventType<BenchPayload>) type;
         return new BenchEventHandler<>(
-                record, ledger, scenario, BenchPayload::seq, BenchPayload::lockKey);
+                record,
+                ledger,
+                scenario,
+                BenchPayload::seq,
+                BenchPayload::lockKey,
+                BenchPayload::dedupKey);
     }
 
-    /** Publishes {@code event} as the payload shape of {@code type}. */
+    /**
+     * Publishes {@code event} as the payload shape of {@code type}, under the event's dedup key
+     * when it has one.
+     */
     static void publish(OutboxEventPublisher publisher, EventType<?> type, BenchmarkEvent event) {
+        PublishOptions options =
+                event.dedupKey() == null
+                        ? PublishOptions.defaults()
+                        : PublishOptions.builder().dedupKey(event.dedupKey()).build();
         if (type.payloadType() == BenchPayloadProto.class) {
             @SuppressWarnings("unchecked")
             EventType<BenchPayloadProto> proto = (EventType<BenchPayloadProto>) type;
@@ -74,12 +88,17 @@ final class BenchPayloads {
                     BenchPayloadProto.newBuilder()
                             .setSeq(event.seq())
                             .setLockKey(event.lockKey() == null ? "" : event.lockKey())
+                            .setDedupKey(event.dedupKey() == null ? "" : event.dedupKey())
                             .setPadding(event.padding())
-                            .build());
+                            .build(),
+                    options);
             return;
         }
         @SuppressWarnings("unchecked")
         EventType<BenchPayload> record = (EventType<BenchPayload>) type;
-        publisher.publish(record, new BenchPayload(event.seq(), event.lockKey(), event.padding()));
+        publisher.publish(
+                record,
+                new BenchPayload(event.seq(), event.lockKey(), event.dedupKey(), event.padding()),
+                options);
     }
 }

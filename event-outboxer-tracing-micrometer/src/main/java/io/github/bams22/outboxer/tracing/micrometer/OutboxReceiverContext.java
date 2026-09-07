@@ -13,6 +13,7 @@ import io.github.bams22.outboxer.spi.OutboxTracer;
 import io.micrometer.observation.transport.Kind;
 import io.micrometer.observation.transport.Propagator;
 import io.micrometer.observation.transport.ReceiverContext;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -28,11 +29,32 @@ import java.util.Objects;
 public final class OutboxReceiverContext extends ReceiverContext<Map<String, String>> {
 
     private final OutboxTracer.Propagation propagation;
+    private final List<Map<String, String>> coalescedContexts;
 
     OutboxReceiverContext(
             Propagator.Getter<Map<String, String>> getter, OutboxTracer.Propagation propagation) {
+        this(getter, propagation, List.of());
+    }
+
+    /**
+     * @param coalescedContexts stored carriers of the keyed events the claim swept as duplicates of
+     *     this one (ADR-0037); the handler links the span to each one that parses
+     */
+    OutboxReceiverContext(
+            Propagator.Getter<Map<String, String>> getter,
+            OutboxTracer.Propagation propagation,
+            List<Map<String, String>> coalescedContexts) {
         super(getter, Kind.CONSUMER);
         this.propagation = Objects.requireNonNull(propagation, "propagation must not be null");
+        this.coalescedContexts =
+                List.copyOf(
+                        Objects.requireNonNull(
+                                coalescedContexts, "coalescedContexts must not be null"));
+    }
+
+    /** Carriers of the swept duplicates, possibly empty. */
+    public List<Map<String, String>> coalescedContexts() {
+        return coalescedContexts;
     }
 
     /**

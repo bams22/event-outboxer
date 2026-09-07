@@ -30,7 +30,7 @@ infrastructure ([ADR-0020](../adr/0020-no-inmemory-storage-in-production.md)).
 
 | Class | Responsibility |
 |---|---|
-| `PostgresEventStore` | `EventStore`: save (with dedup coalescing), claim, finalize, reclaim, sweep, metrics snapshot. All SQL precomputed in the constructor. |
+| `PostgresEventStore` | `EventStore`: save, claim (with the dedup sweep), finalize, reclaim, sweep, metrics snapshot. All SQL precomputed in the constructor. |
 | `PostgresWorkerRegistry` | `WorkerRegistry`: register / heartbeat / findDead / removeDead over `event_outboxer.workers`. |
 | `PostgresOutboxAdmin` | `OutboxAdmin` ([ADR-0019](../adr/0019-admin-and-retention-surface.md)): list by status (keyset pagination), archive lookup, re-enable, purge, replay-from-archive ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)). |
 | `PostgresStorageProperties` | Plain record (`schema`, `tablePrefix`, `archiveEnabled`, `metricsCacheTtl`); `defaults()` = `event_outboxer` / `""` / `false` / `30s`. No Spring annotations. |
@@ -62,14 +62,18 @@ between minor versions.
   with `archive-enabled`, `markProcessed` becomes one atomic
   `WITH del AS (DELETE … RETURNING …) INSERT INTO event_archive …`
   statement (carrying `dedup_key` since V008). The reverse move —
-  `replayFromArchive` — is the mirror CTE, insert-first, so a replay
-  that coalesces against a live PENDING keeps the archive row
+  `replayFromArchive` — is the mirror CTE, insert-first, so a row the
+  INSERT skips (its id is live) keeps the archive row
   ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)).
-- **Dedup coalescing** ([ADR-0021](../adr/0021-dedup-key-single-inflight-per-key.md)):
-  the insert carries `ON CONFLICT (event_type, dedup_key) … DO NOTHING`
-  against a partial unique index over `PENDING` rows;
-  `lockPendingByDedupKey` row-locks the coalesced-into event inside
-  the caller's transaction.
+- **Dedup coalescing** ([ADR-0037](../adr/0037-claim-time-dedup-coalescing.md)):
+  the insert is unconditional; the claim statement elects one
+  representative per `(event_type, dedup_key)` among the rows it
+  locked and sweeps the other due `PENDING` rows of those keys — in the
+  batch and beyond it, up to 1 000 per claim, `FOR UPDATE SKIP LOCKED`
+  so another worker's rows are skipped, never waited on — deleting
+  them (or archiving them as `coalesced at claim`) in the same
+  statement and returning their ids and carriers per representative.
+  The V004 unique index became a plain partial index in V010.
 - **Dual payload lane** ([ADR-0025](../adr/0025-binary-capable-serializer-spi-and-payload-format.md)):
   text payloads land in `payload JSONB`, binary payloads in
   `payload_binary BYTEA` — exactly one is non-null (CHECK constraint)
@@ -91,7 +95,7 @@ them (ADR-0028):
 
 | Location | Contents | Applied by the starter? |
 |---|---|---|
-| `event-outboxer/migration/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key), V006 (payload format) | always |
+| `event-outboxer/migration/core` | V001 (`events`, `workers`), V003 (admin index), V004 (dedup key), V006 (payload format), V010 (plain dedup index, ADR-0037) | always |
 | `event-outboxer/migration/archive` | V002, V007, V008, V009 (`event_archive`) | always (`storage.archive-enabled` only governs runtime) |
 | `event-outboxer/migration/lock` | V005 (`entity_locks`) | when [`event-outboxer-lock-postgres-lease`](event-outboxer-lock-postgres-lease.md) is on the classpath |
 | `db/changelog/outbox/{core,archive}/changelog.xml` | Liquibase changelogs delegating to the same SQL files | no — for `event-outboxer.flyway.enabled=false` setups |

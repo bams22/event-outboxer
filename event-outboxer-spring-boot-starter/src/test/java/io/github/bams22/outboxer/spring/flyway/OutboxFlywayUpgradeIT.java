@@ -67,7 +67,7 @@ class OutboxFlywayUpgradeIT {
         // What a ≤ 0.4.0 deployment left behind: the outbox migrations that shipped back then
         // (V001…V007) recorded in the application's own history table, tables present in
         // event_outboxer. target=7 freezes the fixture there — everything the running jar adds on
-        // top (V008, V009) must be left for the upgrade to apply.
+        // top (V008, V009, V010) must be left for the upgrade to apply.
         Flyway.configure()
                 .dataSource(dataSource)
                 .locations(
@@ -127,7 +127,8 @@ class OutboxFlywayUpgradeIT {
                                             // version as written in its filename ("008"); the
                                             // BASELINE row carries the configured property value.
                                             Map.of("version", "008", "type", "SQL"),
-                                            Map.of("version", "009", "type", "SQL"));
+                                            Map.of("version", "009", "type", "SQL"),
+                                            Map.of("version", "010", "type", "SQL"));
                             // The whole point of the recipe: the migration the running jar needs
                             // is applied on top of the baseline, not hidden by it.
                             assertThat(archiveColumns()).contains("dedup_key");
@@ -136,7 +137,7 @@ class OutboxFlywayUpgradeIT {
         runner.run(
                 ctx -> {
                     assertThat(ctx).hasNotFailed();
-                    assertThat(history()).hasSize(3);
+                    assertThat(history()).hasSize(4);
                 });
     }
 

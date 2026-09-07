@@ -25,6 +25,7 @@ import org.jspecify.annotations.Nullable;
  * @param thread handler thread name and id ({@code name#id}); the id keeps threads of different
  *     per-type executors apart, their names repeat
  * @param lockKey lock key the handler returned, {@code null} when keys are off
+ * @param dedupKey dedup key the event was published under, {@code null} when keys are off
  * @param startedAt wall-clock start of the handler body
  * @param finishedAt wall-clock end of the handler body, before the outcome is returned
  * @param outcome what the handler returned
@@ -37,6 +38,7 @@ public record Handling(
         String workerId,
         String thread,
         @Nullable String lockKey,
+        @Nullable String dedupKey,
         Instant startedAt,
         Instant finishedAt,
         Outcome outcome) {

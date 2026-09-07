@@ -11,6 +11,7 @@ package io.github.bams22.outboxer.spi;
 
 import io.github.bams22.outboxer.domain.WorkerId;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -58,7 +59,10 @@ public interface OutboxTracer {
      * <p>With {@link Propagation#CHILD} the span is a child of the stored context. With {@link
      * Propagation#LINK} it is a new root span carrying a span link to the stored context (where the
      * backend supports links) and the attribute {@link OutboxTraceAttributes#PROPAGATION} {@code =}
-     * {@link OutboxTraceAttributes#PROPAGATION_LINK}; baggage is restored either way.
+     * {@link OutboxTraceAttributes#PROPAGATION_LINK}; baggage is restored either way. When the
+     * claim swept duplicates of the event ({@link ProcessSpanInfo#coalescedContexts()}), the span
+     * carries {@link OutboxTraceAttributes#COALESCED_COUNT} and one link per swept carrier that
+     * parses.
      */
     ProcessSpan startProcessSpan(ProcessSpanInfo info);
 
@@ -88,14 +92,6 @@ public interface OutboxTracer {
          * trace_context} column. Immutable; empty when tracing is inactive.
          */
         Map<String, String> contextToStore();
-
-        /**
-         * The insert coalesced into an existing PENDING event (ADR-0021) — the new event and its
-         * captured context were discarded in favour of {@code existingEventId}. Implementations
-         * should tag the span so operators can see why the surviving event's consumer span is not
-         * this span's child. Not an error outcome.
-         */
-        void coalesced(UUID existingEventId);
 
         /**
          * The event was scheduled beyond the engine's link threshold, so its consumer span will
@@ -146,6 +142,11 @@ public interface OutboxTracer {
      *     ({@link OutboxTraceAttributes#LOCK_KEY})
      * @param lockWait time spent acquiring that lock, the bounded wait of ADR-0035 included; {@code
      *     null} without a key ({@link OutboxTraceAttributes#LOCK_WAIT_MS})
+     * @param coalescedContexts stored carriers of the keyed events the claim swept as duplicates of
+     *     this one (ADR-0037), engine markers already removed; the adapter records their number as
+     *     {@link OutboxTraceAttributes#COALESCED_COUNT} and adds one span link per carrier that
+     *     parses, so the run is causally tied to every publish it covers. Empty for keyless events;
+     *     {@code null} is taken as empty
      */
     record ProcessSpanInfo(
             UUID eventId,
@@ -155,7 +156,8 @@ public interface OutboxTracer {
             Map<String, String> storedContext,
             Propagation propagation,
             @Nullable String lockKey,
-            @Nullable Duration lockWait) {
+            @Nullable Duration lockWait,
+            List<Map<String, String>> coalescedContexts) {
 
         public ProcessSpanInfo {
             Objects.requireNonNull(eventId, "eventId must not be null");
@@ -164,6 +166,30 @@ public interface OutboxTracer {
             Objects.requireNonNull(storedContext, "storedContext must not be null");
             Objects.requireNonNull(propagation, "propagation must not be null");
             storedContext = Map.copyOf(storedContext);
+            coalescedContexts =
+                    coalescedContexts == null ? List.of() : List.copyOf(coalescedContexts);
+        }
+
+        /** Pre-ADR-0037 shape: nothing coalesced. */
+        public ProcessSpanInfo(
+                UUID eventId,
+                String eventType,
+                int attempt,
+                WorkerId workerId,
+                Map<String, String> storedContext,
+                Propagation propagation,
+                @Nullable String lockKey,
+                @Nullable Duration lockWait) {
+            this(
+                    eventId,
+                    eventType,
+                    attempt,
+                    workerId,
+                    storedContext,
+                    propagation,
+                    lockKey,
+                    lockWait,
+                    List.of());
         }
 
         /** Pre-lock-attribute shape (before 2026-09-05): no lock key. */

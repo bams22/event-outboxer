@@ -339,17 +339,45 @@ class OtelOutboxTracerTest {
     }
 
     @Test
-    void coalescedTagsTheProducerSpan() {
-        UUID existing = UUID.randomUUID();
-        OutboxTracer.PublishSpan span = tracer.startPublishSpan(UUID.randomUUID(), "T");
-        span.coalesced(existing);
-        span.close();
+    void consumerSpanCountsAndLinksTheSweptDuplicates() {
+        OutboxTracer.PublishSpan swept = tracer.startPublishSpan(UUID.randomUUID(), "T");
+        Map<String, String> sweptContext = swept.contextToStore();
+        swept.close();
+        String sweptSpanId = exporter.getFinishedSpanItems().get(0).getSpanId();
+        exporter.reset();
 
-        SpanData data = exporter.getFinishedSpanItems().get(0);
+        OutboxTracer.ProcessSpan process =
+                tracer.startProcessSpan(
+                        new OutboxTracer.ProcessSpanInfo(
+                                UUID.randomUUID(),
+                                "T",
+                                1,
+                                WORKER,
+                                Map.of(),
+                                OutboxTracer.Propagation.CHILD,
+                                null,
+                                null,
+                                List.of(sweptContext, Map.of("garbage", "not a carrier"))));
+        process.close();
+
+        // ADR-0037: the count includes every swept duplicate, the links only those whose stored
+        // carrier parses to a valid span context.
+        SpanData consumer = exporter.getFinishedSpanItems().get(0);
         assertThat(
-                        data.getAttributes()
-                                .get(AttributeKey.stringKey("event_outboxer.coalesced_into")))
-                .isEqualTo(existing.toString());
+                        consumer.getAttributes()
+                                .get(AttributeKey.longKey("event_outboxer.coalesced_count")))
+                .isEqualTo(2L);
+        assertThat(consumer.getLinks()).hasSize(1);
+        assertThat(consumer.getLinks().get(0).getSpanContext().getSpanId()).isEqualTo(sweptSpanId);
+
+        exporter.reset();
+        tracer.startProcessSpan(processInfo(UUID.randomUUID(), Map.of())).close();
+        SpanData plain = exporter.getFinishedSpanItems().get(0);
+        assertThat(
+                        plain.getAttributes()
+                                .get(AttributeKey.longKey("event_outboxer.coalesced_count")))
+                .isNull();
+        assertThat(plain.getLinks()).isEmpty();
     }
 
     @Test

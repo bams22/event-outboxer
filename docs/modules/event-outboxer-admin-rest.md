@@ -25,8 +25,8 @@ but on the **application port**, guarded by a configurable
 | `GET /events/{id}` | one event — active store, then archive; 404 when absent |
 | `POST /events/{id}/reenable` | re-enable one `DISABLED` event (fresh attempts budget); 409 when the row exists but is not `DISABLED` |
 | `POST /events/reenable-all` body `{"eventType": "X", "createdBefore": …, "limit": 100}` | bulk re-enable |
-| `POST /events/{id}/replay` | replay one archived event back into the hot table ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)); 200 `{"outcome": "REPLAYED"/"COALESCED"}` (a coalesced replay keeps the archive row), 404 when not in the archive, 409 when the hot table already holds that id (the app re-published the UUID — the live event is the one to look at) |
-| `POST /events/replay-all` body `{"eventType": "X", "archivedAfter": …, "archivedBefore": …, "limit": 100, "cursor": …}` | bulk replay from the archive; response `{"replayed": n, "coalesced": n, "idInUse": n, "nextCursor": "…"}`. Sweep by feeding `nextCursor` back as `cursor` until it comes back null; the counters report rows that stayed archived and never block the walk |
+| `POST /events/{id}/replay` | replay one archived event back into the hot table ([ADR-0033](../adr/0033-archive-dedup-key-and-replay-from-archive.md)); 200 `{"outcome": "REPLAYED"}` (a dedup key never blocks a replay, ADR-0037 — the next claim collapses the replayed row with a live twin), 404 when not in the archive, 409 when the hot table already holds that id (the app re-published the UUID — the live event is the one to look at) |
+| `POST /events/replay-all` body `{"eventType": "X", "archivedAfter": …, "archivedBefore": …, "limit": 100, "cursor": …}` | bulk replay from the archive; response `{"replayed": n, "idInUse": n, "nextCursor": "…"}`. Sweep by feeding `nextCursor` back as `cursor` until it comes back null; `idInUse` reports rows that stayed archived and never blocks the walk |
 | `POST /purge/disabled` body `{"olderThan": "<instant>", "eventType": …, "limit": 1000}` | purge old `DISABLED` events |
 | `POST /purge/archive` body `{"archivedBefore": "<instant>", "limit": 1000}` | purge archive rows |
 

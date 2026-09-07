@@ -10,10 +10,12 @@
 package io.github.bams22.outboxer.domain;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An event that has just been claimed by a worker. Returned from {@code
@@ -40,6 +42,10 @@ import lombok.Builder;
  * @param traceContext restored W3C trace/baggage context; never null (empty map allowed)
  * @param claimedVersion version value recorded on the row at the moment of claim; used for
  *     optimistic concurrency control when finalizing
+ * @param dedupKey the event's dedup key, {@code null} when it was published without one
+ * @param coalesced the keyed duplicates the claim swept on behalf of this event (ADR-0037): they
+ *     never reach a handler, this event's run covers them. Empty for keyless events and when no due
+ *     duplicate existed at claim time; {@code null} is taken as empty
  */
 @Builder
 public record ClaimedEvent(
@@ -53,7 +59,38 @@ public record ClaimedEvent(
         Instant createdAt,
         Instant claimedAt,
         Map<String, String> traceContext,
-        long claimedVersion) {
+        long claimedVersion,
+        @Nullable String dedupKey,
+        List<CoalescedEvent> coalesced) {
+
+    /** Pre-ADR-0037 shape: no dedup key, nothing coalesced. */
+    public ClaimedEvent(
+            UUID id,
+            String eventType,
+            SerializedPayload payload,
+            String payloadFormat,
+            String payloadClass,
+            short priority,
+            int attempts,
+            Instant createdAt,
+            Instant claimedAt,
+            Map<String, String> traceContext,
+            long claimedVersion) {
+        this(
+                id,
+                eventType,
+                payload,
+                payloadFormat,
+                payloadClass,
+                priority,
+                attempts,
+                createdAt,
+                claimedAt,
+                traceContext,
+                claimedVersion,
+                null,
+                List.of());
+    }
 
     public ClaimedEvent {
         Objects.requireNonNull(id, "id must not be null");
@@ -72,5 +109,6 @@ public record ClaimedEvent(
         }
         Objects.requireNonNull(traceContext, "traceContext must not be null");
         traceContext = Map.copyOf(traceContext);
+        coalesced = coalesced == null ? List.of() : List.copyOf(coalesced);
     }
 }

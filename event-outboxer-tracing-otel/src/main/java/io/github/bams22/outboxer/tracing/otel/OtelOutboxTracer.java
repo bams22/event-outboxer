@@ -123,6 +123,22 @@ public final class OtelOutboxTracer implements OutboxTracer {
                         OutboxTraceAttributes.LOCK_WAIT_MS, info.lockWait().toMillis());
             }
         }
+        if (!info.coalescedContexts().isEmpty()) {
+            // Duplicates the claim swept for this event (ADR-0037): count them, and link every
+            // swept publish whose carrier parses, so the run is causally tied to what it covers.
+            builder.setAttribute(
+                    OutboxTraceAttributes.COALESCED_COUNT, (long) info.coalescedContexts().size());
+            for (Map<String, String> carrier : info.coalescedContexts()) {
+                SpanContext swept =
+                        Span.fromContext(
+                                        propagator.extract(
+                                                Context.root(), carrier, MapGetter.INSTANCE))
+                                .getSpanContext();
+                if (swept.isValid()) {
+                    builder.addLink(swept);
+                }
+            }
+        }
         Context scopeParent;
         if (info.propagation() == Propagation.LINK) {
             // Deferred event (ADR-0023, 2026-08-28 amendment): a new root that links to the stored
@@ -161,11 +177,6 @@ public final class OtelOutboxTracer implements OutboxTracer {
         @Override
         public Map<String, String> contextToStore() {
             return context;
-        }
-
-        @Override
-        public void coalesced(UUID existingEventId) {
-            span.setAttribute(OutboxTraceAttributes.COALESCED_INTO, existingEventId.toString());
         }
 
         @Override

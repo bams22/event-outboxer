@@ -91,15 +91,6 @@ public final class SafeOutboxTracer implements OutboxTracer {
         }
 
         @Override
-        public void coalesced(UUID existingEventId) {
-            try {
-                delegate.coalesced(existingEventId);
-            } catch (RuntimeException ex) {
-                log.debug("PublishSpan.coalesced failed: {}", ex.toString());
-            }
-        }
-
-        @Override
         public void linked() {
             try {
                 delegate.linked();

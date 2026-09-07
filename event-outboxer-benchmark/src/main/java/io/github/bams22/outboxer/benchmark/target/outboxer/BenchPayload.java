@@ -18,9 +18,11 @@ import org.jspecify.annotations.Nullable;
  *
  * @param seq benchmark sequence number
  * @param lockKey lock key to return from {@code extractLockKey}, {@code null} for none
+ * @param dedupKey dedup key the event was published under, {@code null} for none
  * @param padding size filler
  */
-public record BenchPayload(long seq, @Nullable String lockKey, String padding) {
+public record BenchPayload(
+        long seq, @Nullable String lockKey, @Nullable String dedupKey, String padding) {
 
     public BenchPayload {
         Objects.requireNonNull(padding, "padding must not be null");

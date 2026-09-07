@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Recording {@link OutboxTracer} test double. Every started span is retained with its inputs,
- * error, coalesce target, and close count; publish spans hand out a unique canned {@code
- * traceparent} so tests can assert exactly which span's context landed on which event row.
+ * error, link flag, and close count; publish spans hand out a unique canned {@code traceparent} so
+ * tests can assert exactly which span's context landed on which event row.
  */
 public final class RecordingOutboxTracer implements OutboxTracer {
 
@@ -61,7 +61,6 @@ public final class RecordingOutboxTracer implements OutboxTracer {
         public final UUID eventId;
         public final String eventType;
         public final Map<String, String> context;
-        public volatile UUID coalescedInto;
         public volatile boolean linked;
         public volatile Throwable error;
         public final AtomicInteger closeCount = new AtomicInteger();
@@ -75,11 +74,6 @@ public final class RecordingOutboxTracer implements OutboxTracer {
         @Override
         public Map<String, String> contextToStore() {
             return context;
-        }
-
-        @Override
-        public void coalesced(UUID existingEventId) {
-            this.coalescedInto = existingEventId;
         }
 
         @Override

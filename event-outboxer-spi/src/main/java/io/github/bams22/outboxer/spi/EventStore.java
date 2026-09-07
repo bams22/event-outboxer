@@ -52,15 +52,12 @@ public interface EventStore {
      * Insert a single pending event. Participates in the caller's transaction via the {@link
      * ConnectionSupplier} port when the PostgreSQL adapter is used (ADR-0002).
      *
-     * <p>When {@code event.dedupKey()} is set, the insert is conditional (ADR-0021): if a {@code
-     * PENDING} event with the same {@code (eventType, dedupKey)} already exists, nothing is
-     * inserted and {@code false} is returned. Events without a dedup key always insert.
+     * <p>Keyed events insert unconditionally (ADR-0037): duplicates of a {@code (eventType,
+     * dedupKey)} are collapsed by {@link #claim}, never by the insert.
      *
-     * @return {@code true} if the row was inserted; {@code false} if it was coalesced away by an
-     *     existing PENDING event with the same dedup key
      * @throws EventStoreException if the write fails
      */
-    boolean save(PendingEvent event);
+    void save(PendingEvent event);
 
     /**
      * Batch-insert pending events. Adapters should prefer a single multi-value INSERT or a {@code
@@ -68,26 +65,12 @@ public interface EventStore {
      * the operation is fail-fast: any violation rolls the whole batch back through the enclosing
      * transaction.
      *
-     * <p>Events with a dedup key are NOT allowed here — coalescing needs the per-row feedback of
-     * {@link #save(PendingEvent)}; the publisher routes such requests individually.
+     * <p>Keyed events are accepted like any other (ADR-0037): nothing about an insert depends on
+     * the key any more.
      *
      * @throws EventStoreException if the batch fails
-     * @throws IllegalArgumentException if any event carries a dedup key
      */
     void saveAll(List<PendingEvent> events);
-
-    /**
-     * Find the {@code PENDING} event with the given {@code (eventType, dedupKey)} and — for
-     * adapters that participate in the caller's transaction — lock its row so that claim queries
-     * (which use {@code FOR UPDATE SKIP LOCKED}) skip it until the caller's transaction commits.
-     * This is the coalescing visibility guarantee of ADR-0021: the transaction whose publish was
-     * coalesced into an existing event is always committed before that event is handled.
-     *
-     * @return the id of the locked PENDING event, or empty if none exists (claimed, finalized or
-     *     never published) — callers should retry the insert then
-     * @throws EventStoreException if the query fails
-     */
-    Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey);
 
     /**
      * Claim up to {@code request.limit()} events of {@code request.eventType()} for processing by
@@ -98,6 +81,13 @@ public interface EventStore {
      * <ul>
      *   <li>Only rows with {@code status = PENDING AND run_at <= now()} are eligible.
      *   <li>Rows are returned in priority-desc then {@code run_at}-asc order.
+     *   <li>Keyed rows are coalesced (ADR-0037): of the due {@code PENDING} rows sharing a {@code
+     *       (event_type, dedup_key)} exactly one — the best by the same order — is claimed and
+     *       returned; the others, inside the batch and beyond it, are removed (archived first when
+     *       archiving is on) and listed in the representative's {@link ClaimedEvent#coalesced()}.
+     *       Rows with a future {@code run_at}, rows another claim holds locked and uncommitted rows
+     *       are never swept. Only committed rows are visible to the sweep and it precedes any
+     *       handler, which is the ADR-0021 visibility guarantee.
      *   <li>Every returned row has its {@code claimed_by}, {@code claimed_at}, {@code status =
      *       PROCESSING} and {@code version} fields updated atomically; the {@code version} on the
      *       returned {@link ClaimedEvent} is the <em>new</em> value, which the engine must echo

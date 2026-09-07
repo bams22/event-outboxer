@@ -39,7 +39,7 @@ public final class LedgerDump {
             Files.createDirectories(file.getParent());
             try (BufferedWriter out = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 out.write(
-                        "seq,eventType,attempt,workerId,thread,lockKey,startedAt,finishedAt,outcome\n");
+                        "seq,eventType,attempt,workerId,thread,lockKey,dedupKey,startedAt,finishedAt,outcome\n");
                 for (Handling h : sorted) {
                     out.write(
                             h.seq()
@@ -53,6 +53,8 @@ public final class LedgerDump {
                                     + h.thread()
                                     + ","
                                     + (h.lockKey() == null ? "" : h.lockKey())
+                                    + ","
+                                    + (h.dedupKey() == null ? "" : h.dedupKey())
                                     + ","
                                     + h.startedAt()
                                     + ","

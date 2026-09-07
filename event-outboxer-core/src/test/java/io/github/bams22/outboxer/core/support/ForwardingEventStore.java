@@ -37,18 +37,13 @@ public class ForwardingEventStore implements EventStore {
     }
 
     @Override
-    public boolean save(PendingEvent event) {
-        return delegate.save(event);
+    public void save(PendingEvent event) {
+        delegate.save(event);
     }
 
     @Override
     public void saveAll(List<PendingEvent> events) {
         delegate.saveAll(events);
-    }
-
-    @Override
-    public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
-        return delegate.lockPendingByDedupKey(eventType, dedupKey);
     }
 
     @Override

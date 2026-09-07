@@ -200,7 +200,8 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
     public ProcessSpan startProcessSpan(ProcessSpanInfo info) {
         Objects.requireNonNull(info, "info must not be null");
         OutboxReceiverContext context =
-                new OutboxReceiverContext(MapGetter.INSTANCE, info.propagation());
+                new OutboxReceiverContext(
+                        MapGetter.INSTANCE, info.propagation(), info.coalescedContexts());
         context.setCarrier(info.storedContext());
         Observation observation =
                 Observation.createNotStarted(
@@ -233,6 +234,13 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
                         OutboxTraceAttributes.LOCK_WAIT_MS,
                         String.valueOf(info.lockWait().toMillis()));
             }
+        }
+        if (!info.coalescedContexts().isEmpty()) {
+            // Duplicates the claim swept for this event (ADR-0037); the links to their publishes
+            // are OutboxReceiverTracingObservationHandler's job, the count is the breadcrumb here.
+            observation.highCardinalityKeyValue(
+                    OutboxTraceAttributes.COALESCED_COUNT,
+                    String.valueOf(info.coalescedContexts().size()));
         }
         if (info.propagation() == Propagation.LINK) {
             // The span shape itself (root + link) is OutboxReceiverTracingObservationHandler's job;
@@ -298,12 +306,6 @@ public final class MicrometerOutboxTracer implements OutboxTracer {
         @Override
         public Map<String, String> contextToStore() {
             return context;
-        }
-
-        @Override
-        public void coalesced(UUID existingEventId) {
-            observation.highCardinalityKeyValue(
-                    OutboxTraceAttributes.COALESCED_INTO, existingEventId.toString());
         }
 
         @Override

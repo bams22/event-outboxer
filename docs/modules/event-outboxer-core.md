@@ -107,11 +107,12 @@ fleet often heals them on retry; a truly poisoned payload ends up
 API: transaction-policy check (`NoTransactionPolicy.FAIL | IGNORE`) →
 serialize → PRODUCER span + trace context capture → `EventStore.save`
 → `onEventPublished` → after-commit poller wake. Dedup-keyed publishes
-(`PublishOptions.dedupKey`, [ADR-0021](../adr/0021-dedup-key-single-inflight-per-key.md))
-use an insert-first coalescing loop: either the insert wins, or the
-existing `PENDING` row is row-locked into the caller's transaction and
-its id returned, or — if the row was already claimed — the insert is
-retried (bounded, then `PublishFailedException`).
+(`PublishOptions.dedupKey`, [ADR-0037](../adr/0037-claim-time-dedup-coalescing.md))
+take the same path — the insert is unconditional; coalescing happens
+at the claim, and `HandlerDispatcher` fires `onEventCoalesced` for
+every duplicate the claim swept on behalf of the event it dispatches,
+before the handler runs, and hands the swept carriers to the consumer
+span (`coalesced_count` + span links).
 
 The `TransactionContext` port abstracts "is a transaction active" and
 "run after commit"; the starter binds it to Spring's transaction

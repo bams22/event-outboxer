@@ -205,7 +205,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
             if (counts.inserted() > 0) {
                 return ReplayOutcome.REPLAYED;
             }
-            return counts.idInUse() > 0 ? ReplayOutcome.ID_IN_USE : ReplayOutcome.COALESCED;
+            return ReplayOutcome.ID_IN_USE;
         } catch (SQLException ex) {
             throw new EventStoreException("replayFromArchive(" + id + ") failed", ex);
         }
@@ -239,8 +239,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
             params.add(Timestamp.from(after.archivedAt()));
             params.add(after.id());
         }
-        // Oldest-archived first: with duplicate dedup keys in one batch, the oldest row replays
-        // and the newer ones coalesce against it — deterministic instead of scan-order luck.
+        // Oldest-archived first, so the cursor walks the window in a stable order.
         where.append(" ORDER BY archived_at, id LIMIT ?");
         params.add(limit);
         try {
@@ -250,11 +249,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
                                     bind(params),
                                     PostgresOutboxAdmin::readCounts)
                             .orElseThrow();
-            return new ReplayAllResult(
-                    counts.inserted(),
-                    counts.found() - counts.inserted() - counts.idInUse(),
-                    counts.idInUse(),
-                    counts.cursor());
+            return new ReplayAllResult(counts.inserted(), counts.idInUse(), counts.cursor());
         } catch (SQLException ex) {
             throw new EventStoreException("replayAllFromArchive(" + eventType + ") failed", ex);
         }
@@ -270,26 +265,17 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
      * returned, so a row that does not move stays archived. A delete-first variant would silently
      * drop the audit row.
      *
-     * <p>Two things can stop a row from moving, and neither is fatal to the batch:
+     * <p>One thing can stop a row from moving, and it is not fatal to the batch: <b>an id already
+     * live</b> — the {@code blocked} anti-join. Without it a single archive row whose id the
+     * application re-published would abort the whole statement, replaying none of the batch and
+     * leaving the sweep permanently stuck on that window. Excluding those ids up front turns a
+     * fatal batch abort into a counted, skipped row. (A concurrent publish of the same id after
+     * this statement's snapshot still raises — that is a genuine race, and it surfaces rather than
+     * passing silently.) A dedup key never blocks a replay (ADR-0037): the row inserts plainly, and
+     * if a due {@code PENDING} event with the same key exists the next claim collapses the two.
      *
-     * <ul>
-     *   <li><b>Coalescing</b> — {@code ON CONFLICT ... DO NOTHING} on the V004 partial index (the
-     *       same arbiter clause the publisher's insert uses): a live {@code PENDING} row with the
-     *       same {@code (event_type, dedup_key)} already has the work scheduled. Duplicate keys
-     *       within one batch resolve the same way, the second row's speculative insert conflicting
-     *       against the first's.
-     *   <li><b>Id already live</b> — the {@code blocked} anti-join. The arbiter above names one
-     *       index, so a primary-key collision is <em>not</em> swallowed by it: without the
-     *       anti-join a single archive row whose id the application re-published would abort the
-     *       whole statement, replaying none of the batch and leaving the sweep permanently stuck on
-     *       that window. Excluding those ids up front turns a fatal batch abort into a counted,
-     *       skipped row. (A concurrent publish of the same id after this statement's snapshot still
-     *       raises — that is a genuine race, and it surfaces rather than passing silently.)
-     * </ul>
-     *
-     * <p>{@code src} is {@code MATERIALIZED} on purpose: the "oldest archived row wins a duplicate
-     * key" guarantee relies on the INSERT consuming it in {@code (archived_at, id)} order, which
-     * only holds for a materialized CTE — an inlined one may be reordered by the planner.
+     * <p>{@code src} is {@code MATERIALIZED} so that the cursor columns below describe the same
+     * batch the INSERT consumed.
      *
      * <p>{@code created_at} is the moment of the replay, not the original publish time: it is the
      * column {@link #purgeDisabled} ages rows by, {@link #reenableAll} bounds on and {@link
@@ -298,8 +284,8 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
      * original publish time stays readable in the archive until the row is actually moved.
      *
      * <p>The trailing {@code cursor_*} columns carry the {@code (archived_at, id)} of the last row
-     * the batch considered — replayed, coalesced or skipped alike — so the caller's sweep advances
-     * past rows that stayed archived instead of finding them again forever.
+     * the batch considered — replayed or skipped alike — so the caller's sweep advances past rows
+     * that stayed archived instead of finding them again forever.
      */
     private String replaySql(String srcWhere) {
         return "WITH src AS MATERIALIZED ("
@@ -323,8 +309,7 @@ public final class PostgresOutboxAdmin implements OutboxAdmin {
                 + REPLAY_REASON
                 + "', trace_context, 0, dedup_key FROM src"
                 + "  WHERE id NOT IN (SELECT id FROM blocked)"
-                + "  ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND dedup_key IS"
-                + " NOT NULL DO NOTHING  RETURNING id"
+                + "  RETURNING id"
                 + "), del AS ("
                 + "  DELETE FROM "
                 + tables.archive()

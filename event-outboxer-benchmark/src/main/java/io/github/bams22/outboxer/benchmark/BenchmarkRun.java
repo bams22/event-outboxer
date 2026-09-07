@@ -35,6 +35,7 @@ import io.github.bams22.outboxer.benchmark.target.BenchmarkPublisher;
 import io.github.bams22.outboxer.benchmark.target.BenchmarkTarget;
 import io.github.bams22.outboxer.benchmark.target.TargetSession;
 import io.github.bams22.outboxer.benchmark.verify.ChaosEvent;
+import io.github.bams22.outboxer.benchmark.verify.DedupExpectation;
 import io.github.bams22.outboxer.benchmark.verify.InvariantChecker;
 import io.github.bams22.outboxer.benchmark.verify.InvariantReport;
 import java.lang.management.ManagementFactory;
@@ -46,13 +47,16 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -156,7 +160,17 @@ public final class BenchmarkRun {
                         phaseStart = Instant.now();
                         session.startWorkers();
                     }
-                    drain = awaitDrain(ledger, scenario, phaseStart, session, db, chaos);
+                    drain =
+                            awaitDrain(
+                                    ledger,
+                                    scenario,
+                                    phaseStart,
+                                    session,
+                                    db,
+                                    chaos,
+                                    scenario.dedupKeyCardinality() > 0
+                                            ? () -> probe.rowCount(eventsTable)
+                                            : null);
                     log.info("Stopping target");
                 }
                 Thread.sleep(STATS_SETTLE);
@@ -183,7 +197,8 @@ public final class BenchmarkRun {
                                         scenario.events(),
                                         handlings,
                                         scenario.lockType().exclusive(),
-                                        chaos);
+                                        chaos,
+                                        dedupExpectation(scenario, publish));
                 ProcessingSummary processing = summarize(publish, handlings, drain, scenario);
                 // The in-process fleet lives in this JVM, so its peak is the fleet's (plus the
                 // driver's own threads, the same in every variant). Forked workers are other
@@ -273,6 +288,7 @@ public final class BenchmarkRun {
             throws InterruptedException {
         int n = s.events();
         long[] publishedAtMicros = new long[n];
+        long[] committedAtMicros = new long[n];
         long[] latencyNanos = new long[n];
         String padding = padding(s.payloadBytes());
         AtomicLong next = new AtomicLong();
@@ -291,6 +307,7 @@ public final class BenchmarkRun {
                                                         seq,
                                                         s.typeIndexFor(seq),
                                                         s.lockKeyFor(seq),
+                                                        s.dedupKeyFor(seq),
                                                         padding);
                                         Instant before = Instant.now();
                                         long t0 = System.nanoTime();
@@ -298,6 +315,8 @@ public final class BenchmarkRun {
                                         latencyNanos[(int) seq] = System.nanoTime() - t0;
                                         publishedAtMicros[(int) seq] =
                                                 LatencyStats.epochMicros(before);
+                                        committedAtMicros[(int) seq] =
+                                                LatencyStats.epochMicros(Instant.now());
                                     }
                                 }));
             }
@@ -313,13 +332,37 @@ public final class BenchmarkRun {
             pool.awaitTermination(10, TimeUnit.SECONDS);
         }
         return new PublishPhase(
-                Duration.between(start, Instant.now()), publishedAtMicros, latencyNanos);
+                Duration.between(start, Instant.now()),
+                publishedAtMicros,
+                committedAtMicros,
+                latencyNanos);
+    }
+
+    /**
+     * Per dedup key, the commit instant of its last publish; {@code null} when the scenario has no
+     * dedup keys.
+     */
+    private static @Nullable DedupExpectation dedupExpectation(Scenario s, PublishPhase publish) {
+        if (s.dedupKeyCardinality() == 0) {
+            return null;
+        }
+        Map<String, Long> lastCommit = new HashMap<>();
+        for (int seq = 0; seq < s.events(); seq++) {
+            String key = Objects.requireNonNull(s.dedupKeyFor(seq));
+            lastCommit.merge(key, publish.committedAtMicros[seq], Math::max);
+        }
+        return new DedupExpectation(lastCommit);
     }
 
     /**
      * Polls the ledger until every event has a successful handling or the deadline passes, firing
      * chaos actions on the way. A ledger read that fails (database down under chaos) is retried on
      * the next tick.
+     *
+     * @param remainingRows under dedup keys most events are never handled under their own sequence
+     *     number, so the ledger cannot say when the run is done; the events table can — the run is
+     *     drained once it holds no rows (publishing has finished by the time this loop starts).
+     *     {@code null} = grade progress by the ledger
      */
     private static Drain awaitDrain(
             Ledger ledger,
@@ -327,7 +370,8 @@ public final class BenchmarkRun {
             Instant phaseStart,
             TargetSession session,
             DatabaseHandle db,
-            List<ChaosEvent> chaos)
+            List<ChaosEvent> chaos,
+            @Nullable LongSupplier remainingRows)
             throws InterruptedException {
         Chaos plan = s.chaos();
         boolean killPending = plan.killWorkers() > 0;
@@ -342,7 +386,23 @@ public final class BenchmarkRun {
                 log.debug("Ledger unavailable, retrying: {}", e.getMessage());
                 done = -1;
             }
-            if (done >= s.events()) {
+            boolean drained;
+            if (remainingRows == null) {
+                drained = done >= s.events();
+            } else {
+                long remaining;
+                try {
+                    remaining = remainingRows.getAsLong();
+                } catch (RuntimeException e) {
+                    log.debug("Events table unavailable, retrying: {}", e.getMessage());
+                    remaining = -1;
+                }
+                drained = remaining == 0;
+                if (remaining >= 0 && done / 1000 != lastLogged / 1000) {
+                    log.info("Handled {} distinct, {} rows left", done, remaining);
+                }
+            }
+            if (drained) {
                 return new Drain(true, phaseStart, Duration.between(phaseStart, Instant.now()));
             }
             if (Instant.now().isAfter(deadline)) {
@@ -521,7 +581,11 @@ public final class BenchmarkRun {
                 .build();
     }
 
-    private record PublishPhase(Duration duration, long[] publishedAtMicros, long[] latencyNanos) {}
+    private record PublishPhase(
+            Duration duration,
+            long[] publishedAtMicros,
+            long[] committedAtMicros,
+            long[] latencyNanos) {}
 
     private record Drain(boolean drained, Instant phaseStart, Duration wallDuration) {}
 

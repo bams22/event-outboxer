@@ -38,7 +38,7 @@ The module is still kept as a first-class artifact because:
 
 | Class | Responsibility |
 |---|---|
-| `InMemoryEventStore` | `EventStore` over a `ConcurrentHashMap`; per-row synchronized transitions; claim ordering (`priority DESC, runAt ASC`) and dedup-key uniqueness mirror the PostgreSQL queries. `markProcessed` removes the row — there is **no archive** |
+| `InMemoryEventStore` | `EventStore` over a `ConcurrentHashMap`; per-row synchronized transitions; claim ordering (`priority DESC, runAt ASC`) and the claim-time dedup sweep (ADR-0037, uncapped) mirror the PostgreSQL queries. `markProcessed` removes the row — there is **no archive** |
 | `InMemoryWorkerRegistry` | `WorkerRegistry`; `findDead` treats `gracefulStop` as immediately dead, like the PG adapter |
 | `InMemoryOutboxAdmin` | `OutboxAdmin` over the store's rows; `findInArchive` is always empty and `purgeArchive` a no-op (no archive) |
 | `InMemoryEntityLocker` | `EntityLocker` with TTL and a fencing token, matching the Redis locker's semantics |

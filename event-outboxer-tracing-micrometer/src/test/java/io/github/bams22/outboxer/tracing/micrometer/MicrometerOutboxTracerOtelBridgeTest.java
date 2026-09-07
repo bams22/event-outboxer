@@ -234,6 +234,50 @@ class MicrometerOutboxTracerOtelBridgeTest {
         assertThat(jdbc.getParentSpanId()).isEqualTo(consumer.getSpanId());
     }
 
+    /**
+     * Claim-time coalescing (ADR-0037) on the real OTel bridge: the consumer span of the
+     * representative stays a child of its own producer and additionally links to the producer of
+     * every swept duplicate whose stored carrier parses.
+     */
+    @Test
+    void sweptDuplicatesAreLinkedFromTheConsumerSpan() {
+        Map<String, String> sweptStored;
+        try (OutboxTracer.PublishSpan swept =
+                outboxTracer.startPublishSpan(UUID.randomUUID(), "T")) {
+            sweptStored = swept.contextToStore();
+        }
+        Map<String, String> ownStored;
+        try (OutboxTracer.PublishSpan own = outboxTracer.startPublishSpan(UUID.randomUUID(), "T")) {
+            ownStored = own.contextToStore();
+        }
+
+        outboxTracer
+                .startProcessSpan(
+                        new OutboxTracer.ProcessSpanInfo(
+                                UUID.randomUUID(),
+                                "T",
+                                1,
+                                WORKER,
+                                ownStored,
+                                OutboxTracer.Propagation.CHILD,
+                                null,
+                                null,
+                                List.of(sweptStored)))
+                .close();
+
+        SpanData consumer = span("outbox process T");
+        // W3C traceparent: 00-<trace id>-<span id>-<flags>.
+        String sweptSpanId = sweptStored.get("traceparent").split("-")[2];
+        String ownSpanId = ownStored.get("traceparent").split("-")[2];
+        assertThat(consumer.getParentSpanId()).isEqualTo(ownSpanId);
+        assertThat(consumer.getLinks()).hasSize(1);
+        assertThat(consumer.getLinks().get(0).getSpanContext().getSpanId()).isEqualTo(sweptSpanId);
+        assertThat(
+                        consumer.getAttributes()
+                                .get(AttributeKey.stringKey("event_outboxer.coalesced_count")))
+                .isEqualTo("1");
+    }
+
     private Map<String, String> publishAndCaptureContext() {
         Span caller = otelTracer.spanBuilder("business-op").startSpan();
         Map<String, String> stored;

@@ -35,6 +35,10 @@ class FlywayMigrationIT {
             assertIndexExists(st, "idx_events_processing_claimed_at");
             assertIndexExists(st, "idx_workers_heartbeat");
             assertIndexExists(st, "idx_archive_event_type_archived_at");
+            // ADR-0037 (V010): the dedup index is a plain partial index; the V004 unique one is
+            // gone.
+            assertIndexExists(st, "ix_events_pending_dedup_key");
+            assertIndexAbsent(st, "uq_events_pending_dedup_key");
         }
     }
 
@@ -79,6 +83,18 @@ class FlywayMigrationIT {
                                 + column
                                 + "'")) {
             assertThat(rs.next()).as("column %s.%s must exist", table, column).isTrue();
+        }
+    }
+
+    private static void assertIndexAbsent(Statement st, String indexName) throws Exception {
+        try (ResultSet rs =
+                st.executeQuery(
+                        "SELECT 1 FROM pg_indexes WHERE schemaname = '"
+                                + SCHEMA
+                                + "' AND indexname = '"
+                                + indexName
+                                + "'")) {
+            assertThat(rs.next()).as("index %s must not exist", indexName).isFalse();
         }
     }
 

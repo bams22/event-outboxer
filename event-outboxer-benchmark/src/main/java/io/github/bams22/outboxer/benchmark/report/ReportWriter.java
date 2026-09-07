@@ -69,7 +69,8 @@ public final class ReportWriter {
                 Locale.ROOT,
                 "%s  scenario=%s  fleet=%s payload=%s/%dB events=%d workers=%d types=%d"
                         + " lockKeys=%d pool=%d batch=%d poll=%s lock=%s exec=%s"
-                        + " finalizeBatching=%s work=%s slowKey=%.2f/%s failureRate=%.2f%n",
+                        + " finalizeBatching=%s work=%s slowKey=%.2f/%s failureRate=%.2f"
+                        + " dedupKeys=%d%n",
                 report.target(),
                 s.name(),
                 s.fleet().option(),
@@ -88,7 +89,8 @@ public final class ReportWriter {
                 human(s.handlerWorkTime()),
                 s.slowKeyShare(),
                 human(s.slowKeyWorkTime()),
-                s.failureRate());
+                s.failureRate(),
+                s.dedupKeyCardinality());
         BenchmarkReport.Environment env = report.environment();
         out.printf(
                 Locale.ROOT,
@@ -153,13 +155,14 @@ public final class ReportWriter {
             var st = db.statements();
             out.printf(
                     Locale.ROOT,
-                    "statements   %d calls = %.2f/event   claim %d calls x %.1f rows   finalize"
-                            + " batched %d calls x %.1f rows, single %d   release %d   retry %d"
-                            + "   other %d%n",
+                    "statements   %d calls = %.2f/event   claim %d calls x %.1f rows, %.2f ms mean"
+                            + "   finalize batched %d calls x %.1f rows, single %d   release %d"
+                            + "   retry %d   other %d%n",
                     st.totalCalls(),
                     (double) st.totalCalls() / p.events(),
                     st.calls("claim"),
                     st.rowsPerCall("claim"),
+                    st.meanMs("claim"),
                     st.calls("finalizeBatch"),
                     st.rowsPerCall("finalizeBatch"),
                     st.calls("finalizeSingle"),
@@ -204,6 +207,21 @@ public final class ReportWriter {
                 inv.lockExclusivityExpected() ? "graded" : "informational, no locker",
                 report.storage().eventRows(),
                 report.storage().lockRows());
+        if (inv.dedupKeys() > 0) {
+            out.printf(
+                    Locale.ROOT,
+                    "dedup        keys=%d publishes=%d handled=%d coalesced=%d (%.1f%%)"
+                            + " staleKeys=%d%n",
+                    inv.dedupKeys(),
+                    inv.published(),
+                    inv.succeeded(),
+                    inv.coalescedPublishes(),
+                    inv.published() == 0 ? 0.0 : 100.0 * inv.coalescedPublishes() / inv.published(),
+                    inv.staleKeys());
+            for (String line : inv.staleKeySample()) {
+                out.println("             stale: " + line);
+            }
+        }
         for (String line : inv.overlapSample()) {
             out.println("             overlap: " + line);
         }

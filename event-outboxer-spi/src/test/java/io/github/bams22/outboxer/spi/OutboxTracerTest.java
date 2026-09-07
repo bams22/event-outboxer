@@ -37,7 +37,6 @@ class OutboxTracerTest {
             assertThat(span.contextToStore()).isEmpty();
             assertThatCode(
                             () -> {
-                                span.coalesced(UUID.randomUUID());
                                 span.linked();
                                 span.error(new RuntimeException("x"));
                                 span.close();

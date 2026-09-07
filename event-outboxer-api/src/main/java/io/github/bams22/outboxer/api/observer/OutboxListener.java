@@ -52,10 +52,11 @@ public interface OutboxListener {
     }
 
     /**
-     * Called when a publish carrying a dedup key coalesced into an existing {@code PENDING} event
-     * of the same {@code (type, key)} instead of inserting a new row (ADR-0021). Fires instead of
-     * {@code onEventPublished} for that request. Note: the caller's transaction may still roll
-     * back, in which case the coalescing never becomes visible to the engine.
+     * Called by the dispatcher for every keyed event the claim statement swept as a duplicate of
+     * another due event with the same {@code (type, dedupKey)} (ADR-0037): the swept event never
+     * reaches a handler, the representative's run covers it. Fires after the claim and before the
+     * representative's handler, once per swept event; {@code onEventPublished} had already fired
+     * for the swept event when it was published.
      */
     default void onEventCoalesced(EventCoalescedInfo info) {
         // no-op

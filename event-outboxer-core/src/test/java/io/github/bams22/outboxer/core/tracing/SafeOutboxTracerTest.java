@@ -51,11 +51,6 @@ class SafeOutboxTracerTest {
                         }
 
                         @Override
-                        public void coalesced(UUID existingEventId) {
-                            throw new IllegalStateException("coalesced exploded");
-                        }
-
-                        @Override
                         public void linked() {
                             throw new IllegalStateException("linked exploded");
                         }
@@ -123,7 +118,6 @@ class SafeOutboxTracerTest {
 
         assertThatCode(
                         () -> {
-                            publish.coalesced(UUID.randomUUID());
                             publish.linked();
                             publish.error(new RuntimeException("x"));
                             publish.close();

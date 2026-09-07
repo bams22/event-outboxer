@@ -88,7 +88,7 @@ class DefaultOutboxEventPublisherTracingTest {
         EventStore failing =
                 new ForwardingEventStore(new InMemoryEventStore()) {
                     @Override
-                    public boolean save(PendingEvent event) {
+                    public void save(PendingEvent event) {
                         throw new EventStoreException("insert failed");
                     }
                 };
@@ -106,7 +106,7 @@ class DefaultOutboxEventPublisherTracingTest {
     }
 
     @Test
-    void coalescedPublishTagsSpanAndKeepsExistingContext() {
+    void keyedPublishesEachKeepTheirOwnSpanContext() {
         InMemoryEventStore store = new InMemoryEventStore();
         RecordingOutboxTracer tracer = new RecordingOutboxTracer();
         DefaultOutboxEventPublisher publisher = publisher(store, tracer);
@@ -115,15 +115,16 @@ class DefaultOutboxEventPublisherTracingTest {
         UUID first = publisher.publish(EventType.of("SYNC", String.class), "v1", keyed);
         UUID second = publisher.publish(EventType.of("SYNC", String.class), "v2", keyed);
 
-        assertThat(second).isEqualTo(first);
+        // ADR-0037: no coalescing at publish time — two rows, two spans, each row carries its own
+        // span's context; the claim links the representative's consumer span to the swept one.
+        assertThat(second).isNotEqualTo(first);
         assertThat(tracer.publishSpans).hasSize(2);
-        RecordingOutboxTracer.RecordedPublishSpan coalescedSpan = tracer.publishSpans.get(1);
-        assertThat(coalescedSpan.coalescedInto).isEqualTo(first);
-        assertThat(coalescedSpan.error).isNull();
-        assertThat(coalescedSpan.closeCount).hasValue(1);
-        // The surviving row keeps the FIRST publish's context — the second capture is discarded.
+        assertThat(tracer.publishSpans.get(1).error).isNull();
+        assertThat(tracer.publishSpans.get(1).closeCount).hasValue(1);
         assertThat(store.findById(first).orElseThrow().traceContext())
                 .isEqualTo(tracer.publishSpans.get(0).context);
+        assertThat(store.findById(second).orElseThrow().traceContext())
+                .isEqualTo(tracer.publishSpans.get(1).context);
     }
 
     @Test

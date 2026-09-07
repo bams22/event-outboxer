@@ -61,6 +61,14 @@ public class OutboxReceiverTracingObservationHandler
     @Override
     public Span.Builder customizeExtractedSpan(
             OutboxReceiverContext context, Span.Builder builder) {
+        // Duplicates the claim swept for this event (ADR-0037): one link per swept publish whose
+        // carrier parses, whatever the propagation mode of the event itself.
+        for (Map<String, String> swept : context.coalescedContexts()) {
+            TraceContext sweptTarget = StoredTraceContexts.parse(tracer, swept);
+            if (sweptTarget != null) {
+                builder.addLink(new Link(sweptTarget));
+            }
+        }
         if (context.propagation() != OutboxTracer.Propagation.LINK) {
             return builder;
         }

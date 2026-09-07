@@ -101,7 +101,8 @@ public record BenchmarkOptions(
                             "kill-at",
                             "respawn-killed",
                             "pg-restart",
-                            "pg-restart-at"));
+                            "pg-restart-at",
+                            "dedup-keys"));
 
     public BenchmarkOptions {
         Objects.requireNonNull(scenario, "scenario must not be null");
@@ -167,6 +168,7 @@ public record BenchmarkOptions(
         applyInt(kv, "connection-pool-size", b::connectionPoolSize);
         apply(kv, "fleet", v -> b.fleet(FleetMode.parse(v)));
         apply(kv, "worker-jvm-args", v -> b.workerJvmArgs(List.of(v.trim().split("\\s+"))));
+        applyInt(kv, "dedup-keys", b::dedupKeyCardinality);
 
         Chaos.ChaosBuilder chaos = base.chaos().toBuilder();
         applyInt(kv, "kill-workers", chaos::killWorkers);

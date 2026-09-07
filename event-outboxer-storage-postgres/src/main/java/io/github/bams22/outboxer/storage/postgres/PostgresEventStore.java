@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.storage.postgres;
 
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.CoalescedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
@@ -59,7 +60,6 @@ public final class PostgresEventStore implements EventStore {
     private final Clock clock;
 
     private final String sqlInsert;
-    private final String sqlLockPendingByDedupKey;
     private final String sqlClaim;
     private final String sqlMarkProcessedNoArchive;
     private final String sqlMarkProcessedWithArchive;
@@ -88,41 +88,17 @@ public final class PostgresEventStore implements EventStore {
         this.metricsCache = Objects.requireNonNull(metricsCache, "metricsCache must not be null");
         this.tables = new SchemaResolver(properties);
 
-        // ON CONFLICT targets the partial unique index over PENDING rows (V004): an insert with a
-        // dedup key coalesces into an existing PENDING event of the same (type, key) — see
-        // ADR-0021. Rows without a dedup key never match the partial index and always insert;
-        // a duplicate primary key still raises normally (the conflict target names only the index).
+        // Unconditional, keyed or not (ADR-0037): duplicates of a dedup key are collapsed by the
+        // claim statement, never by the insert. A duplicate primary key still raises normally.
         this.sqlInsert =
                 "INSERT INTO "
                         + tables.events()
                         + " (id, event_type, payload, payload_binary, payload_format,"
                         + " payload_class, priority, status, created_at, run_at, trace_context,"
                         + " dedup_key) VALUES (?, ?, ?::jsonb, ?, ?, ?, ?, 'PENDING', now(), ?,"
-                        + " ?::jsonb, ?) ON CONFLICT (event_type, dedup_key) WHERE status ="
-                        + " 'PENDING' AND dedup_key IS NOT NULL DO NOTHING";
+                        + " ?::jsonb, ?)";
 
-        this.sqlLockPendingByDedupKey =
-                "SELECT id FROM "
-                        + tables.events()
-                        + " WHERE event_type = ? AND dedup_key = ? AND status = 'PENDING' "
-                        + "FOR UPDATE";
-
-        this.sqlClaim =
-                "WITH picked AS ("
-                        + "  SELECT id FROM "
-                        + tables.events()
-                        + "  WHERE event_type = ? AND status = 'PENDING' AND run_at <= now()"
-                        + "  ORDER BY priority DESC, run_at"
-                        + "  LIMIT ?"
-                        + "  FOR UPDATE SKIP LOCKED"
-                        + ") "
-                        + "UPDATE "
-                        + tables.events()
-                        + " e SET status = 'PROCESSING', claimed_by = ?, claimed_at = now(),"
-                        + " version = version + 1 FROM picked WHERE e.id = picked.id RETURNING"
-                        + " e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,"
-                        + " e.payload_class, e.priority, e.attempts, e.created_at, e.claimed_at,"
-                        + " e.trace_context, e.version";
+        this.sqlClaim = claimSql();
 
         this.sqlMarkProcessedNoArchive =
                 "DELETE FROM "
@@ -225,35 +201,105 @@ public final class PostgresEventStore implements EventStore {
                         + " GROUP BY event_type, status";
     }
 
+    /**
+     * Upper bound on the due duplicates one claim statement sweeps (ADR-0037). Keeps the
+     * statement's latency predictable under a burst on one key — the harness measured ~5 µs per
+     * swept row, 5 ms at the cap; whatever is left is swept by the next claim of the type.
+     */
+    static final int CLAIM_DEDUP_SWEEP_CAP = 1_000;
+
+    /** {@code last_fail_reason} of a swept duplicate in the archive (ADR-0037). */
+    static final String COALESCED_REASON = "coalesced at claim";
+
+    /**
+     * The claim statement (ADR-0014 claim, ADR-0037 coalescing). {@code picked} is the locking CTE.
+     * On top of it, {@code keep} elects one representative per dedup key among the picked rows —
+     * {@code DISTINCT ON} is legal there because the locking already happened in {@code picked} and
+     * a locking clause cannot carry {@code DISTINCT} —, {@code dup} locks every other due PENDING
+     * row of those keys, inside the batch and beyond it up to {@link #CLAIM_DEDUP_SWEEP_CAP} rows,
+     * skipping rows another worker holds, and {@code gone} deletes them (moving them to the archive
+     * first when archiving is on, marked {@code coalesced at claim}). The final UPDATE claims the
+     * picked rows minus the duplicates, so every row is touched by exactly one data-modifying
+     * sub-statement, as PostgreSQL requires; its {@code RETURNING} carries, per representative, the
+     * ids and stored carriers of the rows swept for its key, so the dispatcher can report and link
+     * them.
+     *
+     * <p>Correctness without a publisher-side pin: only committed rows are visible to {@code dup},
+     * and the sweep precedes the handler by construction, so every publish that was swept had
+     * committed before the representative's handler started — the ADR-0021 visibility guarantee. A
+     * publish still in flight is invisible, stays its own row and runs later on its own. Rows with
+     * a future {@code run_at} are never swept: a deferred twin is a separate intent.
+     */
+    private String claimSql() {
+        String events = tables.events();
+        String gone =
+                properties.archiveEnabled()
+                        ? "gone AS (DELETE FROM "
+                                + events
+                                + " e USING dup WHERE e.id = dup.id RETURNING e.id, e.event_type,"
+                                + " e.payload, e.payload_binary, e.payload_format,"
+                                + " e.payload_class, e.priority, e.attempts, e.created_at,"
+                                + " e.run_at, e.trace_context, e.dedup_key), archived AS (INSERT"
+                                + " INTO "
+                                + tables.archive()
+                                + " (id, event_type, payload, payload_binary, payload_format,"
+                                + " payload_class, priority, attempts, created_at, run_at,"
+                                + " last_fail_reason, trace_context, dedup_key, archived_at,"
+                                + " archived_by) SELECT id, event_type, payload, payload_binary,"
+                                + " payload_format, payload_class, priority, attempts, created_at,"
+                                + " run_at, '"
+                                + COALESCED_REASON
+                                + "', trace_context, dedup_key, now(), ? FROM gone) "
+                        : "gone AS (DELETE FROM "
+                                + events
+                                + " e USING dup WHERE e.id = dup.id RETURNING e.id, e.dedup_key,"
+                                + " e.trace_context) ";
+        return "WITH picked AS ("
+                + "  SELECT id, dedup_key, priority, run_at FROM "
+                + events
+                + "  WHERE event_type = ? AND status = 'PENDING' AND run_at <= now()"
+                + "  ORDER BY priority DESC, run_at"
+                + "  LIMIT ?"
+                + "  FOR UPDATE SKIP LOCKED"
+                + "), keep AS ("
+                + "  SELECT DISTINCT ON (dedup_key) id, dedup_key FROM picked"
+                + "  WHERE dedup_key IS NOT NULL"
+                + "  ORDER BY dedup_key, priority DESC, run_at, id"
+                + "), dup AS ("
+                + "  SELECT d.id FROM "
+                + events
+                + " d JOIN keep k ON d.dedup_key = k.dedup_key"
+                + "  WHERE d.event_type = ? AND d.status = 'PENDING' AND d.run_at <= now()"
+                + "  AND d.id <> k.id"
+                + "  LIMIT ?"
+                + "  FOR UPDATE OF d SKIP LOCKED"
+                + "), "
+                + gone
+                + "UPDATE "
+                + events
+                + " e SET status = 'PROCESSING', claimed_by = ?, claimed_at = now(),"
+                + " version = version + 1 FROM picked WHERE e.id = picked.id"
+                + " AND NOT EXISTS (SELECT 1 FROM dup WHERE dup.id = e.id)"
+                + " RETURNING e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,"
+                + " e.payload_class, e.priority, e.attempts, e.created_at, e.claimed_at,"
+                + " e.trace_context, e.version, e.dedup_key,"
+                + " (SELECT array_agg(g.id ORDER BY g.id) FROM gone g WHERE g.dedup_key ="
+                + " e.dedup_key) AS coalesced_ids,"
+                + " (SELECT array_agg(g.trace_context::text ORDER BY g.id) FROM gone g WHERE"
+                + " g.dedup_key = e.dedup_key) AS coalesced_contexts";
+    }
+
     // ---------------------------------------------------------------------------------------------
     // save / saveAll / findById
     // ---------------------------------------------------------------------------------------------
 
     @Override
-    public boolean save(PendingEvent event) {
+    public void save(PendingEvent event) {
         Objects.requireNonNull(event, "event must not be null");
         try {
-            return jdbc.update(sqlInsert, ps -> bindPending(ps, event)) > 0;
+            jdbc.update(sqlInsert, ps -> bindPending(ps, event));
         } catch (SQLException ex) {
             throw new EventStoreException("failed to save event " + event.id(), ex);
-        }
-    }
-
-    @Override
-    public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
-        Objects.requireNonNull(eventType, "eventType must not be null");
-        Objects.requireNonNull(dedupKey, "dedupKey must not be null");
-        try {
-            return jdbc.queryOne(
-                    sqlLockPendingByDedupKey,
-                    ps -> {
-                        ps.setString(1, eventType);
-                        ps.setString(2, dedupKey);
-                    },
-                    rs -> (UUID) rs.getObject("id"));
-        } catch (SQLException ex) {
-            throw new EventStoreException(
-                    "lockPendingByDedupKey(" + eventType + ", " + dedupKey + ") failed", ex);
         }
     }
 
@@ -262,14 +308,6 @@ public final class PostgresEventStore implements EventStore {
         Objects.requireNonNull(events, "events must not be null");
         if (events.isEmpty()) {
             return;
-        }
-        for (PendingEvent e : events) {
-            if (e.dedupKey() != null) {
-                throw new IllegalArgumentException(
-                        "saveAll does not accept events with a dedup key (event "
-                                + e.id()
-                                + "); the publisher must route them through save(...)");
-            }
         }
         try {
             jdbc.doWork(
@@ -312,7 +350,13 @@ public final class PostgresEventStore implements EventStore {
                     ps -> {
                         ps.setString(1, request.eventType());
                         ps.setInt(2, request.limit());
-                        ps.setString(3, request.workerId().value());
+                        ps.setString(3, request.eventType());
+                        ps.setInt(4, CLAIM_DEDUP_SWEEP_CAP);
+                        int next = 5;
+                        if (properties.archiveEnabled()) {
+                            ps.setString(next++, request.workerId().value()); // archived_by
+                        }
+                        ps.setString(next, request.workerId().value()); // claimed_by
                     },
                     PostgresEventStore::readClaimed);
         } catch (SQLException ex) {
@@ -781,7 +825,31 @@ public final class PostgresEventStore implements EventStore {
                 toInstant(rs.getTimestamp("created_at")),
                 toInstant(rs.getTimestamp("claimed_at")),
                 toTraceContext(rs.getString("trace_context")),
-                rs.getLong("version"));
+                rs.getLong("version"),
+                rs.getString("dedup_key"),
+                readCoalesced(rs));
+    }
+
+    /**
+     * The duplicates swept for this representative: two parallel arrays ordered by id, ids and
+     * their stored carriers as JSON text; both {@code NULL} when nothing was swept.
+     */
+    private static List<CoalescedEvent> readCoalesced(ResultSet rs) throws SQLException {
+        Array idsArray = rs.getArray("coalesced_ids");
+        if (idsArray == null) {
+            return List.of();
+        }
+        Array contextsArray = rs.getArray("coalesced_contexts");
+        UUID[] ids = (UUID[]) idsArray.getArray();
+        String[] contexts =
+                contextsArray == null
+                        ? new String[ids.length]
+                        : (String[]) contextsArray.getArray();
+        List<CoalescedEvent> out = new ArrayList<>(ids.length);
+        for (int i = 0; i < ids.length; i++) {
+            out.add(new CoalescedEvent(ids[i], toTraceContext(contexts[i])));
+        }
+        return out;
     }
 
     /** Package-private: reused by {@link PostgresOutboxAdmin}. */

@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.bams22.outboxer.domain.ArchivedEvent;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.CoalescedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
@@ -31,7 +32,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -183,67 +184,68 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
     }
 
     @Test
-    @DisplayName("replay against a live PENDING with the same key coalesces, archive row kept")
-    void replayFromArchive_pendingSameKey_coalescesAndKeepsArchiveRow() {
+    @DisplayName("replay next to a live PENDING of the same key inserts; the next claim collapses")
+    void replayFromArchive_pendingSameKey_insertsAndTheClaimCollapses() {
         UUID archivedId = archiveOne("processed-first", "shared-key");
         // A fresh PENDING event with the same (type, key) is already scheduled.
         var pendingSameKey = pendingKeyed("scheduled-later", "shared-key");
         archiveStore().save(pendingSameKey);
 
-        assertThat(admin.replayFromArchive(archivedId)).isEqualTo(ReplayOutcome.COALESCED);
+        assertThat(admin.replayFromArchive(archivedId)).isEqualTo(ReplayOutcome.REPLAYED);
 
-        // Nothing inserted, the audit row survived, the live event is untouched.
-        assertThat(store.findById(archivedId)).isEmpty();
-        assertThat(admin.findInArchive(archivedId)).isPresent();
-        assertThat(store.findById(pendingSameKey.id()).orElseThrow().status())
+        // Both rows are PENDING (ADR-0037: a key never blocks an insert), the archive row moved.
+        assertThat(store.findById(archivedId).orElseThrow().status())
                 .isEqualTo(EventStatus.PENDING);
+        assertThat(admin.findInArchive(archivedId)).isEmpty();
+        // The claim keeps the older live row and sweeps the replayed one — back into the archive,
+        // since this store archives, marked as coalesced.
+        List<ClaimedEvent> claimed = archiveStore().claim(new ClaimRequest("ARCH_T", WORKER, 10));
+        assertThat(claimed)
+                .singleElement()
+                .satisfies(
+                        ce -> {
+                            assertThat(ce.id()).isEqualTo(pendingSameKey.id());
+                            assertThat(ce.coalesced())
+                                    .extracting(CoalescedEvent::id)
+                                    .containsExactly(archivedId);
+                        });
+        assertThat(admin.findInArchive(archivedId)).isPresent();
     }
 
     @Test
-    @DisplayName("replayAllFromArchive() counts replayed vs coalesced-and-kept rows")
-    void replayAllFromArchive_countsReplayedVsCoalesced() {
+    @DisplayName("replayAllFromArchive() replays keyed and keyless rows alike")
+    void replayAllFromArchive_replaysKeyedAndKeylessRows() {
         archiveOne("a", "key-a");
         archiveOne("b", "key-b");
         archiveOne("c", null);
-        UUID blocked = archiveOne("d", "key-live");
+        UUID keyed = archiveOne("d", "key-live");
         archiveStore().save(pendingKeyed("live", "key-live"));
 
         ReplayAllResult result = admin.replayAllFromArchive("ARCH_T", null, null, 100, null);
 
-        assertThat(result.replayed()).isEqualTo(3);
-        assertThat(result.coalesced()).isEqualTo(1);
+        assertThat(result.replayed()).isEqualTo(4);
         assertThat(result.idInUse()).isZero();
         assertThat(result.next()).isNotNull();
-        assertThat(admin.findInArchive(blocked)).isPresent();
-        assertThat(countArchiveRows()).isEqualTo(1);
+        assertThat(admin.findInArchive(keyed)).isEmpty();
+        assertThat(store.findById(keyed).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
+        assertThat(countArchiveRows()).isZero();
     }
 
     @Test
-    @DisplayName("duplicate key inside one bulk batch: oldest archived row replays, newer stays")
+    @DisplayName("duplicate key inside one bulk batch: both rows replay, the claim collapses them")
     void replayAllFromArchive_intraBatchDuplicateKey() {
         UUID first = archiveOne("first", "dup-key");
         UUID second = archiveOne("second", "dup-key");
-        // Compute the expected winner from the actual archived_at order the SQL uses, so the
-        // assertion cannot flake on a timestamp tie (broken by id in that case).
-        ArchivedEvent a = admin.findInArchive(first).orElseThrow();
-        ArchivedEvent b = admin.findInArchive(second).orElseThrow();
-        UUID older =
-                Comparator.comparing(ArchivedEvent::archivedAt)
-                                        .thenComparing(ArchivedEvent::id)
-                                        .compare(a, b)
-                                <= 0
-                        ? first
-                        : second;
-        UUID newer = older.equals(first) ? second : first;
 
         ReplayAllResult result = admin.replayAllFromArchive("ARCH_T", null, null, 100, null);
 
-        assertThat(result.replayed()).isEqualTo(1);
-        assertThat(result.coalesced()).isEqualTo(1);
-        assertThat(store.findById(older)).isPresent();
-        assertThat(admin.findInArchive(older)).isEmpty();
-        assertThat(store.findById(newer)).isEmpty();
-        assertThat(admin.findInArchive(newer)).isPresent();
+        assertThat(result.replayed()).isEqualTo(2);
+        assertThat(store.findById(first)).isPresent();
+        assertThat(store.findById(second)).isPresent();
+        assertThat(countArchiveRows()).isZero();
+        assertThat(store.claim(new ClaimRequest("ARCH_T", WORKER, 10)))
+                .singleElement()
+                .satisfies(ce -> assertThat(ce.coalesced()).hasSize(1));
     }
 
     @Test
@@ -259,7 +261,6 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
         ReplayAllResult windowed =
                 admin.replayAllFromArchive("ARCH_T", firstAt, thirdAt, 100, null);
         assertThat(windowed.replayed()).isEqualTo(1);
-        assertThat(windowed.coalesced()).isZero();
         assertThat(store.findById(second)).isPresent();
 
         // The limit caps how many of the remaining rows are considered.
@@ -274,7 +275,7 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
         UUID clean = archiveOne("clean", null);
         UUID collides = archiveOne("collides", null);
         // The application re-published the archived event's explicit UUID; the live row is
-        // PROCESSING, so the (event_type, dedup_key) arbiter cannot catch the id conflict.
+        // PROCESSING — a primary-key collision the blocked anti-join must turn into a skipped row.
         ClaimedEvent live = claimArchiveMode(pendingWithId(collides, "republished", null));
         assertThat(live.id()).isEqualTo(collides);
 
@@ -282,7 +283,6 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
 
         assertThat(result.replayed()).isEqualTo(1);
         assertThat(result.idInUse()).isEqualTo(1);
-        assertThat(result.coalesced()).isZero();
         // The clean row moved; the colliding one stayed archived and the live event is untouched.
         assertThat(store.findById(clean).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
         assertThat(admin.findInArchive(clean)).isEmpty();
@@ -306,13 +306,11 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
     @Test
     @DisplayName("the cursor walks past rows that stay archived, so a sweep terminates")
     void replayAllFromArchive_cursorAdvancesPastRowsThatStay() {
-        // Two rows that cannot move — one coalescing, one whose id is live — bracketing one that
-        // can. Without a cursor the same window would return them forever.
-        UUID coalescing = archiveOne("keyed", "live-key");
+        // A row that cannot move (its id is live) between two that can. Without a cursor the same
+        // window would return it forever.
+        UUID keyed = archiveOne("keyed", "live-key");
         UUID movable = archiveOne("movable", null);
         UUID collides = archiveOne("collides", null);
-        // Make the id live first: claim() takes a batch, so doing this after the PENDING row below
-        // would drag that row into PROCESSING too and it would no longer coalesce.
         claimArchiveMode(pendingWithId(collides, "republished", null));
         archiveStore().save(pendingKeyed("already-scheduled", "live-key"));
 
@@ -325,18 +323,19 @@ class PostgresOutboxAdminIT extends AbstractOutboxAdminContractTest {
             batch = admin.replayAllFromArchive("ARCH_T", null, null, 1, cursor);
             cursor = batch.next();
             replayed += batch.replayed();
-            considered += batch.replayed() + batch.coalesced() + batch.idInUse();
+            considered += batch.replayed() + batch.idInUse();
             batches++;
             assertThat(batches).isLessThan(10); // a stalled sweep must fail, not hang
         } while (cursor != null);
 
         // Every archive row was visited exactly once across the sweep, one per batch, and the
-        // fourth batch came back empty to end it.
+        // fourth batch came back empty to end it. The keyed row replays next to its live twin
+        // (ADR-0037); only the live id stays archived.
         assertThat(considered).isEqualTo(3);
-        assertThat(replayed).isEqualTo(1);
+        assertThat(replayed).isEqualTo(2);
         assertThat(batches).isEqualTo(4);
         assertThat(store.findById(movable)).isPresent();
-        assertThat(admin.findInArchive(coalescing)).isPresent();
+        assertThat(store.findById(keyed)).isPresent();
         assertThat(admin.findInArchive(collides)).isPresent();
     }
 

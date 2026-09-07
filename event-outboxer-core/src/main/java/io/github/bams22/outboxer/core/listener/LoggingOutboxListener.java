@@ -65,8 +65,9 @@ public final class LoggingOutboxListener implements OutboxListener {
     @Override
     public void onEventCoalesced(EventCoalescedInfo info) {
         log.debug(
-                "publish coalesced into existing eventId={} type={} dedupKey={}",
-                info.existingEventId(),
+                "eventId={} coalesced into eventId={} type={} dedupKey={}",
+                info.eventId(),
+                info.coalescedIntoEventId(),
                 info.eventType(),
                 info.dedupKey());
     }

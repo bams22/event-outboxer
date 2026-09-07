@@ -28,13 +28,16 @@ SDKs alike.
   propagators (honouring `OTEL_PROPAGATORS`, not hardcoded W3C) into a
   flat string map that the engine persists in the event's
   `trace_context` column. Nothing is made current on the publishing
-  thread. Coalesced dedup publishes tag the span
-  `event_outboxer.coalesced_into=<existingId>`.
+  thread.
 - **Handler side** — span `outbox process <eventType>`, kind
   `CONSUMER`, parented by the *stored* context and made current (with
   restored baggage) for the duration of the handler. Extra attributes:
   `event_outboxer.attempt` (1-based) and `event_outboxer.worker.id`.
-  Each retry gets a fresh span in the same trace. Handler exceptions
+  When the claim swept keyed duplicates of the event
+  ([ADR-0037](../adr/0037-claim-time-dedup-coalescing.md)) the span
+  carries `event_outboxer.coalesced_count` and one span link per swept
+  publish whose stored carrier parses. Each retry gets a fresh span in
+  the same trace. Handler exceptions
   are recorded (`recordException` + ERROR status).
 - **Deferred events** (ADR-0023, 2026-08-28 amendment) — when the
   engine hands over `Propagation.LINK` (the event was published with

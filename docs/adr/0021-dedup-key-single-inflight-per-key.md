@@ -2,7 +2,18 @@
 
 ## Status
 
-Accepted (amended 2026-08-31: coalescing became observable — a
+**Superseded by [ADR-0037](0037-claim-time-dedup-coalescing.md)
+(2026-09-07).** A design review found that the partial unique index of
+this ADR collides with every transition of a PROCESSING event back to
+PENDING once a twin of its key was inserted (`23505` on retry, release,
+reclaim and reenable), and the benchmark harness measured the
+publisher-side pin as the expensive half of the design. ADR-0037 keeps
+the dedup key, its per-type scope and the visibility guarantee, and
+moves coalescing to the claim statement; migration V010 replaces the
+unique index with a plain one. The text below is kept as the record of
+the insert-time design.
+
+Previously: Accepted (amended 2026-08-31: coalescing became observable — a
 coalesced publish fires `OutboxListener.onEventCoalesced` with the
 existing event's id, the event type and the dedup key, complementing
 the `event_outboxer.coalesced_into` span attribute with an aggregate

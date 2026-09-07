@@ -75,7 +75,8 @@ class OutboxFlywayIT {
         assertThat(tables(jdbc, "event_outboxer"))
                 .contains("events", "workers", "event_archive", "entity_locks");
         assertThat(versions(jdbc, "event_outboxer"))
-                .containsExactly("001", "002", "003", "004", "005", "006", "007", "008", "009");
+                .containsExactly(
+                        "001", "002", "003", "004", "005", "006", "007", "008", "009", "010");
         assertThat(context.getBean(OutboxFlywayMigrationInitializer.class)).isNotNull();
         // The lease probe is @DependsOnDatabaseInitialization: it only passed because the
         // detector ordered it after the outbox migrations.

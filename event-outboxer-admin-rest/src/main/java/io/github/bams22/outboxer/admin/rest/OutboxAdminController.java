@@ -115,10 +115,10 @@ public class OutboxAdminController {
     }
 
     /**
-     * Replay one archived event (ADR-0033): 200 with the outcome — {@code REPLAYED}, or {@code
-     * COALESCED} when a PENDING event with the same {@code (event_type, dedup_key)} already exists
-     * (nothing inserted, the archive row is kept) — 404 when the id is not in the archive, 409 when
-     * the hot table already holds that id, which is a live event to look at rather than a replay.
+     * Replay one archived event (ADR-0033): 200 with the outcome {@code REPLAYED}, 404 when the id
+     * is not in the archive, 409 when the hot table already holds that id, which is a live event to
+     * look at rather than a replay. A dedup key never blocks a replay (ADR-0037): the next claim
+     * collapses the replayed row with a live PENDING twin.
      */
     @PostMapping("/events/{id}/replay")
     public ResponseEntity<Object> replay(@PathVariable UUID id) {
@@ -130,7 +130,7 @@ public class OutboxAdminController {
                             .body(
                                     new AdminDtos.ErrorResponse(
                                             "an event with this id is already in the outbox"));
-            case REPLAYED, COALESCED -> ResponseEntity.ok(new ReplayResponse(outcome.name()));
+            case REPLAYED -> ResponseEntity.ok(new ReplayResponse(outcome.name()));
         };
     }
 
@@ -149,10 +149,7 @@ public class OutboxAdminController {
                         request.limitOrDefault(),
                         AdminDtos.decodeArchiveCursor(request.cursor()));
         return new ReplayAllResponse(
-                result.replayed(),
-                result.coalesced(),
-                result.idInUse(),
-                AdminDtos.encodeArchiveCursor(result.next()));
+                result.replayed(), result.idInUse(), AdminDtos.encodeArchiveCursor(result.next()));
     }
 
     /** Delete old DISABLED rows. */

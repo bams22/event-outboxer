@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.benchmark.verify;
 
 import io.github.bams22.outboxer.benchmark.ledger.Handling;
+import io.github.bams22.outboxer.benchmark.report.LatencyStats;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,10 +34,19 @@ public final class InvariantChecker {
     /** How many offenders each sample list keeps. */
     public static final int SAMPLE_SIZE = 20;
 
-    /** Grades {@code handlings} for a run without chaos. */
+    /** Grades {@code handlings} for a run without chaos and without dedup keys. */
     public InvariantReport check(
             long published, List<Handling> handlings, boolean lockExclusivityExpected) {
-        return check(published, handlings, lockExclusivityExpected, List.of());
+        return check(published, handlings, lockExclusivityExpected, List.of(), null);
+    }
+
+    /** Grades {@code handlings} for a run without dedup keys. */
+    public InvariantReport check(
+            long published,
+            List<Handling> handlings,
+            boolean lockExclusivityExpected,
+            List<ChaosEvent> chaos) {
+        return check(published, handlings, lockExclusivityExpected, chaos, null);
     }
 
     /**
@@ -47,12 +57,17 @@ public final class InvariantChecker {
      * @param chaos what the harness did on purpose; a duplicated event whose successful handling
      *     falls into one of these windows is attributable and does not fail the run. A genuine
      *     duplicate that happens to land inside a window is masked — the price of the rule.
+     * @param dedup what a run with dedup keys promises per key, {@code null} when keys were off.
+     *     With it, the per-sequence "lost" rule is replaced by the per-key freshness rule: every
+     *     key's last publish must be followed by a successful handling of that key that started
+     *     after the publish committed.
      */
     public InvariantReport check(
             long published,
             List<Handling> handlings,
             boolean lockExclusivityExpected,
-            List<ChaosEvent> chaos) {
+            List<ChaosEvent> chaos,
+            @Nullable DedupExpectation dedup) {
         Objects.requireNonNull(handlings, "handlings must not be null");
         Objects.requireNonNull(chaos, "chaos must not be null");
         if (published < 0) {
@@ -81,14 +96,17 @@ public final class InvariantChecker {
 
         List<Long> lostSample = new ArrayList<>();
         long lost = 0;
-        for (long seq = 0; seq < published; seq++) {
-            if (!successesPerSeq.containsKey(seq)) {
-                lost++;
-                if (lostSample.size() < SAMPLE_SIZE) {
-                    lostSample.add(seq);
+        if (dedup == null) {
+            for (long seq = 0; seq < published; seq++) {
+                if (!successesPerSeq.containsKey(seq)) {
+                    lost++;
+                    if (lostSample.size() < SAMPLE_SIZE) {
+                        lostSample.add(seq);
+                    }
                 }
             }
         }
+        Freshness freshness = dedup == null ? Freshness.NONE : checkFreshness(dedup, handlings);
 
         long duplicatedEvents = 0;
         long attributable = 0;
@@ -124,7 +142,48 @@ public final class InvariantChecker {
                 .lockExclusivityExpected(lockExclusivityExpected)
                 .lockOverlaps(overlaps.count)
                 .overlapSample(overlaps.sample)
+                .dedupKeys(dedup == null ? 0 : dedup.lastCommitMicrosByKey().size())
+                .coalescedPublishes(dedup == null ? 0 : published - successesPerSeq.size())
+                .staleKeys(freshness.stale)
+                .staleKeySample(freshness.sample)
                 .build();
+    }
+
+    /**
+     * Per key, the latest start of a successful handling must not precede the driver-side commit
+     * instant of the key's last publish. Timestamps compare at microsecond resolution and come from
+     * the same host for the in-process fleet.
+     */
+    private static Freshness checkFreshness(DedupExpectation dedup, List<Handling> handlings) {
+        Map<String, Long> latestStart = new HashMap<>();
+        for (Handling h : handlings) {
+            String key = h.dedupKey();
+            if (key == null || !h.succeeded()) {
+                continue;
+            }
+            latestStart.merge(key, LatencyStats.epochMicros(h.startedAt()), Math::max);
+        }
+        long stale = 0;
+        List<String> sample = new ArrayList<>();
+        for (Map.Entry<String, Long> e : new TreeMap<>(dedup.lastCommitMicrosByKey()).entrySet()) {
+            Long start = latestStart.get(e.getKey());
+            if (start == null || start < e.getValue()) {
+                stale++;
+                if (sample.size() < SAMPLE_SIZE) {
+                    sample.add(
+                            e.getKey()
+                                    + ": last publish committed at "
+                                    + e.getValue()
+                                    + "us, latest successful start "
+                                    + (start == null ? "none" : start + "us"));
+                }
+            }
+        }
+        return new Freshness(stale, sample);
+    }
+
+    private record Freshness(long stale, List<String> sample) {
+        static final Freshness NONE = new Freshness(0, List.of());
     }
 
     private static boolean explained(List<Handling> successes, List<ChaosEvent> chaos) {

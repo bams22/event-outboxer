@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.storage.inmemory;
 
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.CoalescedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
@@ -62,66 +63,20 @@ public final class InMemoryEventStore implements EventStore {
     // save / saveAll / findById
     // ---------------------------------------------------------------------------------------------
 
-    /** Serializes dedup-key inserts — the in-memory analogue of the partial unique index. */
-    private final Object dedupInsertMonitor = new Object();
-
     @Override
-    public boolean save(PendingEvent event) {
+    public void save(PendingEvent event) {
         Objects.requireNonNull(event, "event must not be null");
-        String dedupKey = event.dedupKey();
-        if (dedupKey == null) {
-            return insert(event);
-        }
-        // Coarse but correct for test infrastructure: one monitor makes the exists-check and the
-        // insert atomic, mirroring the PG partial unique index over PENDING rows (ADR-0021).
-        synchronized (dedupInsertMonitor) {
-            if (findPendingByDedupKey(event.eventType(), dedupKey).isPresent()) {
-                return false;
-            }
-            return insert(event);
-        }
-    }
-
-    private boolean insert(PendingEvent event) {
+        // Unconditional, keyed or not (ADR-0037): duplicates of a dedup key are collapsed by claim.
         EventRow row = EventRow.fromPending(event, clock.now());
         EventRow previous = rows.putIfAbsent(row.id, row);
         if (previous != null) {
             throw new EventStoreException("duplicate event id: " + row.id);
         }
-        return true;
-    }
-
-    @Override
-    public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
-        Objects.requireNonNull(eventType, "eventType must not be null");
-        Objects.requireNonNull(dedupKey, "dedupKey must not be null");
-        // No transactions in the in-memory adapter, hence nothing to pin: the coalescing
-        // visibility race of ADR-0021 cannot occur here (every save is immediately visible).
-        return findPendingByDedupKey(eventType, dedupKey);
-    }
-
-    private Optional<UUID> findPendingByDedupKey(String eventType, String dedupKey) {
-        for (EventRow row : rows.values()) {
-            synchronized (row) {
-                if (row.status == EventStatus.PENDING
-                        && eventType.equals(row.eventType)
-                        && dedupKey.equals(row.dedupKey)) {
-                    return Optional.of(row.id);
-                }
-            }
-        }
-        return Optional.empty();
     }
 
     @Override
     public void saveAll(List<PendingEvent> events) {
         Objects.requireNonNull(events, "events must not be null");
-        for (PendingEvent e : events) {
-            if (e.dedupKey() != null) {
-                throw new IllegalArgumentException(
-                        "saveAll does not accept events with a dedup key (event " + e.id() + ")");
-            }
-        }
         for (PendingEvent e : events) {
             save(e);
         }
@@ -143,6 +98,15 @@ public final class InMemoryEventStore implements EventStore {
     // claim
     // ---------------------------------------------------------------------------------------------
 
+    /**
+     * Claims up to {@code limit} due rows in claim order and, for keyed rows, collapses the
+     * duplicates (ADR-0037): the first due row of a {@code dedup_key} in that order is the
+     * representative; every other due PENDING row of the key — inside the batch and beyond it — is
+     * removed and listed in the representative's {@link ClaimedEvent#coalesced()}. Rows with a
+     * future {@code runAt} are never swept. There is no transaction here, so "committed" is
+     * "present in the map", and the row monitor is what keeps a concurrent claim of the same type
+     * from claiming a row this one is sweeping. Test infrastructure: no sweep cap.
+     */
     @Override
     public List<ClaimedEvent> claim(ClaimRequest request) {
         Objects.requireNonNull(request, "request must not be null");
@@ -161,10 +125,21 @@ public final class InMemoryEventStore implements EventStore {
         }
         candidates.sort(CLAIM_ORDER);
 
-        List<ClaimedEvent> claimed = new ArrayList<>(Math.min(candidates.size(), request.limit()));
+        List<ClaimedEvent> representatives = new ArrayList<>();
+        Map<String, List<CoalescedEvent>> sweptByKey = new HashMap<>();
         for (EventRow row : candidates) {
-            if (claimed.size() >= request.limit()) {
-                break;
+            String key = row.dedupKey;
+            if (key != null && sweptByKey.containsKey(key)) {
+                synchronized (row) {
+                    if (row.status == EventStatus.PENDING && !row.runAt.isAfter(now)) {
+                        rows.remove(row.id);
+                        sweptByKey.get(key).add(new CoalescedEvent(row.id, row.traceContext));
+                    }
+                }
+                continue;
+            }
+            if (representatives.size() >= request.limit()) {
+                continue; // batch full; keep sweeping duplicates of the keys already claimed
             }
             synchronized (row) {
                 if (row.status == EventStatus.PENDING && !row.runAt.isAfter(now)) {
@@ -172,11 +147,37 @@ public final class InMemoryEventStore implements EventStore {
                     row.claimedBy = request.workerId();
                     row.claimedAt = now;
                     row.version += 1;
-                    claimed.add(row.toClaimed());
+                    representatives.add(row.toClaimed());
+                    if (key != null) {
+                        sweptByKey.put(key, new ArrayList<>());
+                    }
                 }
             }
         }
+        List<ClaimedEvent> claimed = new ArrayList<>(representatives.size());
+        for (ClaimedEvent ce : representatives) {
+            List<CoalescedEvent> swept =
+                    ce.dedupKey() == null ? List.of() : sweptByKey.get(ce.dedupKey());
+            claimed.add(swept == null || swept.isEmpty() ? ce : withCoalesced(ce, swept));
+        }
         return claimed;
+    }
+
+    private static ClaimedEvent withCoalesced(ClaimedEvent ce, List<CoalescedEvent> swept) {
+        return new ClaimedEvent(
+                ce.id(),
+                ce.eventType(),
+                ce.payload(),
+                ce.payloadFormat(),
+                ce.payloadClass(),
+                ce.priority(),
+                ce.attempts(),
+                ce.createdAt(),
+                ce.claimedAt(),
+                ce.traceContext(),
+                ce.claimedVersion(),
+                ce.dedupKey(),
+                swept);
     }
 
     // Priority DESC, then runAt ASC — matches STORAGE.md §Key queries / claim.
@@ -551,7 +552,9 @@ public final class InMemoryEventStore implements EventStore {
                     createdAt,
                     ca,
                     traceContext,
-                    version);
+                    version,
+                    dedupKey,
+                    List.of());
         }
     }
 }

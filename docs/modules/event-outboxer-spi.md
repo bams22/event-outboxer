@@ -25,7 +25,7 @@ makes backends swappable and independently testable.
 
 | Port | Implemented by | Purpose |
 |---|---|---|
-| `EventStore` | [postgres](event-outboxer-storage-postgres.md), [inmemory](event-outboxer-storage-inmemory.md) | save (+ dedup coalescing), claim, finalize, release, reclaim, sweep, metrics snapshot |
+| `EventStore` | [postgres](event-outboxer-storage-postgres.md), [inmemory](event-outboxer-storage-inmemory.md) | save, claim (+ dedup coalescing), finalize, release, reclaim, sweep, metrics snapshot |
 | `WorkerRegistry` | postgres, inmemory | register / heartbeat / findDead / removeDead — the crashed-worker detection substrate ([ADR-0005](../adr/0005-workers-heartbeat-table.md)) |
 | `EntityLocker` (+ `LockHandle`) | [postgres-lease](event-outboxer-lock-postgres-lease.md), [postgres-advisory](event-outboxer-lock-postgres-advisory.md), [redis](event-outboxer-lock-redis.md), inmemory, `EntityLocker.NOOP` | distributed business-key lock for `extractLockKey` ([ADR-0012](../adr/0012-extract-lock-key-on-handler.md)) |
 | `EventSerializer` | [jackson](event-outboxer-serializer-jackson.md), [protobuf](event-outboxer-serializer-protobuf.md), custom | payload ↔ `SerializedPayload`; `format()` id persisted per event ([ADR-0025](../adr/0025-binary-capable-serializer-spi-and-payload-format.md)) |
@@ -58,10 +58,14 @@ These are stated in the port javadoc and verified by the contract tests:
    connection from `ConnectionSupplier.get()`; in a transactional
    context that connection is the caller's and must not be
    committed/rolled back by the adapter. `release()` is idempotent.
-4. **Dedup coalescing** ([ADR-0021](../adr/0021-dedup-key-single-inflight-per-key.md)):
-   `save` with a dedup key is a conditional insert; `saveAll` rejects
-   dedup keys; `lockPendingByDedupKey` pins the coalesced-into row for
-   the caller's transaction.
+4. **Dedup coalescing** ([ADR-0037](../adr/0037-claim-time-dedup-coalescing.md)):
+   `save` and `saveAll` insert keyed events unconditionally; `claim`
+   collapses the due `PENDING` duplicates of a `(eventType, dedupKey)`
+   — one representative (the best by claim order) is returned, the
+   others are removed (archived first when archiving is on) and listed
+   in `ClaimedEvent.coalesced()` with their ids and stored trace
+   contexts. Only committed rows may be swept, and the sweep must
+   precede the handler; rows with a future `runAt` are never swept.
 5. **Locking:** "busy" is `Optional.empty()`, never an exception;
    `LockHandle.close()` is idempotent and declared without `throws`.
 6. **Serializer format ids** are lowercase kebab-case, ≤ 64 chars, and

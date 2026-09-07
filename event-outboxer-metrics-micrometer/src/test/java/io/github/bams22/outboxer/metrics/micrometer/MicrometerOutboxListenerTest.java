@@ -75,7 +75,8 @@ class MicrometerOutboxListenerTest {
 
     @Test
     void coalescedIncrementsPerTypeCounter() {
-        listener.onEventCoalesced(new EventCoalescedInfo(UUID.randomUUID(), "ORDER", "order-1"));
+        listener.onEventCoalesced(
+                new EventCoalescedInfo(UUID.randomUUID(), UUID.randomUUID(), "ORDER", "order-1"));
 
         assertThat(
                         registry.counter("event_outboxer.events.coalesced", "event_type", "ORDER")

@@ -454,13 +454,8 @@ class OutboxEngineRecoveryTest {
         }
 
         @Override
-        public boolean save(PendingEvent event) {
-            return delegate.save(event);
-        }
-
-        @Override
-        public Optional<UUID> lockPendingByDedupKey(String eventType, String dedupKey) {
-            return delegate.lockPendingByDedupKey(eventType, dedupKey);
+        public void save(PendingEvent event) {
+            delegate.save(event);
         }
 
         @Override

@@ -90,6 +90,7 @@ fast-restarted). Each asserts the verdict, never a number.
 | `backlog` | drain rate after an outage | 20 000 events published first, fleet started afterwards |
 | `crash` | orphan reclaim, lease takeover, duplicate accounting | forked fleet of 3, 5 000 events on 32 keys, two workers `SIGKILL`ed at 30 % and respawned, fast recovery timers |
 | `pg-restart` | pool recovery, finalize failures, stale-claim sweep | forked fleet of 3, 5 000 events, PostgreSQL fast-restarted at 40 %; `--bench.pg-restart=crash` for a crash with WAL replay |
+| `dedup-burst` | the cost and the quality of claim-time dedup coalescing (ADR-0037) | 20 000 events on 64 dedup keys, 8 publisher threads, 3 workers, pool 4, batch 50, 2 ms of work; vary `--bench.dedup-keys` |
 
 Every knob is overridable: `events`, `event-types`, `lock-keys`,
 `workers`, `publisher-threads`, `handler-pool-size`, `claim-batch-size`,
@@ -106,9 +107,19 @@ key `key-slow` with its own work time: the mixed workload of ADR-0035),
 `workers-after-publish`, `drain-timeout`, `payload-bytes`,
 `connection-pool-size`, `fleet` (`in-process` | `forked`),
 `worker-jvm-args`, `kill-workers`, `kill-at`, `respawn-killed`,
-`pg-restart` (`none` | `fast` | `crash`), `pg-restart-at`, plus
+`pg-restart` (`none` | `fast` | `crash`), `pg-restart-at`,
+`dedup-keys` (distinct dedup keys, `0` = none), plus
 `worker-prop.<any starter property>` for everything else. An unknown
 key fails fast and lists the known ones.
+
+With dedup keys the drain is graded by the events table (empty = done)
+rather than by the ledger, since a coalesced publish is never handled
+under its own sequence number; the per-sequence `lost` rule is replaced
+by a per-key **freshness** rule — every key's last publish must be
+followed by a successful handling of that key that started after the
+publish committed, the ADR-0021 visibility guarantee — and the summary
+gains a `dedup` line (handled, coalesced, stale keys) plus the mean
+server-side time of the claim statement from `pg_stat_statements`.
 
 Harness defaults are **not** production defaults where it matters for
 the measurement: `poll-min-interval` is 100 ms (starter: 500 ms) and

@@ -17,6 +17,7 @@ import io.github.bams22.outboxer.api.handle.FailureDecision;
 import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
 import io.github.bams22.outboxer.api.observer.EventClaimedInfo;
+import io.github.bams22.outboxer.api.observer.EventCoalescedInfo;
 import io.github.bams22.outboxer.api.observer.EventDeletedInfo;
 import io.github.bams22.outboxer.api.observer.EventDisabledInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
@@ -36,6 +37,7 @@ import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
 import io.github.bams22.outboxer.core.tracing.TracePropagationMarker;
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.CoalescedEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
@@ -45,6 +47,8 @@ import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -162,6 +166,15 @@ public final class HandlerDispatcher {
                         claimed.createdAt(),
                         claimed.claimedAt(),
                         workerId));
+        // Keyed duplicates the claim swept on behalf of this event (ADR-0037): they never reach a
+        // handler; report each one before this event's run covers them.
+        if (claimed.dedupKey() != null) {
+            for (CoalescedEvent swept : claimed.coalesced()) {
+                listener.onEventCoalesced(
+                        new EventCoalescedInfo(
+                                swept.id(), claimed.id(), claimed.eventType(), claimed.dedupKey()));
+            }
+        }
         // Register for the WHOLE dispatch — deserialization, lock acquisition, handler, finalize —
         // so the watchdog can force-reclaim a hang anywhere in the pipeline (a stuck lock backend
         // used to leave the row PROCESSING outside any registry). handlerMaxRuntime therefore
@@ -571,7 +584,8 @@ public final class HandlerDispatcher {
                                 carrier,
                                 TracePropagationMarker.propagationOf(stored),
                                 lockKey,
-                                lock != null ? lock.waited() : null))) {
+                                lock != null ? lock.waited() : null,
+                                coalescedCarriers(claimed)))) {
             try {
                 EventContext ctx =
                         new EventContext(
@@ -598,6 +612,21 @@ public final class HandlerDispatcher {
             String msg = ex.getMessage();
             return EventOutcome.retry(msg != null ? msg : ex.getClass().getSimpleName(), ex);
         }
+    }
+
+    /**
+     * Stored carriers of the duplicates the claim swept for {@code claimed}, markers stripped: the
+     * consumer span links to each of them (ADR-0037).
+     */
+    private static List<Map<String, String>> coalescedCarriers(ClaimedEvent claimed) {
+        if (claimed.coalesced().isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, String>> carriers = new ArrayList<>(claimed.coalesced().size());
+        for (CoalescedEvent swept : claimed.coalesced()) {
+            carriers.add(TracePropagationMarker.strip(swept.traceContext()));
+        }
+        return carriers;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

@@ -29,9 +29,6 @@ final class NoopOutboxTracer implements OutboxTracer {
                 }
 
                 @Override
-                public void coalesced(UUID existingEventId) {}
-
-                @Override
                 public void error(Throwable error) {}
 
                 @Override

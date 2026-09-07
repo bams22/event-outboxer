@@ -242,15 +242,30 @@ class MicrometerOutboxTracerTest {
     }
 
     @Test
-    void coalescedAddsTheCoalescedIntoTag() {
-        UUID existing = UUID.randomUUID();
-
-        OutboxTracer.PublishSpan span = outboxTracer.startPublishSpan(UUID.randomUUID(), "T");
-        span.coalesced(existing);
+    void consumerSpanCountsTheSweptDuplicates() {
+        OutboxTracer.ProcessSpan span =
+                outboxTracer.startProcessSpan(
+                        new OutboxTracer.ProcessSpanInfo(
+                                UUID.randomUUID(),
+                                "T",
+                                3,
+                                WORKER,
+                                Map.of(),
+                                OutboxTracer.Propagation.CHILD,
+                                null,
+                                null,
+                                List.of(
+                                        Map.of(
+                                                "traceparent",
+                                                "00-"
+                                                        + "a".repeat(32)
+                                                        + "-"
+                                                        + "b".repeat(16)
+                                                        + "-01"))));
         span.close();
 
         assertThat(tracer.onlySpan().getTags())
-                .containsEntry("event_outboxer.coalesced_into", existing.toString());
+                .containsEntry("event_outboxer.coalesced_count", "1");
     }
 
     @Test

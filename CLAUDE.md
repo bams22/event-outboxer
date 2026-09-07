@@ -10,7 +10,7 @@ an embedded, per-service outbox (not a cross-service shared-DB bridge —
 see [ADR-0001](docs/adr/0001-local-embedded-outbox-scope.md)).
 
 Architecture is fully designed before implementation — see
-[docs/](docs/) and the 36 ADRs in [docs/adr/](docs/adr/). Treat the
+[docs/](docs/) and the 37 ADRs in [docs/adr/](docs/adr/). Treat the
 ADRs as the source of truth: if implementation must deviate from an
 ADR, amend the ADR in the same PR.
 
@@ -195,7 +195,7 @@ in a new or amended ADR.
 - **PostgreSQL schema and SQL**: [docs/STORAGE.md](docs/STORAGE.md)
 - **Terminology**: [docs/GLOSSARY.md](docs/GLOSSARY.md)
 - **Rationale for every design decision**:
-  [docs/adr/README.md](docs/adr/README.md) (36 ADRs)
+  [docs/adr/README.md](docs/adr/README.md) (37 ADRs)
 - **Implementation roadmap (phases P0–P10)**: see the plan file noted
   in the user's plan tooling.
 

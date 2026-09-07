@@ -96,6 +96,14 @@ CREATE INDEX idx_events_processing_by_worker
 CREATE INDEX idx_events_processing_claimed_at
     ON event_outboxer.events (claimed_at)
     WHERE status = 'PROCESSING';
+
+-- Dedup coalescing (ADR-0037, V010): the claim's duplicate sweep looks up the due PENDING
+-- rows of a key here. Plain, not unique — V004's unique index was the arbiter of the
+-- publisher's ON CONFLICT insert and collided with every return of a PROCESSING event to
+-- PENDING once a twin of its key existed; V010 replaced it.
+CREATE INDEX ix_events_pending_dedup_key
+    ON event_outboxer.events (event_type, dedup_key)
+    WHERE status = 'PENDING' AND dedup_key IS NOT NULL;
 ```
 
 ### Why partial indexes
@@ -332,8 +340,9 @@ event-outboxer-storage-postgres/src/main/resources/event-outboxer/migration/
 ├── core/
 │   ├── V001__outbox_core.sql            ← events + workers + indexes
 │   ├── V003__outbox_admin_index.sql     ← DISABLED-listing index (ADR-0019)
-│   ├── V004__outbox_dedup_key.sql       ← coalescing dedup key (ADR-0021)
-│   └── V006__outbox_payload_format.sql  ← dual payload lane + format (ADR-0025)
+│   ├── V004__outbox_dedup_key.sql       ← dedup key column + unique index (ADR-0021)
+│   ├── V006__outbox_payload_format.sql  ← dual payload lane + format (ADR-0025)
+│   └── V010__outbox_dedup_index.sql     ← unique dedup index → plain (ADR-0037)
 └── archive/
     ├── V002__outbox_archive.sql         ← event_archive
     ├── V007__outbox_archive_payload_format.sql ← archive payload lanes (ADR-0025)
@@ -481,40 +490,35 @@ liquibase.update(new Contexts());
 
 ## Key queries
 
-### Insert with coalescing dedup key (ADR-0021)
+### Insert (keyed or not)
 
 ```sql
 INSERT INTO event_outboxer.events (id, event_type, payload, payload_binary, payload_format,
                                    payload_class, priority, status, created_at, run_at,
                                    trace_context, dedup_key)
 VALUES (:id, :type, :payload::jsonb, :payload_binary, :payload_format, :payload_class, :priority,
-        'PENDING', now(), :run_at, :trace::jsonb, :dedup_key)
-ON CONFLICT (event_type, dedup_key) WHERE status = 'PENDING' AND dedup_key IS NOT NULL
-DO NOTHING;
+        'PENDING', now(), :run_at, :trace::jsonb, :dedup_key);
 
 -- Exactly one of :payload / :payload_binary is non-NULL (SerializedPayload lane, ADR-0025).
-
--- On conflict the publisher pins the coalesced-into row INSIDE its own transaction:
-SELECT id FROM event_outboxer.events
-WHERE event_type = :type AND dedup_key = :dedup_key AND status = 'PENDING'
-FOR UPDATE;
 ```
 
-The pin is what makes coalescing safe: the claim query below uses
-`FOR UPDATE SKIP LOCKED`, so a pinned pending row is invisible to
-workers until the publishing transaction commits — the handler is
-guaranteed to see the coalesced transaction's changes. The unique
-index (migration V004) is partial over PENDING: PROCESSING events do
-not block the key (a new event inserts and runs afterwards), and
-neither do DISABLED ones.
+Unconditional, keyed or not (ADR-0037): duplicates of a
+`(event_type, dedup_key)` are collapsed by the claim below, never by
+the insert. Publishers of one key therefore never wait on each other,
+and `publish` always returns the id of the row it wrote. (Until
+ADR-0037 the insert carried `ON CONFLICT ... DO NOTHING` against the
+V004 partial unique index and pinned the coalesced-into row with
+`SELECT ... FOR UPDATE`; that mechanism collided with every return of a
+PROCESSING event to PENDING once a twin existed — see ADR-0037.)
 
-### Claim (hot path)
+### Claim (hot path) with the dedup sweep
 
-A single atomic SQL (CTE + UPDATE + RETURNING):
+A single atomic statement: the locking CTE, the duplicate sweep and the
+UPDATE + RETURNING.
 
 ```sql
-WITH picked AS (
-    SELECT id
+WITH picked AS (                                  -- the batch, locked
+    SELECT id, dedup_key, priority, run_at
     FROM event_outboxer.events
     WHERE event_type = :event_type
       AND status     = 'PENDING'
@@ -522,6 +526,26 @@ WITH picked AS (
     ORDER BY priority DESC, run_at
     LIMIT :limit
     FOR UPDATE SKIP LOCKED
+), keep AS (                                      -- one representative per key
+    SELECT DISTINCT ON (dedup_key) id, dedup_key
+    FROM picked
+    WHERE dedup_key IS NOT NULL
+    ORDER BY dedup_key, priority DESC, run_at, id
+), dup AS (                                       -- its due duplicates, in and beyond the batch
+    SELECT d.id
+    FROM event_outboxer.events d
+    JOIN keep k ON d.dedup_key = k.dedup_key
+    WHERE d.event_type = :event_type
+      AND d.status     = 'PENDING'
+      AND d.run_at    <= now()
+      AND d.id <> k.id
+    LIMIT 1000                                    -- CLAIM_DEDUP_SWEEP_CAP
+    FOR UPDATE OF d SKIP LOCKED
+), gone AS (                                      -- swept: deleted, or archived first
+    DELETE FROM event_outboxer.events e USING dup WHERE e.id = dup.id
+    RETURNING e.id, e.dedup_key, e.trace_context
+    -- archive-enabled: RETURNING every column, and an `archived AS (INSERT INTO
+    -- event_archive ... SELECT ..., 'coalesced at claim', ..., now(), :worker_id FROM gone)`
 )
 UPDATE event_outboxer.events e
 SET status      = 'PROCESSING',
@@ -530,15 +554,42 @@ SET status      = 'PROCESSING',
     version     = version + 1
 FROM picked
 WHERE e.id = picked.id
+  AND NOT EXISTS (SELECT 1 FROM dup WHERE dup.id = e.id)
 RETURNING
     e.id, e.event_type, e.payload, e.payload_binary, e.payload_format,
     e.payload_class, e.priority, e.attempts, e.created_at,
-    e.claimed_at, e.trace_context, e.version;
+    e.claimed_at, e.trace_context, e.version, e.dedup_key,
+    (SELECT array_agg(g.id ORDER BY g.id) FROM gone g
+      WHERE g.dedup_key = e.dedup_key)                         AS coalesced_ids,
+    (SELECT array_agg(g.trace_context::text ORDER BY g.id) FROM gone g
+      WHERE g.dedup_key = e.dedup_key)                         AS coalesced_contexts;
 ```
 
-Optimizations:
-- `FOR UPDATE SKIP LOCKED` — concurrent workers do not block each other.
-- The partial index `idx_events_ready` makes the seek instant.
+Optimizations and semantics:
+- `FOR UPDATE SKIP LOCKED` — concurrent workers do not block each other,
+  in `picked` and in `dup` alike: a duplicate another claim holds is
+  skipped, never waited on, so two claims cannot deadlock on each
+  other's rows.
+- The partial index `idx_events_ready` makes the seek instant;
+  `ix_events_pending_dedup_key` makes the sweep one probe per distinct
+  key of the batch. Without a key in the batch `keep`, `dup` and `gone`
+  are empty and cost nothing measurable.
+- `DISTINCT ON` lives in `keep`, not in `picked`: PostgreSQL forbids a
+  locking clause together with `DISTINCT`, so the representative is
+  elected over the rows `picked` already locked. It is the best row of
+  its key by the claim's own order.
+- Every row is touched by exactly one data-modifying sub-statement
+  (`gone` deletes, the UPDATE claims the rest), as PostgreSQL requires.
+- Only committed rows are visible to `dup`, and the sweep precedes the
+  handler: every swept publish had committed before the
+  representative's handler starts — the ADR-0021 visibility guarantee,
+  now without a publisher-side pin. Rows with a future `run_at` are
+  never swept; a deferred twin is a separate intent.
+- The two `array_agg` columns carry, per representative, the swept ids
+  and their stored carriers, so the dispatcher can fire
+  `onEventCoalesced` and link the consumer span to each swept publish.
+- The sweep is capped at 1 000 rows per claim (the harness measured
+  ~5 µs per swept row); the remainder is swept by the next claim.
 - One round trip instead of SELECT-then-UPDATE.
 
 ### Heartbeat (O(1))
@@ -736,7 +787,7 @@ FROM del;
 The reverse move — `OutboxAdmin.replayFromArchive` /
 `replayAllFromArchive` — is also one atomic CTE, but **insert-first**:
 the archive `DELETE` consumes the ids the hot-table `INSERT` actually
-returned, so a replay that coalesces never touches the audit row.
+returned, so a row that does not move never loses its audit record.
 
 ```sql
 WITH src AS MATERIALIZED (
@@ -763,8 +814,6 @@ WITH src AS MATERIALIZED (
            'replayed from archive', trace_context, 0, dedup_key
     FROM src
     WHERE id NOT IN (SELECT id FROM blocked)
-    ON CONFLICT (event_type, dedup_key)
-        WHERE status = 'PENDING' AND dedup_key IS NOT NULL DO NOTHING
     RETURNING id
 ), del AS (
     DELETE FROM event_outboxer.event_archive a USING ins WHERE a.id = ins.id
@@ -781,35 +830,31 @@ SELECT (SELECT count(*) FROM src)     AS found,
 Semantics:
 
 - **Insert-first atomicity.** `del` deletes only ids present in
-  `ins`'s `RETURNING`; a coalesced row (the `ON CONFLICT` arbiter of
-  V004 hit a live `PENDING` with the same `(event_type, dedup_key)`)
-  is never deleted — the archive keeps the audit record structurally,
-  not by ordering luck. A delete-first mirror of the finalize CTE
-  would silently drop the row on coalesce.
-- **Coalesce keeps the archive row**: `found=1, inserted=0` →
-  `COALESCED`; the pending event already scheduled will do the work.
-- **An id already live is skipped, not fatal.** `ON CONFLICT` takes one
-  arbiter index and it is spent on the V004 partial index, so a
-  primary-key collision — the application re-published the archived
-  event's explicit UUID — is not swallowed by it and would abort the
-  entire statement. In a bulk batch that means replaying none of the
-  window, forever, since the window is deterministic. The `blocked`
-  anti-join excludes those ids before the INSERT: `id_in_use` counts
-  them, the archive row stays, and the rest of the batch proceeds. A
-  publish of the same id concurrent with this statement still raises.
-- **`src` is `MATERIALIZED`** because the "oldest archived row wins"
-  rule below depends on the INSERT consuming it in `(archived_at, id)`
-  order — guaranteed for a materialized CTE, not for an inlined one.
+  `ins`'s `RETURNING`; a row the INSERT skipped is never deleted — the
+  archive keeps the audit record structurally, not by ordering luck.
+- **A dedup key never blocks a replay** (ADR-0037): the row inserts
+  plainly next to a live `PENDING` twin, and the next claim collapses
+  the two — with archiving on, the swept one returns to the archive
+  marked `coalesced at claim`.
+- **An id already live is skipped, not fatal.** A primary-key
+  collision — the application re-published the archived event's
+  explicit UUID — would abort the entire statement. In a bulk batch
+  that means replaying none of the window, forever, since the window
+  is deterministic. The `blocked` anti-join excludes those ids before
+  the INSERT: `id_in_use` counts them, the archive row stays, and the
+  rest of the batch proceeds. A publish of the same id concurrent with
+  this statement still raises.
+- **`src` is `MATERIALIZED`** so that the cursor columns describe the
+  same batch the INSERT consumed.
 - **The cursor ends the sweep.** `cursor_archived_at`/`cursor_id` carry
   the last row the batch *considered*, whatever its verdict, so a
   caller looping on it walks past rows that stayed archived instead of
   re-finding them. Keyset on the pair: rows can share an `archived_at`,
   and a timestamp-only cursor would skip whichever tied row the
   previous `LIMIT` cut off.
-- **Duplicate keys within one bulk batch**: the second row's
-  speculative insert conflicts against the first's and is skipped by
-  `DO NOTHING`; `ORDER BY archived_at, id` makes the winner
-  deterministic (oldest archived replays, newer rows stay).
+- **Duplicate keys within one bulk batch** all replay (ADR-0037); the
+  next claim keeps the best of them and sweeps the rest, so one run
+  covers them all.
 - **Field reset**: `attempts=0`, `version=0`, `created_at=now()`,
   `run_at=now()`, `last_fail_reason='replayed from archive'`; payload
   lanes, `priority`, `trace_context` and `dedup_key` are copied verbatim.

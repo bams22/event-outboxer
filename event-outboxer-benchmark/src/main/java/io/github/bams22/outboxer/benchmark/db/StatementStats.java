@@ -32,23 +32,34 @@ import java.util.TreeMap;
  *
  * @param calls statement executions per class
  * @param rows rows affected or returned per class
+ * @param execMillis server-side execution time per class, milliseconds ({@code total_exec_time})
  */
-public record StatementStats(Map<String, Long> calls, Map<String, Long> rows) {
+public record StatementStats(
+        Map<String, Long> calls, Map<String, Long> rows, Map<String, Double> execMillis) {
 
     public StatementStats {
         calls = Map.copyOf(Objects.requireNonNull(calls, "calls must not be null"));
         rows = Map.copyOf(Objects.requireNonNull(rows, "rows must not be null"));
+        execMillis = Map.copyOf(Objects.requireNonNull(execMillis, "execMillis must not be null"));
     }
 
     /** Class-wise difference {@code this - earlier}; classes absent earlier count from zero. */
     public StatementStats minus(StatementStats earlier) {
         Map<String, Long> c = new TreeMap<>();
         Map<String, Long> r = new TreeMap<>();
+        Map<String, Double> t = new TreeMap<>();
         for (String k : calls.keySet()) {
             c.put(k, calls.get(k) - earlier.calls.getOrDefault(k, 0L));
             r.put(k, rows.getOrDefault(k, 0L) - earlier.rows.getOrDefault(k, 0L));
+            t.put(k, execMillis.getOrDefault(k, 0.0) - earlier.execMillis.getOrDefault(k, 0.0));
         }
-        return new StatementStats(c, r);
+        return new StatementStats(c, r, t);
+    }
+
+    /** Mean server-side execution time of one class in milliseconds, zero when it did not run. */
+    public double meanMs(String cls) {
+        long c = calls(cls);
+        return c == 0 ? 0 : execMillis.getOrDefault(cls, 0.0) / c;
     }
 
     /** All calls together. */

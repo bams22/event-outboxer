@@ -45,10 +45,10 @@ public final class JdbcLedger implements Ledger, AutoCloseable {
             "INSERT INTO "
                     + TABLE
                     + " (seq, event_type, attempt, worker_id, thread, lock_key, started_at,"
-                    + " finished_at, outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + " finished_at, outcome, dedup_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SELECT_ALL =
             "SELECT seq, event_type, attempt, worker_id, thread, lock_key, started_at, finished_at,"
-                    + " outcome FROM "
+                    + " outcome, dedup_key FROM "
                     + TABLE;
 
     private final HikariDataSource pool;
@@ -84,6 +84,7 @@ public final class JdbcLedger implements Ledger, AutoCloseable {
                             + " NULL, attempt INT NOT NULL, worker_id TEXT NOT NULL, thread TEXT"
                             + " NOT NULL, lock_key TEXT, started_at TIMESTAMPTZ NOT NULL,"
                             + " finished_at TIMESTAMPTZ NOT NULL, outcome TEXT NOT NULL)");
+            st.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS dedup_key TEXT");
             st.execute(
                     "CREATE INDEX IF NOT EXISTS handled_outcome_seq ON "
                             + TABLE
@@ -108,6 +109,7 @@ public final class JdbcLedger implements Ledger, AutoCloseable {
             ps.setTimestamp(7, Timestamp.from(h.startedAt()));
             ps.setTimestamp(8, Timestamp.from(h.finishedAt()));
             ps.setString(9, h.outcome().name());
+            ps.setString(10, h.dedupKey());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Ledger insert failed for seq " + h.seq(), e);
@@ -142,6 +144,7 @@ public final class JdbcLedger implements Ledger, AutoCloseable {
                                 .startedAt(instant(rs, 7))
                                 .finishedAt(instant(rs, 8))
                                 .outcome(Handling.Outcome.valueOf(rs.getString(9)))
+                                .dedupKey(rs.getString(10))
                                 .build());
             }
             return out;

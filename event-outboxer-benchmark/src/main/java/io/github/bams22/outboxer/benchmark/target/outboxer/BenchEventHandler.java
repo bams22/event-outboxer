@@ -42,23 +42,27 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
     private final int failPerMille;
     private final ToLongFunction<T> seqOf;
     private final Function<T, @Nullable String> lockKeyOf;
+    private final Function<T, @Nullable String> dedupKeyOf;
 
     /**
      * @param seqOf reads the sequence number out of the payload shape
      * @param lockKeyOf reads the lock key, {@code null} for none
+     * @param dedupKeyOf reads the dedup key, {@code null} for none
      */
     public BenchEventHandler(
             EventType<T> type,
             Ledger ledger,
             Scenario scenario,
             ToLongFunction<T> seqOf,
-            Function<T, @Nullable String> lockKeyOf) {
+            Function<T, @Nullable String> lockKeyOf,
+            Function<T, @Nullable String> dedupKeyOf) {
         this.type = Objects.requireNonNull(type, "type must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
         this.scenario = Objects.requireNonNull(scenario, "scenario must not be null");
         this.failPerMille = (int) Math.round(scenario.failureRate() * 1000);
         this.seqOf = Objects.requireNonNull(seqOf, "seqOf must not be null");
         this.lockKeyOf = Objects.requireNonNull(lockKeyOf, "lockKeyOf must not be null");
+        this.dedupKeyOf = Objects.requireNonNull(dedupKeyOf, "dedupKeyOf must not be null");
     }
 
     @Override
@@ -91,6 +95,7 @@ public final class BenchEventHandler<T> implements EventHandler<T> {
                         .workerId(ctx.workerId().value())
                         .thread(threadLabel())
                         .lockKey(lockKey)
+                        .dedupKey(dedupKeyOf.apply(payload))
                         .startedAt(started)
                         .finishedAt(Instant.now())
                         .outcome(verdict)

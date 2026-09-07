@@ -48,7 +48,8 @@ class RecordingOutboxListenerTest {
     @DisplayName("clear() resets every captured list, handlersAbandoned included")
     void clearResetsEverything() {
         RecordingOutboxListener listener = new RecordingOutboxListener();
-        listener.onEventCoalesced(new EventCoalescedInfo(UUID.randomUUID(), "T", "k"));
+        listener.onEventCoalesced(
+                new EventCoalescedInfo(UUID.randomUUID(), UUID.randomUUID(), "T", "k"));
         listener.onMaintenanceRunCompleted(
                 new MaintenanceRunInfo("heartbeat", MaintenanceRunInfo.Result.OK, null));
         listener.onHandlerAbandoned(

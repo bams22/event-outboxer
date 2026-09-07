@@ -241,7 +241,7 @@ public abstract class AbstractOutboxAdminContractTest {
         store.save(pending(TYPE_A, "live"));
 
         assertThat(admin.replayAllFromArchive(TYPE_A, null, null, 100, null))
-                .isEqualTo(new ReplayAllResult(0, 0, 0, null));
+                .isEqualTo(new ReplayAllResult(0, 0, null));
         // A null cursor is what ends a sweep: an adapter that returned a non-null one here would
         // loop forever.
         assertThat(admin.replayAllFromArchive(TYPE_A, null, null, 100, null).next()).isNull();
@@ -271,11 +271,11 @@ public abstract class AbstractOutboxAdminContractTest {
         // A well-formed window is accepted, cursor included, so the checks above are not blanket
         // rejections.
         assertThat(admin.replayAllFromArchive(TYPE_A, t.minusSeconds(3600), t, 100, null))
-                .isEqualTo(new ReplayAllResult(0, 0, 0, null));
+                .isEqualTo(new ReplayAllResult(0, 0, null));
         assertThat(
                         admin.replayAllFromArchive(
                                 TYPE_A, null, null, 100, new ArchiveCursor(t, UUID.randomUUID())))
-                .isEqualTo(new ReplayAllResult(0, 0, 0, null));
+                .isEqualTo(new ReplayAllResult(0, 0, null));
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bams22.outboxer.domain.ClaimedEvent;
+import io.github.bams22.outboxer.domain.CoalescedEvent;
 import io.github.bams22.outboxer.domain.Event;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.PendingEvent;
@@ -552,70 +553,247 @@ public abstract class AbstractEventStoreContractTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // dedup key coalescing (ADR-0021)
+    // dedup key coalescing at claim time (ADR-0037)
     // ---------------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("save() coalesces a second PENDING event with the same (type, dedupKey)")
-    void save_coalescesOnPendingDuplicate() {
-        assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "p1", "order-1"))).isTrue();
+    @DisplayName("keyed events always insert: the key never blocks a save or a saveAll")
+    void save_keyedEventsAlwaysInsert() {
+        PendingEvent first = pendingWithKey(EVENT_TYPE_A, "p1", "order-1");
+        PendingEvent second = pendingWithKey(EVENT_TYPE_A, "p2", "order-1");
+        store.save(first);
+        store.save(second);
+        PendingEvent third = pendingWithKey(EVENT_TYPE_A, "p3", "order-1");
+        PendingEvent fourth = pendingWithKey(EVENT_TYPE_B, "p4", "order-1");
+        store.saveAll(List.of(third, fourth));
 
-        assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "p2", "order-1"))).isFalse();
-        assertThat(store.save(pendingWithKey(EVENT_TYPE_B, "p3", "order-1"))).isTrue();
-        assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "p4", "order-2"))).isTrue();
-        assertThat(store.save(pending(EVENT_TYPE_A, "no-key", Instant.now()))).isTrue();
+        for (PendingEvent p : List.of(first, second, third, fourth)) {
+            assertThat(store.findById(p.id()).orElseThrow().status())
+                    .isEqualTo(EventStatus.PENDING);
+        }
     }
 
     @Test
-    @DisplayName(
-            "the dedup scope is PENDING only: PROCESSING and DISABLED rows do not block the key")
-    void save_dedupScopedToPending() {
-        PendingEvent first = pendingWithKey(EVENT_TYPE_A, "v1", "order-9");
-        assertThat(store.save(first)).isTrue();
-        ClaimedEvent claimed = claimOneById(EVENT_TYPE_A, first.id());
+    @DisplayName("claim keeps the oldest due row of a key and sweeps the others, in the batch")
+    void claim_collapsesDueDuplicatesOfAKey() {
+        Instant base = Instant.now().minusSeconds(30);
+        PendingEvent oldest = pendingWithKey(EVENT_TYPE_A, "v1", "order-9", base);
+        PendingEvent middle = pendingWithKey(EVENT_TYPE_A, "v2", "order-9", base.plusSeconds(1));
+        PendingEvent newest = pendingWithKey(EVENT_TYPE_A, "v3", "order-9", base.plusSeconds(2));
+        PendingEvent otherKey = pendingWithKey(EVENT_TYPE_A, "o", "order-10", base);
+        PendingEvent keyless = pending(EVENT_TYPE_A, "no-key", base);
+        for (PendingEvent p : List.of(oldest, middle, newest, otherKey, keyless)) {
+            store.save(p);
+        }
 
-        // PROCESSING: a new event with the same key must insert — it will run afterwards with
-        // fresh data (the coalescing-visibility guarantee of ADR-0021).
-        PendingEvent second = pendingWithKey(EVENT_TYPE_A, "v2", "order-9");
-        assertThat(store.save(second)).isTrue();
+        List<ClaimedEvent> claimed = store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 10));
 
-        // DISABLED: the failed first event must not block the key either.
-        ClaimedEvent secondClaimed = claimOneById(EVENT_TYPE_A, second.id());
-        store.markDisabled(secondClaimed.id(), WORKER_1, secondClaimed.claimedVersion(), "boom");
-        assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "v3", "order-9"))).isTrue();
+        assertThat(claimed)
+                .extracting(ClaimedEvent::id)
+                .containsExactlyInAnyOrder(oldest.id(), otherKey.id(), keyless.id());
+        ClaimedEvent representative =
+                claimed.stream().filter(c -> c.id().equals(oldest.id())).findFirst().orElseThrow();
+        assertThat(representative.dedupKey()).isEqualTo("order-9");
+        assertThat(representative.coalesced())
+                .extracting(CoalescedEvent::id)
+                .containsExactlyInAnyOrder(middle.id(), newest.id());
+        assertThat(store.findById(middle.id())).isEmpty();
+        assertThat(store.findById(newest.id())).isEmpty();
+        claimed.stream()
+                .filter(c -> !c.id().equals(oldest.id()))
+                .forEach(c -> assertThat(c.coalesced()).isEmpty());
     }
 
     @Test
-    @DisplayName(
-            "after markProcessed the key is free again — in-flight coalescing, not exactly-once")
-    void save_keyFreeAfterProcessing() {
+    @DisplayName("duplicates beyond the claim batch are swept by the same claim")
+    void claim_sweepsDuplicatesBeyondTheBatch() {
+        Instant base = Instant.now().minusSeconds(60);
+        PendingEvent first = pendingWithKey(EVENT_TYPE_A, "v0", "order-7", base);
+        store.save(first);
+        for (int i = 1; i < 30; i++) {
+            store.save(pendingWithKey(EVENT_TYPE_A, "v" + i, "order-7", base.plusSeconds(i)));
+        }
+
+        List<ClaimedEvent> claimed = store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 5));
+
+        assertThat(claimed)
+                .singleElement()
+                .satisfies(c -> assertThat(c.id()).isEqualTo(first.id()));
+        assertThat(claimed.getFirst().coalesced()).hasSize(29);
+        assertThat(store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 100))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the swept duplicates' trace contexts travel with the representative")
+    void claim_carriesTheSweptTraceContexts() {
+        Instant base = Instant.now().minusSeconds(30);
+        store.save(pendingWithKey(EVENT_TYPE_A, "v1", "order-3", base));
+        PendingEvent twin =
+                pendingWithKeyAt(
+                        EVENT_TYPE_A,
+                        "v2",
+                        "order-3",
+                        base.plusSeconds(1),
+                        Map.of("traceparent", "00-abc-def-01"));
+        store.save(twin);
+
+        ClaimedEvent representative =
+                store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 10)).getFirst();
+
+        assertThat(representative.coalesced())
+                .singleElement()
+                .satisfies(
+                        c -> {
+                            assertThat(c.id()).isEqualTo(twin.id());
+                            assertThat(c.traceContext())
+                                    .containsEntry("traceparent", "00-abc-def-01");
+                        });
+    }
+
+    @Test
+    @DisplayName("a deferred twin (future runAt) is a separate intent and is never swept")
+    void claim_keepsDeferredTwin() {
+        PendingEvent due = pendingWithKey(EVENT_TYPE_A, "now", "order-5");
+        PendingEvent later =
+                pendingWithKey(EVENT_TYPE_A, "later", "order-5", Instant.now().plusSeconds(3600));
+        store.save(due);
+        store.save(later);
+
+        List<ClaimedEvent> claimed = store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 10));
+
+        assertThat(claimed).singleElement().satisfies(c -> assertThat(c.id()).isEqualTo(due.id()));
+        assertThat(claimed.getFirst().coalesced()).isEmpty();
+        assertThat(store.findById(later.id()).orElseThrow().status())
+                .isEqualTo(EventStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("keys are scoped per event type: the same key in two types never collapses")
+    void claim_doesNotCollapseAcrossTypes() {
+        store.save(pendingWithKey(EVENT_TYPE_A, "a", "shared"));
+        store.save(pendingWithKey(EVENT_TYPE_B, "b", "shared"));
+
+        assertThat(store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 10)))
+                .singleElement()
+                .satisfies(c -> assertThat(c.coalesced()).isEmpty());
+        assertThat(store.claim(new ClaimRequest(EVENT_TYPE_B, WORKER_1, 10)))
+                .singleElement()
+                .satisfies(c -> assertThat(c.coalesced()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("after the representative is processed the key is free again — not exactly-once")
+    void claim_keyFreeAfterProcessing() {
         PendingEvent first = pendingWithKey(EVENT_TYPE_A, "v1", "order-5");
-        assertThat(store.save(first)).isTrue();
+        store.save(first);
         ClaimedEvent claimed = claimOneById(EVENT_TYPE_A, first.id());
         assertThat(store.markProcessed(claimed.id(), WORKER_1, claimed.claimedVersion())).isTrue();
 
-        assertThat(store.save(pendingWithKey(EVENT_TYPE_A, "v2", "order-5"))).isTrue();
+        PendingEvent again = pendingWithKey(EVENT_TYPE_A, "v2", "order-5");
+        store.save(again);
+        assertThat(claimOneById(EVENT_TYPE_A, again.id()).coalesced()).isEmpty();
+    }
+
+    // The regression of ADR-0037: with a twin inserted while the key's event is PROCESSING, every
+    // way back to PENDING used to collide with the V004 unique index (23505). Now the twin is a
+    // plain row and the next claim collapses the two.
+
+    @Test
+    @DisplayName("markForRetry with a PENDING twin of the key succeeds; the next claim collapses")
+    void markForRetry_withTwin_noLongerCollides() {
+        ClaimedEvent first = claimKeyed("order-11", Instant.now().minusSeconds(20));
+        PendingEvent twin = pendingWithKey(EVENT_TYPE_A, "twin", "order-11");
+        store.save(twin);
+
+        assertThat(
+                        store.markForRetry(
+                                first.id(),
+                                WORKER_1,
+                                first.claimedVersion(),
+                                "boom",
+                                Instant.now().minusSeconds(10)))
+                .isTrue();
+
+        assertCollapsesToRepresentative(first.id(), twin.id());
     }
 
     @Test
-    @DisplayName("lockPendingByDedupKey finds the PENDING row and misses non-PENDING ones")
-    void lockPendingByDedupKey_findsOnlyPending() {
-        PendingEvent p = pendingWithKey(EVENT_TYPE_A, "v1", "order-7");
+    @DisplayName("release with a PENDING twin of the key succeeds; the next claim collapses")
+    void release_withTwin_noLongerCollides() {
+        ClaimedEvent first = claimKeyed("order-12", Instant.now().minusSeconds(20));
+        PendingEvent twin = pendingWithKey(EVENT_TYPE_A, "twin", "order-12");
+        store.save(twin);
+
+        assertThat(
+                        store.release(
+                                first.id(),
+                                WORKER_1,
+                                first.claimedVersion(),
+                                "lock busy",
+                                Instant.now().minusSeconds(10)))
+                .isTrue();
+
+        assertCollapsesToRepresentative(first.id(), twin.id());
+    }
+
+    @Test
+    @DisplayName("forceReclaim with a PENDING twin of the key succeeds; the next claim collapses")
+    void forceReclaim_withTwin_noLongerCollides() {
+        ClaimedEvent first = claimKeyed("order-13", Instant.now().minusSeconds(20));
+        PendingEvent twin = pendingWithKey(EVENT_TYPE_A, "twin", "order-13");
+        store.save(twin);
+
+        assertThat(
+                        store.forceReclaim(
+                                first.id(),
+                                WORKER_1,
+                                first.claimedVersion(),
+                                Instant.now().minusSeconds(10)))
+                .isTrue();
+
+        assertCollapsesToRepresentative(first.id(), twin.id());
+    }
+
+    @Test
+    @DisplayName("reclaimOrphans with a PENDING twin of the key succeeds; the next claim collapses")
+    void reclaimOrphans_withTwin_noLongerCollides() {
+        ClaimedEvent first = claimKeyed("order-14", Instant.now().minusSeconds(20));
+        PendingEvent twin = pendingWithKey(EVENT_TYPE_A, "twin", "order-14");
+        store.save(twin);
+
+        assertThat(store.reclaimOrphans(List.of(WORKER_1), Instant.now().minusSeconds(10)))
+                .isEqualTo(1);
+
+        assertCollapsesToRepresentative(first.id(), twin.id());
+    }
+
+    private ClaimedEvent claimKeyed(String key, Instant runAt) {
+        PendingEvent p = pendingWithKey(EVENT_TYPE_A, "first", key, runAt);
         store.save(p);
-
-        assertThat(store.lockPendingByDedupKey(EVENT_TYPE_A, "order-7")).contains(p.id());
-        assertThat(store.lockPendingByDedupKey(EVENT_TYPE_A, "unknown")).isEmpty();
-        assertThat(store.lockPendingByDedupKey(EVENT_TYPE_B, "order-7")).isEmpty();
-
-        claimOneById(EVENT_TYPE_A, p.id());
-        assertThat(store.lockPendingByDedupKey(EVENT_TYPE_A, "order-7")).isEmpty();
+        return claimOneById(EVENT_TYPE_A, p.id());
     }
 
-    @Test
-    @DisplayName("saveAll rejects events carrying a dedup key")
-    void saveAll_rejectsDedupKeys() {
-        assertThatThrownBy(() -> store.saveAll(List.of(pendingWithKey(EVENT_TYPE_A, "x", "k"))))
-                .isInstanceOf(IllegalArgumentException.class);
+    /**
+     * Both rows are PENDING now; one claim keeps the older {@code representative} and sweeps {@code
+     * swept}.
+     */
+    private void assertCollapsesToRepresentative(UUID representative, UUID swept) {
+        assertThat(store.findById(representative).orElseThrow().status())
+                .isEqualTo(EventStatus.PENDING);
+        assertThat(store.findById(swept).orElseThrow().status()).isEqualTo(EventStatus.PENDING);
+
+        List<ClaimedEvent> claimed = store.claim(new ClaimRequest(EVENT_TYPE_A, WORKER_1, 10));
+
+        assertThat(claimed)
+                .singleElement()
+                .satisfies(
+                        c -> {
+                            assertThat(c.id()).isEqualTo(representative);
+                            assertThat(c.coalesced())
+                                    .extracting(CoalescedEvent::id)
+                                    .containsExactly(swept);
+                        });
+        assertThat(store.findById(swept)).isEmpty();
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -890,6 +1068,25 @@ public abstract class AbstractEventStoreContractTest {
     }
 
     protected PendingEvent pendingWithKey(String type, String rawPayload, String dedupKey) {
+        return pendingWithKey(type, rawPayload, dedupKey, Instant.now().minusSeconds(1));
+    }
+
+    protected PendingEvent pendingWithKey(
+            String type, String rawPayload, String dedupKey, Instant runAt) {
+        return pendingWithKeyAt(type, rawPayload, dedupKey, runAt);
+    }
+
+    private PendingEvent pendingWithKeyAt(
+            String type, String rawPayload, String dedupKey, Instant runAt) {
+        return pendingWithKeyAt(type, rawPayload, dedupKey, runAt, Map.of());
+    }
+
+    private PendingEvent pendingWithKeyAt(
+            String type,
+            String rawPayload,
+            String dedupKey,
+            Instant runAt,
+            Map<String, String> traceContext) {
         return PendingEvent.builder()
                 .id(UUID.randomUUID())
                 .eventType(type)
@@ -897,8 +1094,8 @@ public abstract class AbstractEventStoreContractTest {
                 .payloadFormat(TEST_FORMAT)
                 .payloadClass("java.lang.String")
                 .priority((short) 0)
-                .runAt(Instant.now().minusSeconds(1))
-                .traceContext(Map.of())
+                .runAt(runAt)
+                .traceContext(traceContext)
                 .dedupKey(dedupKey)
                 .build();
     }

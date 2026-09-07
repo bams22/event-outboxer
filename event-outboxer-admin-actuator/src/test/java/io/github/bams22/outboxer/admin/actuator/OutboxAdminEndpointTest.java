@@ -108,7 +108,6 @@ class OutboxAdminEndpointTest {
         Map<String, @Nullable Object> bulk =
                 endpoint.reenableAll("A", null, "replay", null, null, null);
         assertThat(bulk.get("replayed")).isEqualTo(0);
-        assertThat(bulk.get("coalesced")).isEqualTo(0);
         assertThat(bulk.get("idInUse")).isEqualTo(0);
         // No archive means nothing was considered, so the sweep ends immediately.
         assertThat(bulk).containsEntry("nextCursor", null);

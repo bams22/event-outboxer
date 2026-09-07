@@ -200,7 +200,7 @@ class DefaultOutboxEventPublisherTest {
     }
 
     @Test
-    void dedupKeyCoalescesIntoExistingPendingEvent() {
+    void dedupKeyPublishAlwaysInsertsItsOwnRow() {
         InMemoryEventStore store = new InMemoryEventStore();
         AtomicInteger published = new AtomicInteger();
         List<EventCoalescedInfo> coalesced = new ArrayList<>();
@@ -227,37 +227,26 @@ class DefaultOutboxEventPublisherTest {
 
         UUID first = publisher.publish(EventType.of("SYNC", String.class), "v1", keyed);
         UUID second = publisher.publish(EventType.of("SYNC", String.class), "v2", keyed);
-        UUID third =
-                publisher.publish(
-                        EventType.of("SYNC", String.class),
-                        "v3",
-                        PublishOptions.builder().dedupKey("order-2").build());
 
-        assertThat(second).isEqualTo(first); // coalesced into the existing pending event
-        assertThat(third).isNotEqualTo(first);
-        assertThat(published).hasValue(2); // onEventPublished only for real inserts
-        assertThat(coalesced)
-                .singleElement() // onEventCoalesced exactly for the coalesced request
-                .isEqualTo(new EventCoalescedInfo(first, "SYNC", "order-1"));
-        assertThat(wakes).containsExactly("SYNC", "SYNC"); // wake only for real inserts
+        // ADR-0037: duplicates are collapsed by the claim, never by the publisher — every publish
+        // is its own row, its own id, its own onEventPublished and wake; onEventCoalesced is the
+        // dispatcher's callback, not the publisher's.
+        assertThat(second).isNotEqualTo(first);
+        assertThat(published).hasValue(2);
+        assertThat(coalesced).isEmpty();
+        assertThat(wakes).containsExactly("SYNC", "SYNC");
         assertThat(store.findById(first)).isPresent();
+        assertThat(store.findById(second)).isPresent();
+        assertThat(store.findById(second).orElseThrow().dedupKey()).isEqualTo("order-1");
     }
 
     @Test
-    void publishAllRoutesDedupRequestsIndividually() {
+    void publishAllBatchesKeyedRequestsLikeAnyOther() {
         InMemoryEventStore store = new InMemoryEventStore();
-        List<EventCoalescedInfo> coalesced = new ArrayList<>();
         DefaultOutboxEventPublisher publisher =
                 DefaultOutboxEventPublisher.builder()
                         .store(store)
                         .serializer(new StringEventSerializer())
-                        .listener(
-                                new OutboxListener() {
-                                    @Override
-                                    public void onEventCoalesced(EventCoalescedInfo info) {
-                                        coalesced.add(info);
-                                    }
-                                })
                         .build();
         PublishOptions keyed = PublishOptions.builder().dedupKey("k").build();
 
@@ -269,14 +258,10 @@ class DefaultOutboxEventPublisherTest {
                                 new PublishRequest<>(
                                         EventType.of("A", String.class), "plain", null)));
 
-        assertThat(ids).hasSize(3);
-        assertThat(ids.get(1)).isEqualTo(ids.get(0)); // second keyed request coalesced
-        assertThat(ids.get(2)).isNotEqualTo(ids.get(0));
-        assertThat(coalesced)
-                .singleElement()
-                .isEqualTo(new EventCoalescedInfo(ids.get(0), "A", "k"));
-        assertThat(store.findById(ids.get(0))).isPresent();
-        assertThat(store.findById(ids.get(2))).isPresent();
+        assertThat(ids).hasSize(3).doesNotHaveDuplicates();
+        for (UUID id : ids) {
+            assertThat(store.findById(id)).isPresent();
+        }
     }
 
     @Test

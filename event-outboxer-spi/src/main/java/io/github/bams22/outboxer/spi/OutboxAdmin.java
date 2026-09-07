@@ -40,10 +40,8 @@ import org.jspecify.annotations.Nullable;
  *       replay is a new lifecycle, so it starts a new retention clock: with the original publish
  *       time an event archived long ago would be purged by the next {@link #purgeDisabled} sweep
  *       and would page last in {@link #findByStatus}. A replay that cannot proceed leaves the
- *       archive row untouched and says why: {@link ReplayOutcome#COALESCED} when a {@code PENDING}
- *       event with the same {@code (event_type, dedup_key)} already exists (ADR-0021 arbiter — the
- *       work is already scheduled), {@link ReplayOutcome#ID_IN_USE} when the hot table already
- *       holds the event's id.
+ *       archive row untouched and says why: {@link ReplayOutcome#ID_IN_USE} when the hot table
+ *       already holds the event's id.
  *   <li>Every bulk operation takes a {@code limit} and is expected to run as a single bounded
  *       statement; callers loop for full sweeps.
  * </ul>
@@ -130,13 +128,13 @@ public interface OutboxAdmin {
     /**
      * Bulk {@link #replayFromArchive(UUID)} for archived events of the given type, optionally
      * bounded to an {@code archived_at} window (both bounds exclusive), capped by {@code limit}.
-     * Rows are taken oldest-archived first, so when the batch holds several rows with the same
-     * dedup key, the oldest one replays and the newer ones coalesce and stay archived.
+     * Rows are taken oldest-archived first. Several rows with the same dedup key all replay; the
+     * next claim collapses them into one run (ADR-0037).
      *
-     * <p>A row that cannot be replayed — coalesced, or its id already live — is <em>skipped, not
-     * fatal</em>: the batch still moves every other row. Those rows stay in the archive, so the
-     * same window keeps finding them and {@code replayed() > 0} is not a usable loop condition.
-     * Sweep with the cursor instead, which advances past every row the batch considered:
+     * <p>A row that cannot be replayed — its id already live — is <em>skipped, not fatal</em>: the
+     * batch still moves every other row. Those rows stay in the archive, so the same window keeps
+     * finding them and {@code replayed() > 0} is not a usable loop condition. Sweep with the cursor
+     * instead, which advances past every row the batch considered:
      *
      * <pre>{@code
      * ArchiveCursor cursor = null;
@@ -165,7 +163,7 @@ public interface OutboxAdmin {
             int limit,
             @Nullable ArchiveCursor after) {
         requireReplayAllArguments(eventType, archivedAfter, archivedBefore, limit);
-        return new ReplayAllResult(0, 0, 0, null);
+        return new ReplayAllResult(0, 0, null);
     }
 
     /**
@@ -203,11 +201,6 @@ public interface OutboxAdmin {
         /** The archive row moved back to the hot table as a fresh {@code PENDING} event. */
         REPLAYED,
         /**
-         * A {@code PENDING} event with the same {@code (event_type, dedup_key)} already exists —
-         * nothing was inserted and the archive row was kept (ADR-0021 coalescing).
-         */
-        COALESCED,
-        /**
          * The hot table already holds an event with this id — the application re-published the
          * archived event's explicit UUID. Nothing was inserted and the archive row was kept; the
          * live event is the one to look at.
@@ -221,17 +214,14 @@ public interface OutboxAdmin {
      * Result of {@link #replayAllFromArchive}: one counter per {@link ReplayOutcome} the batch
      * produced, plus the cursor to continue the sweep from.
      *
-     * <p>{@code replayed + coalesced + idInUse} is the number of archive rows the batch considered.
-     * The two non-replayed counters are reporting only — neither blocks the sweep, because {@code
-     * next} advances past those rows as well.
+     * <p>{@code replayed + idInUse} is the number of archive rows the batch considered. The
+     * non-replayed counter is reporting only — it does not block the sweep, because {@code next}
+     * advances past those rows as well.
      *
      * @param replayed rows moved back to the hot table
-     * @param coalesced rows left archived because a {@code PENDING} event with the same {@code
-     *     (event_type, dedup_key)} already exists
      * @param idInUse rows left archived because the hot table already holds their id
      * @param next cursor of the last row considered, to pass as {@code after} on the following
      *     call; {@code null} when the batch found nothing, which is the end of the sweep
      */
-    record ReplayAllResult(
-            int replayed, int coalesced, int idInUse, @Nullable ArchiveCursor next) {}
+    record ReplayAllResult(int replayed, int idInUse, @Nullable ArchiveCursor next) {}
 }

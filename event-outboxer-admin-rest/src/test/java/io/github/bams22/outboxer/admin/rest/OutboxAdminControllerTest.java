@@ -51,7 +51,7 @@ class OutboxAdminControllerTest {
     private static final WorkerId WORKER = new WorkerId("rest-test");
     private static final Instant CURSOR_AT = Instant.parse("2026-02-01T10:15:30.123456Z");
     private static final UUID NEXT_ID = UUID.fromString("0f9a2c31-1111-4222-8333-444455556666");
-    private static final ReplayAllResult EMPTY_BULK = new ReplayAllResult(0, 0, 0, null);
+    private static final ReplayAllResult EMPTY_BULK = new ReplayAllResult(0, 0, null);
 
     private InMemoryEventStore store;
     private MockMvc mvc;
@@ -147,18 +147,17 @@ class OutboxAdminControllerTest {
                                 .content("{\"eventType\": \"A\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.replayed").value(0))
-                .andExpect(jsonPath("$.coalesced").value(0))
                 .andExpect(jsonPath("$.idInUse").value(0))
                 .andExpect(jsonPath("$.nextCursor").doesNotExist());
     }
 
     @Test
-    @DisplayName("replay endpoints map REPLAYED/COALESCED outcomes to 200 bodies")
+    @DisplayName("replay endpoints map the REPLAYED outcome and bulk counts to 200 bodies")
     void replayEndpointsOutcomeMapping() throws Exception {
         ReplayStubAdmin stub =
                 new ReplayStubAdmin(
                         ReplayOutcome.REPLAYED,
-                        new ReplayAllResult(3, 2, 1, new ArchiveCursor(CURSOR_AT, NEXT_ID)));
+                        new ReplayAllResult(3, 1, new ArchiveCursor(CURSOR_AT, NEXT_ID)));
         MockMvc stubbed = stubbedMvc(stub);
 
         stubbed.perform(post("/outbox-admin/events/{id}/replay", UUID.randomUUID()))
@@ -170,7 +169,6 @@ class OutboxAdminControllerTest {
                                 .content("{\"eventType\": \"A\", \"limit\": 5}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.replayed").value(3))
-                .andExpect(jsonPath("$.coalesced").value(2))
                 .andExpect(jsonPath("$.idInUse").value(1))
                 .andExpect(jsonPath("$.nextCursor").value(CURSOR_AT + "_" + NEXT_ID));
     }

@@ -22,7 +22,13 @@ the success side too, and `LockAcquisitionInfo` gained a `waited`
 component); amended 2026-09-05: 29 → 30 methods — `onLockReleased`
 reports the hold time of an entity lock (acquisition to release,
 handler plus finalize), the number `lock-wait` and `lock-ttl` are sized
-against)
+against; amended 2026-09-07 by
+[ADR-0037](0037-claim-time-dedup-coalescing.md): `onEventCoalesced`
+moved from the Publication group to the Processing lifecycle group —
+coalescing happens at the claim now, so the dispatcher fires it once
+per swept duplicate, after the claim and before the representative's
+handler — and `EventCoalescedInfo` became `(eventId,
+coalescedIntoEventId, eventType, dedupKey)`, the swept event first)
 
 ## Date
 
@@ -59,13 +65,15 @@ separate `event-outboxer-metrics-micrometer` module with
 records (protection against breaking changes when adding fields).
 
 Groups:
-1. **Publication**: `onEventPublished`, `onEventCoalesced` (a keyed
-   publish coalesced into an existing PENDING event, ADR-0021 — fires
-   instead of `onEventPublished`).
+1. **Publication**: `onEventPublished` (every publish, keyed or not —
+   since ADR-0037 a keyed publish always inserts).
 2. **Polling**: `onPollCompleted` (every claim attempt including empty
    polls — the highest-frequency callback), `onPollerSaturated` (claim
    cycle skipped because the handler executor had no free capacity).
-3. **Processing lifecycle**: `onEventClaimed`, `onEventProcessed`,
+3. **Processing lifecycle**: `onEventClaimed`, `onEventCoalesced` (a
+   keyed duplicate the claim swept for the claimed event, ADR-0037 —
+   fired by the dispatcher once per swept event, after the claim and
+   before the handler; until ADR-0037 it was a publication callback), `onEventProcessed`,
    `onEventRetryScheduled`, `onEventDisabled`, `onEventDeleted`,
    `onEventSkipped`.
 4. **Errors & anomalies**: `onHandlerError`, `onUnknownEventType`,

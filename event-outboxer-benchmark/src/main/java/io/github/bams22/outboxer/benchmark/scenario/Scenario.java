@@ -64,6 +64,8 @@ import org.jspecify.annotations.Nullable;
  * @param chaos what goes wrong on purpose during the drain
  * @param payloadFormat which serializer writes the payload: Jackson (JSONB lane) or Protobuf (BYTEA
  *     lane)
+ * @param dedupKeyCardinality distinct dedup keys ({@code dk-0..}); events are spread round-robin so
+ *     every key is published {@code events / cardinality} times; {@code 0} = no dedup key
  */
 @Builder(toBuilder = true)
 public record Scenario(
@@ -92,14 +94,23 @@ public record Scenario(
         FleetMode fleet,
         List<String> workerJvmArgs,
         Chaos chaos,
-        PayloadFormat payloadFormat) {
+        PayloadFormat payloadFormat,
+        int dedupKeyCardinality) {
 
     /** The lock key that receives the {@code slowKeyShare} of events. */
     public static final String SLOW_KEY = "key-slow";
 
     /** Names of the shipped presets, in documentation order. */
     public static final List<String> PRESETS =
-            List.of("smoke", "throughput", "hot-key", "failures", "backlog", "crash", "pg-restart");
+            List.of(
+                    "smoke",
+                    "throughput",
+                    "hot-key",
+                    "failures",
+                    "backlog",
+                    "crash",
+                    "pg-restart",
+                    "dedup-burst");
 
     /**
      * Maintenance settings every chaos preset applies: the production defaults (30 s dead
@@ -181,6 +192,7 @@ public record Scenario(
         workerJvmArgs = workerJvmArgs == null ? List.of("-Xmx1g") : List.copyOf(workerJvmArgs);
         chaos = chaos == null ? Chaos.none() : chaos;
         payloadFormat = payloadFormat == null ? PayloadFormat.JACKSON : payloadFormat;
+        nonNegative("dedupKeyCardinality", dedupKeyCardinality);
         if (chaos.killWorkers() > 0 && fleet != FleetMode.FORKED) {
             throw new IllegalArgumentException(
                     "chaos.killWorkers requires fleet=forked: an in-process context cannot be"
@@ -206,6 +218,7 @@ public record Scenario(
             case "backlog" -> backlog();
             case "crash" -> crash();
             case "pg-restart", "pgrestart", "pg_restart" -> pgRestart();
+            case "dedup-burst", "dedupburst", "dedup_burst" -> dedupBurst();
             default ->
                     throw new IllegalArgumentException(
                             "Unknown scenario '" + name + "', expected one of " + PRESETS);
@@ -329,6 +342,32 @@ public record Scenario(
                                 .build())
                 .workerProperties(FAST_RECOVERY_PROPERTIES)
                 .build();
+    }
+
+    /**
+     * Many publishers hammer a few dedup keys while the fleet drains: the cost and the quality of
+     * claim-time coalescing (ADR-0037). Vary {@code --bench.dedup-keys} for the key cardinality.
+     * Two milliseconds of work keep rows PROCESSING long enough for twins to arrive mid-handling.
+     */
+    public static Scenario dedupBurst() {
+        return Scenario.builder()
+                .name("dedup-burst")
+                .events(20_000)
+                .workers(3)
+                .handlerPoolSize(4)
+                .claimBatchSize(50)
+                .publisherThreads(8)
+                .dedupKeyCardinality(64)
+                .handlerWorkTime(Duration.ofMillis(2))
+                .build();
+    }
+
+    /** The dedup key for a sequence number, {@code null} when dedup keys are off. */
+    public @Nullable String dedupKeyFor(long seq) {
+        if (dedupKeyCardinality == 0) {
+            return null;
+        }
+        return "dk-" + Math.floorMod(seq, dedupKeyCardinality);
     }
 
     /**

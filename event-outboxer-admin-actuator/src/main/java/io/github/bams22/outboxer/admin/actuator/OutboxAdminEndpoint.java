@@ -127,8 +127,8 @@ public class OutboxAdminEndpoint {
      * replay only.
      *
      * <p>A replay response carries {@code nextCursor}: feed it back as {@code cursor} until it
-     * comes back null. Rows that stayed archived (coalesced, or their id already live) are counted
-     * but do not stop the sweep — the cursor advances past them.
+     * comes back null. Rows that stayed archived (their id already live) are counted but do not
+     * stop the sweep — the cursor advances past them.
      */
     @WriteOperation
     public Map<String, @Nullable Object> reenableAll(
@@ -149,7 +149,6 @@ public class OutboxAdminEndpoint {
                             CursorCodec.decodeArchive(cursor));
             Map<String, @Nullable Object> body = new LinkedHashMap<>();
             body.put("replayed", result.replayed());
-            body.put("coalesced", result.coalesced());
             body.put("idInUse", result.idInUse());
             body.put("nextCursor", CursorCodec.encodeArchive(result.next()));
             return body;
