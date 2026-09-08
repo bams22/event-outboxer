@@ -148,4 +148,5 @@ of a bespoke user-written job.
   model; amended by this ADR (retention + `findInArchive` now exist).
 - [ADR-0010](0010-storage-agnostic-core-via-spi.md) — port design;
   `OutboxAdmin` keeps `EventStore` from becoming a god-interface.
-- [ADR-0016](0016-maven-module-structure.md) — module layout (now 15).
+- [ADR-0016](0016-maven-module-structure.md) — module layout (15 when
+  this ADR was written; 21 published modules today).

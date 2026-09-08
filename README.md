@@ -24,6 +24,12 @@ Transactional Outbox pattern.
 - **Distributed-safe**: `SELECT FOR UPDATE SKIP LOCKED` + optimistic locking
   via a `version` column + heartbeat/lease in a separate `event_outboxer.workers`
   table for detecting crashed workers.
+- **Per-entity serialization**: a handler that declares `extractLockKey`
+  runs one event per key at a time across the whole fleet, through a
+  pluggable `EntityLocker` — a lease table or `pg_advisory_lock` on
+  PostgreSQL, Lettuce or Redisson on Redis/KeyDB. A busy key is waited
+  out for a bounded `lock-wait` (100 ms by default) before the event
+  goes back to the backlog.
 - **At-least-once**: handlers must be idempotent. Exponential backoff with
   jitter, attempt limits, DISABLED status for poison events.
 - **Composable failure handling**: `FailureHandler<T>` chain (log →
@@ -98,6 +104,21 @@ event-outboxer:
 JSON via Jackson comes with the starter — nothing to add for
 serialization; for Protobuf see
 [`event-outboxer-serializer-protobuf`](docs/modules/event-outboxer-serializer-protobuf.md).
+
+The locker above is needed only when a handler declares
+`extractLockKey(...)` — `lock.type` defaults to `noop`. On PostgreSQL the
+recommended choice is the lease table
+([`-lock-postgres-lease`](docs/modules/event-outboxer-lock-postgres-lease.md):
+pgBouncer-safe, no pinned connections, TTL honoured);
+[`-lock-postgres-advisory`](docs/modules/event-outboxer-lock-postgres-advisory.md)
+trades those for immediate release on a clean crash. A fleet that
+coordinates through Redis/KeyDB takes either
+[`-lock-redis`](docs/modules/event-outboxer-lock-redis.md) (Lettuce,
+`SET NX PX` with a fencing-token release) or
+[`-lock-redisson`](docs/modules/event-outboxer-lock-redisson.md), which
+takes an `RLock` on the `RedissonClient` the application already runs —
+its topologies, its connection management. Pick one per fleet: two
+backends do not see each other's keys.
 
 With `flyway-core` and `flyway-database-postgresql` on the classpath the
 starter migrates the outbox schema through **its own Flyway instance**

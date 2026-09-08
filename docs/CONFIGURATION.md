@@ -850,8 +850,10 @@ runs the moment it is claimed. Measured with the benchmark harness
 - Under lock contention the same multiplication lands on the busy
   path: 103 dispatches of a type try a handful of keys at once, and
   every busy hit is two row writes. The `hot-key` preset went from
-  237/s to 96/s and from 6.6 to 21 row writes per event (ADR-0035 is
-  the planned fix).
+  237/s to 96/s and from 6.6 to 21 row writes per event. The bounded
+  `lock-wait` of ADR-0035 fixes this for a capped executor; on an
+  uncapped virtual one it is the single cell where waiting costs more
+  than it saves, so cap the in-flight budget as below.
 
 So configure `virtual` deliberately rather than flipping it:
 `handler-pool-size` = the concurrency the handler's downstream and

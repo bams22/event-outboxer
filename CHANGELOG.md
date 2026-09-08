@@ -5,52 +5,52 @@ All notable changes to this project are documented here. Format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.8.0] — 2026-09-08
 
-### Fixed
-- **Backlog gauges and health no longer lag an admin mutation by a full
-  `metrics-cache-ttl` (ADR-0019 amendment, 2026-09-07).**
-  `PostgresOutboxAdmin` now shares the `MetricsSnapshotCache` with
-  `PostgresEventStore` and invalidates it after every mutation that
-  changed rows — re-enable, purge of `DISABLED` rows, replay;
-  `purgeArchive` does not, the snapshot does not cover the archive.
-  Dropping the entry was not enough on its own: a snapshot computation
-  already in flight put its pre-mutation counts straight back, and a
-  mutation made inside a caller transaction invalidated when its
-  statement ran while the rows became visible only at commit.
-  `MetricsSnapshotCache.put` is conditional now — a snapshot taken
-  before the last `invalidate()` is refused, by a second reference in
-  the in-memory flavour and a Lua compare-and-set against an
-  `<prefix>invalidated-at` key in the Redis one — and the starter defers
-  the admin bean's invalidation to after-commit. The freshness is a
-  property of the PostgreSQL adapter pair, not of the `OutboxAdmin`
-  port: with the default per-JVM cache it reaches only the replica that
-  served the admin call, `cache.type=redis` makes it fleet-wide.
+### Breaking
+- **`EventStore.save(PendingEvent)` returns `void`, and
+  `lockPendingByDedupKey(...)` is gone (ADR-0037).** Deduplication of a
+  key no longer happens at insert time, so the publisher has no
+  "coalesced into an existing row" answer to return: a keyed publish
+  inserts unconditionally and the claim statement elects one
+  representative per `(event_type, dedup_key)`. A custom `EventStore`
+  adapter drops the returned `boolean`, deletes the lookup, accepts
+  keyed events in `saveAll(...)` — and reports what its claim swept:
+  `ClaimedEvent` gains `@Nullable String dedupKey` and
+  `List<CoalescedEvent> coalesced()` (new record in
+  `io.github.bams22.outboxer.domain`), whose ids and trace carriers the
+  dispatcher needs between the claim and the handler.
 
-- **The batched archive finalize could silently stop copying a column.**
-  `markProcessedAll(...)` with archiving on kept a hand-written copy of
-  the archive column lists while the other statements moved onto the
-  shared `EventRows` constants. Both of its sides stayed consistent with
-  each other, so PostgreSQL raised nothing: a column added to the
-  immutable set (as ADR-0037 added `dedup_key`) would have been archived
-  by the single-row finalize and dropped by the batched one — the
-  default path, `finalize-batching` being on. Both are built from
-  `EventRows` now, and `EventRowsSchemaIT` checks the lists against the
-  migrated schema.
+- **`OutboxAdmin.ReplayOutcome.COALESCED` and
+  `ReplayAllResult.coalesced()` removed (ADR-0033 amendment,
+  ADR-0037).** A replay from the archive inserts plainly now and the
+  next claim collapses it with a live twin, so nothing coalesces at
+  replay time. `ReplayAllResult` becomes `(replayed, idInUse, next)` —
+  the canonical constructor loses a component — and neither admin
+  surface reports a coalesced count any more.
 
-- **A publish-only engine no longer resets every in-flight claim of the
-  fleet (ADR-0029 amendment, 2026-09-04).** The stale-claim threshold
-  is derived from the `handler-max-runtime` of the types an instance
-  polls; a publish-only instance polls none, so the derived value was
-  zero and its sweeper returned every `PROCESSING` row to `PENDING`
-  (`attempts + 1`) every `stale-claim-sweep-interval` — events queued
-  in live workers were then handled twice. Found by the benchmark
-  harness's `crash` preset (390 duplicates on 5 000 events, most of
-  them nowhere near the kill). Now an instance that polls no type runs
-  the sweeper only when `maintenance.stale-claim-threshold` is set
-  explicitly, and says so at startup.
+- **`OutboxTracer.PublishSpan.coalesced(UUID)` and
+  `OutboxTraceAttributes.COALESCED_INTO` removed (ADR-0023
+  amendment).** For the same reason coalescing is no longer visible
+  from the producer span; the consumer span carries it instead —
+  `event_outboxer.coalesced_count` plus one span link per swept
+  publish, in the OTel and the Micrometer adapter alike. A custom
+  `OutboxTracer` loses an interface method rather than gaining one.
 
-### Changed
+- **`EventCoalescedInfo` is `(eventId, coalescedIntoEventId, eventType,
+  dedupKey)` and fires per swept duplicate.** `existingEventId()` is
+  gone, and the callback now comes from the dispatcher after the claim
+  and before the handler instead of from the publisher — a listener
+  that used to observe a publish observes a claim. The
+  `event_outboxer.events.coalesced` counter keeps its name and its
+  meaning: one increment per collapsed duplicate.
+
+- **`LockAcquisitionInfo` and `EventTypeConfig` gain a component
+  (ADR-0035).** `LockAcquisitionInfo.waited` (how long the bounded wait
+  ran before the outcome) and `EventTypeConfig.lockWait` change the
+  arity of both canonical constructors; `@Builder` users are
+  unaffected.
+
 - **`PostgresOutboxAdmin` and `LettuceMetricsSnapshotCache` constructors
   changed (pre-1.0 break).** `new PostgresOutboxAdmin(connections,
   properties)` becomes `new PostgresOutboxAdmin(connections, properties,
@@ -60,6 +60,66 @@ All notable changes to this project are documented here. Format follows
   the invalidation barrier and the store's `takenAt` are stamped by the
   same clock. The Spring Boot starter wires both; only plain-Java wiring
   needs the edit.
+
+- **Migration V004 is rewritten in place, not superseded (ADR-0037).**
+  It creates the plain partial index `ix_events_pending_dedup_key` —
+  the lookup of the claim's duplicate sweep — instead of the unique
+  `uq_events_pending_dedup_key`; there is no V010 and the history stays
+  nine versions long. A database migrated by 0.7.0 or earlier therefore
+  carries the old V004 checksum and the unique index, and Flyway
+  validation rejects it on startup. Such a database is recreated, not
+  upgraded (ADR-0037 §Consequences) — repairing one by hand means a
+  `flyway repair` plus dropping `uq_events_pending_dedup_key` and
+  creating the plain index; Liquibase users are in the same position,
+  the `outbox-core-004-dedup-key` changeset points at the rewritten
+  file and its checksum moves with it. Rewriting a released migration
+  is a pre-users liberty, not how a schema change ships once there are
+  users.
+
+### Changed
+- **A busy entity lock is waited out for 100 ms before the event is
+  released (ADR-0035).** Until now a busy `tryLock` sent the claimed
+  event straight back to the tail of the backlog. The dispatcher now
+  keeps it on the handler thread and retries the lock for up to the
+  per-type `event-outboxer.event-types.defaults.lock-wait` (thin-merged
+  per type, validated `>= 0` and `< handler-max-runtime`); only then
+  does it take the unchanged busy path — released with
+  `lock-busy-retry-delay`, no attempt consumed. The default of 100 ms
+  was fixed by a 17-run matrix on the harness ([lock-wait
+  session](docs/benchmarks/2026-09-04-laptop-lock-wait.md)): on 5 ms
+  holds it removes every busy round trip (the lease locker drops to its
+  5.00 row-write floor, the Redis locker to the engine's 3.00) and
+  raises the drain rate by a third, a 200 ms hot key next to 63 cool
+  keys drains 2.3× faster for 0.6 s of median on the cool keys, and a
+  workload without lock keys is untouched.
+  **Upgrade note:** a configuration whose `handler-max-runtime` is
+  100 ms or less — test setups, mostly — must lower `lock-wait` with
+  it, or startup validation rejects the pair. The testkit's own
+  defaults keep it at `0`. On an uncapped virtual executor a hot key is
+  the one loser (waiters cost more than they save); cap the in-flight
+  budget as the executor guidance in CONFIGURATION.md says.
+
+- **Keyed publishes no longer serialize on the key (ADR-0037,
+  superseding ADR-0021's insert-time design).** The V004 partial unique
+  index arbitrated an `ON CONFLICT` insert at publish time and collided
+  with every return of a `PROCESSING` event to `PENDING` once a twin of
+  its key existed — 23505 on retry, release, reclaim and re-enable, and
+  a failed orphan-recovery batch for a whole dead worker. Coalescing
+  moved into the claim: keyed rows insert unconditionally, the claim
+  CTE elects one representative per `(event_type, dedup_key)`, sweeps
+  the other due `PENDING` rows of those keys (in and beyond the batch,
+  capped at 1 000, `FOR UPDATE SKIP LOCKED`, archived as `coalesced at
+  claim` where archiving is on) and returns their ids and trace
+  carriers with the representative. Only committed rows are swept and
+  the sweep precedes the handler, so the ADR-0021 visibility guarantee
+  holds without the publisher's pin. Measured: no cost on the keyless
+  path, ~5 µs per swept duplicate, one statement instead of two per
+  keyed publish, hot-key end-to-end p99 1.97 s → 129 ms; the price is
+  two row writes and ~1 KB of WAL per duplicate where the insert-time
+  design paid a conflicting no-op ([dedup
+  sessions](docs/benchmarks/2026-09-07-laptop-dedup-final.md)). A
+  deferred twin — one whose `run_at` is still in the future — is a
+  separate intent and is never swept.
 
 - **`MetricsSnapshotCache` contract tightened.** `put(...)` must refuse a
   snapshot whose `takenAt` predates the implementation's last
@@ -84,6 +144,75 @@ All notable changes to this project are documented here. Format follows
   `true`; the amendment records when to turn it off.
 
 ### Added
+- **New module `event-outboxer-lock-redisson` (ADR-0036).** A fourth
+  `EntityLocker`, for applications that already run Redisson:
+  `lock.type=redisson` takes an `RLock` on the application's own
+  `RedissonClient` — its topologies (single, master-replica, sentinel,
+  cluster), its connection management, and its pub/sub wait as
+  ADR-0035's bounded wait. The starter never creates the client;
+  resolution mirrors ADR-0024 and ADR-0027 (`@OutboxRedissonClient` →
+  unique or `@Primary` bean → fail fast naming the candidates).
+  Redisson's three traps are closed in code: every acquisition passes
+  an explicit lease so the watchdog is off and the `min(close, ttl)`
+  guarantee holds, the handle releases with `unlockAsync(threadId)` so
+  it closes from any thread (a stale close after expiry is a
+  debug-logged no-op), and a per-thread guard keeps the SPI's "held is
+  busy" against `RLock` re-entrance. Keys default to `outbox:rlock:`, a
+  hash namespace never to be shared with the Lettuce locker's
+  `outbox:lock:` strings — the two lockers must not be mixed in one
+  fleet — and `lock.fair` selects `RFairLock`. Redisson 3.52.0 is
+  managed in the parent pom (the Boot BOM does not carry it). Measured
+  at the same place as the Lettuce locker's pub/sub wake-up (513 vs
+  574/s on hot-key, tails within noise) for 2.4× the Redis commands per
+  event: choose it for the client and the topologies you already have,
+  not for speed.
+- **Bounded wait for a busy entity lock, as an SPI contract (ADR-0035).**
+  `EntityLocker.tryLock(key, ttl, maxWait)` is a `default` method that
+  polls the plain `tryLock` with a 2–10 ms back-off, so third-party
+  lockers keep working; zero means a single attempt, an interrupt ends
+  the wait with the flag preserved, and backend errors propagate. Two
+  adapters override it natively: `PgAdvisoryLocker` blocks in
+  `pg_advisory_lock` under a transaction-local `statement_timeout` and
+  reports SQLState 57014 as busy (after a defensive unlock, since a
+  lock granted an instant before the cancel survives the rollback), and
+  the Redis locker parks on a release notification (below). Contract
+  tests cover budget, hand-over, zero wait and interrupt for every
+  adapter. New listener callback `onLockAcquired(LockAcquiredInfo)` —
+  the 29th — and a new timer
+  `event_outboxer.lock.wait_time{event_type, outcome=acquired|busy}`
+  make the share of acquisitions that needed the wait observable.
+- **The Redis locker wakes on the holder's release instead of polling
+  (`event-outboxer.lock.wakeup`, default `true`; ADR-0027
+  amendment).** The release script publishes the released token on
+  `<key-prefix>released:<key>` and a waiter parks on a second, pub/sub
+  connection until it arrives: one shared subscription per contended
+  key, a generation counter that rules out lost wake-ups, and a 25 ms
+  fallback probe for notifications lost across a reconnect or keys that
+  expired rather than being released. The starter opens the pub/sub
+  connection lazily (`outboxRedisPubSubConnection`) and closes it
+  first; without one — or on a failed subscribe — the locker keeps the
+  SPI's polling wait and says so. Measured on hot-key: 464 → 555/s,
+  max end-to-end 7.3 s → 2.9 s. The lease locker keeps polling: its
+  LISTEN/NOTIFY twin was built, measured and removed the same day (no
+  gain over polling, and LISTEN cannot survive pgBouncer transaction
+  pooling — the very deployment that locker exists for), recorded in
+  ADR-0022's second amendment.
+- **Lock observability: hold time, wake-up outcomes, per-key spans.**
+  `onLockReleased(LockReleasedInfo)` — the 30th listener callback —
+  and `event_outboxer.lock.hold_time{event_type}` carry the number that
+  `lock-wait` and `lock-ttl` are sized against (acquisition to release,
+  handler plus finalize), which no meter covered.
+  `event_outboxer.lock.wakeups{result=notified|probed|exhausted|interrupted}`
+  says how each bounded wait of the Redis locker ended, so a pub/sub
+  connection that silently stopped delivering shows as `probed`
+  outgrowing `notified` instead of as a slightly slower fleet. Both
+  tracing adapters set `event_outboxer.lock.key` and
+  `event_outboxer.lock.wait_ms` on the consumer span when the handler
+  declares a key — the per-key question belongs to tracing, not to
+  metric cardinality. The starter's metrics defaults gain SLO buckets
+  for both timers, and the Grafana dashboard's Entity locks row gains
+  five panels (wait p99/p50 by outcome, hold time p99/avg by type,
+  share of waits exhausted, wake-ups by result, acquisitions vs busy).
 - **Benchmark report: measured handler concurrency.** The `processing`
   metrics carry a `concurrency` block (peak in-flight handlers
   fleet-wide and per worker from the ledger's interval overlap,
@@ -155,6 +284,57 @@ All notable changes to this project are documented here. Format follows
   their SET lists) sampled before and after the run — the direct
   measure of round trips per event that the group-commit sessions
   needed.
+- **Benchmark harness: dedup and lock-contention knobs.** The
+  `dedup-burst` preset and `--bench.dedup-keys` drive keyed publishes
+  at a chosen key cardinality, graded by a per-key freshness invariant
+  (`staleKeys`) and reported with the mean claim-statement time from
+  `pg_stat_statements`; `--bench.slow-key-share` /
+  `--bench.slow-key-work-time` route a share of events to one slow lock
+  key, which is how the lock-wait matrix was run; `--bench.lock` now
+  also takes `redisson`.
+
+### Fixed
+- **Backlog gauges and health no longer lag an admin mutation by a full
+  `metrics-cache-ttl` (ADR-0019 amendment, 2026-09-07).**
+  `PostgresOutboxAdmin` now shares the `MetricsSnapshotCache` with
+  `PostgresEventStore` and invalidates it after every mutation that
+  changed rows — re-enable, purge of `DISABLED` rows, replay;
+  `purgeArchive` does not, the snapshot does not cover the archive.
+  Dropping the entry was not enough on its own: a snapshot computation
+  already in flight put its pre-mutation counts straight back, and a
+  mutation made inside a caller transaction invalidated when its
+  statement ran while the rows became visible only at commit.
+  `MetricsSnapshotCache.put` is conditional now — a snapshot taken
+  before the last `invalidate()` is refused, by a second reference in
+  the in-memory flavour and a Lua compare-and-set against an
+  `<prefix>invalidated-at` key in the Redis one — and the starter defers
+  the admin bean's invalidation to after-commit. The freshness is a
+  property of the PostgreSQL adapter pair, not of the `OutboxAdmin`
+  port: with the default per-JVM cache it reaches only the replica that
+  served the admin call, `cache.type=redis` makes it fleet-wide.
+
+- **The batched archive finalize could silently stop copying a column.**
+  `markProcessedAll(...)` with archiving on kept a hand-written copy of
+  the archive column lists while the other statements moved onto the
+  shared `EventRows` constants. Both of its sides stayed consistent with
+  each other, so PostgreSQL raised nothing: a column added to the
+  immutable set (as ADR-0037 added `dedup_key`) would have been archived
+  by the single-row finalize and dropped by the batched one — the
+  default path, `finalize-batching` being on. Both are built from
+  `EventRows` now, and `EventRowsSchemaIT` checks the lists against the
+  migrated schema.
+
+- **A publish-only engine no longer resets every in-flight claim of the
+  fleet (ADR-0029 amendment, 2026-09-04).** The stale-claim threshold
+  is derived from the `handler-max-runtime` of the types an instance
+  polls; a publish-only instance polls none, so the derived value was
+  zero and its sweeper returned every `PROCESSING` row to `PENDING`
+  (`attempts + 1`) every `stale-claim-sweep-interval` — events queued
+  in live workers were then handled twice. Found by the benchmark
+  harness's `crash` preset (390 duplicates on 5 000 events, most of
+  them nowhere near the kill). Now an instance that polls no type runs
+  the sweeper only when `maintenance.stale-claim-threshold` is set
+  explicitly, and says so at startup.
 
 
 ## [0.7.0] — 2026-09-03
@@ -1360,7 +1540,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   `spring-boot-dependencies` BOM; patch releases will follow
   upstream advisories.
 
-[Unreleased]: https://github.com/bams22/event-outboxer/compare/v0.7.0...HEAD
+[0.8.0]: https://github.com/bams22/event-outboxer/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/bams22/event-outboxer/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/bams22/event-outboxer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bams22/event-outboxer/compare/v0.4.0...v0.5.0

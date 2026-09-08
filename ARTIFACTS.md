@@ -11,8 +11,8 @@ The table below is the quickest way to decide what to add to your `pom.xml`.
 | Goal | Modules to add | Transitive runtime cost |
 |---|---|---|
 | Spring Boot + PostgreSQL (typical production) | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-postgres-lease` <br> `event-outboxer-metrics-micrometer` (optional) | Spring Boot 3.5, Jackson (JSON serializer comes with the starter), PostgreSQL JDBC, HikariCP (via your `spring-boot-starter-jdbc`), Micrometer. |
-| Spring Boot + PG with Redis-coordinated locks | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-redis` | Additional: Lettuce 6. |
-| Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` (or `-serializer-protobuf`) <br> `event-outboxer-lock-postgres-lease` (or postgres-advisory / redis / noop) | SLF4J, Jackson (or protobuf-java), adapter dependencies. |
+| Spring Boot + PG with Redis-coordinated locks | `event-outboxer-spring-boot-starter` <br> `event-outboxer-storage-postgres` <br> `event-outboxer-lock-redis` (or `event-outboxer-lock-redisson` for apps that already run Redisson) | Additional: Lettuce 6 — or Redisson 3.52 and your own `RedissonClient` bean. |
+| Plain Java, no Spring | `event-outboxer-core` <br> `event-outboxer-storage-postgres` (or inmemory) <br> `event-outboxer-serializer-jackson` (or `-serializer-protobuf`) <br> `event-outboxer-lock-postgres-lease` (or postgres-advisory / redis / redisson / noop) | SLF4J, Jackson (or protobuf-java), adapter dependencies. |
 | Unit / integration tests for your handlers | `event-outboxer-testkit` (test scope) | Transitively brings in-memory adapter + Jackson. |
 | Transactional publish to Kafka/RabbitMQ via Spring Cloud Stream | `event-outboxer-relay-spring-cloud-stream` <br> + your binder (e.g. `spring-cloud-stream-binder-kafka`) | Additional: Spring Cloud Stream (function core, integration). Configure an acknowledged producer send (Kafka: `producer.sync: true`) — see the module doc. |
 
@@ -47,6 +47,7 @@ Always import the BOM first and let it manage versions:
 | `event-outboxer-lock-postgres-lease` | Lease-table `EntityLocker` (`entity_locks`, ADR-0022) — no pinned connections, pgBouncer-safe, TTL honoured. Ships migration V005. | PostgreSQL JDBC. | Recommended PostgreSQL locker (`lock.type=postgres-lease`). |
 | `event-outboxer-lock-postgres-advisory` | `pg_advisory_lock`-backed `EntityLocker` (session-scoped; pins one pooled connection per held lock, incompatible with pgBouncer transaction pooling). | PostgreSQL JDBC. | Opt-out (`lock.type=postgres-advisory`) for immediate clean-crash release. |
 | `event-outboxer-lock-redis` | Redis/KeyDB `EntityLocker` with fencing-token unlock. | Lettuce 6. | Multi-region or cross-DB deployments. |
+| `event-outboxer-lock-redisson` | Redis/KeyDB `EntityLocker` over a Redisson `RLock` on the application's own `RedissonClient` (ADR-0036): its topologies, its connection management, its pub/sub wait. Keys are hashes under `outbox:rlock:` — never mix one fleet between this locker and `-lock-redis`. | `redisson` 3.52. | Applications that already run Redisson, or need sentinel / cluster topologies the Lettuce locker does not cover. |
 | `event-outboxer-cache-redis` | Redis/KeyDB `MetricsSnapshotCache` — shares the metrics snapshot across replicas. | Lettuce 6. | Fleets where per-JVM snapshot queries would hammer the DB. |
 | `event-outboxer-metrics-micrometer` | `OutboxListener` publishing to a Micrometer `MeterRegistry`. | `micrometer-core`. | Any Boot app with Micrometer/Observation; the starter auto-wires it if present. |
 | `event-outboxer-tracing-otel` | OpenTelemetry `OutboxTracer` — publish→handle trace continuity (ADR-0023); works with the OTel Java agent. | `opentelemetry-api`. | OTel-instrumented apps without Boot's Micrometer Tracing bridge; auto-detected by the starter. |
@@ -72,6 +73,9 @@ Always import the BOM first and let it manage versions:
   JSONB, CTE-in-UPDATE). Earlier versions will not apply `V001`.
 - **Redis / KeyDB**: Redis **7+** or KeyDB **6+** for the Redis locker.
 - **Lettuce**: any 6.x via Spring Boot's managed version.
+- **Redisson**: **3.52.0**, managed in the parent pom (Spring Boot's BOM
+  does not carry it) — for `event-outboxer-lock-redisson` only, which
+  binds to the `RedissonClient` bean the application provides.
 
 ## Artifacts per release
 
@@ -92,25 +96,26 @@ so adapter modules can extend the abstract contract tests.
 ## Coordinates cheat-sheet
 
 ```
-io.github.bams22:event-outboxer-bom:0.7.0                  (pom)
-io.github.bams22:event-outboxer-api:0.7.0
-io.github.bams22:event-outboxer-spi:0.7.0
-io.github.bams22:event-outboxer-spi:0.7.0:tests            (classifier)
-io.github.bams22:event-outboxer-core:0.7.0
-io.github.bams22:event-outboxer-storage-inmemory:0.7.0
-io.github.bams22:event-outboxer-storage-postgres:0.7.0
-io.github.bams22:event-outboxer-serializer-jackson:0.7.0
-io.github.bams22:event-outboxer-serializer-protobuf:0.7.0
-io.github.bams22:event-outboxer-lock-postgres-lease:0.7.0
-io.github.bams22:event-outboxer-lock-postgres-advisory:0.7.0  (0.2.0 shipped as event-outboxer-lock-postgres)
-io.github.bams22:event-outboxer-lock-redis:0.7.0
-io.github.bams22:event-outboxer-cache-redis:0.7.0
-io.github.bams22:event-outboxer-metrics-micrometer:0.7.0
-io.github.bams22:event-outboxer-tracing-otel:0.7.0
-io.github.bams22:event-outboxer-tracing-micrometer:0.7.0
-io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.7.0  (new in 0.7.0)
-io.github.bams22:event-outboxer-admin-actuator:0.7.0
-io.github.bams22:event-outboxer-admin-rest:0.7.0
-io.github.bams22:event-outboxer-testkit:0.7.0
-io.github.bams22:event-outboxer-spring-boot-starter:0.7.0
+io.github.bams22:event-outboxer-bom:0.8.0                  (pom)
+io.github.bams22:event-outboxer-api:0.8.0
+io.github.bams22:event-outboxer-spi:0.8.0
+io.github.bams22:event-outboxer-spi:0.8.0:tests            (classifier)
+io.github.bams22:event-outboxer-core:0.8.0
+io.github.bams22:event-outboxer-storage-inmemory:0.8.0
+io.github.bams22:event-outboxer-storage-postgres:0.8.0
+io.github.bams22:event-outboxer-serializer-jackson:0.8.0
+io.github.bams22:event-outboxer-serializer-protobuf:0.8.0
+io.github.bams22:event-outboxer-lock-postgres-lease:0.8.0
+io.github.bams22:event-outboxer-lock-postgres-advisory:0.8.0  (0.2.0 shipped as event-outboxer-lock-postgres)
+io.github.bams22:event-outboxer-lock-redis:0.8.0
+io.github.bams22:event-outboxer-lock-redisson:0.8.0  (new in 0.8.0)
+io.github.bams22:event-outboxer-cache-redis:0.8.0
+io.github.bams22:event-outboxer-metrics-micrometer:0.8.0
+io.github.bams22:event-outboxer-tracing-otel:0.8.0
+io.github.bams22:event-outboxer-tracing-micrometer:0.8.0
+io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.8.0  (new in 0.7.0)
+io.github.bams22:event-outboxer-admin-actuator:0.8.0
+io.github.bams22:event-outboxer-admin-rest:0.8.0
+io.github.bams22:event-outboxer-testkit:0.8.0
+io.github.bams22:event-outboxer-spring-boot-starter:0.8.0
 ```

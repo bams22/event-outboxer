@@ -20,7 +20,7 @@ modules, their dependencies, and the publication strategy.
 
 ## Decision
 
-### 20 modules (+ 1 unpublished harness, see the 2026-09-04 amendment)
+### 21 modules (+ 1 unpublished harness, see the 2026-09-04 amendment)
 
 ```
 event-outboxer (root parent pom)
@@ -228,7 +228,7 @@ The BOM POM manages:
 
 ### Negative consequences
 
-- 20 modules — more than a monorepo. That is the price of the pluggable
+- 21 modules — more than a monorepo. That is the price of the pluggable
   architecture. (`event-outboxer-cache-redis` was added after the
   original decision when `MetricsSnapshotCache` became an SPI port;
   `event-outboxer-lock-postgres-lease` was added by ADR-0022 so the
@@ -305,6 +305,19 @@ at compile scope (it starts a disposable PostgreSQL when none is
 given). The "20 modules" count above refers to published artifacts and
 stays; the reactor now builds 21 plus the relocation stub. The `bench`
 Maven profile repackages the module into an executable jar.
+
+## Amendment (2026-09-05): 21st published module — the Redisson locker
+
+ADR-0036 adds `event-outboxer-lock-redisson` (package
+`io.github.bams22.outboxer.lock.redisson`, starter class
+`RedissonLockAutoConfiguration`), a fourth `EntityLocker` for
+applications that already run Redisson. It follows the adapter rules of
+this ADR unchanged: `-api` and `-spi` plus its own backend dependency,
+no `-core`, optional in the starter, listed in the BOM and in
+`ARTIFACTS.md`. Its version is pinned in the parent pom — the Spring
+Boot BOM does not carry Redisson, the same as for `protobuf-java`. The
+count above becomes 21 published modules; the reactor builds 22 plus
+the relocation stub.
 
 ## Related decisions
 

@@ -156,8 +156,8 @@ simple.
 - Thread dumps are readable: `outbox-handler-N`, `outbox-vt-N`,
   `outbox-poller-<eventType>`.
 - Custom propagation: replace the whole engine via `@Bean OutboxEngine`
-  (a direct `@Bean TaskDecorator` override is a follow-up; see §Override
-  points).
+  (a direct `@Bean TaskDecorator` override has since been implemented;
+  see §Override points).
 
 ### For maintainers
 

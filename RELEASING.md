@@ -105,7 +105,7 @@ Pass `-Drevision=` so the flattened poms carry the release version:
 
 Verify under each module's `target/`:
 
-- [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar` — 18 of each. The
+- [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar` — 20 of each. The
       parent, the BOM and the `-lock-postgres` relocation stub are
       pom-only and produce no jar; `event-outboxer-spi` additionally
       produces a `-tests.jar`.

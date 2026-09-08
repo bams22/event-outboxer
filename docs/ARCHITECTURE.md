@@ -78,7 +78,7 @@ asynchronously with atomicity guarantees relative to business transactions.
 
 ## Module layout
 
-The library consists of 20 Maven modules:
+The library consists of 21 Maven modules:
 
 ```
 event-outboxer (parent pom)
