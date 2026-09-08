@@ -138,9 +138,34 @@ of a bespoke user-written job.
   Redis barrier compares millisecond timestamps stamped by different pods,
   so it is only as good as their clock sync; the cost of losing that race
   is one TTL of stale gauges, never a wrong number.
-- Deferred: `onEventReenabled` listener event (planned together with
-  the OutboxListener split), a WebFlux variant of the REST module,
-  any dashboard/UI.
+- **Deferred, restated 2026-09-08 and deliberately not in 0.8.0:
+  `onEventReenabled`.** No `OutboxAdmin` mutation fires an
+  `OutboxListener` callback — `reenable`, `reenableAll`,
+  `replayFromArchive`, `replayAllFromArchive`, `purgeDisabled` and
+  `purgeArchive` change rows and return counts, and neither the
+  adapters nor the two surface modules hold a listener. The consequence
+  accepted for now: a fleet cannot tell an operator-driven re-enable
+  from an ordinary publish. The row reappears as `PENDING` and is
+  claimed like any other, so every consume-side callback fires for its
+  second lifecycle; the backlog gauges move promptly (the 2026-09-07
+  invalidation above), but nothing marks the moment or names the actor,
+  and a dashboard reads the drop in the `DISABLED` gauge as if the
+  engine had done it. Until the callback exists, the audit trail of an
+  admin action is the surface it came through — the Actuator endpoint
+  on the management port, the REST controller behind its `@PreAuthorize`
+  authority — not the outbox's event bus.
+  Why it waits instead of shipping with the rest of this ADR: a
+  callback for `reenable` alone would be the wrong shape. A mutation
+  bus wants every mutation under one naming scheme (single and bulk
+  re-enable, single and bulk replay, both purges, each with its
+  counts), and it would put a listener into the `OutboxAdmin` port,
+  which today has none — the listener lives in the engine, and the
+  admin adapters are reached directly by the surfaces. Revisit it
+  together with the split of `OutboxListener` (30 callbacks on one
+  interface, ADR-0013 §Negative consequences) and add the whole
+  mutation set at once.
+- Deferred without a plan: a WebFlux variant of the REST module, any
+  dashboard/UI.
 
 ## Related decisions
 

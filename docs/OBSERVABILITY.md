@@ -388,6 +388,16 @@ you care about.
 | 29 | `onEventCoalesced` | consume | a keyed event the claim swept as a duplicate of another due event with the same `(type, dedup_key)` (ADR-0037); fired by the dispatcher once per swept event, after the claim and before the representative's handler. `onEventPublished` had already fired for the swept event | `eventId` (the swept event), `coalescedIntoEventId` (the representative), `eventType`, `dedupKey` (free-form — never a metric tag) |
 | 30 | `onMaintenanceRunCompleted` | maintenance | after every run of a periodic maintenance task, OK or FAILED — fired by the scheduler's guarded wrapper, which keeps a throwing task on its schedule | `task` (stable name, safe as a tag), `result`, `cause` (null on OK) |
 
+**Not on the bus: admin actions.** `OutboxAdmin` mutations — re-enable,
+replay from the archive, purge of `DISABLED` rows or of the archive —
+fire no callback (deferred on purpose, ADR-0019). A re-enabled or
+replayed event reappears as `PENDING` and is claimed like any other, so
+the callbacks above cover its second lifecycle but never the operator
+action that started it, and the backlog gauges move without saying who
+moved them. Audit those actions on the surface they came through: the
+Actuator endpoint on the management port, or the REST controller behind
+its `@PreAuthorize` authority.
+
 ### Writing custom listeners
 
 Listeners run on the engine's hot path — worker threads, poller threads

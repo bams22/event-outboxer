@@ -192,6 +192,12 @@ no dedicated enable/disable property.
 
 - 30 methods — a noticeable API surface. Adding a new one is a breaking
   change.
+- Admin-driven transitions are outside the bus: an `OutboxAdmin`
+  re-enable, replay or purge fires no callback, so a listener sees the
+  effect of an operator's action and never the action itself. Deferred
+  on purpose — [ADR-0019](0019-admin-and-retention-surface.md)
+  §Consequences records why `onEventReenabled` waits for the split of
+  this interface and for the rest of the mutation set.
 - Listeners must be thread-safe and fast.
 - A little more boilerplate when creating a custom listener.
 
