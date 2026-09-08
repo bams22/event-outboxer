@@ -100,22 +100,28 @@ contacting Sonatype. Fails fast on GPG / sources / javadoc misconfig.
 Pass `-Drevision=` so the flattened poms carry the release version:
 
 ```bash
-./mvnw -B -ntp -Prelease clean package -Drevision=0.2.0 -DskipTests
+./mvnw -B -ntp -Prelease clean verify -Drevision=0.2.0 -DskipTests
 ```
 
 Verify under each module's `target/`:
 
-- [ ] `*.jar`, `*-sources.jar`, `*-javadoc.jar` — 20 of each. The
-      parent, the BOM and the `-lock-postgres` relocation stub are
-      pom-only and produce no jar; `event-outboxer-spi` additionally
-      produces a `-tests.jar`.
+- [ ] `*-sources.jar` and `*-javadoc.jar` — 20 of each, one per
+      published jar module. `*.jar` counts 21: the same 20 plus
+      `event-outboxer-benchmark`, which builds a jar but skips
+      sources, javadoc, signing and deploy (ADR-0034) — it is never
+      uploaded. The parent, the BOM and the `-lock-postgres`
+      relocation stub are pom-only and produce no jar;
+      `event-outboxer-spi` additionally produces a `-tests.jar`.
 - [ ] A matching `.asc` GPG signature next to each of the above.
+      `maven-gpg-plugin` runs in the `verify` phase, so a `package`
+      run produces no signature at all — that is why the command above
+      says `verify`.
 - [ ] Every `.flattened-pom.xml` carries `<version>0.2.0</version>`,
       not `${revision}` — confirms `flatten-maven-plugin` ran. (The
       `<revision>` *property* still reads `…-SNAPSHOT` in the parent's
       flattened pom; that is inert, consumers only read `<version>`.)
 
-Use `package`, not `deploy -DaltDeploymentRepository=…`: the
+Use `verify`, not `deploy -DaltDeploymentRepository=…`: the
 `central-publishing-maven-plugin` is registered with
 `<extensions>true</extensions>`, so it takes over the deploy step
 entirely, ignores the alternate repository and aborts with
@@ -123,11 +129,17 @@ entirely, ignores the alternate repository and aborts with
 unless `~/.m2/settings.xml` defines a `central` server. There is no
 local staging directory to inspect.
 
-Signing needs a pinentry the shell can reach. From a non-interactive
-shell `maven-gpg-plugin` fails with `gpg: signing failed: No pinentry`
-— run the command from a real terminal, or append `-Dgpg.skip=true` to
-check only the artifact shape. CI signing (the `GPG_PRIVATE_KEY` /
-`GPG_PASSPHRASE` secrets) is the authoritative check either way.
+Signing needs a pinentry the shell can reach, or an agent that already
+holds the passphrase. From a non-interactive shell `maven-gpg-plugin`
+fails the build on the parent module before any other module runs —
+`gpg: signing failed: No pinentry`, or `gpg: Sorry, we are in batchmode
+- can't get input` with `Exit code: 2` when `--pinentry-mode loopback`
+has nowhere to ask. Run the command from a real terminal (unlocking the
+key once is enough for the whole reactor), or append `-Dgpg.skip=true`
+to check only the artifact shape. `-Dgpg.passphrase=…` also works but
+puts the passphrase in the shell history and in the process list, so
+prefer the agent. CI signing (the `GPG_PRIVATE_KEY` / `GPG_PASSPHRASE`
+secrets) is the authoritative check either way.
 
 Run `./mvnw clean` after inspection.
 

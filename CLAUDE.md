@@ -98,9 +98,14 @@ runs in the default build):
 ./mvnw -B -ntp spotless:apply
 ```
 
-Release dry-run (stages to local dir; requires GPG key configured):
+Release dry-run — builds and signs everything the release would upload,
+without contacting Sonatype (needs the GPG key unlocked; add
+`-Dgpg.skip=true` to check only the artifact shape). There is no local
+staging directory: `central-publishing-maven-plugin` takes over `deploy`
+entirely, so `-DaltDeploymentRepository` does not work. See
+[RELEASING.md](RELEASING.md):
 ```
-./mvnw clean deploy -P release -DaltDeploymentRepository=local::file:./stage -DskipTests
+./mvnw -B -ntp -Prelease clean verify -Drevision=X.Y.Z -DskipTests
 ```
 
 ## Invariants — do not break
