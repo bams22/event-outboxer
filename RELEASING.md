@@ -270,6 +270,55 @@ Recovery:
    for the current version — this plugin is worth keeping current
    precisely because it is not forward-compatible.
 
+### `Cannot get deployment status. Response status code: 502`
+
+Seen while cutting 0.8.0. The Portal answered 502 to the status poll
+that follows the upload, so `central-publishing-maven-plugin` failed
+the build on the last module of the reactor
+(`event-outboxer-benchmark` — it is last, not a publishing target; the
+plugin defers the bundle upload to the final module). The step failed
+and "Create GitHub Release" was skipped.
+
+Same shape as the entry above and the same trap: the log line right
+before the failure was
+
+```
+Uploaded bundle successfully, deployment name: Deployment,
+deploymentId: <uuid>. Deployment will require manual publishing
+Waiting until Deployment <uuid> is validated
+```
+
+The bundle was already in the Portal. Nothing was lost and no
+coordinate was burned — with `<autoPublish>false</autoPublish>` the
+deployment sits there until a human publishes it, which is exactly
+where the failure left it.
+
+Recovery:
+
+1. Open <https://central.sonatype.com/publishing/deployments>, find the
+   `deploymentId` from that log line, and **Publish** it — the
+   artifacts are uploaded, validated and signed. Confirm on
+   <https://repo1.maven.org/maven2/io/github/bams22/> (sync takes a few
+   minutes) rather than trusting the workflow's red cross.
+2. Create the GitHub Release by hand, since the workflow never reached
+   that step — the same command it would have run:
+
+   ```bash
+   awk -v v=0.8.0 '$0 ~ "^## \\[" {flag=0} $0 ~ "^## \\[" v "\\]" {flag=1; next} flag' \
+     CHANGELOG.md > release-notes.md
+   gh release create v0.8.0 --title v0.8.0 --notes-file release-notes.md
+   ```
+
+3. Do **not** re-run the workflow before dropping the deployment: a
+   second upload of the same coordinates is refused (see "Deployment
+   with the same coordinates already exists" below).
+
+Unlike the `UnrecognizedPropertyException` above, this one needs no
+plugin bump — 502 is the Portal being unavailable for that one request,
+not a client incompatibility. If the poll fails repeatedly rather than
+once, check <https://status.maven.org/> before touching the release
+setup.
+
 ### `401 Unauthorized` during Maven deploy
 
 The `CENTRAL_TOKEN` GitHub secret is stale or was copied incompletely.
