@@ -5,6 +5,11 @@ All notable changes to this project are documented here. Format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+Nothing yet.
+
+
 ## [0.9.0] — 2026-10-06
 
 Additive release: japicmp against 0.8.0 reports no binary- or
@@ -1572,6 +1577,7 @@ or Micrometer registry, the library's defaults use a specific prefix:
   `spring-boot-dependencies` BOM; patch releases will follow
   upstream advisories.
 
+[Unreleased]: https://github.com/bams22/event-outboxer/compare/v0.9.0...HEAD
 [0.9.0]: https://github.com/bams22/event-outboxer/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/bams22/event-outboxer/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/bams22/event-outboxer/compare/v0.6.0...v0.7.0
