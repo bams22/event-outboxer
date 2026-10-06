@@ -96,26 +96,26 @@ so adapter modules can extend the abstract contract tests.
 ## Coordinates cheat-sheet
 
 ```
-io.github.bams22:event-outboxer-bom:0.8.0                  (pom)
-io.github.bams22:event-outboxer-api:0.8.0
-io.github.bams22:event-outboxer-spi:0.8.0
-io.github.bams22:event-outboxer-spi:0.8.0:tests            (classifier)
-io.github.bams22:event-outboxer-core:0.8.0
-io.github.bams22:event-outboxer-storage-inmemory:0.8.0
-io.github.bams22:event-outboxer-storage-postgres:0.8.0
-io.github.bams22:event-outboxer-serializer-jackson:0.8.0
-io.github.bams22:event-outboxer-serializer-protobuf:0.8.0
-io.github.bams22:event-outboxer-lock-postgres-lease:0.8.0
-io.github.bams22:event-outboxer-lock-postgres-advisory:0.8.0  (0.2.0 shipped as event-outboxer-lock-postgres)
-io.github.bams22:event-outboxer-lock-redis:0.8.0
-io.github.bams22:event-outboxer-lock-redisson:0.8.0  (new in 0.8.0)
-io.github.bams22:event-outboxer-cache-redis:0.8.0
-io.github.bams22:event-outboxer-metrics-micrometer:0.8.0
-io.github.bams22:event-outboxer-tracing-otel:0.8.0
-io.github.bams22:event-outboxer-tracing-micrometer:0.8.0
-io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.8.0  (new in 0.7.0)
-io.github.bams22:event-outboxer-admin-actuator:0.8.0
-io.github.bams22:event-outboxer-admin-rest:0.8.0
-io.github.bams22:event-outboxer-testkit:0.8.0
-io.github.bams22:event-outboxer-spring-boot-starter:0.8.0
+io.github.bams22:event-outboxer-bom:0.9.0                  (pom)
+io.github.bams22:event-outboxer-api:0.9.0
+io.github.bams22:event-outboxer-spi:0.9.0
+io.github.bams22:event-outboxer-spi:0.9.0:tests            (classifier)
+io.github.bams22:event-outboxer-core:0.9.0
+io.github.bams22:event-outboxer-storage-inmemory:0.9.0
+io.github.bams22:event-outboxer-storage-postgres:0.9.0
+io.github.bams22:event-outboxer-serializer-jackson:0.9.0
+io.github.bams22:event-outboxer-serializer-protobuf:0.9.0
+io.github.bams22:event-outboxer-lock-postgres-lease:0.9.0
+io.github.bams22:event-outboxer-lock-postgres-advisory:0.9.0  (0.2.0 shipped as event-outboxer-lock-postgres)
+io.github.bams22:event-outboxer-lock-redis:0.9.0
+io.github.bams22:event-outboxer-lock-redisson:0.9.0  (new in 0.8.0)
+io.github.bams22:event-outboxer-cache-redis:0.9.0
+io.github.bams22:event-outboxer-metrics-micrometer:0.9.0
+io.github.bams22:event-outboxer-tracing-otel:0.9.0
+io.github.bams22:event-outboxer-tracing-micrometer:0.9.0
+io.github.bams22:event-outboxer-relay-spring-cloud-stream:0.9.0  (new in 0.7.0)
+io.github.bams22:event-outboxer-admin-actuator:0.9.0
+io.github.bams22:event-outboxer-admin-rest:0.9.0
+io.github.bams22:event-outboxer-testkit:0.9.0
+io.github.bams22:event-outboxer-spring-boot-starter:0.9.0
 ```
