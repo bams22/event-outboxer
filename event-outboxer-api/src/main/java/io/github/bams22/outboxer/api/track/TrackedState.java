@@ -58,7 +58,8 @@ public enum TrackedState {
      * <ul>
      *   <li>the event was processed (or skipped, or coalesced) while the archive is disabled —
      *       success means {@code DELETE} (ADR-0008);
-     *   <li>the publishing transaction never committed — it rolled back, or is still open;
+     *   <li>the publishing transaction never committed — it rolled back, or is still open in
+     *       another thread (inside it, the publishing thread sees its own uncommitted row);
      *   <li>the row was purged by retention;
      *   <li>the id is simply unknown.
      * </ul>

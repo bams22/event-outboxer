@@ -117,8 +117,10 @@ public final class DefaultOutboxEventTracker implements OutboxEventTracker {
                             + " that transaction commits — call await after the publishing"
                             + " transaction commits");
         }
+        // Elapsed-time comparison rather than an absolute deadline: start + timeout could
+        // overflow, and Duration.toNanos() throws beyond ~292 years — saturate instead.
+        long timeoutNanos = saturatedNanos(timeout);
         long start = System.nanoTime();
-        long deadline = start + timeout.toNanos();
         while (true) {
             Optional<Event> row = store.findById(eventId);
             if (row.isEmpty()) {
@@ -128,7 +130,7 @@ public final class DefaultOutboxEventTracker implements OutboxEventTracker {
             if (event.status() == EventStatus.DISABLED) {
                 return new AwaitResult.Disabled(event);
             }
-            long remaining = deadline - System.nanoTime();
+            long remaining = timeoutNanos - (System.nanoTime() - start);
             if (remaining <= 0) {
                 return new AwaitResult.TimedOut(
                         eventId,
@@ -157,6 +159,14 @@ public final class DefaultOutboxEventTracker implements OutboxEventTracker {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AwaitInterruptedException("interrupted while awaiting event " + eventId, e);
+        }
+    }
+
+    private static long saturatedNanos(Duration value) {
+        try {
+            return value.toNanos();
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
         }
     }
 

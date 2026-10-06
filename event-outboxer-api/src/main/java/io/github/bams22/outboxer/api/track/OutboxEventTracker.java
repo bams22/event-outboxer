@@ -30,9 +30,10 @@ import java.util.UUID;
  * too.
  *
  * <p><b>{@code ABSENT} vs {@code ARCHIVED}.</b> Success means {@code DELETE} from the hot table
- * (ADR-0008). Without the archive ({@code event-outboxer.storage.archive-enabled=true}) a processed
- * event, an unknown id and a rolled-back publish all look the same — {@link TrackedState#ABSENT}.
- * Enable the archive when you need an authoritative "done" for arbitrary ids.
+ * (ADR-0008). With the archive off (the default) a processed event, an unknown id and a
+ * rolled-back publish all look the same — {@link TrackedState#ABSENT}. Enable the archive ({@code
+ * event-outboxer.storage.archive-enabled=true}) when you need an authoritative "done" for arbitrary
+ * ids.
  *
  * <p><b>Latency.</b> Waiting does not make the engine faster: an event is picked up on its
  * poller's cadence — right after commit on the publishing instance, up to {@code

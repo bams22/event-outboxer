@@ -195,6 +195,15 @@ class DefaultOutboxEventTrackerTest {
     }
 
     @Test
+    void hugeTimeoutSaturatesInsteadOfOverflowing() {
+        UUID id = UUID.randomUUID();
+
+        // Duration.toNanos() overflows past ~292 years; the wait must still run normally.
+        assertThat(tracker.await(id, Duration.ofSeconds(Long.MAX_VALUE)))
+                .isEqualTo(new AwaitResult.Completed(id, null));
+    }
+
+    @Test
     void rejectsInvalidArguments() {
         UUID id = UUID.randomUUID();
         assertThatThrownBy(() -> tracker.state(null)).isInstanceOf(NullPointerException.class);
