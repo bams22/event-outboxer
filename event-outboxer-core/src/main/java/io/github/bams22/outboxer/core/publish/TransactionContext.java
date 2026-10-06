@@ -12,10 +12,12 @@ package io.github.bams22.outboxer.core.publish;
 /**
  * Detects whether the current thread is executing inside a transaction. The publisher consults this
  * port before every write so that the configured {@link NoTransactionPolicy} can fire on
- * violations.
+ * violations; the tracker consults it before {@code await} so that waiting inside the publishing
+ * transaction fails fast (ADR-0038).
  *
- * <p>The default plain-Java implementation (see {@link #alwaysActive()}) assumes every caller is
- * already in a transaction — suitable for tests and scripts. The Spring Boot starter substitutes an
+ * <p>The publisher's plain-Java default (see {@link #alwaysActive()}) assumes every caller is
+ * already in a transaction — suitable for tests and scripts; the tracker's is {@link
+ * #neverActive()}. The Spring Boot starter substitutes an
  * implementation backed by {@code TransactionSynchronizationManager.isActualTransactionActive()}.
  */
 @FunctionalInterface
@@ -46,7 +48,11 @@ public interface TransactionContext {
         return () -> true;
     }
 
-    /** Implementation that always reports "no active transaction" — useful for negative tests. */
+    /**
+     * Implementation that always reports "no active transaction". The default of {@code
+     * DefaultOutboxEventTracker}, whose in-transaction guard is therefore off in plain-Java setups
+     * (ADR-0038); also useful for negative publisher tests.
+     */
     static TransactionContext neverActive() {
         return () -> false;
     }

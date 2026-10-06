@@ -76,6 +76,19 @@ class ExceptionCodesTest {
     }
 
     @Test
+    void trackingCodes() {
+        assertThat(new AwaitInTransactionException("await inside TX"))
+                .hasMessageStartingWith("OUTBOX-501:")
+                .hasMessageContaining("await inside TX")
+                .isInstanceOf(TrackingException.class);
+        InterruptedException cause = new InterruptedException();
+        assertThat(new AwaitInterruptedException("interrupted", cause))
+                .hasMessageStartingWith("OUTBOX-502:")
+                .hasCause(cause)
+                .isInstanceOf(TrackingException.class);
+    }
+
+    @Test
     void categoryHierarchyIsTraversable() {
         // Catching the category base is enough to handle every concrete subtype.
         OutboxException publish = new PublishValidationException("x");

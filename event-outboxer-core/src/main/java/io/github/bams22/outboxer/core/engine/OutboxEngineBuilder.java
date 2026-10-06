@@ -14,6 +14,7 @@ import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.api.track.OutboxEventTracker;
 import io.github.bams22.outboxer.core.concurrent.NamedThreadFactory;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
@@ -43,6 +44,7 @@ import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
 import io.github.bams22.outboxer.core.tracing.SafeOutboxTracer;
+import io.github.bams22.outboxer.core.track.DefaultOutboxEventTracker;
 import io.github.bams22.outboxer.core.workerid.WorkerIdFactory;
 import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.WorkerId;
@@ -109,7 +111,7 @@ public final class OutboxEngineBuilder {
     private final Map<String, EventSerializer> writeSerializerOverrides = new LinkedHashMap<>();
     private EntityLocker locker = EntityLocker.NOOP;
     private Clock clock = Clock.system();
-    private TransactionContext txContext = TransactionContext.alwaysActive();
+    private @Nullable TransactionContext txContext;
     private NoTransactionPolicy noTxPolicy = NoTransactionPolicy.IGNORE;
     private final List<EventHandler<?>> handlers = new ArrayList<>();
     private boolean publishOnly = false;
@@ -211,6 +213,12 @@ public final class OutboxEngineBuilder {
         return this;
     }
 
+    /**
+     * How the publisher and the tracker detect a transaction on the calling thread. When unset,
+     * each gets the default that does not break its plain-Java use (ADR-0038): the publisher
+     * {@link TransactionContext#alwaysActive()}, the tracker {@link
+     * TransactionContext#neverActive()} — its in-transaction guard is then off.
+     */
     public OutboxEngineBuilder transactionContext(TransactionContext txContext) {
         this.txContext = Objects.requireNonNull(txContext);
         return this;
@@ -376,9 +384,10 @@ public final class OutboxEngineBuilder {
     }
 
     /**
-     * Admin port used by the optional retention task. The engine itself never calls admin
-     * operations; the port is only consumed when {@link #retention(RetentionConfig)} enables at
-     * least one threshold.
+     * Admin port used by the optional retention task and by {@link OutboxEngine#tracker()} for
+     * archive lookups (ADR-0038). The engine itself never calls admin operations; retention
+     * consumes the port only when {@link #retention(RetentionConfig)} enables at least one
+     * threshold. Without it the tracker never consults the archive.
      */
     public OutboxEngineBuilder admin(OutboxAdmin admin) {
         this.admin = Objects.requireNonNull(admin);
@@ -526,13 +535,25 @@ public final class OutboxEngineBuilder {
                         .serializer(eventSerializer)
                         .writeSerializerOverrides(writeSerializerOverrides)
                         .clock(clock)
-                        .transactionContext(txContext)
+                        .transactionContext(
+                                txContext != null ? txContext : TransactionContext.alwaysActive())
                         .noTransactionPolicy(noTxPolicy)
                         .listener(listener)
                         .waker(hub)
                         .tracer(safeTracer)
                         .deferredPropagation(deferredPropagation)
                         .linkThreshold(linkThreshold)
+                        .build();
+
+        // Per-consumer transaction-context defaults (ADR-0038): the publisher assumes a
+        // transaction,
+        // the tracker assumes none — each the default that does not break its plain-Java use.
+        OutboxEventTracker tracker =
+                DefaultOutboxEventTracker.builder()
+                        .store(eventStore)
+                        .admin(admin)
+                        .transactionContext(
+                                txContext != null ? txContext : TransactionContext.neverActive())
                         .build();
 
         HeartbeatTask heartbeat = new HeartbeatTask(workerRegistry, workerInfo, clock, listener);
@@ -607,6 +628,7 @@ public final class OutboxEngineBuilder {
                         eventStore,
                         clock,
                         publisher,
+                        tracker,
                         maintenance,
                         heartbeat,
                         pollers,

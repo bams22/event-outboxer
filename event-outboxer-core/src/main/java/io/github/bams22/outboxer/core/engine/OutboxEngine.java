@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.api.observer.WorkerDeregisteredInfo;
 import io.github.bams22.outboxer.api.observer.WorkerGracefulStopInfo;
 import io.github.bams22.outboxer.api.observer.WorkerRegisteredInfo;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.api.track.OutboxEventTracker;
 import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
 import io.github.bams22.outboxer.core.maintenance.HeartbeatTask;
 import io.github.bams22.outboxer.core.maintenance.MaintenanceScheduler;
@@ -54,6 +55,7 @@ public final class OutboxEngine {
     private final HandlerExecutorManager handlerExecutors;
     private final InFlightRegistry inFlight;
     private final OutboxEventPublisher publisher;
+    private final OutboxEventTracker tracker;
     private final OutboxListener listener;
     private final Duration shutdownTimeout;
 
@@ -78,6 +80,7 @@ public final class OutboxEngine {
             EventStore store,
             Clock clock,
             OutboxEventPublisher publisher,
+            OutboxEventTracker tracker,
             MaintenanceScheduler maintenance,
             HeartbeatTask heartbeat,
             List<Poller> pollers,
@@ -90,6 +93,7 @@ public final class OutboxEngine {
         this.store = Objects.requireNonNull(store);
         this.clock = Objects.requireNonNull(clock);
         this.publisher = Objects.requireNonNull(publisher);
+        this.tracker = Objects.requireNonNull(tracker);
         this.maintenance = Objects.requireNonNull(maintenance);
         this.heartbeat = Objects.requireNonNull(heartbeat);
         this.pollers = List.copyOf(pollers);
@@ -102,6 +106,15 @@ public final class OutboxEngine {
     /** Publish port — hand this to application code. Safe to call even before {@link #start()}. */
     public OutboxEventPublisher publisher() {
         return publisher;
+    }
+
+    /**
+     * Tracking port (ADR-0038) — look an event up by the id {@code publish(...)} returned, or wait,
+     * bounded, for it to be finalised. A stateless database reader: safe to call before {@link
+     * #start()} and on publish-only engines.
+     */
+    public OutboxEventTracker tracker() {
+        return tracker;
     }
 
     /** WorkerId under which this engine runs. */

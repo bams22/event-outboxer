@@ -9,13 +9,12 @@
  */
 
 /**
- * {@link io.github.bams22.outboxer.domain.exception.OutboxException} root and the seven category
- * bases with their concrete finals (Publish-, Handle-, Storage-, Lock-, Configuration-,
- * EngineLifecycle-, Tracking-). Operational exceptions carry an {@code OUTBOX-XXX} message code.
+ * Default {@link io.github.bams22.outboxer.api.track.OutboxEventTracker} (ADR-0038): a stateless
+ * reader over the {@code EventStore} and, optionally, the {@code OutboxAdmin} archive lookup.
  *
  * <p>{@link org.jspecify.annotations.NullMarked}: everything is non-null by default.
  */
 @NullMarked
-package io.github.bams22.outboxer.domain.exception;
+package io.github.bams22.outboxer.core.track;
 
 import org.jspecify.annotations.NullMarked;

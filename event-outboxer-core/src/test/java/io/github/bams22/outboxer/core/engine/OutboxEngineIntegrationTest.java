@@ -19,9 +19,12 @@ import io.github.bams22.outboxer.api.handle.EventOutcome;
 import io.github.bams22.outboxer.api.observer.EngineCrashedInfo;
 import io.github.bams22.outboxer.api.observer.EventProcessedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
+import io.github.bams22.outboxer.api.track.AwaitResult;
+import io.github.bams22.outboxer.api.track.TrackedState;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
+import io.github.bams22.outboxer.core.publish.TransactionContext;
 import io.github.bams22.outboxer.core.support.ForwardingEventStore;
 import io.github.bams22.outboxer.core.support.StringEventSerializer;
 import io.github.bams22.outboxer.domain.EventStatus;
@@ -29,6 +32,7 @@ import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
 import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.domain.exception.AwaitInTransactionException;
 import io.github.bams22.outboxer.domain.exception.NoEventHandlersException;
 import io.github.bams22.outboxer.spi.EventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
@@ -383,6 +387,51 @@ class OutboxEngineIntegrationTest {
 
         engine.stop(Duration.ofSeconds(2));
         assertThat(engine.state()).isEqualTo(OutboxEngine.State.STOPPED);
+    }
+
+    @Test
+    @DisplayName(
+            "publish-only engine exposes a tracker; its in-transaction guard is off by default")
+    void publishOnlyEngineTracksWithoutTransactionGuard() {
+        engine = fastEngine().publishOnly(true).build();
+
+        UUID id = engine.publisher().publish(EventType.of("ORDER", String.class), "order-1");
+
+        assertThat(engine.tracker().state(id)).isEqualTo(TrackedState.PENDING);
+        // No explicit transactionContext: the publisher assumed a transaction, the tracker none —
+        // so await waits instead of throwing AwaitInTransactionException.
+        assertThat(engine.tracker().await(id, Duration.ofMillis(30), Duration.ofMillis(5)))
+                .isInstanceOfSatisfying(
+                        AwaitResult.TimedOut.class,
+                        t -> assertThat(t.lastSeen()).isEqualTo(TrackedState.PENDING));
+    }
+
+    @Test
+    void fullEngineTrackerAwaitsProcessing() {
+        engine =
+                fastEngine()
+                        .handler(
+                                recordingHandler("ORDER", (ctx, payload) -> EventOutcome.success()))
+                        .build();
+        engine.start();
+
+        UUID id = engine.publisher().publish(EventType.of("ORDER", String.class), "order-1");
+
+        AwaitResult result = engine.tracker().await(id, Duration.ofSeconds(5));
+        assertThat(result).isEqualTo(new AwaitResult.Completed(id, null));
+        assertThat(engine.tracker().state(id)).isEqualTo(TrackedState.ABSENT); // no archive
+    }
+
+    @Test
+    void explicitTransactionContextAlsoGuardsTheTracker() {
+        engine =
+                fastEngine()
+                        .publishOnly(true)
+                        .transactionContext(TransactionContext.alwaysActive())
+                        .build();
+
+        assertThatThrownBy(() -> engine.tracker().await(UUID.randomUUID(), Duration.ofSeconds(5)))
+                .isInstanceOf(AwaitInTransactionException.class);
     }
 
     private OutboxEngineBuilder fastEngine() {

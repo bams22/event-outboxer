@@ -115,7 +115,9 @@ public final class DefaultOutboxEventPublisher implements OutboxEventPublisher {
      *     mapped serializer; {@code null} = none
      * @param clock publish-time clock; {@code null} = {@link Clock#system()}
      * @param transactionContext how the publisher detects the caller's transaction; {@code null} =
-     *     {@link TransactionContext#alwaysActive()}
+     *     {@link TransactionContext#alwaysActive()} — deliberately the opposite of the tracker's
+     *     {@code neverActive()} default (ADR-0038): without an observable transaction manager the
+     *     publisher must not refuse to write
      * @param noTransactionPolicy what to do when no transaction is active; {@code null} = {@link
      *     NoTransactionPolicy#FAIL}
      * @param listener observer notified of publishes; {@code null} = {@link OutboxListener#NOOP}
