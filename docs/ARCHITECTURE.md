@@ -414,24 +414,37 @@ only truth the publishing and the processing replica share:
 **After commit only.** The row is invisible to the engine until the
 publishing transaction commits (ADR-0002), so `await` inside it could
 only time out; with the starter it throws `AwaitInTransactionException`
-(`OUTBOX-501`) instead. Wait from a later request, a non-transactional
-code path, or an after-commit hook:
+(`OUTBOX-501`) instead. Return the id from the transactional method and
+wait in its non-transactional caller, or in a later request:
 
 ```java
-@Transactional
-public void placeOrder(Order order) {
-    orders.save(order);
-    UUID id = publisher.publish(ORDER_PLACED, new OrderPlaced(order.id()));
-    TransactionSynchronizationManager.registerSynchronization(
-            new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    AwaitResult result = tracker.await(id, Duration.ofSeconds(5));
-                    // ...
-                }
-            });
+@Service
+class OrderService {
+    @Transactional
+    public UUID placeOrder(Order order) {
+        orders.save(order);
+        return publisher.publish(ORDER_PLACED, new OrderPlaced(order.id()));
+    }
+}
+
+@RestController
+class OrderController {
+    @PostMapping("/orders")
+    public ResponseEntity<?> place(@RequestBody Order order) {
+        UUID id = orderService.placeOrder(order); // committed here
+        AwaitResult result = tracker.await(id, Duration.ofSeconds(5));
+        // ...
+    }
 }
 ```
+
+Not from an `afterCommit` / `afterCompletion` synchronisation: those
+callbacks run before Spring clears the transaction state, with the
+transaction's connection still bound to the thread, so the guard
+treats them as inside the transaction and `await` throws there too.
+They would gain nothing anyway — `afterCommit` runs on the same thread
+right before the transactional method returns, while an outer
+`REQUIRED` transaction would defer it to that transaction's commit.
 
 **Waiting does not make the engine faster.** The event is picked up on
 its poller's cadence — immediately on the publishing instance thanks to

@@ -14,6 +14,11 @@ package io.github.bams22.outboxer.domain.exception;
  * thread. The awaited row becomes visible to the engine only after the publishing transaction
  * commits (ADR-0002), so such a wait could only run into its timeout; the tracker fails fast
  * instead (ADR-0038).
+ *
+ * <p>Transaction synchronisation callbacks ({@code afterCommit}, {@code afterCompletion}) are also
+ * reported as inside the transaction: Spring clears the transaction state only after they run, and
+ * waiting there would hold the transaction's connection for the whole wait. Call {@code await}
+ * once the transactional method has returned.
  */
 public final class AwaitInTransactionException extends TrackingException {
 

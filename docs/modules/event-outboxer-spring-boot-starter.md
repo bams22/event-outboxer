@@ -42,8 +42,11 @@ The `OutboxEventTracker` bean
 built, like the publisher, independently of the engine — so it exists
 on publish-only instances too — from the `EventStore`, the
 `OutboxAdmin` bean (archive lookups) and `SpringTransactionContext`:
-`await` inside `@Transactional` throws `AwaitInTransactionException`
-instead of waiting for a commit that cannot happen first.
+`await` inside `@Transactional` — its `afterCommit` /
+`afterCompletion` synchronisations included — throws
+`AwaitInTransactionException` instead of waiting for a commit that
+cannot happen first. Await in the caller once the transactional method
+has returned.
 
 Beans it *collects* rather than creates:
 

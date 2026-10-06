@@ -10,22 +10,31 @@
 package io.github.bams22.outboxer.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.bams22.outboxer.api.track.AwaitResult;
 import io.github.bams22.outboxer.api.track.OutboxEventTracker;
 import io.github.bams22.outboxer.api.track.TrackedState;
+import io.github.bams22.outboxer.domain.exception.AwaitInTransactionException;
 import io.github.bams22.outboxer.domain.exception.InvariantViolationException;
 import io.github.bams22.outboxer.spring.lock.NoOpLockAutoConfiguration;
 import io.github.bams22.outboxer.spring.serializer.JacksonSerializerAutoConfiguration;
 import io.github.bams22.outboxer.spring.storage.OutboxInMemoryTestConfiguration;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The {@code OutboxEventTracker} bean (ADR-0038): present in both roles, replaceable, and fed by
@@ -108,6 +117,61 @@ class TrackerAutoConfigurationTest {
                                             .await(id, Duration.ofSeconds(1)))
                             .isEqualTo(new AwaitResult.Completed(id, null));
                 });
+    }
+
+    @Test
+    @DisplayName(
+            "afterCommit still counts as inside the transaction; after the method returns it does"
+                    + " not")
+    void afterCommitSynchronizationIsInsideTheTransaction() {
+        runner.run(
+                ctx -> {
+                    OutboxEventTracker tracker = ctx.getBean(OutboxEventTracker.class);
+                    UUID id = UUID.randomUUID();
+                    AtomicReference<Throwable> inAfterCommit = new AtomicReference<>();
+                    TransactionSynchronization awaitAfterCommit =
+                            new TransactionSynchronization() {
+                                @Override
+                                public void afterCommit() {
+                                    inAfterCommit.set(
+                                            catchThrowable(
+                                                    () ->
+                                                            tracker.await(
+                                                                    id, Duration.ofSeconds(1))));
+                                }
+                            };
+
+                    new TransactionTemplate(new NoOpTransactionManager())
+                            .executeWithoutResult(
+                                    status ->
+                                            TransactionSynchronizationManager
+                                                    .registerSynchronization(awaitAfterCommit));
+
+                    assertThat(inAfterCommit.get()).isInstanceOf(AwaitInTransactionException.class);
+                    assertThat(tracker.await(id, Duration.ofSeconds(1)))
+                            .isEqualTo(new AwaitResult.Completed(id, null));
+                });
+    }
+
+    /**
+     * Drives Spring's real commit sequence — synchronisation callbacks before cleanup — without a
+     * resource behind it.
+     */
+    static class NoOpTransactionManager extends AbstractPlatformTransactionManager {
+
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {}
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {}
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {}
     }
 
     @Configuration(proxyBeanMethods = false)

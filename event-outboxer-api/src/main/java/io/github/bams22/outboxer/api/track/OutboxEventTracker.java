@@ -22,8 +22,12 @@ import java.util.UUID;
  * transaction commits (ADR-0002); waiting inside that transaction can only time out. {@link
  * #await(UUID, Duration)} therefore throws {@link
  * io.github.bams22.outboxer.domain.exception.AwaitInTransactionException} when it detects an active
- * transaction on the calling thread. Call it from an {@code afterCommit} synchronisation, a later
- * request, or any non-transactional code path.
+ * transaction on the calling thread. Return the id from the transactional method and call {@code
+ * await} from its non-transactional caller, a later request, or any other code path that runs
+ * outside a transaction. Transaction synchronisation callbacks ({@code afterCommit}, {@code
+ * afterCompletion}) still count as inside the transaction: they run before the transaction is
+ * cleaned up and while its connection is still bound to the thread, so {@code await} throws there
+ * too.
  *
  * <p><b>{@code ABSENT} vs {@code ARCHIVED}.</b> Success means {@code DELETE} from the hot table
  * (ADR-0008). Without the archive ({@code event-outboxer.storage.archive-enabled=true}) a processed

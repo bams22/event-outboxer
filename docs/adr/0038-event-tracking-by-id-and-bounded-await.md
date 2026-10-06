@@ -8,6 +8,13 @@ docs). One detail settled during implementation: the two exceptions sit
 under a new `TrackingException` category (codes `OUTBOX-5xx`), matching
 the two-level hierarchy of the other categories.
 
+Clarified 2026-10-06 (review): the first draft recommended calling
+`await` from an `afterCommit` synchronisation. With the starter that
+throws — Spring still reports the transaction as active inside its
+synchronisation callbacks — and it buys nothing over awaiting in the
+caller once the transactional method returns. The guard is kept as is;
+§4 and the Consequences now recommend the caller instead.
+
 ## Date
 
 2026-10-06
@@ -176,7 +183,16 @@ publishing transaction has committed. The method:
    is off (default `TransactionContext.neverActive()` for the tracker;
    note the deliberate asymmetry with the publisher's
    `alwaysActive()` default — each default is the one that does not
-   break the common case for that component).
+   break the common case for that component). Transaction
+   synchronisation callbacks (`afterCommit`, `afterCompletion`) count
+   as inside: Spring clears the actual-transaction flag only after
+   they run, with the connection still bound to the thread. That is
+   kept on purpose — waiting there would hold the transaction's
+   connection, surface lookup failures from an already-committed
+   transaction, and, under an outer `REQUIRED` transaction, move the
+   wait to that transaction's commit. The supported shape is: return
+   the id from the transactional method, `await` in its
+   non-transactional caller.
 2. **Polls the row by primary key** until the deadline:
    `PENDING` / `PROCESSING` → sleep `min(pollInterval, remaining)` and
    look again; `DISABLED` → return `Disabled(event)` (carrying
@@ -273,9 +289,11 @@ exists.
 
 - One new, additive API package and one new bean. Existing code is
   untouched; `publish()` keeps its signature.
-- `await` is for use **after commit**: from an `afterCommit`
-  synchronisation, a later request, or any non-transactional code
-  path. Inside `@Transactional` it throws.
+- `await` is for use **after commit**: in the non-transactional caller
+  of the `@Transactional` method that published, in a later request,
+  or on any other code path outside a transaction. Inside
+  `@Transactional` — including its `afterCommit` / `afterCompletion`
+  synchronisations — it throws.
 - Processing latency is unchanged: an idle instance picks the event
   up on its poller's cadence (immediately on the publishing instance
   thanks to the after-commit wake, up to 10 s elsewhere). Waiting does
