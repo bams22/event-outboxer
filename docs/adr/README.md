@@ -42,6 +42,7 @@ why, which alternatives were considered and rejected. The format is based on
 
 - [ADR-0007: FailureHandler chain-of-responsibility (replacing RetryPolicy)](0007-failure-handler-chain-of-responsibility.md)
 - [ADR-0008: Three statuses + optional archive in a separate table](0008-three-statuses-plus-optional-archive.md)
+- [ADR-0038: Tracking an event by id — status lookup and bounded await, no request-reply](0038-event-tracking-by-id-and-bounded-await.md)
 
 ### Spring integration
 

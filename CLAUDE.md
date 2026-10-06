@@ -10,7 +10,7 @@ an embedded, per-service outbox (not a cross-service shared-DB bridge —
 see [ADR-0001](docs/adr/0001-local-embedded-outbox-scope.md)).
 
 Architecture is fully designed before implementation — see
-[docs/](docs/) and the 37 ADRs in [docs/adr/](docs/adr/). Treat the
+[docs/](docs/) and the 38 ADRs in [docs/adr/](docs/adr/). Treat the
 ADRs as the source of truth: if implementation must deviate from an
 ADR, amend the ADR in the same PR.
 
@@ -205,7 +205,7 @@ in a new or amended ADR.
 - **PostgreSQL schema and SQL**: [docs/STORAGE.md](docs/STORAGE.md)
 - **Terminology**: [docs/GLOSSARY.md](docs/GLOSSARY.md)
 - **Rationale for every design decision**:
-  [docs/adr/README.md](docs/adr/README.md) (37 ADRs)
+  [docs/adr/README.md](docs/adr/README.md) (38 ADRs)
 - **Implementation roadmap (phases P0–P10)**: see the plan file noted
   in the user's plan tooling.
 
@@ -217,6 +217,10 @@ in a new or amended ADR.
 - NOT exactly-once. It is at-least-once; handler idempotency is the
   user's responsibility.
   [ADR-0015](docs/adr/0015-at-least-once-semantics.md).
+- NOT request-reply. `publish()` returns the event id; `OutboxEventTracker`
+  can look up its state or wait, bounded, for it to be finalised, but no
+  handler result value is ever stored or returned.
+  [ADR-0038](docs/adr/0038-event-tracking-by-id-and-bounded-await.md).
 - NOT a standalone job scheduler à la jobrunr — no lambda capture, no
   dashboard (in MVP), no cron (in MVP).
 
