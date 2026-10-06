@@ -175,7 +175,8 @@ public class OutboxEngineAutoConfiguration {
     /**
      * Tracking port (ADR-0038). Built independently of the engine bean, like the publisher: a
      * stateless database reader that exists on publish-only instances and before the engine starts.
-     * The archive is consulted through the {@code OutboxAdmin} bean when there is one.
+     * The archive is consulted through the {@code OutboxAdmin} bean only with {@code
+     * event-outboxer.storage.archive-enabled=true}: with the archive off its table may not exist.
      */
     @Bean
     @ConditionalOnMissingBean(OutboxEventTracker.class)
@@ -191,7 +192,10 @@ public class OutboxEngineAutoConfiguration {
         }
         return DefaultOutboxEventTracker.builder()
                 .store(store)
-                .admin(adminProvider.getIfAvailable())
+                .admin(
+                        properties.getStorage().isArchiveEnabled()
+                                ? adminProvider.getIfAvailable()
+                                : null)
                 .transactionContext(txContext)
                 .pollInterval(pollInterval)
                 .build();
@@ -241,6 +245,7 @@ public class OutboxEngineAutoConfiguration {
                         .retention(mapRetention(properties.getRetention()))
                         .dispatcher(mapDispatcher(properties.getDispatcher()));
         adminProvider.ifAvailable(builder::admin);
+        builder.archiveEnabled(properties.getStorage().isArchiveEnabled());
 
         // Thin merge (CONFIGURATION.md §Per-type override): user defaults overlay the library
         // defaults, and each per-type override overlays the resolved defaults field by field —

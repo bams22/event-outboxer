@@ -15,6 +15,11 @@ synchronisation callbacks — and it buys nothing over awaiting in the
 caller once the transactional method returns. The guard is kept as is;
 §4 and the Consequences now recommend the caller instead.
 
+Fixed 2026-10-06 (review): the first wiring passed the `OutboxAdmin`
+to the tracker whenever one existed, so with the archive off and its
+optional table absent every no-row lookup failed. Archive lookups are
+now gated on the archive setting (§5).
+
 ## Date
 
 2026-10-06
@@ -231,11 +236,17 @@ provenance.
 - `OutboxEngine.tracker()` next to `publisher()` for plain-Java users;
   `OutboxEngineBuilder` resolves the `TransactionContext` default per
   consumer (publisher → `alwaysActive()`, tracker → `neverActive()`)
-  when the user did not supply one.
+  when the user did not supply one, and hands the tracker its `admin`
+  only with `archiveEnabled(true)` (default `false`).
 - `event-outboxer-spring-boot-starter`: an `OutboxEventTracker` bean
   (`@ConditionalOnMissingBean`), present in both roles, built from the
-  `EventStore`, the optional `OutboxAdmin`, the starter's
+  `EventStore`, the `OutboxAdmin` bean when
+  `event-outboxer.storage.archive-enabled=true`, the starter's
   `TransactionContext` and `event-outboxer.tracker.poll-interval`.
+- The archive is consulted only when it is enabled. Its table is
+  optional DDL (STORAGE.md): an application that manages the schema
+  itself may never have created it, and an `OutboxAdmin` bean exists
+  regardless — so "admin port present" is not "archive present".
 - `event-outboxer-testkit`: `OutboxTestContext.tracker()`.
 - Admin surfaces are unchanged; they already perform the combined
   per-id lookup for operators.

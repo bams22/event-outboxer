@@ -134,6 +134,7 @@ public final class OutboxEngineBuilder {
     private @Nullable PollStrategy pollStrategy;
     private @Nullable PollerWakeHub wakeHub;
     private @Nullable OutboxAdmin admin;
+    private boolean archiveEnabled = false;
     private RetentionConfig retentionConfig = RetentionConfig.disabled();
 
     // ---------------------------------------------------------------------------------------------
@@ -384,13 +385,24 @@ public final class OutboxEngineBuilder {
     }
 
     /**
-     * Admin port used by the optional retention task and by {@link OutboxEngine#tracker()} for
-     * archive lookups (ADR-0038). The engine itself never calls admin operations; retention
-     * consumes the port only when {@link #retention(RetentionConfig)} enables at least one
-     * threshold. Without it the tracker never consults the archive.
+     * Admin port used by the optional retention task and, when {@link #archiveEnabled(boolean)} is
+     * set, by {@link OutboxEngine#tracker()} for archive lookups (ADR-0038). The engine itself never
+     * calls admin operations; retention consumes the port only when {@link
+     * #retention(RetentionConfig)} enables at least one threshold.
      */
     public OutboxEngineBuilder admin(OutboxAdmin admin) {
         this.admin = Objects.requireNonNull(admin);
+        return this;
+    }
+
+    /**
+     * Whether the store archives finalised events (ADR-0008) — mirror the storage adapter's own
+     * archive setting. When {@code true}, {@link OutboxEngine#tracker()} consults the archive
+     * through the {@link #admin(OutboxAdmin) admin} port; when {@code false} (default) it never
+     * does, so a schema without the archive table stays usable (ADR-0038).
+     */
+    public OutboxEngineBuilder archiveEnabled(boolean archiveEnabled) {
+        this.archiveEnabled = archiveEnabled;
         return this;
     }
 
@@ -546,12 +558,12 @@ public final class OutboxEngineBuilder {
                         .build();
 
         // Per-consumer transaction-context defaults (ADR-0038): the publisher assumes a
-        // transaction,
-        // the tracker assumes none — each the default that does not break its plain-Java use.
+        // transaction, the tracker assumes none — each the default that does not break its
+        // plain-Java use. The archive is consulted only when the store actually archives.
         OutboxEventTracker tracker =
                 DefaultOutboxEventTracker.builder()
                         .store(eventStore)
-                        .admin(admin)
+                        .admin(archiveEnabled ? admin : null)
                         .transactionContext(
                                 txContext != null ? txContext : TransactionContext.neverActive())
                         .build();

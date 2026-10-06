@@ -41,7 +41,9 @@ The `OutboxEventTracker` bean
 ([ADR-0038](../adr/0038-event-tracking-by-id-and-bounded-await.md)) is
 built, like the publisher, independently of the engine — so it exists
 on publish-only instances too — from the `EventStore`, the
-`OutboxAdmin` bean (archive lookups) and `SpringTransactionContext`:
+`OutboxAdmin` bean for archive lookups (only with
+`event-outboxer.storage.archive-enabled=true`; with the archive off its
+table may not exist) and `SpringTransactionContext`:
 `await` inside `@Transactional` — its `afterCommit` /
 `afterCompletion` synchronisations included — throws
 `AwaitInTransactionException` instead of waiting for a commit that

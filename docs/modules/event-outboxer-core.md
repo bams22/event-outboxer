@@ -131,8 +131,10 @@ fails fast with `AwaitInTransactionException` when the
 is `neverActive()` — the opposite of the publisher's `alwaysActive()`,
 on purpose: without an observable transaction manager neither component
 should refuse its job. `OutboxEngine.tracker()` exposes one built from
-the engine's store and admin; `OutboxEngineBuilder.transactionContext`,
-when set, feeds both publisher and tracker.
+the engine's store and — only with `OutboxEngineBuilder.archiveEnabled(true)`
+— its admin port, so a schema without the optional archive table stays
+usable; `OutboxEngineBuilder.transactionContext`, when set, feeds both
+publisher and tracker.
 
 ### Maintenance (`maintenance`)
 

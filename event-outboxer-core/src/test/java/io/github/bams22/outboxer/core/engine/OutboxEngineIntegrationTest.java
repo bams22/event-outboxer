@@ -12,6 +12,11 @@ package io.github.bams22.outboxer.core.engine;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
@@ -35,12 +40,14 @@ import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.exception.AwaitInTransactionException;
 import io.github.bams22.outboxer.domain.exception.NoEventHandlersException;
 import io.github.bams22.outboxer.spi.EventStore;
+import io.github.bams22.outboxer.spi.OutboxAdmin;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryEventStore;
 import io.github.bams22.outboxer.storage.inmemory.InMemoryWorkerRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -432,6 +439,33 @@ class OutboxEngineIntegrationTest {
 
         assertThatThrownBy(() -> engine.tracker().await(UUID.randomUUID(), Duration.ofSeconds(5)))
                 .isInstanceOf(AwaitInTransactionException.class);
+    }
+
+    @Test
+    @DisplayName("archive off (default) → the tracker never consults the admin port's archive")
+    void trackerSkipsArchiveUnlessEnabled() {
+        OutboxAdmin admin = mock(OutboxAdmin.class);
+        when(admin.findInArchive(any()))
+                .thenThrow(new IllegalStateException("archive table does not exist"));
+        engine = fastEngine().publishOnly(true).admin(admin).build();
+        UUID id = UUID.randomUUID();
+
+        assertThat(engine.tracker().state(id)).isEqualTo(TrackedState.ABSENT);
+        assertThat(engine.tracker().await(id, Duration.ofSeconds(1)))
+                .isEqualTo(new AwaitResult.Completed(id, null));
+        verify(admin, never()).findInArchive(any());
+    }
+
+    @Test
+    @DisplayName("archiveEnabled(true) → the tracker consults the archive through the admin port")
+    void trackerConsultsArchiveWhenEnabled() {
+        OutboxAdmin admin = mock(OutboxAdmin.class);
+        when(admin.findInArchive(any())).thenReturn(Optional.empty());
+        engine = fastEngine().publishOnly(true).admin(admin).archiveEnabled(true).build();
+        UUID id = UUID.randomUUID();
+
+        assertThat(engine.tracker().state(id)).isEqualTo(TrackedState.ABSENT);
+        verify(admin).findInArchive(id);
     }
 
     private OutboxEngineBuilder fastEngine() {

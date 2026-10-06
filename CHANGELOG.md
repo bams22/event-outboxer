@@ -27,7 +27,10 @@ All notable changes to this project are documented here. Format follows
   `OutboxEventTracker` bean in the starter, present on publish-only
   instances as well.
 - `OutboxEngine.tracker()` (core, `DefaultOutboxEventTracker`) and
-  `OutboxTestContext.tracker()` (testkit).
+  `OutboxTestContext.tracker()` (testkit). The tracker reads the
+  archive only when it is enabled — `event-outboxer.storage.archive-enabled`
+  in the starter, the new `OutboxEngineBuilder.archiveEnabled(boolean)`
+  in plain Java — so a schema without the optional archive table works.
 
 
 ## [0.8.0] — 2026-09-08
