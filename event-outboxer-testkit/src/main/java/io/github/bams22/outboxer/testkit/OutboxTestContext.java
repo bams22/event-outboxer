@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.api.handle.builtin.FailureHandlers;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.api.track.OutboxEventTracker;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.EventTypeConfigProvider;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
@@ -31,6 +32,7 @@ import io.github.bams22.outboxer.core.polling.PollerWaker;
 import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
+import io.github.bams22.outboxer.core.track.DefaultOutboxEventTracker;
 import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.domain.WorkerInfo;
@@ -76,6 +78,7 @@ public final class OutboxTestContext {
     private final OutboxListenerRegistry listenerRegistry;
     private final RecordingOutboxListener recordingListener;
     private final OutboxEventPublisher publisher;
+    private final OutboxEventTracker tracker;
     private final ManualEngine manualEngine;
     private final WorkerInfo workerInfo;
 
@@ -88,6 +91,7 @@ public final class OutboxTestContext {
             OutboxListenerRegistry listenerRegistry,
             RecordingOutboxListener recordingListener,
             OutboxEventPublisher publisher,
+            OutboxEventTracker tracker,
             ManualEngine manualEngine,
             WorkerInfo workerInfo) {
         this.eventStore = eventStore;
@@ -98,6 +102,7 @@ public final class OutboxTestContext {
         this.listenerRegistry = listenerRegistry;
         this.recordingListener = recordingListener;
         this.publisher = publisher;
+        this.tracker = tracker;
         this.manualEngine = manualEngine;
         this.workerInfo = workerInfo;
     }
@@ -136,6 +141,18 @@ public final class OutboxTestContext {
 
     public OutboxEventPublisher publisher() {
         return publisher;
+    }
+
+    /**
+     * Tracking port (ADR-0038) over this context's event store: {@code state(id)} and a bounded
+     * {@code await(id, timeout)} — use it instead of {@code Thread.sleep} when an engine processes
+     * events on its own threads. There is no archive here, so a successfully processed event
+     * reports {@code TrackedState.ABSENT} and {@code await} returns {@code Completed} with {@code
+     * archived() == null}. The in-transaction guard uses the builder's {@code transactionContext}
+     * when one was set, and is off otherwise.
+     */
+    public OutboxEventTracker tracker() {
+        return tracker;
     }
 
     public ManualEngine manualEngine() {
@@ -478,6 +495,14 @@ public final class OutboxTestContext {
                             .tracer(tracer)
                             .build();
 
+            // Not resolvedTxCtx: its alwaysActive() fallback suits the publisher, but would make
+            // every await throw. The tracker's own default is neverActive() (ADR-0038).
+            OutboxEventTracker tracker =
+                    DefaultOutboxEventTracker.builder()
+                            .store(resolvedStore)
+                            .transactionContext(txContext)
+                            .build();
+
             WorkerInfo workerInfo =
                     WorkerInfo.builder()
                             .id(resolvedWorkerId)
@@ -496,6 +521,7 @@ public final class OutboxTestContext {
                     listeners,
                     recording,
                     publisher,
+                    tracker,
                     engine,
                     workerInfo);
         }

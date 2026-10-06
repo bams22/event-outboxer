@@ -10,6 +10,7 @@
 package io.github.bams22.outboxer.spring;
 
 import io.github.bams22.outboxer.api.handle.builtin.MaxRetriesFailureHandler;
+import io.github.bams22.outboxer.core.track.DefaultOutboxEventTracker;
 import io.github.bams22.outboxer.spi.OutboxTracer;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -51,6 +52,7 @@ public class OutboxProperties {
     private final Redis redis = new Redis();
     private final Lock lock = new Lock();
     private final Publisher publisher = new Publisher();
+    private final Tracker tracker = new Tracker();
     private final Serializer serializer = new Serializer();
     private final Maintenance maintenance = new Maintenance();
     private final Dispatcher dispatcher = new Dispatcher();
@@ -280,6 +282,21 @@ public class OutboxProperties {
     public static class Publisher {
         /** {@code FAIL} or {@code IGNORE}. Default: {@code FAIL}. */
         private NoTxPolicy noTransactionPolicy = NoTxPolicy.FAIL;
+    }
+
+    /**
+     * {@code OutboxEventTracker} (ADR-0038): looking an event up by id and waiting, bounded, for it
+     * to be finalised.
+     */
+    @Getter
+    @Setter
+    public static class Tracker {
+        /**
+         * Pause between two primary-key lookups of {@code await(id, timeout)}. Must be positive.
+         * Each concurrent waiter costs one lookup per interval; a shorter interval does not make
+         * the engine process the event sooner.
+         */
+        private Duration pollInterval = DefaultOutboxEventTracker.DEFAULT_POLL_INTERVAL;
     }
 
     public enum NoTxPolicy {

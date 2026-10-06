@@ -15,6 +15,7 @@ import io.github.bams22.outboxer.api.handle.FailureHandler;
 import io.github.bams22.outboxer.api.observer.EventPublishedInfo;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.publish.OutboxEventPublisher;
+import io.github.bams22.outboxer.api.track.OutboxEventTracker;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
 import io.github.bams22.outboxer.core.config.RetentionConfig;
@@ -27,7 +28,9 @@ import io.github.bams22.outboxer.core.polling.PollerWakeHub;
 import io.github.bams22.outboxer.core.publish.DefaultOutboxEventPublisher;
 import io.github.bams22.outboxer.core.publish.NoTransactionPolicy;
 import io.github.bams22.outboxer.core.publish.TransactionContext;
+import io.github.bams22.outboxer.core.track.DefaultOutboxEventTracker;
 import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.domain.exception.InvariantViolationException;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
 import io.github.bams22.outboxer.spi.EventSerializer;
@@ -47,6 +50,7 @@ import io.github.bams22.outboxer.spring.serializer.OutboxSerializers;
 import io.github.bams22.outboxer.spring.storage.PostgresStorageAutoConfiguration;
 import io.github.bams22.outboxer.spring.tracing.MicrometerTracingAutoConfiguration;
 import io.github.bams22.outboxer.spring.tracing.OtelTracingAutoConfiguration;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -165,6 +169,31 @@ public class OutboxEngineAutoConfiguration {
                 .tracer(resolveTracer(tracerProvider))
                 .deferredPropagation(properties.getTracing().getDeferredPropagation())
                 .linkThreshold(properties.getTracing().getLinkThreshold())
+                .build();
+    }
+
+    /**
+     * Tracking port (ADR-0038). Built independently of the engine bean, like the publisher: a
+     * stateless database reader that exists on publish-only instances and before the engine starts.
+     * The archive is consulted through the {@code OutboxAdmin} bean when there is one.
+     */
+    @Bean
+    @ConditionalOnMissingBean(OutboxEventTracker.class)
+    public OutboxEventTracker outboxEventTracker(
+            EventStore store,
+            ObjectProvider<OutboxAdmin> adminProvider,
+            TransactionContext txContext,
+            OutboxProperties properties) {
+        Duration pollInterval = properties.getTracker().getPollInterval();
+        if (pollInterval == null || pollInterval.isNegative() || pollInterval.isZero()) {
+            throw new InvariantViolationException(
+                    "event-outboxer.tracker.poll-interval must be positive, got " + pollInterval);
+        }
+        return DefaultOutboxEventTracker.builder()
+                .store(store)
+                .admin(adminProvider.getIfAvailable())
+                .transactionContext(txContext)
+                .pollInterval(pollInterval)
                 .build();
     }
 

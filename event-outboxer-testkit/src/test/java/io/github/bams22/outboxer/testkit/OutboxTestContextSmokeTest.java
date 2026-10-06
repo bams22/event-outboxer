@@ -15,6 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.bams22.outboxer.api.handle.EventContext;
 import io.github.bams22.outboxer.api.handle.EventHandler;
 import io.github.bams22.outboxer.api.handle.EventOutcome;
+import io.github.bams22.outboxer.api.track.AwaitResult;
+import io.github.bams22.outboxer.api.track.TrackedState;
 import io.github.bams22.outboxer.core.config.EventTypeConfig;
 import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.EventType;
@@ -59,6 +61,28 @@ class OutboxTestContextSmokeTest {
         assertThatStore(ctx.eventStore()).hasNoEvent(id);
         assertThat(ctx.recording().processed()).hasSize(1);
         assertThat(ctx.recording().published()).hasSize(1);
+    }
+
+    @Test
+    void trackerFollowsTheEventThroughTheManualEngine() {
+        OutboxTestContext ctx =
+                OutboxTestContext.builder()
+                        .handler(stringHandler("ORDER", (c, p) -> EventOutcome.success()))
+                        .build();
+
+        UUID id =
+                ctx.publisher()
+                        .publish(
+                                EventType.of("ORDER", OrderCreated.class),
+                                new OrderCreated("ord-1", 3));
+        assertThat(ctx.tracker().state(id)).isEqualTo(TrackedState.PENDING);
+
+        ctx.manualEngine().tick();
+
+        // No archive in the testkit: done reads as ABSENT, await as Completed(archived = null).
+        assertThat(ctx.tracker().state(id)).isEqualTo(TrackedState.ABSENT);
+        assertThat(ctx.tracker().await(id, Duration.ofSeconds(1)))
+                .isEqualTo(new AwaitResult.Completed(id, null));
     }
 
     @Test
