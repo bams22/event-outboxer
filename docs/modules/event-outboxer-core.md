@@ -119,6 +119,21 @@ The `TransactionContext` port abstracts "is a transaction active" and
 synchronization, plain-Java users pass their own (defaults to
 `alwaysActive()`).
 
+### Tracking (`track`)
+
+`DefaultOutboxEventTracker` implements `OutboxEventTracker`
+([ADR-0038](../adr/0038-event-tracking-by-id-and-bounded-await.md)):
+a stateless reader over `EventStore.findById` and, when an
+`OutboxAdmin` is supplied, `OutboxAdmin.findInArchive`. `await` sleeps
+on the calling thread between primary-key lookups (default 200 ms) and
+fails fast with `AwaitInTransactionException` when the
+`TransactionContext` reports an active transaction. Its default context
+is `neverActive()` — the opposite of the publisher's `alwaysActive()`,
+on purpose: without an observable transaction manager neither component
+should refuse its job. `OutboxEngine.tracker()` exposes one built from
+the engine's store and admin; `OutboxEngineBuilder.transactionContext`,
+when set, feeds both publisher and tracker.
+
 ### Maintenance (`maintenance`)
 
 One shared 3-thread `ScheduledExecutorService`

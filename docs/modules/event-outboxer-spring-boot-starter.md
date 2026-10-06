@@ -34,7 +34,16 @@ silently.
 default `true`) registers, each behind `@ConditionalOnMissingBean`:
 `Clock`, `SpringTransactionContext`, `PollerWakeHub`, `WorkerId`,
 `OutboxSerializers` (write/read serializer resolution),
-`OutboxEventPublisher`, `OutboxEngine` and `OutboxSmartLifecycle`.
+`OutboxEventPublisher`, `OutboxEventTracker`, `OutboxEngine` and
+`OutboxSmartLifecycle`.
+
+The `OutboxEventTracker` bean
+([ADR-0038](../adr/0038-event-tracking-by-id-and-bounded-await.md)) is
+built, like the publisher, independently of the engine — so it exists
+on publish-only instances too — from the `EventStore`, the
+`OutboxAdmin` bean (archive lookups) and `SpringTransactionContext`:
+`await` inside `@Transactional` throws `AwaitInTransactionException`
+instead of waiting for a commit that cannot happen first.
 
 Beans it *collects* rather than creates:
 
@@ -196,6 +205,7 @@ defaults and startup-validated invariants is
 | `maintenance.*` | heartbeat, dead threshold, recovery/watchdog cadence, shutdown timeout |
 | `handler-executor.type` | platform vs virtual threads |
 | `publisher.no-transaction-policy` | `FAIL` (default) / `IGNORE` |
+| `tracker.poll-interval` | pause between lookups of `OutboxEventTracker.await` (default `200ms`) |
 | `metrics.*`, `tracing.*`, `health.probe-groups` | observability |
 | `retention.*` | opt-in archive/`DISABLED` cleanup (off by default) |
 

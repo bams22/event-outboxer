@@ -7,7 +7,27 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **`OutboxEventTracker` — track an event by its id (ADR-0038).**
+  `publish()` keeps returning the `UUID`; that id is the handle. New
+  package `io.github.bams22.outboxer.api.track`:
+  `OutboxEventTracker` with `state(id)` and a bounded, primary-key
+  polled `await(id, timeout[, pollInterval])`; `TrackedState`
+  (`PENDING` / `PROCESSING` / `DISABLED` / `ARCHIVED` / `ABSENT`); the
+  sealed `AwaitResult` (`Completed` / `Disabled` / `TimedOut`). Without
+  the archive a finished event reads `ABSENT` — enable
+  `event-outboxer.storage.archive-enabled` for an authoritative "done".
+  No handler result values are stored or returned.
+- New exception category `TrackingException`:
+  `AwaitInTransactionException` (`OUTBOX-501`) — `await` inside an
+  active transaction fails fast instead of timing out —
+  and `AwaitInterruptedException` (`OUTBOX-502`), interrupt flag
+  restored.
+- `event-outboxer.tracker.poll-interval` (default `200ms`) and an
+  `OutboxEventTracker` bean in the starter, present on publish-only
+  instances as well.
+- `OutboxEngine.tracker()` (core, `DefaultOutboxEventTracker`) and
+  `OutboxTestContext.tracker()` (testkit).
 
 
 ## [0.8.0] — 2026-09-08

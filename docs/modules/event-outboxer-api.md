@@ -141,6 +141,27 @@ finalizes immediately; `Retry.delayOverride` wins over any computed
 backoff; `NoRetryFailureHandler` disables on first failure (useful for
 validation-style handlers).
 
+### Tracking (`api.track`)
+
+**`OutboxEventTracker`** — read-only view of an event by the id
+`publish()` returned
+([ADR-0038](../adr/0038-event-tracking-by-id-and-bounded-await.md)):
+
+- `state(id)` → `TrackedState`: `PENDING` / `PROCESSING` / `DISABLED`
+  for a hot-table row, `ARCHIVED` for an archive row, `ABSENT` for
+  neither — processed with the archive off, never committed, purged,
+  or unknown; the library cannot tell which.
+- `await(id, timeout[, pollInterval])` → sealed `AwaitResult`:
+  `Completed(eventId, @Nullable archived)`, `Disabled(event)` or
+  `TimedOut(eventId, lastSeen, waited)`. Polls the row by primary key;
+  bounded by `timeout`.
+
+Call `await` **after** the publishing transaction commits — inside it
+the row is invisible to the engine, and the starter's tracker throws
+`AwaitInTransactionException` rather than wait out the timeout. No
+handler result value is ever stored: write it to your own table keyed
+by `EventContext.eventId()` and read it once `Completed` arrives.
+
 ### Observability (`api.observer`)
 
 **`OutboxListener`** — 26 callbacks, all default no-ops, each with its
@@ -191,6 +212,7 @@ carry an `OUTBOX-XXX` code constant:
 | `LockException` → `LockAcquisitionException`, `LockReleaseException` | 401–402 | "busy" is `Optional.empty()`, not an exception |
 | `ConfigurationException` → `DuplicateHandlerException`, `InvalidEventTypeConfigException`, `InvariantViolationException`, `NoEventHandlersException`, `NoEventSerializersException` | — | fail-fast at startup |
 | `EngineLifecycleException` → `EngineNotStartedException` | — | lifecycle misuse |
+| `TrackingException` → `AwaitInTransactionException`, `AwaitInterruptedException` | 501–502 | `OutboxEventTracker.await` inside a transaction / interrupted (flag restored) |
 
 ## When to use it
 

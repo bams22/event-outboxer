@@ -58,6 +58,9 @@ event-outboxer:
   publisher:
     no-transaction-policy: FAIL      # FAIL | IGNORE
 
+  tracker:                           # OutboxEventTracker (ADR-0038)
+    poll-interval: 200ms             # pause between primary-key lookups of await(id, timeout); > 0
+
   storage:
     type: postgres                   # REQUIRED — no default, no in-memory option (ADR-0020)
     # schema is shared between the adapter (SQL) and the classpath
@@ -233,6 +236,21 @@ active transaction:
   accidentally publishing without atomicity.
 - `IGNORE` — writes without a surrounding transaction. Unsafe, for
   tests only.
+
+### `event-outboxer.tracker.poll-interval`
+
+Default `200ms`; must be positive (startup fails otherwise). The pause
+between two primary-key lookups of `OutboxEventTracker.await(id,
+timeout)`; the three-argument `await` overrides it per call. The
+tracker bean exists on every instance, publish-only included
+([ADR-0038](adr/0038-event-tracking-by-id-and-bounded-await.md)).
+
+Each concurrent waiter costs one lookup per interval against the hot
+table. A shorter interval only shortens the waiter's reaction time —
+the engine still picks the event up on its own poll cadence. With
+`event-outboxer.storage.archive-enabled=true` a finished event reads
+`ARCHIVED` and `await` returns the archive row; without it, `ABSENT` /
+`Completed(archived = null)`.
 
 ### `event-outboxer.publish-only`
 

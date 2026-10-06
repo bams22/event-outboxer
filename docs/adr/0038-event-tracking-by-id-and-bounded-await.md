@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed — design agreed 2026-10-06. To be flipped to Accepted in the
-commit that lands the implementation (four-commit plan: ADR, API + core,
-starter + testkit + PostgreSQL integration test, docs).
+Accepted — 2026-10-06. Design agreed and implemented the same day
+(ADR, API + core, starter + testkit + PostgreSQL integration test,
+docs). One detail settled during implementation: the two exceptions sit
+under a new `TrackingException` category (codes `OUTBOX-5xx`), matching
+the two-level hierarchy of the other categories.
 
 ## Date
 

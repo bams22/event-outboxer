@@ -33,7 +33,7 @@ ADR, amend the ADR in the same PR.
 ```
 event-outboxer (parent pom)
 ├── event-outboxer-bom                     versions-only BOM for consumers
-├── event-outboxer-api                     public API: publisher, handler, listener, domain, exceptions
+├── event-outboxer-api                     public API: publisher, tracker, handler, listener, domain, exceptions
 ├── event-outboxer-spi                     ports for adapters (EventStore, WorkerRegistry, ...)
 ├── event-outboxer-core                    engine (NO Spring dependency, enforced by banned-deps)
 ├── event-outboxer-storage-inmemory        TEST infrastructure: contract tests, testkit, @Import test config (ADR-0020)

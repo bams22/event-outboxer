@@ -70,8 +70,15 @@ OutboxTestContext outbox = OutboxTestContext.builder()
 
 Every collaborator the engine uses is exposed on the context so your
 assertions can reach it: `eventStore()`, `workerRegistry()`,
-`entityLocker()`, `clock()`, `publisher()`, `manualEngine()`,
-`recording()` (the `RecordingOutboxListener`), `workerInfo()`.
+`entityLocker()`, `clock()`, `publisher()`, `tracker()`,
+`manualEngine()`, `recording()` (the `RecordingOutboxListener`),
+`workerInfo()`.
+
+`tracker()` is an `OutboxEventTracker` over the context's store
+([ADR-0038](adr/0038-event-tracking-by-id-and-bounded-await.md)).
+The testkit has no archive, so a processed event reads
+`TrackedState.ABSENT` and `await` returns `Completed` with
+`archived() == null`.
 
 ### `SettableClock`
 
@@ -233,6 +240,34 @@ collaborators your application sees in production, and you assert via
 the injected `OutboxEventPublisher`, `EventStore` etc. directly. See
 `event-outboxer-spring-boot-starter/src/test/java/io/github/bams22/outboxer/spring/PostgresStarterIT.java`
 for a worked example.
+
+To wait for an event the running engine processes in the background,
+inject the `OutboxEventTracker` bean instead of `Thread.sleep` or a
+hand-rolled poll of `EventStore.findById`. Publish in a transaction
+that **commits** (a `@Transactional` service method, not a
+`@Transactional` test method — the row is invisible to the engine until
+commit, and `await` inside a transaction throws
+`AwaitInTransactionException`), then wait:
+
+```java
+@Autowired OrderService orders;          // @Transactional placeOrder(...) returns the event id
+@Autowired OutboxEventTracker tracker;
+
+@Test
+void orderPlacedIsProcessed() {
+    UUID id = orders.placeOrder(new Order("ord-1"));
+
+    assertThat(tracker.await(id, Duration.ofSeconds(10)))
+        .isInstanceOf(AwaitResult.Completed.class);
+}
+```
+
+`Disabled` tells you the handler gave up (with `lastFailReason`),
+`TimedOut` that nothing finished in time — so a failing test says which.
+Lower `event-outboxer.tracker.poll-interval` and the event types'
+`poll-min-interval` / `poll-max-interval` in test properties to keep
+such tests fast. `PostgresTrackerITBase` in the starter's tests is a
+worked example.
 
 ## Related documents
 

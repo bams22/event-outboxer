@@ -160,6 +160,7 @@ See [ADR-0016](adr/0016-maven-module-structure.md).
 | Component | Purpose |
 |---|---|
 | `OutboxEventPublisher` | Event publication (port with default impl in core) |
+| `OutboxEventTracker` | Status lookup and bounded await by event id (ADR-0038; default impl in core) |
 | `EventHandler<T>` | Handler for a specific event type (user-facing contract) |
 | `EventOutcome` | Sealed interface of outcomes: Success / Retry / Fail / Skip |
 | `FailureHandler<T>` | Chain-of-responsibility for handling failures |
@@ -380,6 +381,77 @@ Three active statuses: **PENDING / PROCESSING / DISABLED**.
 Successfully processed events are **DELETEd**. The optional archive is a
 separate `event_outboxer.event_archive` table (see
 [ADR-0008](adr/0008-three-statuses-plus-optional-archive.md)).
+
+### Observing an event by id
+
+`publish()` returns the event's `UUID`, and that id is the handle
+([ADR-0038](adr/0038-event-tracking-by-id-and-bounded-await.md)).
+`OutboxEventTracker` — a bean in the starter, `OutboxEngine.tracker()`
+in plain Java — answers two questions about it from the database, the
+only truth the publishing and the processing replica share:
+
+- `state(id)` — one lookup, mapped to a `TrackedState`:
+
+  | Lookup result | `TrackedState` |
+  |---|---|
+  | hot-table row, `status = PENDING` | `PENDING` |
+  | hot-table row, `status = PROCESSING` | `PROCESSING` |
+  | hot-table row, `status = DISABLED` | `DISABLED` |
+  | no hot-table row, archive row present | `ARCHIVED` |
+  | no hot-table row, no archive row | `ABSENT` |
+
+  `ABSENT` means exactly that: processed with the archive off, never
+  committed, purged by retention, or an unknown id — the library cannot
+  tell which. Turn on `event-outboxer.storage.archive-enabled` when
+  you need an authoritative "done" for arbitrary ids.
+
+- `await(id, timeout[, pollInterval])` — polls the row by primary key
+  (default every 200 ms) and returns a sealed `AwaitResult`:
+  `Completed` (row gone; carries the archive row when there is one),
+  `Disabled` (carries the event with `attempts` and `lastFailReason`)
+  or `TimedOut` (last state seen, time waited).
+
+**After commit only.** The row is invisible to the engine until the
+publishing transaction commits (ADR-0002), so `await` inside it could
+only time out; with the starter it throws `AwaitInTransactionException`
+(`OUTBOX-501`) instead. Wait from a later request, a non-transactional
+code path, or an after-commit hook:
+
+```java
+@Transactional
+public void placeOrder(Order order) {
+    orders.save(order);
+    UUID id = publisher.publish(ORDER_PLACED, new OrderPlaced(order.id()));
+    TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    AwaitResult result = tracker.await(id, Duration.ofSeconds(5));
+                    // ...
+                }
+            });
+}
+```
+
+**Waiting does not make the engine faster.** The event is picked up on
+its poller's cadence — immediately on the publishing instance thanks to
+the after-commit wake, up to `poll-max-interval` elsewhere. Each waiter
+costs a parked thread and one primary-key lookup per interval: keep
+timeouts in seconds, not minutes.
+
+**Results go through your own table.** The outbox stores no handler
+return value — at-least-once means a handler may run twice
+(ADR-0015). Have the handler write its outcome into an application
+table, inside its own transaction, keyed by `EventContext.eventId()`;
+`Completed` is the signal to read it:
+
+```java
+public EventOutcome handle(EventContext ctx, OrderPlaced payload) {
+    Receipt receipt = billing.charge(payload.orderId());
+    receipts.upsert(ctx.eventId(), receipt); // idempotent by event id
+    return EventOutcome.success();
+}
+```
 
 ---
 

@@ -21,6 +21,12 @@ least once**, possibly more (due to crashes, orphan recovery, retry after
 a transient exception). The handler MUST be idempotent. See
 [ADR-0015](adr/0015-at-least-once-semantics.md).
 
+**AwaitResult** — sealed result of `OutboxEventTracker.await(id,
+timeout)`: `Completed` (the row left the hot table; carries the archive
+row when there is one), `Disabled` (carries the event with `attempts`
+and `lastFailReason`) or `TimedOut` (last state seen, time waited). See
+[ADR-0038](adr/0038-event-tracking-by-id-and-bounded-await.md).
+
 ## C
 
 **claim** — atomic operation that moves an event from PENDING to
@@ -273,6 +279,20 @@ Micrometer Observation, Security context).
 that neutralizes `commit()`/`rollback()` for connections participating in
 an outer TX. Used to participate in the client's TX. See
 [ADR-0002](adr/0002-participate-in-client-transaction.md).
+
+**TrackedState** — what an observer can say about an event id:
+`PENDING` / `PROCESSING` / `DISABLED` (hot-table row), `ARCHIVED`
+(archive row) or `ABSENT` (neither — processed with the archive off,
+never committed, purged, or unknown). Deliberately a different type
+from the persisted `EventStatus`. See
+[ADR-0038](adr/0038-event-tracking-by-id-and-bounded-await.md).
+
+**tracker** (`OutboxEventTracker`) — read-only port looking an event up
+by the id `publish()` returned: `state(id)` and a bounded, DB-polled
+`await(id, timeout)`. Use after the publishing transaction commits;
+inside it `await` throws `AwaitInTransactionException`. Stores and
+returns no handler result. See
+[ADR-0038](adr/0038-event-tracking-by-id-and-bounded-await.md).
 
 **trace_context** — event field holding the flat W3C carrier map
 (`traceparent` / `tracestate` / `baggage` as single string values),

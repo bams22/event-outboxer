@@ -42,6 +42,11 @@ Transactional Outbox pattern.
   OpenTelemetry (`event-outboxer-tracing-otel`, works with the OTel Java
   agent) and Micrometer Tracing (`event-outboxer-tracing-micrometer`),
   auto-detected by the starter.
+- **Track an event by its id**: the id returned by `publish()` is the
+  handle — `OutboxEventTracker` offers a status lookup and a bounded,
+  database-polled await, on any instance. No result values: the outbox
+  is not request-reply
+  ([ADR-0038](docs/adr/0038-event-tracking-by-id-and-bounded-await.md)).
 - **Deep Spring Boot integration**: MDC / tracing / security-context
   propagation via `ContextPropagatingTaskDecorator`, graceful shutdown
   through `SmartLifecycle`.

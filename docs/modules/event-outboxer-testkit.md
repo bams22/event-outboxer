@@ -23,7 +23,7 @@ is three lines instead of a polling loop.
 
 | Class | Role |
 |---|---|
-| `OutboxTestContext` (+ builder) | one-stop fixture: in-memory store/registry/locker, Jackson serializer, `SettableClock`, publisher, `ManualEngine`, `RecordingOutboxListener` pre-attached |
+| `OutboxTestContext` (+ builder) | one-stop fixture: in-memory store/registry/locker, Jackson serializer, `SettableClock`, publisher, `tracker()`, `ManualEngine`, `RecordingOutboxListener` pre-attached |
 | `ManualEngine` | synchronous driver: `tick()` claims + dispatches **on the calling thread**; `tick(type, batchSize)`, `tickHeartbeat()`, `tickOrphanRecovery()`, `tickWatchdog()` |
 | `SettableClock` | thread-safe mutable `Clock`: `advance(Duration)`, `set(Instant)`; statics `atSystemNow()`, `atEpoch()` |
 | `RecordingOutboxListener` | captures all 25 `OutboxListener` callbacks into lists: `processed()`, `retryScheduled()`, `disabled()`, `stuckReclaimed()`, … plus `clear()` |
@@ -36,6 +36,15 @@ Context defaults are test-tuned: `no-transaction-policy=IGNORE`,
 Every builder setter mirrors an `event-outboxer.*` property or an
 `OutboxEngineBuilder` option — including `writeSerializerOverride` for
 per-type serializer tests.
+
+`OutboxTestContext.tracker()` is an `OutboxEventTracker`
+([ADR-0038](../adr/0038-event-tracking-by-id-and-bounded-await.md))
+over the context's store. The testkit has no archive, so a processed
+event reads `ABSENT` and `await` returns `Completed` with
+`archived() == null`. With `ManualEngine` the tick is synchronous and
+`state(id)` is enough; `await` earns its keep when an engine runs on
+its own threads — there is deliberately no `awaitProcessed` helper,
+the tracker is that helper.
 
 ## When to use it
 
