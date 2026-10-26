@@ -192,6 +192,24 @@ additionally reported as a handler error (listener callback, metric).
 Rule of thumb: throw for the unexpected, `retry` for an expected deferral
 (rate limit, upstream not ready yet), `fail` for the hopeless.
 
+**Evolving events that are already stored.** Two identifiers are
+load-bearing and must never change once events written with them may
+exist: the event type name (`EventType.of("SEND_ORDER_CONFIRMATION", …)`,
+stored as `event_type`, used to find the handler) and the serializer's
+`format()` id (stored as `payload_format`, used to pick the
+deserializer). Everything else is free to move:
+
+- **Renaming or moving the payload DTO is safe.** Deserialization always
+  targets the class in the handler's `EventType`, never the stored
+  `payload_class`; that column is publish-time diagnostics only
+  ([ADR-0003](docs/adr/0003-explicit-dto-payload.md),
+  [ADR-0025](docs/adr/0025-binary-capable-serializer-spi-and-payload-format.md)).
+- **Evolve the DTO additively.** With the default Jackson settings
+  ([ADR-0011](docs/adr/0011-jackson-json-only-in-mvp.md)) adding and
+  removing fields is tolerated; a renamed field reads as `null`/default
+  in old events, and a changed field type fails to parse, so such an
+  event travels the failure chain into `DISABLED`.
+
 ## Versions
 
 > [!WARNING]
