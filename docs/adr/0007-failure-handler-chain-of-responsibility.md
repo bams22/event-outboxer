@@ -288,6 +288,46 @@ ADR-0030 closes the gap:
 The chain model, the sealed `FailureDecision`, and the "core takes
 pre-built chains, the starter binds YAML" split are unchanged.
 
+## Amendment (2026-10-26): outcome guarantees are enforced by the dispatcher
+
+Found while integrating the library into a service: two promises the
+`EventOutcome` Javadoc makes to the handler author were only true for
+some chain compositions.
+
+1. **`Fail` → straight to `DISABLED`** was implemented solely inside
+   `MaxRetriesFailureHandler`. A chain built without `withMaxAttempts`
+   (`FailureHandlers.<T>builder().withExponentialBackoff(...)`, or any
+   hand-written `FailureHandler`) sent an explicit `Fail` into backoff and
+   retried it indefinitely.
+2. **`Retry(reason, delayOverride)`** short-circuited the chain in
+   `HandlerDispatcher`: the event was rescheduled at `now + override`
+   without consulting `MaxRetries` or `NoRetry`. A handler that always
+   answered with an explicit delay could never reach `DISABLED`, and the
+   `delayOverride` handling inside `ExponentialBackoffFailureHandler` /
+   `FixedDelayFailureHandler` was unreachable from the engine.
+
+Decision — the chain decides *whether*, the dispatcher guarantees the
+outcome contract regardless of the chain:
+
+- `Retry` and `Fail` both always go through the resolved chain, so the
+  chain's logging decorator and its `DISABLE` / `DELETE` choice keep
+  applying to every failure.
+- After the chain has answered, `HandlerDispatcher.enforceOutcomeContract`
+  post-processes a `RetryAt` only:
+  - for a `Fail` it becomes `Disable("<reason> — explicit Fail")`;
+    `MaxRetriesFailureHandler` still finalizes a `Fail` itself first, so
+    `ExhaustedAction.DELETE` continues to delete;
+  - for a `Retry` carrying a `delayOverride` its `when` is replaced by
+    `now + delayOverride`, so the override is honoured by custom chains
+    too; `Disable` / `Delete` answers (attempt cap exhausted, no-retry
+    policy) stand.
+
+Consequences: a `Retry` with an explicit delay now counts toward
+`max-attempts` and is subject to `withNoRetry()` like any other retry;
+the built-in handlers' own `delayOverride` reads are now redundant with
+the dispatcher but kept — they are part of those classes' documented
+behaviour when invoked directly. No API change.
+
 ## Related decisions
 
 - [ADR-0013](0013-outbox-listener-for-observability.md) —

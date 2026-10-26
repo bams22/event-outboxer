@@ -171,6 +171,27 @@ public class SendOrderConfirmationHandler
 }
 ```
 
+**What `handle()` may return.** `EventOutcome` is sealed with four
+cases:
+
+- `success()` — done; the row is deleted (or archived when the archive
+  is enabled).
+- `skip(reason)` — successful no-op: the handler found the work already
+  done through another path. Stored like success, counted separately.
+- `retry(reason[, delay][, cause])` — transient, "try again later". The
+  failure chain decides whether and when (default
+  `Log → MaxRetries(10) → ExponentialBackoff`); an explicit `delay` only
+  sets *when* the next attempt runs and still counts toward the attempt
+  cap.
+- `fail(reason[, cause])` — permanent. No further attempts: the event
+  goes to `DISABLED` whatever the chain, for an operator to inspect
+  through the admin surface.
+
+An uncaught exception is treated as `retry(ex.getMessage(), ex)` and is
+additionally reported as a handler error (listener callback, metric).
+Rule of thumb: throw for the unexpected, `retry` for an expected deferral
+(rate limit, upstream not ready yet), `fail` for the hopeless.
+
 ## Versions
 
 > [!WARNING]

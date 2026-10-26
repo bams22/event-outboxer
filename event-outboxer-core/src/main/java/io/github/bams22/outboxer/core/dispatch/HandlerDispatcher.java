@@ -695,12 +695,9 @@ public final class HandlerDispatcher {
             EventHandler<?> handler,
             Object payload,
             EventOutcome.Retry retry) {
-        Duration delayOverride = retry.delayOverride();
-        if (delayOverride != null) {
-            Instant when = clock.now().plus(delayOverride);
-            applyRetry(claimed, when, retry.reason(), retry.cause());
-            return;
-        }
+        // A delayOverride does not bypass the chain: the chain still decides *whether* the event
+        // is retried (attempt cap, no-retry policy); enforceOutcomeContract applies the override
+        // to *when*.
         applyFailureDecision(claimed, handler, payload, retry, retry.cause());
     }
 
@@ -717,9 +714,9 @@ public final class HandlerDispatcher {
             @Nullable EventOutcome outcome,
             @Nullable Throwable cause) {
         FailureHandler fh = failureHandlers.resolve(handler);
+        Instant now = clock.now();
         FailureContext ctx =
-                new FailureContext(
-                        claimed, payload, outcome, cause, claimed.attempts() + 1, clock.now());
+                new FailureContext(claimed, payload, outcome, cause, claimed.attempts() + 1, now);
         FailureDecision decision;
         EventDisabledInfo.Trigger disableTrigger = EventDisabledInfo.Trigger.FAILURE_DECISION;
         try {
@@ -729,12 +726,52 @@ public final class HandlerDispatcher {
             decision = new FailureDecision.Disable("failure handler threw: " + ex);
             disableTrigger = EventDisabledInfo.Trigger.FAILURE_HANDLER_ERROR;
         }
+        decision = enforceOutcomeContract(claimed, outcome, decision, now);
         switch (decision) {
             case FailureDecision.RetryAt ra -> applyRetry(claimed, ra.when(), ra.reason(), cause);
             case FailureDecision.Disable d ->
                     finaliseDisable(claimed, disableTrigger, d.reason(), cause);
             case FailureDecision.Delete del -> applyDelete(claimed, del.reason());
         }
+    }
+
+    /**
+     * Applies the two guarantees {@link EventOutcome} makes to the handler author, independently of
+     * how the resolved {@link FailureHandler} chain is composed (ADR-0007, amendment 2026-10-26):
+     *
+     * <ul>
+     *   <li>{@link EventOutcome.Fail} is never retried. A {@code RetryAt} answered for a {@code
+     *       Fail} becomes {@code Disable}. {@code MaxRetriesFailureHandler} already finalizes a
+     *       {@code Fail} itself and may choose {@code Delete}; this is the backstop for chains
+     *       built without it.
+     *   <li>{@link EventOutcome.Retry#delayOverride()} sets <em>when</em> the next attempt runs,
+     *       not <em>whether</em> it runs: a {@code RetryAt} is re-timed to {@code now +
+     *       delayOverride}, while {@code Disable} and {@code Delete} (attempt cap, no-retry
+     *       policy) stand.
+     * </ul>
+     */
+    private static FailureDecision enforceOutcomeContract(
+            ClaimedEvent claimed,
+            @Nullable EventOutcome outcome,
+            FailureDecision decision,
+            Instant now) {
+        if (!(decision instanceof FailureDecision.RetryAt retryAt)) {
+            return decision;
+        }
+        if (outcome instanceof EventOutcome.Fail fail) {
+            log.debug(
+                    "failure handler answered RetryAt for an explicit Fail on eventId={};"
+                            + " disabling instead",
+                    claimed.id());
+            return new FailureDecision.Disable(fail.reason() + " — explicit Fail");
+        }
+        if (outcome instanceof EventOutcome.Retry retry) {
+            Duration override = retry.delayOverride();
+            if (override != null) {
+                return new FailureDecision.RetryAt(now.plus(override), retryAt.reason());
+            }
+        }
+        return decision;
     }
 
     private void applyRetry(

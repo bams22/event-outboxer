@@ -7,7 +7,20 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+- **`EventOutcome.fail(...)` is now disabled regardless of the failure
+  chain.** The "straight to `DISABLED`" promise lived only in
+  `MaxRetriesFailureHandler`; a chain built without `withMaxAttempts`
+  (or any hand-written `FailureHandler`) retried an explicit `Fail`
+  indefinitely. `HandlerDispatcher` now turns a `RetryAt` answered for a
+  `Fail` into `Disable`; a `MaxRetries` decorator configured with
+  `DELETE` still deletes. ADR-0007, amendment 2026-10-26.
+- **`EventOutcome.retry(reason, delay)` no longer bypasses the attempt
+  cap.** The explicit delay used to skip the failure chain entirely, so
+  a handler that always answered with a delay could never reach
+  `DISABLED`. The chain now decides *whether* to retry (`max-attempts`,
+  `withNoRetry()`), and the dispatcher re-times its `RetryAt` to
+  `now + delay`, so the override is honoured by custom chains too.
 
 
 ## [0.9.0] — 2026-10-06

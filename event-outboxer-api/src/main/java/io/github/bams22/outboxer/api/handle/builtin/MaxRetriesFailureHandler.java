@@ -21,7 +21,10 @@ import java.util.Objects;
  * handler.
  *
  * <p>The {@code EventOutcome.Fail} case is also finalized immediately regardless of attempt count —
- * an explicit {@code Fail} from the handler bypasses any remaining retries.
+ * an explicit {@code Fail} from the handler bypasses any remaining retries. The engine guarantees
+ * the same for chains built without this decorator: a {@code RetryAt} answered for a {@code Fail}
+ * is turned into {@code Disable} by the dispatcher (ADR-0007, amendment 2026-10-26). This decorator
+ * is where {@code DELETE} can be chosen instead.
  *
  * @param <T> payload type
  */

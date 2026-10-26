@@ -274,6 +274,8 @@ For each claimedEvent:
         │            switch outcome:
         │              Success → EventStore.markProcessed(id, version, worker) or DELETE
         │              Retry/Fail → FailureHandler chain → markForRetry/markDisabled/delete
+        │                (dispatcher backstop: Fail is never RetryAt;
+        │                 Retry.delayOverride re-times a RetryAt, never revives one)
         │          finally:
         │            lock?.close() [no-throws]
         │            InFlightRegistry.unregister(id)

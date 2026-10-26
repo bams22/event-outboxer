@@ -48,7 +48,11 @@ public sealed interface EventOutcome
         return new Retry(reason, null, cause);
     }
 
-    /** Transient failure with an explicit delay before the next attempt. */
+    /**
+     * Transient failure with an explicit delay before the next attempt. The delay says <em>when</em>
+     * the next attempt runs; <em>whether</em> it runs is still the {@code FailureHandler} chain's
+     * call — the attempt cap and a no-retry policy apply as usual.
+     */
     static EventOutcome retry(String reason, Duration delay) {
         return new Retry(reason, delay, null);
     }
@@ -83,7 +87,9 @@ public sealed interface EventOutcome
      *
      * @param reason human-readable reason written to {@code last_fail_reason}
      * @param delayOverride optional explicit delay before the next attempt; if null, the configured
-     *     {@code FailureHandler} chain decides (typically exponential backoff)
+     *     {@code FailureHandler} chain decides (typically exponential backoff). The override only
+     *     re-times a retry the chain has decided on — it never turns a {@code Disable} / {@code
+     *     Delete} (attempt cap exhausted, no-retry policy) back into a retry
      * @param cause originating exception, or null if the handler returned {@code Retry} without one
      */
     record Retry(String reason, @Nullable Duration delayOverride, @Nullable Throwable cause)
@@ -98,6 +104,10 @@ public sealed interface EventOutcome
      * Non-retryable failure — move the event straight to {@code DISABLED}. Use when the handler
      * knows that additional attempts cannot succeed (for example, a permanent {@code 404} from an
      * external API).
+     *
+     * <p>The engine guarantees this regardless of how the {@code FailureHandler} chain is composed:
+     * a chain that answers a {@code Fail} with a retry is overridden to {@code Disable}. A {@code
+     * MaxRetriesFailureHandler} configured with {@code ExhaustedAction.DELETE} still deletes.
      *
      * @param reason human-readable reason written to {@code last_fail_reason}
      * @param cause originating exception, or null
