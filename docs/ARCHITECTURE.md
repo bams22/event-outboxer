@@ -815,3 +815,43 @@ belong to the core; the starter only wires, it never adds behaviour.
 - [Testing handlers with the testkit](TESTING.md)
 - [Glossary](GLOSSARY.md)
 - [Architecture Decision Records](adr/README.md)
+
+
+## Claim recovery and delivery boundaries (0.10)
+
+The executor budget bounds prefetch. Queued claims and running dispatches are tracked separately;
+watchdog runtime begins at dispatch, not at claim. The stale sweeper only recovers abandoned claims
+owned by this worker and excludes both sets under the registry monitor. It never applies local
+timeouts to peer workers. Orphan recovery remains responsible for dead peers.
+
+Before user code runs, `EventStore.ownsClaim` verifies worker/version/status; PostgreSQL uses a
+primary-key metadata lookup, adding one read per dispatch without loading the payload. This avoids
+executing an already stale queued task, but is not fencing for external side effects: handlers
+must remain idempotent. Active dispatches are keyed by their handles so an obsolete task cannot
+overwrite a newer attempt in the watchdog registry.
+
+Heartbeat uses its own executor; maintenance uses three separate threads. Stale sweeping performs
+one bounded batch per tick, retention at most 16 batches per table. These budgets do not replace
+JDBC/network timeouts or connection-pool sizing.
+
+The Spring publication guard checks only whether an actual Spring transaction is active
+on the calling thread (`isActualTransactionActive()`). It does not verify resource enlistment
+or inspect transaction-manager internals. `FAIL` prevents publication without a transaction;
+it does not detect a transaction using the wrong DataSource.
+
+For local JDBC/JPA transactions, business persistence and the outbox must use the same
+DataSource and transaction manager. With JPA, the manager/dialect must expose the transactional
+JDBC connection for that DataSource. Selecting an outbox DataSource does not automatically enlist
+it in a transaction managed for another resource. Applications with multiple transaction managers
+must select the correct manager and verify atomic commit/rollback in integration tests.
+
+Relay success means an AcknowledgedStreamSender returned after broker confirmation. See the
+[relay delivery contract and migration](modules/event-outboxer-relay-spring-cloud-stream.md#delivery-guarantees-and-migration).
+
+
+### Callback lifetime
+
+Dispatch registration and dequeue happen before onEventClaimed/onEventCoalesced callbacks.
+Callbacks run inside the dispatch try/finally and watchdog runtime budget; after they return,
+ownership is checked before invoking the handler. Throwing callbacks cannot leave queued protection
+behind, and callbacks that ignore interruption remain visible as abandoned dispatches.

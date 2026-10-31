@@ -24,7 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Owns a small scheduled executor (three threads by default) that ticks {@link HeartbeatTask},
+ * Owns a dedicated heartbeat executor and a three-thread maintenance executor that ticks
  * {@link OrphanRecoveryTask}, {@link WatchdogTask} and {@link EngineHealthCheckTask}. The executor
  * is created on {@link #start()} and shut down on {@link #stop(Duration)} so the engine's
  * graceful-shutdown flow can drain pending work deterministically.
@@ -52,6 +52,7 @@ public final class MaintenanceScheduler {
     private final OutboxListener listener;
 
     private @Nullable ScheduledExecutorService executor;
+    private @Nullable ScheduledExecutorService heartbeatExecutor;
 
     /**
      * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
@@ -91,7 +92,10 @@ public final class MaintenanceScheduler {
         executor =
                 Executors.newScheduledThreadPool(
                         3, new NamedThreadFactory("outbox-maintenance", true));
-        scheduleFixed(executor, "heartbeat", heartbeat, config.heartbeatInterval());
+        heartbeatExecutor =
+                Executors.newSingleThreadScheduledExecutor(
+                        new NamedThreadFactory("outbox-heartbeat", true));
+        scheduleFixed(heartbeatExecutor, "heartbeat", heartbeat, config.heartbeatInterval());
         scheduleFixed(executor, "orphan_recovery", orphanRecovery, config.orphanRecoveryInterval());
         scheduleFixed(executor, "watchdog", watchdog, config.watchdogInterval());
         // Crash detection ticks at the same cadence as the watchdog — no new config knob.
@@ -118,6 +122,9 @@ public final class MaintenanceScheduler {
         if (exec == null) {
             return;
         }
+        ScheduledExecutorService heartbeats = heartbeatExecutor;
+        if (heartbeats != null) heartbeats.shutdown();
+        long deadline = System.nanoTime() + timeout.toNanos();
         exec.shutdown();
         try {
             if (!exec.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -127,6 +134,18 @@ public final class MaintenanceScheduler {
             exec.shutdownNow();
             Thread.currentThread().interrupt();
         } finally {
+            if (heartbeats != null) {
+                try {
+                    if (!heartbeats.awaitTermination(
+                            Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
+                        heartbeats.shutdownNow();
+                    }
+                } catch (InterruptedException ex) {
+                    heartbeats.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
+            heartbeatExecutor = null;
             executor = null;
         }
     }

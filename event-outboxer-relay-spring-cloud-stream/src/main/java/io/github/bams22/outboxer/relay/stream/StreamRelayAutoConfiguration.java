@@ -70,14 +70,85 @@ public class StreamRelayAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean({AcknowledgedStreamSender.class, StreamRelayEventHandler.class})
+    @ConditionalOnBean(StreamBridge.class)
+    public AcknowledgedStreamSender outboxAcknowledgedStreamSender(
+            StreamBridge bridge,
+            StreamRelayProperties properties,
+            org.springframework.core.env.Environment environment) {
+        var bindings = java.util.Set.copyOf(properties.getAcknowledgedBindings());
+        if (bindings.isEmpty()) {
+            throw new IllegalStateException(
+                    "Configure event-outboxer.relay.stream.acknowledged-bindings with synchronous"
+                        + " Kafka outputs, or provide an AcknowledgedStreamSender bean that waits"
+                        + " for broker confirms");
+        }
+        for (String binding : bindings) {
+            String binder =
+                    environment.getProperty(
+                            "spring.cloud.stream.bindings." + binding + ".binder",
+                            environment.getProperty("spring.cloud.stream.default-binder", ""));
+            String type =
+                    environment.getProperty(
+                            "spring.cloud.stream.binders." + binder + ".type", binder);
+            String prefix = "spring.cloud.stream.kafka.bindings." + binding + ".producer.";
+            if (!"kafka".equals(type)
+                    || !environment.getProperty(prefix + "sync", Boolean.class, false)) {
+                throw new IllegalStateException(
+                        "Relay binding '"
+                                + binding
+                                + "' must explicitly select a Kafka binder and configure "
+                                + prefix
+                                + "sync=true");
+            }
+            // Require an explicit binding-level acknowledgement policy so global defaults cannot
+            // silently weaken the delivery contract. Named binder environments / Kafka transactions
+            // need a dedicated adapter because they use different effective producer properties.
+            String acks = environment.getProperty(prefix + "configuration.acks", "");
+            if (!java.util.Set.of("all", "-1", "1").contains(acks)) {
+                throw new IllegalStateException(
+                        "Relay binding '"
+                                + binding
+                                + "' must explicitly configure "
+                                + prefix
+                                + "configuration.acks=all (or 1)");
+            }
+            var binderProperties =
+                    org.springframework.boot.context.properties.bind.Binder.get(environment);
+            if (!"kafka".equals(binder)
+                    || binderProperties
+                            .bind(
+                                    "spring.cloud.stream.binders.kafka",
+                                    org.springframework.boot.context.properties.bind.Bindable.mapOf(
+                                            String.class, Object.class))
+                            .isBound()
+                    || binderProperties
+                            .bind(
+                                    "spring.cloud.stream.kafka.binder.transaction.transaction-id-prefix",
+                                    String.class)
+                            .isBound()) {
+                throw new IllegalStateException(
+                        "Named binder environments and transactional Kafka producers require an"
+                                + " AcknowledgedStreamSender bean that awaits delivery/commit");
+            }
+        }
+        return (binding, message) -> {
+            if (!bindings.contains(binding))
+                throw new IllegalArgumentException(
+                        "Relay binding is not configured for acknowledged delivery: " + binding);
+            return bridge.send(binding, message);
+        };
+    }
+
+    @Bean
     @ConditionalOnMissingBean(StreamRelayEventHandler.class)
     @ConditionalOnBean(StreamBridge.class)
     public StreamRelayEventHandler outboxStreamRelayEventHandler(
-            StreamBridge streamBridge, StreamRelayProperties properties) {
+            AcknowledgedStreamSender sender, StreamRelayProperties properties) {
         return StreamRelayEventHandler.builder()
-                .streamOperations(streamBridge)
+                .acknowledgedSender(sender)
                 .messageKeyHeader(properties.getMessageKeyHeader())
-                .perKeyOrdering(properties.isPerKeyOrdering())
+                .serializePerKey(properties.isSerializePerKey())
                 .build();
     }
 

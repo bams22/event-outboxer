@@ -893,6 +893,31 @@ public abstract class AbstractEventStoreContractTest {
     // ---------------------------------------------------------------------------------------------
 
     @Test
+    void ownedSweepProtectsQueuedAndPeerClaimsAndInvalidatesOldVersions() {
+        ClaimedEvent abandoned = publishAndClaim(EVENT_TYPE_A, "abandoned", WORKER_1);
+        assertThat(store.ownsClaim(abandoned.id(), WORKER_1, abandoned.claimedVersion())).isTrue();
+        assertThat(store.ownsClaim(abandoned.id(), WORKER_2, abandoned.claimedVersion())).isFalse();
+        ClaimedEvent queued = publishAndClaim(EVENT_TYPE_A, "queued", WORKER_1);
+        ClaimedEvent peer = publishAndClaim(EVENT_TYPE_A, "peer", WORKER_2);
+        for (var claim : List.of(abandoned, queued, peer)) {
+            backdateClaim(claim.id(), Instant.now().minus(Duration.ofHours(1)));
+        }
+        assertThat(
+                        store.sweepStaleOwned(
+                                Duration.ofMinutes(10), 1, WORKER_1, java.util.Set.of(queued.id())))
+                .isEqualTo(1);
+        assertThat(store.findById(queued.id()).orElseThrow().status())
+                .isEqualTo(EventStatus.PROCESSING);
+        assertThat(store.findById(peer.id()).orElseThrow().status())
+                .isEqualTo(EventStatus.PROCESSING);
+        assertThat(store.ownsClaim(abandoned.id(), WORKER_1, abandoned.claimedVersion())).isFalse();
+        assertThat(store.markProcessed(abandoned.id(), WORKER_1, abandoned.claimedVersion()))
+                .isFalse();
+        assertThat(store.sweepStaleOwned(Duration.ofMinutes(10), 10, WORKER_1, java.util.Set.of()))
+                .isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("sweepStale() reclaims only PROCESSING rows older than the threshold")
     void sweepStale_reclaimsOnlyStaleRows() {
         ClaimedEvent stale = publishAndClaim(EVENT_TYPE_A, "stale", WORKER_1);

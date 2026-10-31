@@ -63,7 +63,7 @@ public final class DefaultStreamOutboxPublisher implements StreamOutboxPublisher
     public UUID publish(StreamOutboxMessage message) {
         Objects.requireNonNull(message, "message must not be null");
         return outboxEventPublisher.publish(
-                StreamEnvelope.EVENT_TYPE, toEnvelope(message), message.options());
+                StreamEnvelope.EVENT_TYPE, toEnvelope(message), scopedOptions(message));
     }
 
     @Override
@@ -76,8 +76,32 @@ public final class DefaultStreamOutboxPublisher implements StreamOutboxPublisher
                                         PublishRequest.of(
                                                 StreamEnvelope.EVENT_TYPE,
                                                 toEnvelope(message),
-                                                message.options()))
+                                                scopedOptions(message)))
                         .toList());
+    }
+
+    private io.github.bams22.outboxer.api.publish.PublishOptions scopedOptions(
+            StreamOutboxMessage message) {
+        var options = message.options();
+        if (options == null || options.coalescingKey() == null) return options;
+        // Fixed-length SHA-256 of a length-prefixed tuple preserves the 256-character API limit.
+        String tuple =
+                message.binding().length() + ":" + message.binding() + options.coalescingKey();
+        String key;
+        try {
+            key =
+                    java.util.HexFormat.of()
+                            .formatHex(
+                                    java.security.MessageDigest.getInstance("SHA-256")
+                                            .digest(
+                                                    tuple.getBytes(
+                                                            java.nio.charset.StandardCharsets
+                                                                    .UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+        return new io.github.bams22.outboxer.api.publish.PublishOptions(
+                options.runAt(), options.priority(), options.traceContext(), key);
     }
 
     private StreamEnvelope toEnvelope(StreamOutboxMessage message) {

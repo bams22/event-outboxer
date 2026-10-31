@@ -295,6 +295,16 @@ public interface EventStore {
     int sweepStale(java.time.Duration olderThan, int limit);
 
     /**
+     * Recover abandoned claims belonging only to this worker, excluding locally queued/running
+     * ids. Never sweep a peer using this worker's timeout. Adapters must implement this operation
+     * atomically; the conservative default disables this safety net for older adapters.
+     */
+    default int sweepStaleOwned(
+            java.time.Duration olderThan, int limit, WorkerId workerId, Set<UUID> protectedIds) {
+        return 0;
+    }
+
+    /**
      * Reclaim all events owned by the given set of dead workers back to {@code PENDING} in a single
      * transaction. Increments {@code attempts} and {@code version}, clears {@code
      * claimed_by}/{@code claimed_at}, sets {@code run_at} to {@code now} so the events are
@@ -314,6 +324,23 @@ public interface EventStore {
      * @throws EventStoreException if the query fails
      */
     Optional<Event> findById(UUID id);
+
+    /**
+     * Check whether a queued dispatch still owns its claim before invoking user code. This is a
+     * point-in-time guard, not fencing of external side effects; handlers remain idempotent.
+     * Adapters should override it with a metadata-only lookup when payloads are large.
+     */
+    default boolean ownsClaim(UUID id, WorkerId workerId, long version) {
+        return findById(id)
+                .filter(
+                        event ->
+                                event.status()
+                                                == io.github.bams22.outboxer.domain.EventStatus
+                                                        .PROCESSING
+                                        && workerId.equals(event.claimedBy())
+                                        && event.version() == version)
+                .isPresent();
+    }
 
     /**
      * Capture a snapshot of per-status / per-type counters for metrics and health checks. Adapters

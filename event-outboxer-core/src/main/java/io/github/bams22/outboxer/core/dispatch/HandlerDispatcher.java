@@ -155,27 +155,15 @@ public final class HandlerDispatcher {
         this.tracer = SafeOutboxTracer.wrap(tracer != null ? tracer : OutboxTracer.NOOP);
     }
 
+    public void queued(ClaimedEvent claimed) {
+        inFlight.queued(claimed);
+    }
+
     /** Entry point invoked by the per-type handler executor for each claimed event. */
     public void dispatch(ClaimedEvent claimed) {
         Objects.requireNonNull(claimed, "claimed must not be null");
-        listener.onEventClaimed(
-                new EventClaimedInfo(
-                        claimed.id(),
-                        claimed.eventType(),
-                        claimed.attempts() + 1,
-                        claimed.createdAt(),
-                        claimed.claimedAt(),
-                        workerId));
-        // Keyed duplicates the claim swept on behalf of this event (ADR-0037): they never reach a
-        // handler; report each one before this event's run covers them.
-        if (claimed.dedupKey() != null) {
-            for (CoalescedEvent swept : claimed.coalesced()) {
-                listener.onEventCoalesced(
-                        new EventCoalescedInfo(
-                                swept.id(), claimed.id(), claimed.eventType(), claimed.dedupKey()));
-            }
-        }
-        // Register for the WHOLE dispatch — deserialization, lock acquisition, handler, finalize —
+        // Register for the WHOLE dispatch — listeners, deserialization, lock acquisition, handler,
+        // finalize —
         // so the watchdog can force-reclaim a hang anywhere in the pipeline (a stuck lock backend
         // used to leave the row PROCESSING outside any registry). handlerMaxRuntime therefore
         // budgets the full processing of a claim, not just handler.handle().
@@ -189,7 +177,35 @@ public final class HandlerDispatcher {
                         clock.now(),
                         handle);
         inFlight.register(entry);
+        inFlight.dequeued(claimed);
         try {
+            listener.onEventClaimed(
+                    new EventClaimedInfo(
+                            claimed.id(),
+                            claimed.eventType(),
+                            claimed.attempts() + 1,
+                            claimed.createdAt(),
+                            claimed.claimedAt(),
+                            workerId));
+            // Keyed duplicates the claim swept on behalf of this event (ADR-0037): they never reach
+            // a
+            // handler; report each one before this event's run covers them.
+            if (claimed.dedupKey() != null) {
+                for (CoalescedEvent swept : claimed.coalesced()) {
+                    listener.onEventCoalesced(
+                            new EventCoalescedInfo(
+                                    swept.id(),
+                                    claimed.id(),
+                                    claimed.eventType(),
+                                    claimed.dedupKey()));
+                }
+            }
+            // A callback may have unwound from a watchdog interrupt. Clear our interrupt before
+            // touching JDBC, then discard an attempt reclaimed while the callback was blocked.
+            handle.consumeInterrupt();
+            if (!store.ownsClaim(claimed.id(), workerId, claimed.claimedVersion())) {
+                return;
+            }
             dispatchRegistered(claimed, handle);
         } finally {
             // Detach before unregistering: a watchdog iterating a stale snapshot must not land an
@@ -247,7 +263,24 @@ public final class HandlerDispatcher {
         }
 
         EventTypeConfig cfg = typeConfig.forType(claimed.eventType());
-        String lockKey = extractLockKey(handler, payload);
+        String lockKey;
+        try {
+            lockKey = extractLockKey(handler, payload);
+        } catch (RuntimeException ex) {
+            listener.onHandlerError(
+                    new HandlerErrorInfo(
+                            claimed.id(),
+                            claimed.eventType(),
+                            claimed.attempts() + 1,
+                            ex,
+                            Duration.ZERO));
+            try {
+                applyFailureDecision(claimed, handler, payload, null, ex);
+            } catch (RuntimeException finalizeEx) {
+                releaseAfterFinalizeFailure(claimed, finalizeEx);
+            }
+            return;
+        }
         AcquiredLock lock = null;
         try {
             if (lockKey != null) {
@@ -299,6 +332,7 @@ public final class HandlerDispatcher {
      * failure.
      */
     public void releaseRejected(ClaimedEvent claimed) {
+        inFlight.dequeued(claimed);
         Objects.requireNonNull(claimed, "claimed must not be null");
         Instant when = clock.now().plus(dispatcherConfig.dispatchRejectedRetryDelay());
         try {
@@ -392,10 +426,8 @@ public final class HandlerDispatcher {
             case FAIL -> {
                 // Deliberately leave the row PROCESSING as a visible poison-pill marker. Note:
                 // while
-                // this worker lives, neither the watchdog (event never entered the in-flight
-                // registry)
-                // nor orphan recovery (worker is heartbeating) will touch it — it surfaces via the
-                // totalProcessing metric and is released back to PENDING on engine shutdown.
+                // this worker lives, orphan recovery will not touch it. After this dispatch
+                // unregisters, the local stale-claim sweeper returns it to PENDING.
                 log.error(
                         "unknown handler for eventType={} (policy=FAIL); leaving event PROCESSING",
                         claimed.eventType());

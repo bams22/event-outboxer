@@ -118,8 +118,47 @@ class MaintenanceSchedulerTest {
         await().atMost(Duration.ofSeconds(5)).until(() -> registry.heartbeats.get() >= 2);
     }
 
+    @Test
+    void heartbeatContinuesWhenAllMaintenanceThreadsAreBlocked() throws Exception {
+        var blocked = new java.util.concurrent.CountDownLatch(3);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var beats = new AtomicInteger();
+        var registry = new InMemoryWorkerRegistry();
+        registry.register(WORKER);
+        scheduler =
+                scheduler(
+                        registry,
+                        info -> {
+                            if (info.task().equals("heartbeat")) beats.incrementAndGet();
+                            else {
+                                blocked.countDown();
+                                try {
+                                    release.await();
+                                } catch (InterruptedException ex) {
+                                    Thread.currentThread().interrupt();
+                                }
+                            }
+                        },
+                        Duration.ofMillis(20));
+        scheduler.start();
+        try {
+            assertThat(blocked.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            int before = beats.get();
+            await().atMost(Duration.ofSeconds(2)).until(() -> beats.get() >= before + 3);
+        } finally {
+            release.countDown();
+        }
+    }
+
     private MaintenanceScheduler scheduler(
             WorkerRegistry registry, java.util.function.Consumer<MaintenanceRunInfo> onRun) {
+        return scheduler(registry, onRun, Duration.ofHours(1));
+    }
+
+    private MaintenanceScheduler scheduler(
+            WorkerRegistry registry,
+            java.util.function.Consumer<MaintenanceRunInfo> onRun,
+            Duration cadence) {
         InMemoryEventStore store = new InMemoryEventStore();
         OutboxListener listener =
                 new OutboxListener() {
@@ -128,7 +167,7 @@ class MaintenanceSchedulerTest {
                         onRun.accept(info);
                     }
                 };
-        Duration never = Duration.ofHours(1);
+        Duration never = cadence;
         return MaintenanceScheduler.builder()
                 .heartbeat(new HeartbeatTask(registry, WORKER, Clock.system(), OutboxListener.NOOP))
                 .orphanRecovery(
@@ -141,6 +180,8 @@ class MaintenanceSchedulerTest {
                 .engineHealthCheck(new EngineHealthCheckTask(List.of(), (reason, cause) -> {}))
                 .staleClaimSweeper(
                         StaleClaimSweeperTask.builder()
+                                .workerId(WORKER.id())
+                                .inFlight(new InFlightRegistry())
                                 .store(store)
                                 .threshold(Duration.ofMinutes(10))
                                 .interval(never)

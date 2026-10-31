@@ -195,7 +195,7 @@ event-outboxer:
     stream:                          # requires the event-outboxer-relay-spring-cloud-stream module
       enabled: true                  # kill switch; active when StreamBridge is on the classpath
       message-key-header: kafka_messageKey  # outgoing key header (UTF-8 bytes); empty = no key header
-      per-key-ordering: false        # serialize sends sharing (binding, key) via the entity locker
+      serialize-per-key: false        # serialize sends sharing (binding, key) via the entity locker
       default-content-type: application/json  # contentType for pre-encoded payloads
 
   admin:
@@ -236,6 +236,17 @@ active transaction:
   accidentally publishing without atomicity.
 - `IGNORE` — writes without a surrounding transaction. Unsafe, for
   tests only.
+
+The Spring publication guard checks only whether an actual Spring transaction is active
+on the calling thread (`isActualTransactionActive()`). It does not verify resource enlistment
+or inspect transaction-manager internals. `FAIL` prevents publication without a transaction;
+it does not detect a transaction using the wrong DataSource.
+
+For local JDBC/JPA transactions, business persistence and the outbox must use the same
+DataSource and transaction manager. With JPA, the manager/dialect must expose the transactional
+JDBC connection for that DataSource. Selecting an outbox DataSource does not automatically enlist
+it in a transaction managed for another resource. Applications with multiple transaction managers
+must select the correct manager and verify atomic commit/rollback in integration tests.
 
 ### `event-outboxer.tracker.poll-interval`
 
@@ -997,7 +1008,7 @@ under the reserved event type `outboxer-stream-relay`.
   empty string to disable the key header entirely and rely on the
   binding's `partitionKeyExpression` instead.
 
-- `per-key-ordering` — when `true`, the handler's `extractLockKey`
+- `serialize-per-key` — when `true`, the handler's `extractLockKey`
   returns `outboxer-stream-relay:<binding>:<key>`, serializing deliveries
   that share a (binding, key) pair through the configured entity
   locker (ADR-0012). Requires `event-outboxer.lock.type` to be a real
@@ -1593,3 +1604,18 @@ OutboxTracer outboxTracer(OpenTelemetry otel) {
 
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — architectural overview.
 - [docs/adr/README.md](adr/README.md) — rationale.
+
+
+### Acknowledged relay delivery (0.10 migration)
+
+`event-outboxer.relay.stream.acknowledged-bindings` lists allowed outputs for the built-in
+Kafka sender. Each requires an explicit Kafka binder, `producer.sync=true`, and binding-level
+`producer.configuration.acks=all` (or `1`). Other binders/configurations require an
+`AcknowledgedStreamSender` bean. See [relay migration](modules/event-outboxer-relay-spring-cloud-stream.md#delivery-guarantees-and-migration).
+`serialize-per-key` provides mutual exclusion, not FIFO; `per-key-ordering` remains a deprecated alias.
+
+Stale-claim sweeping is worker-local and excludes queued/running claims. Its threshold no longer
+applies to peer workers; orphan recovery handles dead peers. One sweep processes at most
+`maintenance.reclaim-batch-size` rows per tick. Retention processes at most 16 batches per table
+per tick. Heartbeat uses a dedicated scheduler thread; JDBC pool availability and timeouts still
+apply. The existing queue capacity bounds prefetch; queue wait does not consume handler runtime.

@@ -38,7 +38,12 @@ class StreamRelayAutoConfigurationTest {
 
     private final ApplicationContextRunner runner =
             new ApplicationContextRunner()
-                    .withConfiguration(AutoConfigurations.of(StreamRelayAutoConfiguration.class));
+                    .withConfiguration(AutoConfigurations.of(StreamRelayAutoConfiguration.class))
+                    .withPropertyValues(
+                            "event-outboxer.relay.stream.acknowledged-bindings=b",
+                            "spring.cloud.stream.default-binder=kafka",
+                            "spring.cloud.stream.kafka.bindings.b.producer.sync=true",
+                            "spring.cloud.stream.kafka.bindings.b.producer.configuration.acks=all");
 
     private final StreamBridge streamBridge = mock(StreamBridge.class);
 
@@ -81,6 +86,57 @@ class StreamRelayAutoConfigurationTest {
         ArgumentCaptor<Message<?>> captor = ArgumentCaptor.forClass(Message.class);
         verify(streamBridge).send(eq("b"), captor.capture());
         return captor.getValue();
+    }
+
+    @Test
+    void rejectsUnacknowledgedKafkaConfiguration() {
+        withCollaborators()
+                .withPropertyValues("spring.cloud.stream.kafka.bindings.b.producer.sync=false")
+                .run(ctx -> assertThat(ctx).hasFailed());
+        withCollaborators()
+                .withPropertyValues(
+                        "spring.cloud.stream.kafka.bindings.b.producer.configuration.acks=0")
+                .run(ctx -> assertThat(ctx).hasFailed());
+        withCollaborators()
+                .withPropertyValues("spring.cloud.stream.default-binder=rabbit")
+                .run(ctx -> assertThat(ctx).hasFailed());
+    }
+
+    @Test
+    void customConfirmAdapterSupportsOtherBinders() {
+        withCollaborators()
+                .withPropertyValues("spring.cloud.stream.default-binder=rabbit")
+                .withBean(AcknowledgedStreamSender.class, () -> (binding, message) -> true)
+                .run(ctx -> assertThat(ctx).hasNotFailed());
+    }
+
+    @Test
+    void rejectsUnconfiguredDynamicDestination() {
+        withCollaborators()
+                .run(
+                        ctx ->
+                                org.assertj.core.api.Assertions.assertThatThrownBy(
+                                                () ->
+                                                        ctx.getBean(AcknowledgedStreamSender.class)
+                                                                .sendAndAwait(
+                                                                        "other",
+                                                                        new org.springframework
+                                                                                .messaging.support
+                                                                                .GenericMessage<>(
+                                                                                "data")))
+                                        .isInstanceOf(IllegalArgumentException.class));
+    }
+
+    @Test
+    void serializePerKeyPropertyReachesHandler() {
+        withCollaborators()
+                .withPropertyValues("event-outboxer.relay.stream.serialize-per-key=true")
+                .run(
+                        ctx ->
+                                assertThat(
+                                                ctx.getBean(StreamRelayEventHandler.class)
+                                                        .extractLockKey(envelope()))
+                                        .isEqualTo("outboxer-stream-relay:b:k"));
     }
 
     @Test

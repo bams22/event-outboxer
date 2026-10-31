@@ -7,7 +7,28 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Breaking
+- Relay handlers now require `AcknowledgedStreamSender` instead of raw `StreamOperations`.
+  Auto-configuration requires explicit acknowledged Kafka bindings or a custom confirming sender.
+  See the relay module migration guide. No database migration is required.
+- Standalone `StaleClaimSweeperTask` builders now require `workerId` and the shared `inFlight`
+  registry. Third-party stores should implement `EventStore.sweepStaleOwned`; its safe default
+  does no sweeping. The engine no longer uses global age-only sweeping.
+
+### Changed
+- Prefer `PublishOptions.coalescingKey` and relay `serializePerKey` / `serialize-per-key`.
+  Previous names remain deprecated aliases. Coalescing discards redundant payloads and is not
+  idempotent publication; per-key serialization is not FIFO ordering.
+
 ### Fixed
+- Claim/coalescing listener callbacks are now inside watchdog registration and dispatch cleanup;
+  blocked callbacks can be reclaimed and thrown callbacks cannot leave permanent queued protection.
+- Queued/running claims are excluded from worker-local recovery, and stale dispatches validate
+  ownership before handler execution. Peer timeout configurations no longer affect live claims.
+- Lock-key extraction failures follow the failure policy immediately.
+- Relay coalescing keys are scoped by binding; every delivery carries stable `outboxer_eventId`.
+- Heartbeats have a dedicated executor; stale sweeps and retention passes have batch budgets.
+
 - **`EventOutcome.fail(...)` is now disabled regardless of the failure
   chain.** The "straight to `DISABLED`" promise lived only in
   `MaxRetriesFailureHandler`; a chain built without `withMaxAttempts`

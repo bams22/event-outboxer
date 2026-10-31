@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import lombok.Builder;
 import org.jspecify.annotations.Nullable;
-import org.springframework.cloud.stream.function.StreamOperations;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.support.MessageBuilder;
@@ -37,9 +36,9 @@ import org.springframework.messaging.support.MessageBuilder;
  * <p>Delivery is idempotent only in the at-least-once sense (ADR-0015): a crash between {@code
  * send} and finalize redelivers the message — consumers must deduplicate.
  *
- * <p>With {@code perKeyOrdering} enabled, {@link #extractLockKey} serializes handling of events
+ * <p>With {@code serializePerKey} enabled, {@link #extractLockKey} serializes handling of events
  * that share a (binding, key) pair through the configured {@code EntityLocker} (ADR-0012) —
- * relay-level ordering, which requires {@code event-outboxer.lock.type} to be set to a real locker.
+ * mutual exclusion, not FIFO ordering, which requires {@code event-outboxer.lock.type} to be set to a real locker.
  *
  * <p><b>Construction.</b> {@code StreamRelayEventHandler.builder()} — see the constructor for
  * required collaborators and defaults.
@@ -52,25 +51,45 @@ public final class StreamRelayEventHandler implements EventHandler<StreamEnvelop
      */
     public static final String DEFAULT_MESSAGE_KEY_HEADER = "kafka_messageKey";
 
+    public static final String EVENT_ID_HEADER = "outboxer_eventId";
+
+    public static class StreamRelayEventHandlerBuilder {
+        public StreamRelayEventHandlerBuilder serializePerKey(boolean enabled) {
+            this.perKeyOrdering = enabled;
+            return this;
+        }
+
+        /**
+         * Compatibility alias. Mutual exclusion does not guarantee FIFO order.
+         */
+        @Deprecated
+        public StreamRelayEventHandlerBuilder perKeyOrdering(Boolean enabled) {
+            this.perKeyOrdering = enabled;
+            return this;
+        }
+    }
+
     private static final String LOCK_KEY_PREFIX = "outboxer-stream-relay:";
 
-    private final StreamOperations streamOperations;
+    private final AcknowledgedStreamSender acknowledgedSender;
     private final @Nullable String messageKeyHeader;
     private final boolean perKeyOrdering;
 
     /**
      * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
-     * streamOperations} (the {@code StreamBridge}). Defaults: {@code messageKeyHeader} — {@link
+     * acknowledgedSender} (the {@code StreamBridge}). Defaults: {@code messageKeyHeader} — {@link
      * #DEFAULT_MESSAGE_KEY_HEADER}, blank disables the key header entirely (rely on the binding's
      * {@code partitionKeyExpression} instead); {@code perKeyOrdering} — {@code false}.
      */
     @Builder
     private StreamRelayEventHandler(
-            StreamOperations streamOperations,
+            AcknowledgedStreamSender acknowledgedSender,
             @Nullable String messageKeyHeader,
             @Nullable Boolean perKeyOrdering) {
-        this.streamOperations =
-                Objects.requireNonNull(streamOperations, "streamOperations must not be null");
+        this.acknowledgedSender =
+                Objects.requireNonNull(
+                        acknowledgedSender,
+                        "acknowledgedSender must confirm broker delivery before returning true");
         this.messageKeyHeader =
                 messageKeyHeader == null
                         ? DEFAULT_MESSAGE_KEY_HEADER
@@ -90,17 +109,18 @@ public final class StreamRelayEventHandler implements EventHandler<StreamEnvelop
         MessageBuilder<Object> messageBuilder =
                 MessageBuilder.withPayload(Objects.requireNonNull(wirePayload))
                         .copyHeaders(envelope.headers())
+                        .setHeader(EVENT_ID_HEADER, ctx.eventId().toString())
                         .setHeader(MessageHeaders.CONTENT_TYPE, envelope.contentType());
         if (messageKeyHeader != null && envelope.key() != null) {
             messageBuilder.setHeader(
                     messageKeyHeader, envelope.key().getBytes(StandardCharsets.UTF_8));
         }
         Message<Object> message = messageBuilder.build();
-        boolean sent = streamOperations.send(envelope.binding(), message);
+        boolean sent = acknowledgedSender.sendAndAwait(envelope.binding(), message);
         return sent
                 ? EventOutcome.success()
                 : EventOutcome.retry(
-                        "StreamBridge.send returned false for binding '"
+                        "Acknowledged sender returned false for binding '"
                                 + envelope.binding()
                                 + "'");
     }

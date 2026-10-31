@@ -29,6 +29,13 @@ public class StreamRelayProperties {
     private boolean enabled = true;
 
     /**
+     * Kafka output bindings allowed by the built-in acknowledged sender. Each must explicitly
+     * select a Kafka binder and configure producer.sync=true. Other binders require an
+     * AcknowledgedStreamSender bean that awaits their publisher confirms.
+     */
+    private java.util.Set<String> acknowledgedBindings = java.util.Set.of();
+
+    /**
      * Name of the outgoing message header carrying the message key, written as UTF-8 bytes. The
      * default targets the Kafka binder's record-key header; set to an empty string to disable the
      * key header entirely and rely on the binding's {@code partitionKeyExpression} instead.
@@ -40,7 +47,23 @@ public class StreamRelayProperties {
      * locker (ADR-0012). Requires {@code event-outboxer.lock.type} to be a real locker; costs
      * throughput.
      */
-    private boolean perKeyOrdering = false;
+    private boolean serializePerKey = false;
+
+    /**
+     * Compatibility alias. This setting provides mutual exclusion, not FIFO ordering.
+     */
+    @Deprecated
+    public boolean isPerKeyOrdering() {
+        return serializePerKey;
+    }
+
+    /**
+     * Compatibility alias for serialize-per-key.
+     */
+    @Deprecated
+    public void setPerKeyOrdering(boolean enabled) {
+        serializePerKey = enabled;
+    }
 
     /**
      * Content type stamped on messages whose payload was passed pre-encoded ({@code String}, {@code

@@ -16,7 +16,7 @@ createOrder()` rolls back, the event MUST NOT be persisted (and therefore
 MUST NOT be processed).
 
 This requires `EventStore.save()` to run on **the same JDBC connection** that
-Spring's `DataSourceTransactionManager` bound to the current transaction.
+Spring's transaction manager exposes for the current transaction.
 Otherwise the event is written in a separate transaction, independent of the
 business transaction.
 
@@ -94,7 +94,8 @@ architecture.
 
 ### Positive consequences
 
-- Atomicity out of the box. Users cannot accidentally break it.
+- Atomicity when business persistence and outbox use the same transactional resource;
+  DataSource and transaction-manager configuration remain the application's responsibility.
 - A regression test in CI: `@Transactional` + `publish()` + synthetic
   rollback → no entry in `event_outboxer.events`.
 
@@ -112,3 +113,22 @@ architecture.
 - [ADR-0024](0024-outbox-datasource-selection.md) — which `DataSource` the
   starter wraps when the application defines several
   (`@OutboxDataSource` qualifier → primary/unique → fail fast).
+
+
+## Amendment — 2026-10-31: transaction guard scope
+
+The Spring publication guard checks only whether an actual Spring transaction is active
+on the calling thread (`isActualTransactionActive()`). It does not verify resource enlistment
+or inspect transaction-manager internals. `FAIL` prevents publication without a transaction;
+it does not detect a transaction using the wrong DataSource.
+
+For local JDBC/JPA transactions, business persistence and the outbox must use the same
+DataSource and transaction manager. With JPA, the manager/dialect must expose the transactional
+JDBC connection for that DataSource. Selecting an outbox DataSource does not automatically enlist
+it in a transaction managed for another resource. Applications with multiple transaction managers
+must select the correct manager and verify atomic commit/rollback in integration tests.
+
+The experimental resource-specific guard was removed: its JDBC-specific checks rejected valid
+JPA transactions and coupled the starter to transaction-manager internals. The public
+TransactionContext retains only isActive() and afterCommit(); no JPA-specific context is required
+solely to pass the default guard.

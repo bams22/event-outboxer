@@ -152,7 +152,7 @@ class DefaultStreamOutboxPublisherTest {
 
     @Test
     void headersAndOptionsArePassedThrough() {
-        PublishOptions options = PublishOptions.builder().dedupKey("dk").build();
+        PublishOptions options = PublishOptions.builder().priority((short) 3).build();
 
         publisher.publish(
                 StreamOutboxMessage.builder()
@@ -189,6 +189,30 @@ class DefaultStreamOutboxPublisherTest {
         assertThat(requests.get(0).type()).isEqualTo(StreamEnvelope.EVENT_TYPE);
         assertThat(((StreamEnvelope) requests.get(0).payload()).binding()).isEqualTo("b1");
         assertThat(((StreamEnvelope) requests.get(1).payload()).binding()).isEqualTo("b2");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void coalescingIsScopedByBindingInSingleAndBatchPublication() {
+        var options =
+                PublishOptions.builder().coalescingKey("same-key").priority((short) 7).build();
+        var a = StreamOutboxMessage.builder().binding("a").payload("one").options(options).build();
+        var b = StreamOutboxMessage.builder().binding("b").payload("two").options(options).build();
+        publisher.publish(a);
+        publisher.publishAll(List.of(a, b));
+        ArgumentCaptor<PublishOptions> single = ArgumentCaptor.forClass(PublishOptions.class);
+        verify(outboxEventPublisher)
+                .publish(eq(StreamEnvelope.EVENT_TYPE), any(), single.capture());
+        ArgumentCaptor<Collection<PublishRequest<?>>> batch =
+                ArgumentCaptor.forClass(Collection.class);
+        verify(outboxEventPublisher).publishAll(batch.capture());
+        var requests = List.copyOf(batch.getValue());
+        assertThat(requests.get(0).options().coalescingKey())
+                .isEqualTo(single.getValue().coalescingKey());
+        assertThat(requests.get(1).options().coalescingKey())
+                .isNotEqualTo(single.getValue().coalescingKey());
+        assertThat(single.getValue().priority()).isEqualTo((short) 7);
+        assertThat(single.getValue().coalescingKey()).hasSizeLessThanOrEqualTo(256);
     }
 
     @Test

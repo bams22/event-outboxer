@@ -314,3 +314,8 @@ stored `event_type` string and deserializes into `handler.payloadType()`
 - [ADR-0011](0011-jackson-json-only-in-mvp.md) — Jackson's cheap
   deserialization makes acquiring the lock after deserialization
   acceptable.
+
+
+## Amendment — 2026-10-31
+
+Exceptions from extractLockKey are handler failures and go through the configured failure policy immediately. Relay serialization is named serializePerKey; the deprecated perKeyOrdering alias does not imply FIFO.

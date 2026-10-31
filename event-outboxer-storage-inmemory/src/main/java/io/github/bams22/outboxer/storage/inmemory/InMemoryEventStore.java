@@ -330,6 +330,27 @@ public final class InMemoryEventStore implements EventStore {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit must be positive, got " + limit);
         }
+        return sweepStaleMatching(olderThan, limit, null, java.util.Set.of());
+    }
+
+    @Override
+    public int sweepStaleOwned(
+            java.time.Duration olderThan,
+            int limit,
+            WorkerId workerId,
+            java.util.Set<UUID> protectedIds) {
+        Objects.requireNonNull(workerId, "workerId must not be null");
+        return sweepStaleMatching(olderThan, limit, workerId, protectedIds);
+    }
+
+    private int sweepStaleMatching(
+            java.time.Duration olderThan,
+            int limit,
+            @Nullable WorkerId workerId,
+            java.util.Set<UUID> protectedIds) {
+        Objects.requireNonNull(olderThan);
+        Objects.requireNonNull(protectedIds);
+        if (limit <= 0) throw new IllegalArgumentException("limit must be positive");
         Instant cutoff = clock.now().minus(olderThan);
         int swept = 0;
         for (EventRow row : rows.values()) {
@@ -340,7 +361,9 @@ public final class InMemoryEventStore implements EventStore {
                 Instant claimedAt = row.claimedAt;
                 if (row.status == EventStatus.PROCESSING
                         && claimedAt != null
-                        && claimedAt.isBefore(cutoff)) {
+                        && claimedAt.isBefore(cutoff)
+                        && (workerId == null || workerId.equals(row.claimedBy))
+                        && !protectedIds.contains(row.id)) {
                     row.status = EventStatus.PENDING;
                     row.claimedBy = null;
                     row.claimedAt = null;

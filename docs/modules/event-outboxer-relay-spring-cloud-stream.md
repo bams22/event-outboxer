@@ -12,7 +12,7 @@ payload) in the outbox inside your transaction, and a built-in
 | Coordinates | `io.github.bams22:event-outboxer-relay-spring-cloud-stream` |
 | Java package | `io.github.bams22.outboxer.relay.stream` |
 | Depends on | [`event-outboxer-api`](event-outboxer-api.md), [`event-outboxer-serializer-jackson`](event-outboxer-serializer-jackson.md), `spring-cloud-stream` (you add the binder) |
-| Enable with | module on the classpath + `StreamBridge` present — no flag (`event-outboxer.relay.stream.enabled=false` to opt out) |
+| Enable with | module on the classpath + `StreamBridge` present — requires acknowledged delivery configuration; `event-outboxer.relay.stream.enabled=false` to opt out |
 
 ## Why it exists
 
@@ -39,7 +39,7 @@ streamOutboxPublisher.publish(StreamOutboxMessage.builder()
         .key(order.id())
         .headers(Map.of("x-tenant", tenantId))
         .payload(new OrderCreated(...))
-        .options(PublishOptions.builder().dedupKey(order.id()).build())
+        .options(PublishOptions.builder().coalescingKey(order.id()).build())
         .build());
 ```
 
@@ -80,41 +80,57 @@ every notation — see [CONFIGURATION.md §Event-type names containing a
 dot](../CONFIGURATION.md#event-type-names-containing-a-dot) for what a
 dotted name would have cost.
 
-## Delivery guarantees — read this before going to production
+## Delivery guarantees and migration
 
-The relay inherits the engine's at-least-once semantics **up to the
-`StreamBridge.send(...)` call**. What happens after that is the
-binder's business, and the defaults are not what you want:
+The handler requires an `AcknowledgedStreamSender`. Its `sendAndAwait` method must return
+`true` only after broker acknowledgement, and return `false` or throw on timeout, rejection,
+or an indeterminate result. Waiting must be bounded. The outbox retains/retries the event
+until this contract is satisfied. A crash after acknowledgement and before finalization can
+still redeliver it: consumers should deduplicate using the stable `outboxer_eventId` header,
+which the relay writes from `EventContext.eventId()` on every attempt, overriding a caller header.
 
-- The handler treats `send(...) == true` as success, so the engine
-  finalizes the event and the outbox row goes away.
-- With the Kafka binder's default `sync: false` that `true` means
-  "handed to the producer's buffer", not "the broker acknowledged
-  it". A crash or a producer-side error in that window loses the
-  message, and there is no outbox row left to retry from.
-
-So configure an acknowledged send per binding:
+The built-in adapter supports the standard, nontransactional Kafka binder with explicit
+synchronous output bindings. Startup rejects missing acknowledgements, and sends to unlisted
+dynamic bindings fail instead of silently finalizing the event:
 
 ```yaml
+event-outboxer:
+  relay:
+    stream:
+      acknowledged-bindings: [orders-out]
+      serialize-per-key: false
 spring:
   cloud:
     stream:
+      default-binder: kafka
       kafka:
         bindings:
           orders-out:
             producer:
-              sync: true             # block until the broker acks
+              sync: true
+              configuration:
+                acks: all
 ```
 
-Other binders have their own mechanism (RabbitMQ: publisher confirms)
-— check your binder's reference. Without it the hop from the outbox to
-the broker is at-most-once, which is exactly the gap the outbox
-pattern is supposed to close.
+For RabbitMQ, named binder environments, transactional Kafka, or a customized asynchronous
+StreamBridge/channel pipeline, provide an `AcknowledgedStreamSender` bean that awaits the
+actual broker confirms/transaction commit. Merely wrapping asynchronous `StreamBridge.send`
+is insufficient. The built-in adapter assumes the standard synchronous StreamBridge pipeline;
+do not enable `StreamBridge.setAsync(true)` or replace its channels with asynchronous ones.
+See the [Spring Kafka binder producer contract](https://docs.spring.io/spring-cloud-stream/reference/kafka/kafka_overview.html).
 
-Once the send is acknowledged, the usual at-least-once caveat applies
-in the other direction: a crash between a successful `send` and the
-finalize redelivers the message, so consumers must deduplicate
-([ADR-0015](../adr/0015-at-least-once-semantics.md)).
+**Migration:** replace `StreamRelayEventHandler.builder().streamOperations(...)` with
+`.acknowledgedSender(...)`. Applications using auto-configuration must supply the configuration
+above or a confirming sender bean. The legacy `per-key-ordering` property and
+`perKeyOrdering(...)` builder method remain deprecated aliases for `serialize-per-key` and
+`serializePerKey(...)`. These provide mutual exclusion, never FIFO order across retries.
+
+`PublishOptions.coalescingKey(...)` is the preferred name for the deprecated `dedupKey(...)`.
+Use it only for replaceable work whose handler reads current state; payloads of swept events
+are discarded. It is not an idempotency key for publication. The relay scopes this key by
+binding using a SHA-256 digest of a length-prefixed tuple; identical user keys on different
+outputs cannot coalesce. During a rolling upgrade old unscoped keys and new scoped keys may
+produce additional runs, which remain covered by the at-least-once contract.
 
 ## When to use it
 
@@ -143,7 +159,7 @@ event-outboxer:
     stream:
       enabled: true                        # default — presence of the module is the opt-in
       message-key-header: kafka_messageKey # empty = no key header (use partitionKeyExpression)
-      per-key-ordering: false              # true = serialize per (binding, key); needs lock.type
+      serialize-per-key: false              # true = serialize per (binding, key); needs lock.type
       default-content-type: application/json
 ```
 
@@ -167,7 +183,7 @@ event-outboxer:
 
 ```java
 StreamRelayEventHandler relayHandler = StreamRelayEventHandler.builder()
-        .streamOperations(streamBridge)
+        .acknowledgedSender(confirmedSender)
         .build();
 
 new OutboxEngineBuilder()

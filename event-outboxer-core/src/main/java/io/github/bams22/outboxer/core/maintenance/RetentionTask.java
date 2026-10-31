@@ -26,9 +26,8 @@ import org.slf4j.LoggerFactory;
  * (ADR-0019). Scheduled by {@link MaintenanceScheduler} only when at least one threshold of {@link
  * RetentionConfig} is set — retention is strictly opt-in.
  *
- * <p>Each pass loops in {@code batchSize}-bounded DELETE statements until a batch comes back short,
- * so a single pass fully catches up regardless of backlog while never holding a long-running
- * transaction.
+ * <p>Each pass runs at most 16 {@code batchSize}-bounded DELETE statements per table, yielding
+ * earlier when a batch comes back short. Further backlog is handled on the next tick.
  *
  * <p>A failing archive sweep does not skip the disabled sweep (and vice versa); after both sweeps
  * ran — and any partial progress was reported through {@code onRetentionPurged} — the first failure
@@ -96,11 +95,14 @@ public final class RetentionTask implements Runnable {
     private long sweep(String what, IntSupplier purgeBatch) {
         long total = 0;
         try {
-            int purged;
-            do {
-                purged = purgeBatch.getAsInt();
+            // Bound each pass: yield to the scheduler even if the backlog keeps growing.
+            for (int batches = 0;
+                    batches < 16 && !Thread.currentThread().isInterrupted();
+                    batches++) {
+                int purged = purgeBatch.getAsInt();
                 total += purged;
-            } while (purged >= config.batchSize());
+                if (purged < config.batchSize()) break;
+            }
             if (total > 0) {
                 log.info("retention: purged {} {} row(s)", total, what);
             }

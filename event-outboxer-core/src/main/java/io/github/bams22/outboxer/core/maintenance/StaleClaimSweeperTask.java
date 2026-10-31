@@ -12,6 +12,8 @@ package io.github.bams22.outboxer.core.maintenance;
 import io.github.bams22.outboxer.api.observer.OutboxListener;
 import io.github.bams22.outboxer.api.observer.StaleClaimsSweptInfo;
 import io.github.bams22.outboxer.core.config.MaintenanceConfig;
+import io.github.bams22.outboxer.core.dispatch.InFlightRegistry;
+import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.EventStore;
 import java.time.Duration;
 import java.util.Objects;
@@ -21,16 +23,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Last-line safety net over the whole fleet: periodically returns {@code PROCESSING} rows whose
- * {@code claimed_at} is older than the threshold to {@code PENDING} — rows invisible to both the
- * watchdog (never entered the in-flight registry) and orphan recovery (the owning worker is alive
- * and heartbeating). Uses the partial index over {@code PROCESSING} rows created for exactly this
- * scan in migration V001.
- *
- * <p>The threshold is guaranteed by {@code OutboxEngineBuilder} to exceed every per-type {@code
- * handlerMaxRuntime}: registered in-flight rows are force-reclaimed by the watchdog long before
- * this task could see them, so anything swept here was genuinely abandoned. Swept rows are logged
- * at WARN — they indicate a bug or an incident, not normal operation.
+ * Worker-local safety net for abandoned PROCESSING claims. Queued and running claims are
+ * excluded under the shared registry monitor. Peer workers are recovered by orphan recovery,
+ * so different runtime configurations on replicas cannot expire each other's legitimate work.
+ * Each tick performs one bounded storage batch.
  *
  * <p><b>Construction.</b> {@code StaleClaimSweeperTask.builder()} — see the constructor for
  * required collaborators and defaults.
@@ -39,6 +35,8 @@ public final class StaleClaimSweeperTask implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(StaleClaimSweeperTask.class);
 
+    private final WorkerId workerId;
+    private final InFlightRegistry inFlight;
     private final EventStore store;
     private final OutboxListener listener;
     private final Duration threshold;
@@ -47,7 +45,7 @@ public final class StaleClaimSweeperTask implements Runnable {
 
     /**
      * Builder-backed constructor; parameter names are the builder's method names. Required: {@code
-     * store} and {@code threshold} (the engine derives it from {@code
+     * store}, {@code workerId}, shared {@code inFlight} registry and {@code threshold} (the engine derives it from {@code
      * MaintenanceConfig.staleClaimThreshold} and every per-type {@code handlerMaxRuntime}).
      * Defaults: {@link OutboxListener#NOOP}, {@code interval} = {@code
      * MaintenanceConfig.defaults().staleClaimSweepInterval()}, {@code batchSize} = {@code
@@ -56,11 +54,15 @@ public final class StaleClaimSweeperTask implements Runnable {
     @Builder
     private StaleClaimSweeperTask(
             EventStore store,
+            WorkerId workerId,
+            InFlightRegistry inFlight,
             @Nullable OutboxListener listener,
             Duration threshold,
             @Nullable Duration interval,
             @Nullable Integer batchSize) {
         this.store = Objects.requireNonNull(store, "store must not be null");
+        this.workerId = Objects.requireNonNull(workerId, "workerId must not be null");
+        this.inFlight = Objects.requireNonNull(inFlight, "inFlight must not be null");
         this.listener = listener != null ? listener : OutboxListener.NOOP;
         this.threshold = Objects.requireNonNull(threshold, "threshold must not be null");
         this.interval =
@@ -85,15 +87,12 @@ public final class StaleClaimSweeperTask implements Runnable {
     public void run() {
         long total = 0;
         try {
-            int swept;
-            do {
-                swept = store.sweepStale(threshold, batchSize);
-                total += swept;
-            } while (swept >= batchSize);
+            // One bounded batch per tick keeps maintenance latency predictable.
+            total = inFlight.sweepAbandoned(store, threshold, batchSize, workerId);
             if (total > 0) {
                 log.warn(
-                        "swept {} stale PROCESSING claim(s) older than {} back to PENDING — "
-                                + "these rows were invisible to the watchdog and orphan recovery",
+                        "swept {} stale PROCESSING claim(s) older than {} back to PENDING — these"
+                            + " local rows were absent from both the queue and in-flight registry",
                         total,
                         threshold);
                 listener.onStaleClaimsSwept(new StaleClaimsSweptInfo(total, threshold));

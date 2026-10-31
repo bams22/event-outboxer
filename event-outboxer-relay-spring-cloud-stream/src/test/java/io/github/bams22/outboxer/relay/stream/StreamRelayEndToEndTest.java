@@ -100,5 +100,13 @@ class StreamRelayEndToEndTest {
                 DataSourceTransactionManagerAutoConfiguration.class,
                 JdbcTemplateAutoConfiguration.class
             })
-    static class TestApp {}
+    static class TestApp {
+        @org.springframework.context.annotation.Bean
+        AcknowledgedStreamSender testBinderSender(
+                org.springframework.cloud.stream.function.StreamBridge bridge) {
+            // The in-process test binder delivers synchronously; production adapters await broker
+            // confirms.
+            return (binding, message) -> bridge.send(binding, message);
+        }
+    }
 }

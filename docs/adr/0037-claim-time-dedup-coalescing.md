@@ -439,3 +439,8 @@ workers, 2 ms of work; all cells pass the freshness invariant):
 - [ADR-0034](0034-benchmark-and-invariant-harness.md) — the decision
   was taken on the harness's numbers and its new per-key freshness
   invariant.
+
+
+## Amendment — 2026-10-31
+
+The preferred public option is coalescingKey; dedupKey remains a deprecated alias and the persisted column name is unchanged. This merges replaceable work and discards redundant payloads, not idempotent publication. Relay scopes user keys by binding using SHA-256 over a length-prefixed tuple; mixed old/new publishers may cause additional runs during rollout.

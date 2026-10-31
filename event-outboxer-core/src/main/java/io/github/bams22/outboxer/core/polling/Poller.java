@@ -271,6 +271,7 @@ public final class Poller {
     }
 
     private boolean submit(ClaimedEvent claimed) {
+        dispatcher.queued(claimed);
         try {
             handlerExecutor.execute(() -> dispatcher.dispatch(claimed));
             return true;

@@ -269,3 +269,8 @@ Revisit if a binder-neutral "await ack" hook appears upstream.
   — `SerializedPayload` supplies the dual-lane pattern the envelope
   mirrors; the per-type write-format override enables protobuf-writer
   deployments (§3).
+
+
+## Amendment — 2026-10-31
+
+The handler requires AcknowledgedStreamSender; the standard Kafka adapter validates explicitly allowed synchronous bindings and nonzero acknowledgement configuration. Other configurations provide a confirming adapter. Each attempt carries the stable outboxer_eventId header. Relay coalescing keys include the binding scope. See the module migration guide for the breaking builder/configuration change.

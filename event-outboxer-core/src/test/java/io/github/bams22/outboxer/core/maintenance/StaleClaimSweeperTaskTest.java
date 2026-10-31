@@ -28,14 +28,18 @@ class StaleClaimSweeperTaskTest {
     private static final Duration THRESHOLD = Duration.ofMinutes(10);
 
     @Test
-    @DisplayName("sweeps in batches until a short batch and reports the total to the listener")
+    @DisplayName("sweeps one bounded batch per tick and reports its total")
     void sweepsUntilShortBatchAndNotifiesListener() {
         // Scripted sweep results: two full batches of 5 followed by a short batch of 2.
         Deque<Integer> sweeps = new ArrayDeque<>(List.of(5, 5, 2));
         ForwardingEventStore store =
                 new ForwardingEventStore(new InMemoryEventStore()) {
                     @Override
-                    public int sweepStale(Duration olderThan, int limit) {
+                    public int sweepStaleOwned(
+                            Duration olderThan,
+                            int limit,
+                            io.github.bams22.outboxer.domain.WorkerId worker,
+                            java.util.Set<java.util.UUID> protectedIds) {
                         return sweeps.isEmpty() ? 0 : sweeps.pop();
                     }
                 };
@@ -49,6 +53,8 @@ class StaleClaimSweeperTaskTest {
                 };
         StaleClaimSweeperTask task =
                 StaleClaimSweeperTask.builder()
+                        .workerId(new io.github.bams22.outboxer.domain.WorkerId("test"))
+                        .inFlight(new io.github.bams22.outboxer.core.dispatch.InFlightRegistry())
                         .store(store)
                         .listener(listener)
                         .threshold(THRESHOLD)
@@ -58,7 +64,7 @@ class StaleClaimSweeperTaskTest {
 
         task.run();
 
-        assertThat(sweptInfos).containsExactly(new StaleClaimsSweptInfo(12, THRESHOLD));
+        assertThat(sweptInfos).containsExactly(new StaleClaimsSweptInfo(5, THRESHOLD));
     }
 
     @Test
@@ -74,6 +80,8 @@ class StaleClaimSweeperTaskTest {
                 };
         StaleClaimSweeperTask task =
                 StaleClaimSweeperTask.builder()
+                        .workerId(new io.github.bams22.outboxer.domain.WorkerId("test"))
+                        .inFlight(new io.github.bams22.outboxer.core.dispatch.InFlightRegistry())
                         .store(new InMemoryEventStore())
                         .listener(listener)
                         .threshold(THRESHOLD)

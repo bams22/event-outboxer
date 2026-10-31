@@ -609,6 +609,8 @@ public final class OutboxEngineBuilder {
         if (staleClaimThreshold != null) {
             staleClaimSweeper =
                     StaleClaimSweeperTask.builder()
+                            .workerId(workerId)
+                            .inFlight(inFlight)
                             .store(eventStore)
                             .listener(listener)
                             .threshold(staleClaimThreshold)

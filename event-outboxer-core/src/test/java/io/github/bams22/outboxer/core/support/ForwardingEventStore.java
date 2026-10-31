@@ -94,6 +94,12 @@ public class ForwardingEventStore implements EventStore {
     }
 
     @Override
+    public int sweepStaleOwned(
+            Duration olderThan, int limit, WorkerId workerId, java.util.Set<UUID> protectedIds) {
+        return delegate.sweepStaleOwned(olderThan, limit, workerId, protectedIds);
+    }
+
+    @Override
     public int sweepStale(Duration olderThan, int limit) {
         return delegate.sweepStale(olderThan, limit);
     }

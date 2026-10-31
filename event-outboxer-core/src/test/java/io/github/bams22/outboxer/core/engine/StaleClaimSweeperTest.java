@@ -26,7 +26,6 @@ import io.github.bams22.outboxer.domain.EventStatus;
 import io.github.bams22.outboxer.domain.EventType;
 import io.github.bams22.outboxer.domain.PendingEvent;
 import io.github.bams22.outboxer.domain.SerializedPayload;
-import io.github.bams22.outboxer.domain.WorkerId;
 import io.github.bams22.outboxer.spi.ClaimRequest;
 import io.github.bams22.outboxer.spi.Clock;
 import io.github.bams22.outboxer.spi.EntityLocker;
@@ -117,7 +116,7 @@ class StaleClaimSweeperTest {
                         .runAt(clock.now().minusSeconds(1))
                         .traceContext(Map.of())
                         .build());
-        store.claim(new ClaimRequest("ORPHANED_TYPE", new WorkerId("zombie"), 10));
+        store.claim(new ClaimRequest("ORPHANED_TYPE", engine.workerId(), 10));
         assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
 
         // Age the claim past the 1s threshold by advancing the shared clock.
@@ -162,6 +161,74 @@ class StaleClaimSweeperTest {
     }
 
     @Test
+    void queuedAndRunningClaimsSurviveRepeatedSweepsBeyondTheirClaimAge() throws Exception {
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var sweepRuns = new AtomicInteger();
+        var handled = new AtomicInteger();
+        engine =
+                engineWith(
+                                cfg -> cfg.handlerPoolSize(1).handlerQueueCapacity(5),
+                                m ->
+                                        m.staleClaimSweepInterval(Duration.ofMillis(50))
+                                                .watchdogInterval(Duration.ofHours(1)))
+                        .listener(
+                                new io.github.bams22.outboxer.api.observer.OutboxListener() {
+                                    public void onMaintenanceRunCompleted(
+                                            io.github.bams22.outboxer.api.observer
+                                                            .MaintenanceRunInfo
+                                                    info) {
+                                        if (info.task().equals("stale_claim_sweeper"))
+                                            sweepRuns.incrementAndGet();
+                                    }
+                                })
+                        .handler(
+                                handler(
+                                        "QUEUED",
+                                        (ctx, payload) -> {
+                                            started.countDown();
+                                            try {
+                                                release.await();
+                                            } catch (InterruptedException ex) {
+                                                Thread.currentThread().interrupt();
+                                            }
+                                            handled.incrementAndGet();
+                                            return EventOutcome.success();
+                                        }))
+                        .build();
+        var ids = new java.util.ArrayList<UUID>();
+        for (int i = 0; i < 3; i++)
+            ids.add(engine.publisher().publish(EventType.of("QUEUED", String.class), "p"));
+        engine.start();
+        try {
+            assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            await().atMost(Duration.ofSeconds(5))
+                    .until(
+                            () ->
+                                    ids.stream()
+                                            .allMatch(
+                                                    id ->
+                                                            store.findById(id)
+                                                                            .orElseThrow()
+                                                                            .status()
+                                                                    == EventStatus.PROCESSING));
+            offset.updateAndGet(o -> o.plusHours(1));
+            int before = sweepRuns.get();
+            await().atMost(Duration.ofSeconds(5)).until(() -> sweepRuns.get() >= before + 3);
+            for (UUID id : ids) {
+                assertThat(store.findById(id).orElseThrow().status())
+                        .isEqualTo(EventStatus.PROCESSING);
+                assertThat(store.findById(id).orElseThrow().attempts()).isZero();
+            }
+        } finally {
+            release.countDown();
+        }
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> ids.stream().allMatch(id -> store.findById(id).isEmpty()));
+        assertThat(handled).hasValue(3);
+    }
+
+    @Test
     @DisplayName("threshold resolution: none without types, explicit wins, 2x max otherwise")
     void thresholdResolution() {
         MaintenanceConfig derived = MaintenanceConfig.defaults();
@@ -202,7 +269,7 @@ class StaleClaimSweeperTest {
                         .runAt(clock.now().minusSeconds(1))
                         .traceContext(Map.of())
                         .build());
-        store.claim(new ClaimRequest("ORPHANED_TYPE", new WorkerId("zombie"), 10));
+        store.claim(new ClaimRequest("ORPHANED_TYPE", engine.workerId(), 10));
         assertThat(store.findById(id).orElseThrow().status()).isEqualTo(EventStatus.PROCESSING);
         return id;
     }

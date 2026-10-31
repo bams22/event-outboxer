@@ -63,7 +63,9 @@ class StreamRelayEventHandlerTest {
     }
 
     private StreamRelayEventHandler defaultHandler() {
-        return StreamRelayEventHandler.builder().streamOperations(streamOperations).build();
+        return StreamRelayEventHandler.builder()
+                .acknowledgedSender((binding, message) -> streamOperations.send(binding, message))
+                .build();
     }
 
     private Message<?> handleAndCaptureMessage(StreamRelayEventHandler handler, StreamEnvelope e) {
@@ -114,7 +116,8 @@ class StreamRelayEventHandlerTest {
     void customKeyHeaderNameIsUsed() {
         StreamRelayEventHandler handler =
                 StreamRelayEventHandler.builder()
-                        .streamOperations(streamOperations)
+                        .acknowledgedSender(
+                                (binding, message) -> streamOperations.send(binding, message))
                         .messageKeyHeader("myKey")
                         .build();
 
@@ -129,7 +132,8 @@ class StreamRelayEventHandlerTest {
     void blankKeyHeaderConfigDisablesTheHeader() {
         StreamRelayEventHandler handler =
                 StreamRelayEventHandler.builder()
-                        .streamOperations(streamOperations)
+                        .acknowledgedSender(
+                                (binding, message) -> streamOperations.send(binding, message))
                         .messageKeyHeader("")
                         .build();
 
@@ -177,13 +181,35 @@ class StreamRelayEventHandlerTest {
     void lockKeyIsNamespacedWhenOrderingEnabled() {
         StreamRelayEventHandler handler =
                 StreamRelayEventHandler.builder()
-                        .streamOperations(streamOperations)
+                        .acknowledgedSender(
+                                (binding, message) -> streamOperations.send(binding, message))
                         .perKeyOrdering(true)
                         .build();
 
         assertThat(handler.extractLockKey(envelope().build()))
                 .isEqualTo("outboxer-stream-relay:orders-out:k1");
         assertThat(handler.extractLockKey(envelope().key(null).build())).isNull();
+    }
+
+    @Test
+    void stableEventIdOverridesCallerHeaderAcrossRetries() {
+        EventContext ctx = context();
+        StreamEnvelope e =
+                envelope()
+                        .headers(Map.of(StreamRelayEventHandler.EVENT_ID_HEADER, "spoofed"))
+                        .build();
+        defaultHandler().handle(ctx, e);
+        defaultHandler().handle(ctx, e);
+        ArgumentCaptor<Message<?>> messages = ArgumentCaptor.forClass(Message.class);
+        verify(streamOperations, org.mockito.Mockito.times(2))
+                .send(eq(e.binding()), messages.capture());
+        assertThat(messages.getAllValues())
+                .allSatisfy(
+                        message ->
+                                assertThat(message.getHeaders())
+                                        .containsEntry(
+                                                StreamRelayEventHandler.EVENT_ID_HEADER,
+                                                ctx.eventId().toString()));
     }
 
     @Test

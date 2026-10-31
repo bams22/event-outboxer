@@ -64,6 +64,36 @@ public record PublishOptions(
         }
     }
 
+    /**
+     * Preferred name: this key coalesces replaceable work; it does not deduplicate publication.
+     */
+    public @Nullable String coalescingKey() {
+        return dedupKey;
+    }
+
+    /**
+     * Compatibility alias for {@link #coalescingKey()}.
+     */
+    @Deprecated
+    public @Nullable String dedupKey() {
+        return dedupKey;
+    }
+
+    public static class PublishOptionsBuilder {
+        public PublishOptionsBuilder coalescingKey(@Nullable String key) {
+            this.dedupKey = key;
+            return this;
+        }
+
+        /**
+         * Compatibility alias; use {@link #coalescingKey(String)}.
+         */
+        @Deprecated
+        public PublishOptionsBuilder dedupKey(@Nullable String key) {
+            return coalescingKey(key);
+        }
+    }
+
     /** Canonical empty instance — all defaults. */
     public static PublishOptions defaults() {
         return new PublishOptions(null, null, null, null);

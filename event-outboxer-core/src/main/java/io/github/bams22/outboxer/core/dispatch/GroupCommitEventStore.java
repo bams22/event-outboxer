@@ -310,6 +310,17 @@ public final class GroupCommitEventStore implements EventStore {
     }
 
     @Override
+    public boolean ownsClaim(UUID id, WorkerId workerId, long version) {
+        return delegate.ownsClaim(id, workerId, version);
+    }
+
+    @Override
+    public int sweepStaleOwned(
+            Duration olderThan, int limit, WorkerId workerId, Set<UUID> protectedIds) {
+        return delegate.sweepStaleOwned(olderThan, limit, workerId, protectedIds);
+    }
+
+    @Override
     public int sweepStale(Duration olderThan, int limit) {
         return delegate.sweepStale(olderThan, limit);
     }

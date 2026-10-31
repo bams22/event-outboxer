@@ -9,10 +9,15 @@
  */
 package io.github.bams22.outboxer.core.dispatch;
 
+import io.github.bams22.outboxer.domain.ClaimedEvent;
 import io.github.bams22.outboxer.domain.WorkerId;
+import io.github.bams22.outboxer.spi.EventStore;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -35,17 +40,42 @@ import java.util.concurrent.ConcurrentMap;
  */
 public final class InFlightRegistry {
 
-    private final ConcurrentMap<UUID, Entry> entries = new ConcurrentHashMap<>();
+    private final Set<ClaimedEvent> queued = new HashSet<>();
+
+    public synchronized void queued(ClaimedEvent claim) {
+        queued.add(claim);
+    }
+
+    public synchronized void dequeued(ClaimedEvent claim) {
+        queued.remove(claim);
+    }
+
+    public synchronized void clearQueued() {
+        queued.clear();
+    }
+
+    /**
+     * Serialize the protected-id snapshot and sweep with dispatch registration. The SQL operation
+     * is bounded to one batch; claims registered afterwards must validate ownership before running.
+     */
+    public synchronized int sweepAbandoned(
+            EventStore store, Duration threshold, int limit, WorkerId workerId) {
+        Set<UUID> protectedIds = new HashSet<>();
+        for (Entry entry : entries.values()) protectedIds.add(entry.eventId());
+        for (var claim : queued) protectedIds.add(claim.id());
+        return store.sweepStaleOwned(threshold, limit, workerId, protectedIds);
+    }
+
+    private final ConcurrentMap<DispatchHandle, Entry> entries = new ConcurrentHashMap<>();
     private final ConcurrentMap<DispatchHandle, Abandoned> abandoned = new ConcurrentHashMap<>();
 
     /**
-     * Register a newly-dispatched event. Idempotent — a second register with the same id replaces
-     * the previous entry (which by then can only be an overlapping dispatch already moved to the
-     * abandoned set).
+     * Register one dispatch, keyed by its handle. A stale queued task cannot replace bookkeeping
+     * for a newer attempt of the same event. Re-registering the same dispatch is idempotent.
      */
-    public void register(Entry entry) {
+    public synchronized void register(Entry entry) {
         Objects.requireNonNull(entry, "entry must not be null");
-        entries.put(entry.eventId(), entry);
+        entries.put(entry.handle(), entry);
     }
 
     /**
@@ -55,7 +85,7 @@ public final class InFlightRegistry {
      */
     public void unregister(Entry entry) {
         Objects.requireNonNull(entry, "entry must not be null");
-        entries.remove(entry.eventId(), entry);
+        entries.remove(entry.handle(), entry);
         abandoned.remove(entry.handle());
     }
 
@@ -72,7 +102,7 @@ public final class InFlightRegistry {
     public void markAbandoned(Entry entry, Instant reclaimedAt, boolean interrupted) {
         Objects.requireNonNull(entry, "entry must not be null");
         Objects.requireNonNull(reclaimedAt, "reclaimedAt must not be null");
-        if (!entries.remove(entry.eventId(), entry)) {
+        if (!entries.remove(entry.handle(), entry)) {
             // The dispatch finished between the watchdog's snapshot and this call — nothing leaked.
             return;
         }

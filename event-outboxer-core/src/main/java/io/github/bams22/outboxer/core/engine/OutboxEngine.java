@@ -277,6 +277,7 @@ public final class OutboxEngine {
         }
 
         maintenance.stop(timeout);
+        inFlight.clearQueued();
 
         // Invariant: the worker row must outlive its claims. If releaseClaimed failed, keep the
         // graceful_stop-flagged row so a peer's orphan recovery (which treats graceful_stop as

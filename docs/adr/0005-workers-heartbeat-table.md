@@ -188,3 +188,8 @@ sweeper (everything else, `stale-claim-threshold`).
   and orphan recovery synchronize via `version`.
 - [ADR-0004](0004-per-event-type-worker-isolation.md) — workers are shared
   across types, events are per type.
+
+
+## Amendment — 2026-10-31
+
+Heartbeat runs on a dedicated scheduled executor, independently of the three maintenance threads. Stale sweeping uses sweepStaleOwned with the local worker id and queued/running ids, serialized with local registration. Peers recover dead workers through orphan recovery, never through their own handler timeout. One stale sweep is one bounded batch; retention yields after 16 batches per table.

@@ -626,6 +626,66 @@ public final class PostgresEventStore implements EventStore {
     }
 
     @Override
+    public boolean ownsClaim(UUID id, WorkerId workerId, long version) {
+        Objects.requireNonNull(id);
+        Objects.requireNonNull(workerId);
+        try {
+            return jdbc.queryOne(
+                            "SELECT 1 FROM "
+                                    + tables.events()
+                                    + " WHERE id = ? AND claimed_by = ? AND version = ? AND status"
+                                    + " = 'PROCESSING'",
+                            ps -> {
+                                ps.setObject(1, id);
+                                ps.setString(2, workerId.value());
+                                ps.setLong(3, version);
+                            },
+                            rs -> true)
+                    .orElse(false);
+        } catch (SQLException ex) {
+            throw new EventStoreException("ownsClaim failed", ex);
+        }
+    }
+
+    @Override
+    public int sweepStaleOwned(
+            java.time.Duration olderThan, int limit, WorkerId workerId, Set<UUID> protectedIds) {
+        Objects.requireNonNull(olderThan);
+        Objects.requireNonNull(workerId);
+        Objects.requireNonNull(protectedIds);
+        if (limit <= 0) throw new IllegalArgumentException("limit must be positive");
+        String sql =
+                "WITH candidates AS (SELECT id FROM "
+                        + tables.events()
+                        + " WHERE status = 'PROCESSING' AND claimed_by = ? AND claimed_at < now() -"
+                        + " make_interval(secs => ?) AND NOT (id = ANY(?)) ORDER BY claimed_at"
+                        + " LIMIT ? FOR UPDATE SKIP LOCKED) UPDATE "
+                        + tables.events()
+                        + " e SET status = 'PENDING', claimed_by = NULL,"
+                        + " claimed_at = NULL, attempts = attempts + 1, version = version + 1,"
+                        + " last_fail_reason = 'swept: abandoned local claim', run_at = now()"
+                        + " FROM candidates c WHERE e.id = c.id";
+        try {
+            return jdbc.doWork(
+                    connection -> {
+                        java.sql.Array ids =
+                                connection.createArrayOf("uuid", protectedIds.toArray());
+                        try (java.sql.PreparedStatement ps = connection.prepareStatement(sql)) {
+                            ps.setString(1, workerId.value());
+                            ps.setDouble(2, olderThan.toMillis() / 1000.0);
+                            ps.setArray(3, ids);
+                            ps.setInt(4, limit);
+                            return ps.executeUpdate();
+                        } finally {
+                            ids.free();
+                        }
+                    });
+        } catch (SQLException ex) {
+            throw new EventStoreException("sweepStaleOwned failed", ex);
+        }
+    }
+
+    @Override
     public int sweepStale(java.time.Duration olderThan, int limit) {
         Objects.requireNonNull(olderThan, "olderThan must not be null");
         if (limit <= 0) {
